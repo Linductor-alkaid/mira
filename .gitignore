@@ -1,0 +1,71 @@
+# CMake and native build output
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/CTestTestfile.cmake
+/Testing/
+/compile_commands.json
+/CMakeUserPresets.json
+
+# Compiled objects, libraries, and executables
+*.o
+*.obj
+*.lo
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.pdb
+*.dSYM/
+
+# Test, coverage, benchmark, and runtime artifacts
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+/coverage/
+/artifacts/
+/logs/
+/tmp/
+*.log
+
+# Android and Gradle local output
+.gradle/
+.cxx/
+.externalNativeBuild/
+captures/
+local.properties
+*.apk
+*.aab
+
+# IDE and editor state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
