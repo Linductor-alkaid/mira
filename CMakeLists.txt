@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.20)
 
 project(Mira VERSION 0.1.0 LANGUAGES CXX)
 
+if(ANDROID)
+    if(NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+        message(FATAL_ERROR
+            "Mira Android preset resolved unexpected ABI: ${CMAKE_ANDROID_ARCH_ABI}")
+    endif()
+    if(NOT CMAKE_SYSTEM_VERSION VERSION_EQUAL "24")
+        message(FATAL_ERROR
+            "Mira Android preset resolved unexpected API level: ${CMAKE_SYSTEM_VERSION}")
+    endif()
+endif()
+
 include(GNUInstallDirs)
 include(CTest)
 include(CMakePackageConfigHelpers)

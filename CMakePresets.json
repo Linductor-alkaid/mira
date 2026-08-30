@@ -72,7 +72,11 @@
       "toolchainFile": "${sourceDir}/cmake/toolchains/android-arm64.cmake",
       "cacheVariables": {
         "MIRA_BUILD_TESTS": "OFF",
-        "MIRA_WARNINGS_AS_ERRORS": "ON"
+        "MIRA_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_SYSTEM_VERSION": "24",
+        "CMAKE_ANDROID_API": "24",
+        "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a",
+        "CMAKE_ANDROID_STL_TYPE": "c++_static"
       }
     },
     {

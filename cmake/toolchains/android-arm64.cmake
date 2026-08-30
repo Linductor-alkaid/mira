@@ -15,22 +15,12 @@ if(NOT EXISTS "${_mira_android_ndk}/build/cmake/android.toolchain.cmake")
     message(FATAL_ERROR "Android NDK toolchain not found under ${_mira_android_ndk}")
 endif()
 
-# These are the public inputs consumed by the NDK toolchain. The
-# CMAKE_ANDROID_* cache variables are derived from them while it initializes.
+# These are the inputs consumed by CMake's built-in Android platform support.
+# Do not include the NDK's legacy wrapper here: CMake loads its Android modules
+# after this file and nested inclusion makes the ABI/API selection order-dependent.
 set(CMAKE_SYSTEM_NAME Android)
 set(CMAKE_SYSTEM_VERSION 24 CACHE STRING "Minimum Android API level" FORCE)
-set(ANDROID_PLATFORM android-24 CACHE STRING "Minimum Android API level" FORCE)
-set(ANDROID_ABI arm64-v8a CACHE STRING "Android ABI" FORCE)
-set(ANDROID_STL c++_static CACHE STRING "Android STL" FORCE)
+set(CMAKE_ANDROID_API 24 CACHE STRING "Minimum Android API level" FORCE)
+set(CMAKE_ANDROID_ARCH_ABI arm64-v8a CACHE STRING "Android ABI" FORCE)
+set(CMAKE_ANDROID_STL_TYPE c++_static CACHE STRING "Android STL" FORCE)
 set(CMAKE_ANDROID_NDK "${_mira_android_ndk}" CACHE PATH "Android NDK" FORCE)
-
-include("${CMAKE_ANDROID_NDK}/build/cmake/android.toolchain.cmake")
-
-if(NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    message(FATAL_ERROR
-        "Mira Android arm64 toolchain resolved unexpected ABI: ${CMAKE_ANDROID_ARCH_ABI}")
-endif()
-if(NOT CMAKE_SYSTEM_VERSION VERSION_EQUAL "24")
-    message(FATAL_ERROR
-        "Mira Android arm64 toolchain resolved unexpected API level: ${CMAKE_SYSTEM_VERSION}")
-endif()

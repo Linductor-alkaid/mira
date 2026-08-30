@@ -131,16 +131,21 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
 
 ### 2026-08-30：Android CI 回归修复
 
-- 失败证据：[CI run 33301936164](https://github.com/Linductor-alkaid/mira/actions/runs/33301936164) 和
-  [CI run 33303233207](https://github.com/Linductor-alkaid/mira/actions/runs/33303233207)，Android job
-  均在 configure 后的编译阶段失败；两次 run 的 Windows、Linux、sanitizer 和 quality jobs 通过。
+- 失败证据：[CI run 33301936164](https://github.com/Linductor-alkaid/mira/actions/runs/33301936164)、
+  [CI run 33303233207](https://github.com/Linductor-alkaid/mira/actions/runs/33303233207) 和
+  [CI run 33303509993](https://github.com/Linductor-alkaid/mira/actions/runs/33303509993)，Android job
+  均在 configure 或编译阶段失败；三次 run 的 Windows、Linux、sanitizer 和 quality jobs 通过。
 - 根因：Android NDK 26.3 的 libc++ 无法为 `std::array<uint8_t, 16>` 生成默认三路比较，
   `include/mira/core_contracts.hpp:73` 及其强类型 ID 比较运算符因此在 `-Werror` 下报错。
 - 第二次 run 进一步暴露 `Id128Hash` 在 `size_t` 较窄的平台上的常量窄化，以及自定义 toolchain 未将
   ABI/API 输入传递给 NDK，实际降级为 `armv7`/API 21。
+- 第三次 run 在 configure 阶段暴露 wrapper 嵌套 NDK toolchain 后的 `CMAKE_SYSTEM_VERSION=1` 哨兵值，
+  原有 API 断言位置不正确。
 - 修复：`Id128::operator<=>` 改为标准库无关的显式字节序比较，`Id128Hash` 在 `size_t` 较窄的平台
   上显式收窄，并在 `mira_m1_core_test` 增加 `<`、`>`、`!=` 回归断言；Android toolchain 改用
-  NDK 的 `ANDROID_ABI=arm64-v8a`、`ANDROID_PLATFORM=android-24` 输入并对解析结果断言。Linux GCC
+  CMake 官方的 `CMAKE_ANDROID_ARCH_ABI=arm64-v8a`、`CMAKE_SYSTEM_VERSION=24`、
+  `CMAKE_ANDROID_STL_TYPE=c++_static` 输入，不再嵌套 include NDK legacy wrapper；项目配置阶段对
+  最终 ABI/API 断言，CI 显式安装 Ninja。Linux GCC
   Debug 本地 `ctest --preset debug --output-on-failure` 通过，12/12。
 - Android 目标的最终 `Build verified` 结论以包含此修复的后续 CI run 为准；在此之前保留平台矩阵的
   `Configured` 状态。
