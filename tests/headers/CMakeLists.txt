@@ -10,6 +10,8 @@ foreach(HEADER IN ITEMS
         mira/environment.hpp
         mira/runtime_baseline.hpp
         mira/core_contracts.hpp
+        mira/coordinates.hpp
+        mira/observation.hpp
         mira/event_store.hpp
         mira/action_journal.hpp
         mira/artifact_store.hpp

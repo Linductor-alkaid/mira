@@ -65,6 +65,8 @@ endif()
 add_library(mira_core
     src/runtime/runtime_baseline.cpp
     src/runtime/runtime.cpp
+    src/observation/coordinate_transform.cpp
+    src/observation/observation.cpp
     src/storage/event_store.cpp
     src/storage/artifact_store.cpp
     src/storage/action_journal.cpp

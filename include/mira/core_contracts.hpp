@@ -137,6 +137,11 @@ MIRA_DEFINE_ID(TenantId);
 MIRA_DEFINE_ID(UserId);
 MIRA_DEFINE_ID(HostInstanceId);
 MIRA_DEFINE_ID(ControlIngressId);
+MIRA_DEFINE_ID(CoordinateSpaceId);
+MIRA_DEFINE_ID(DisplayId);
+MIRA_DEFINE_ID(UiNodeId);
+MIRA_DEFINE_ID(ClockDomainId);
+MIRA_DEFINE_ID(RegionId);
 
 #undef MIRA_DEFINE_ID
 
@@ -147,6 +152,10 @@ struct Timestamp final {
         return {std::chrono::system_clock::now(), std::chrono::steady_clock::now()};
     }
 };
+
+// Monotonic counter owned by the environment side; any topology, permission or
+// host discontinuity increments it and invalidates stale coordinates.
+using EnvironmentEpoch = std::uint64_t;
 
 struct SchemaVersion final {
     std::uint16_t major = 1;

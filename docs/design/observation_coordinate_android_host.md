@@ -450,5 +450,7 @@ provenance 原则。
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [本地感知与任务模型](local_perception_and_task_models.md)
 - [威胁模型与确认协议](../security/threat_model_and_confirmation.md)
-- [Mira 实施总计划](../plans/mira-implementation-plan.md)：M2
+- [M2 里程碑计划](../plans/m2-observation-simulator-android-host.md)：坐标与 Observation 契约
+  已落地为 `include/mira/coordinates.hpp` 与 `include/mira/observation.hpp`；本设计中的结构为
+  规范契约，字段命名以头文件为准。
 
