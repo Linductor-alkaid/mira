@@ -28,6 +28,12 @@ Task 状态，将产生终态复活、错 epoch 提交和 shutdown 竞态。原�
    结算 completion 提交到控制面并进入 `Quiesced`；关闭串行上下文并消费对应 future；最后从非
    worker 线程关闭 Executor。`Stopped` 不依赖关闭后的 Executor 回调。
 
+M0 验证发现当前 `submit_on_with_handle()` 在多 worker 下存在进展和同步对象生命周期问题，记录为
+`EXE-20260830-002`、`EXE-20260830-003`。在上游修复前，决策第 2 条由单一 compatibility boundary
+实现：先 reserve FIFO ticket，再由普通 Executor tracked task 非阻塞 `post_reserved()`，独立业务
+promise 在串行 callback 内结算；两类 future 都必须消费，取消必须 abandon 未发布 ticket。该兼容
+边界保持同一串行上下文和 Executor 所有权，不等同于允许自建 actor 线程或队列。
+
 ## 备选方案
 
 - 每 Task 一个 `SerialExecutionContext`：线程数随 Task 增长，不接受。

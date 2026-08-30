@@ -1,0 +1,62 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "MIRA_BUILD_TESTS": "ON",
+        "MIRA_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "asan",
+      "inherits": "debug",
+      "cacheVariables": { "MIRA_ENABLE_ASAN": "ON" }
+    },
+    {
+      "name": "ubsan",
+      "inherits": "debug",
+      "cacheVariables": { "MIRA_ENABLE_UBSAN": "ON" }
+    },
+    {
+      "name": "tsan",
+      "inherits": "debug",
+      "cacheVariables": { "MIRA_ENABLE_TSAN": "ON" }
+    },
+    {
+      "name": "static-analysis",
+      "inherits": "debug",
+      "cacheVariables": { "MIRA_ENABLE_CLANG_TIDY": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug", "jobs": 2 },
+    { "name": "release", "configurePreset": "release", "jobs": 2 },
+    { "name": "asan", "configurePreset": "asan", "jobs": 2 },
+    { "name": "ubsan", "configurePreset": "ubsan", "jobs": 2 },
+    { "name": "tsan", "configurePreset": "tsan", "jobs": 2 },
+    { "name": "static-analysis", "configurePreset": "static-analysis", "jobs": 2 }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+    { "name": "ubsan", "configurePreset": "ubsan", "output": { "outputOnFailure": true } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } }
+  ]
+}

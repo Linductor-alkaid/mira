@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = clang ]; then
+            echo "CXX=clang++" >> "$GITHUB_ENV"
+            echo "CC=clang" >> "$GITHUB_ENV"
+          else
+            echo "CXX=g++" >> "$GITHUB_ENV"
+            echo "CC=gcc" >> "$GITHUB_ENV"
+          fi
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [ASAN, UBSAN, TSAN]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_${{ matrix.sanitizer }}=ON
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        if: matrix.sanitizer != 'TSAN'
+        run: ctest --test-dir build --output-on-failure
+      - name: Test with TSAN
+        if: matrix.sanitizer == 'TSAN'
+        run: setarch x86_64 -R ctest --test-dir build --output-on-failure
+
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install quality tools
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_CLANG_TIDY=ON
+      - name: Static analysis build
+        run: cmake --build build --parallel 2
+      - name: Format, docs, supply chain
+        run: cmake --build build --target format-check docs-check sbom-check

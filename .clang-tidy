@@ -1,0 +1,13 @@
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  performance-*,
+  portability-*,
+  readability-identifier-naming
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(include/mira|src|adapters)/.*'
+CheckOptions:
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case

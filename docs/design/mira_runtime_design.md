@@ -1,7 +1,7 @@
 # Mira Runtime 设计文档
 
 > 状态：Active  
-> 版本：0.4  
+> 版本：0.5
 > 更新日期：2026-08-30  
 > 适用范围：Mira Core、Provider、Controller、Platform Adapter 及其宿主集成
 
@@ -98,6 +98,14 @@ Platform 和 Model Provider 不创建 Mira 自有线程或返回自行管理的�
 
 完成消息只有在这些标识仍与 Task 当前状态匹配时才可提交结果。迟到响应会被记录为
 `StaleCompletionIgnored`，不得让终态或新 epoch 回退。
+
+M0 在 Executor 提交 facade 上确认了三个已登记边界：默认异步队列缺少总量 admission
+（`EXE-20260830-001`），多 worker 的 `submit_on_with_handle()` wrapper 可能因 ticket 等待互相
+饥饿（`EXE-20260830-002`），且其栈条件变量存在 TSAN 可见的生命周期竞争
+（`EXE-20260830-003`）。在上游修复前，Mira 的兼容边界先预留 serial ticket，再通过 Executor
+tracked task 非阻塞调用 `post_reserved()`，并以独立共享 promise 结算业务结果；dispatch future
+与业务 future 均由 `ExecutionSupervisor` 保存和消费，排队取消显式 abandon ticket。该边界不创建
+线程或私有调度器。完整证据与移除条件见[Executor 反馈台账](../executor_feedback/ledger.md)。
 
 ### 3.5 副作用默认至多执行一次
 
