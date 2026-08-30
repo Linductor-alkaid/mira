@@ -92,7 +92,7 @@ struct ModelProfileCapabilities final {
 // Reference to a secret resolved only at the transport boundary.
 struct SecretRef final {
     std::string name;
-    friend bool operator==(const SecretRef &, const SecretRef &) noexcept = default;
+    friend bool operator==(const SecretRef &, const SecretRef &) = default;
 };
 
 // Staged network deadlines (design LLM API §10.1). All optional; the final

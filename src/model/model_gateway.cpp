@@ -283,7 +283,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             return outcome;
         }
 
-        const auto failure = response.error();
+        auto failure = response.error();
         circuit.record_failure();
         outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
 

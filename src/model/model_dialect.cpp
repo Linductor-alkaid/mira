@@ -429,9 +429,8 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
         break;
     }
     case OutputMode::StrictFunctionTool:
-        // Tool-driven decisions declare their tools below; no text format.
-        break;
     case OutputMode::Text:
+        // Tool-driven and text modes declare no text format.
         break;
     }
 
@@ -816,6 +815,7 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
     }
     case OutputMode::StrictFunctionTool:
     case OutputMode::Text:
+        // Tool-driven and text modes declare no response format.
         break;
     }
 

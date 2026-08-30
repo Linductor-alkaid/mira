@@ -137,8 +137,9 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
             },
             trace);
         last_trace_ = trace;
-        last_headers_ = std::move(info.has_value() ? info.value().headers
-                                                   : std::vector<std::pair<std::string, std::string>>{});
+        if (info.has_value()) {
+            last_headers_ = std::move(info.value().headers);
+        }
         sse_stats_ = parser.stats();
         last_preview_ = parser.take_preview();
         if (!info) {

@@ -144,7 +144,7 @@ class JsonValue final {
         }
     }
 
-    friend bool operator==(const JsonValue &lhs, const JsonValue &rhs) noexcept = default;
+    friend bool operator==(const JsonValue &lhs, const JsonValue &rhs) = default;
 
   private:
     std::variant<std::nullptr_t, bool, std::int64_t, Number, std::string, Array, Object> variant_;

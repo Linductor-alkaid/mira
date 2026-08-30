@@ -1155,7 +1155,7 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
             }
             const auto *side_effects = tool_json.find("has_side_effects");
             if (side_effects != nullptr && side_effects->is_boolean()) {
-                tool.has_side_effects = *side_effects->as_boolean();
+                tool.has_side_effects = side_effects->as_boolean().value_or(false);
             }
             request.tools.emplace_back(std::move(tool));
         }
@@ -1273,7 +1273,7 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
         }
         if (const auto *field = data_policy->find("allow_uploads");
             field != nullptr && field->is_boolean()) {
-            request.data_policy.allow_uploads = *field->as_boolean();
+            request.data_policy.allow_uploads = field->as_boolean().value_or(false);
         }
         if (const auto *field = data_policy->find("region"); field != nullptr && field->is_string()) {
             request.data_policy.region = *field->as_string();

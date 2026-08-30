@@ -53,7 +53,7 @@ MIRA_DEFINE_MODEL_ID(EvalRunId);
 // Provider-scoped identifier of one tool invocation on the wire.
 struct ProviderToolCallId final {
     std::string value;
-    friend bool operator==(const ProviderToolCallId &, const ProviderToolCallId &) noexcept = default;
+    friend bool operator==(const ProviderToolCallId &, const ProviderToolCallId &) = default;
 };
 
 // Stable, payload-free reference to stored content. Payload bytes never
