@@ -51,6 +51,16 @@ int main() {
     MIRA_CHECK(mira::digest_string("abc").to_string() ==
                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 
+    const mira::Id128::Bytes lower_bytes{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+    const mira::Id128::Bytes higher_bytes{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                          0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x10};
+    const mira::Id128 lower_id(lower_bytes);
+    const mira::Id128 higher_id(higher_bytes);
+    MIRA_CHECK(lower_id < higher_id);
+    MIRA_CHECK(higher_id > lower_id);
+    MIRA_CHECK(lower_id != higher_id);
+
     const auto root = std::filesystem::temp_directory_path() / "mira-m1-event-store-test";
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);

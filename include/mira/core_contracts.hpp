@@ -70,7 +70,20 @@ public:
     }
 
     friend constexpr bool operator==(const Id128 &, const Id128 &) noexcept = default;
-    friend constexpr auto operator<=>(const Id128 &, const Id128 &) noexcept = default;
+    // libc++ in the Android NDK does not provide a three-way comparison for
+    // std::array<uint8_t, 16>; compare bytes explicitly for all toolchains.
+    friend constexpr std::strong_ordering operator<=>(const Id128 &lhs,
+                                                       const Id128 &rhs) noexcept {
+        for (std::size_t index = 0; index < lhs.bytes_.size(); ++index) {
+            if (lhs.bytes_[index] < rhs.bytes_[index]) {
+                return std::strong_ordering::less;
+            }
+            if (lhs.bytes_[index] > rhs.bytes_[index]) {
+                return std::strong_ordering::greater;
+            }
+        }
+        return std::strong_ordering::equal;
+    }
 
 private:
     [[nodiscard]] static std::optional<std::uint8_t> hex_value(char value) noexcept {

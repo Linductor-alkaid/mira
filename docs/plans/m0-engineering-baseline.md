@@ -63,6 +63,9 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
 
 ## 5. 风险与阻塞
 
+- `BUG-20260830-001`：Android NDK 26.3 libc++ 不为 `std::array<uint8_t, 16>` 提供可用的三路比较，
+  导致 `Id128` 的默认 `operator<=>` 在 `-Werror` 下被删除。修复为 `Id128` 内部按字节显式返回
+  `std::strong_ordering`，并以契约测试覆盖排序语义；待 Android CI 重跑确认。
 - `RISK-2026-001`：`SerialExecutionContext` 拥有内部串行线程，且 `submit_on` facade wrapper 在
   默认池中等待回调完成。M0 必须用最小线程数和突发 completion 验证不会因长控制回调造成饥饿；
   控制回调不得执行模型、I/O、阻塞等待或用户回调。
@@ -125,3 +128,14 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
   环境错误终止；补跑条件为 NDK 26.3.11579264（或兼容版本）及 Ninja 可用。CI 只构建
   `mira_core` 和 `mira_simulator_adapter`，真机 Host/Adapter 行为验证仍属于 M2/M7。
 - `format-check` 未在本轮执行：当前容器没有 `clang-format`；CI 的 quality job 安装该工具后执行。
+
+### 2026-08-30：Android CI 回归修复
+
+- 失败证据：[CI run 33301936164](https://github.com/Linductor-alkaid/mira/actions/runs/33301936164)，
+  Android job 在 configure 后的编译阶段失败；Windows、Linux、sanitizer 和 quality jobs 通过。
+- 根因：Android NDK 26.3 的 libc++ 无法为 `std::array<uint8_t, 16>` 生成默认三路比较，
+  `include/mira/core_contracts.hpp:73` 及其强类型 ID 比较运算符因此在 `-Werror` 下报错。
+- 修复：`Id128::operator<=>` 改为标准库无关的显式字节序比较，并在 `mira_m1_core_test` 增加
+  `<`、`>`、`!=` 回归断言。Linux GCC Debug 本地 `ctest --preset debug --output-on-failure` 通过，12/12。
+- Android 目标的最终 `Build verified` 结论以包含此修复的后续 CI run 为准；在此之前保留平台矩阵的
+  `Configured` 状态。

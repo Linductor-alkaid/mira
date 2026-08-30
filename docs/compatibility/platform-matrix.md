@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | Linux x86_64 | GCC 13、Clang 18；`debug`/`release`/sanitizer | `Build verified`（M0，Ubuntu 24.04） | `Planned`（`adapters/linux`，M2/M7） | Linux GCC/Clang CI |
 | Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Configured`；CI 配置已提交，待 Windows runner 结果 | `Planned`（`adapters/windows`，M2/M7） | Windows configure/build/test CI |
-| Android arm64-v8a | NDK toolchain，API 24；`android-arm64-release` | `Configured`；CI 只构建 `mira_core` 与 `mira_simulator_adapter`，待 NDK runner 结果 | `Planned`（Host/NDK Adapter，M2） | Android NDK configure/build CI；真机/模拟器由 M2/M7 |
+| Android arm64-v8a | NDK toolchain，API 24；`android-arm64-release` | `Configured`；CI run 33301936164 暴露 libc++ ID 比较兼容性问题，修复后待重跑 | `Planned`（Host/NDK Adapter，M2） | Android NDK configure/build CI；真机/模拟器由 M2/M7 |
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，
@@ -62,5 +62,7 @@ Android toolchain 不把 SDK/NDK 路径写入仓库；CI 使用 `ANDROID_NDK_VER
 - `mira_platform_boundary_test` 在测试构建中执行同一检查。
 - `.github/workflows/ci.yml` 的 `linux`、`windows` 和 `android` job 分别负责目标组合；未运行或
   失败的目标必须保留其状态和补跑条件。
+- Android CI run 33301936164 的编译失败已登记为 `BUG-20260830-001`；修复提交后的 runner 成功
+  结果才可将 Android Core/Simulator 证据提升为 `Build verified`。
 - 真实输入、截图、权限和生命周期 contract tests 在 Adapter 交付后加入 M2/M7，不能由 Simulator
   结果替代。
