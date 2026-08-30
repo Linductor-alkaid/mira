@@ -429,7 +429,7 @@ HostDispatcherBridge::dispatch_input(MiraAndroidHostV1 *host,
                                             outcome.side_effect_may_have_occurred =
                                                 result.side_effect_may_have_occurred;
                                             outcome.environment_epoch = result.environment_epoch;
-                                            promise->set_value(std::move(outcome));
+                                            promise->set_value(outcome);
                                         }});
         ++stats_.operations_submitted;
     }
