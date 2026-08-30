@@ -33,14 +33,14 @@ struct ShutdownReport final {
 };
 
 class CommandHandle final {
-public:
+  public:
     CommandHandle() = default;
     [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(state_); }
     [[nodiscard]] CommandId id() const noexcept;
     [[nodiscard]] Result<CommandReceipt> receipt(std::chrono::milliseconds timeout) const;
     [[nodiscard]] Result<CommandOutcome> outcome(std::chrono::milliseconds timeout) const;
 
-private:
+  private:
     struct State;
     explicit CommandHandle(std::shared_ptr<State> state) : state_(std::move(state)) {}
     friend class MiraRuntime;
@@ -65,7 +65,7 @@ struct SessionSnapshot final {
 };
 
 class MiraRuntime final {
-public:
+  public:
     explicit MiraRuntime(RuntimeConfig config = {});
     ~MiraRuntime();
     MiraRuntime(const MiraRuntime &) = delete;
@@ -73,7 +73,7 @@ public:
 
     Result<void> initialize();
     Result<SessionSubmission> open_session(std::shared_ptr<IEnvironment> environment,
-                                            SessionConfig config = {});
+                                           SessionConfig config = {});
     Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task);
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
@@ -89,7 +89,7 @@ public:
     [[nodiscard]] RuntimeState state() const noexcept;
     ShutdownReport finish_shutdown();
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

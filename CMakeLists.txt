@@ -67,6 +67,7 @@ add_library(mira_core
     src/runtime/runtime.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
+    src/observation/observation_pipeline.cpp
     src/storage/event_store.cpp
     src/storage/artifact_store.cpp
     src/storage/action_journal.cpp
@@ -121,6 +122,34 @@ endif()
 mira_enable_sanitizers(mira_simulator_adapter)
 set_target_properties(mira_simulator_adapter PROPERTIES EXPORT_NAME simulator_adapter)
 
+add_library(mira_android_adapter
+    adapters/android/host_dispatcher.cpp
+    adapters/android/android_host_adapter.cpp
+)
+add_library(Mira::android_adapter ALIAS mira_android_adapter)
+target_include_directories(mira_android_adapter
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(mira_android_adapter PUBLIC Mira::core)
+target_link_libraries(mira_android_adapter PRIVATE executor::executor)
+target_include_directories(mira_android_adapter SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+)
+target_compile_features(mira_android_adapter PUBLIC cxx_std_20)
+mira_enable_warnings(mira_android_adapter)
+if(MIRA_ENABLE_CLANG_TIDY)
+    set_property(TARGET mira_android_adapter PROPERTY CXX_CLANG_TIDY
+        "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*"
+    )
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(mira_android_adapter PRIVATE -Wno-deprecated-declarations)
+endif()
+mira_enable_sanitizers(mira_android_adapter)
+set_target_properties(mira_android_adapter PROPERTIES EXPORT_NAME android_adapter)
+
 add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
 target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
 mira_enable_warnings(mira_minimal_consumer)
@@ -164,7 +193,7 @@ if(MIRA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mira_core mira_simulator_adapter
+install(TARGETS mira_core mira_simulator_adapter mira_android_adapter
     EXPORT MiraTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

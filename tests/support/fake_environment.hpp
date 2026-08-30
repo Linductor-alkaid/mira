@@ -2,34 +2,64 @@
 
 #include <mira/environment.hpp>
 
-#include <cstdint>
-#include <string>
 #include <utility>
-#include <vector>
 
 namespace mira::test {
 
+// Minimal in-memory environment for Runtime-level tests. It serves one
+// canned observation per observe call and records executed input.
 class FakeEnvironment final : public IEnvironment {
-public:
-    explicit FakeEnvironment(std::string content = {}) : content_(std::move(content)) {}
+  public:
+    explicit FakeEnvironment(Observation observation = {}) : observation_(std::move(observation)) {}
 
-    Observation observe() override { return {++observation_sequence_, content_}; }
-
-    ExecutionReceipt execute(const InputSequence &input) override {
-        actions_.insert(actions_.end(), input.begin(), input.end());
-        return {++execution_sequence_, true, "fake input accepted"};
+    EnvironmentCapabilities capabilities() const override {
+        EnvironmentCapabilities capabilities;
+        capabilities.screen_capture = true;
+        capabilities.discrete_input = true;
+        capabilities.input_release = true;
+        capabilities.epoch_invalidation = true;
+        return capabilities;
     }
 
-    void interrupt() noexcept override { interrupted_ = true; }
+    Result<Observation> observe(const ObservationRequest & /*request*/,
+                                const OperationContext & /*context*/) override {
+        if (observation_.id.is_nil()) {
+            observation_.id = ObservationId::generate();
+        }
+        observation_.environment_epoch = epoch_;
+        return observation_;
+    }
 
-    [[nodiscard]] const std::vector<InputEvent> &actions() const noexcept { return actions_; }
+    Result<ExecutionReceipt> execute(const InputSequence &input,
+                                     const OperationContext & /*context*/) override {
+        if (input.events.empty()) {
+            Error error;
+            error.code = ErrorCode::InvalidArgument;
+            error.domain = "mira.test";
+            error.safe_message = "input sequence must not be empty";
+            return error;
+        }
+        executed_ += input.events.size();
+        ExecutionReceipt receipt;
+        receipt.status = ExecutionStatus::Completed;
+        receipt.environment_epoch = epoch_;
+        receipt.safe_message = "fake input accepted";
+        return receipt;
+    }
+
+    Result<void> interrupt(const OperationContext & /*context*/) override {
+        interrupted_ = true;
+        return Result<void>{};
+    }
+
+    void bump_epoch() { ++epoch_; }
+    [[nodiscard]] std::size_t executed_event_count() const noexcept { return executed_; }
     [[nodiscard]] bool interrupted() const noexcept { return interrupted_; }
 
-private:
-    std::string content_;
-    std::vector<InputEvent> actions_;
-    std::uint64_t observation_sequence_ = 0;
-    std::uint64_t execution_sequence_ = 0;
+  private:
+    Observation observation_;
+    std::size_t executed_ = 0;
+    EnvironmentEpoch epoch_ = 1;
     bool interrupted_ = false;
 };
 

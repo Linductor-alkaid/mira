@@ -99,7 +99,7 @@ struct RecoveryOptions final {
 };
 
 class IEventStore {
-public:
+  public:
     virtual ~IEventStore() = default;
     virtual Result<AppendReceipt> append(const AppendRequest &) = 0;
     virtual Result<std::vector<AppendReceipt>> append_batch(std::span<const AppendRequest>) = 0;
@@ -109,7 +109,7 @@ public:
 };
 
 class MemoryEventStore final : public IEventStore {
-public:
+  public:
     explicit MemoryEventStore(std::size_t max_events = 100'000);
     ~MemoryEventStore() override;
     MemoryEventStore(const MemoryEventStore &) = delete;
@@ -123,13 +123,13 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] std::optional<EventEnvelope> find(EventId) const;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
 
 class FileEventStore final : public IEventStore {
-public:
+  public:
     FileEventStore(std::filesystem::path root, std::size_t max_events = 100'000);
     ~FileEventStore() override;
     FileEventStore(const FileEventStore &) = delete;
@@ -143,7 +143,7 @@ public:
     [[nodiscard]] const std::filesystem::path &root() const noexcept;
     [[nodiscard]] bool read_only() const noexcept;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

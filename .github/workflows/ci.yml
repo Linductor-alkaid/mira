@@ -76,8 +76,8 @@ jobs:
           echo "ANDROID_NDK_HOME=${android_sdk_root}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
       - name: Configure Android arm64
         run: cmake --preset android-arm64-release
-      - name: Build Android Core and Simulator
-        run: cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter
+      - name: Build Android Core, Simulator and Host Adapter
+        run: cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter
 
   sanitizers:
     strategy:
@@ -107,7 +107,13 @@ jobs:
         with:
           submodules: recursive
       - name: Install quality tools
-        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-tidy
+          # Pin clang-format to the version the tree is formatted with; the
+          # apt snapshot is not reproducible across runner updates.
+          python3 -m pip install 'clang-format==18.1.8'
+          sudo ln -sf "$(command -v clang-format)" /usr/local/bin/clang-format
+          clang-format --version
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_CLANG_TIDY=ON
       - name: Static analysis build

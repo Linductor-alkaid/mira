@@ -21,6 +21,25 @@ mira_add_test(mira_stress_test stress/runtime_ordering_stress_test.cpp stress)
 mira_add_test(mira_benchmark_smoke benchmark/control_plane_benchmark.cpp benchmark)
 mira_add_test(mira_m1_core_test m1/m1_core_test.cpp contract)
 mira_add_test(mira_m2_observation_test m2/m2_observation_coordinate_test.cpp contract)
+mira_add_test(mira_m2_simulator_test m2/m2_simulator_scenario_test.cpp contract)
+mira_add_test(mira_m2_pipeline_test m2/m2_observation_pipeline_test.cpp contract)
+
+add_executable(mira_m2_android_host_test
+    m2/m2_android_host_abi_test.cpp
+    support/fake_android_host.cpp
+)
+target_link_libraries(mira_m2_android_host_test PRIVATE
+    Mira::core Mira::android_adapter Mira::simulator_adapter executor::executor)
+target_include_directories(mira_m2_android_host_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(mira_m2_android_host_test SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+mira_enable_warnings(mira_m2_android_host_test)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(mira_m2_android_host_test PRIVATE -Wno-deprecated-declarations)
+endif()
+mira_enable_sanitizers(mira_m2_android_host_test)
+add_test(NAME mira_m2_android_host_test COMMAND mira_m2_android_host_test)
+set_tests_properties(mira_m2_android_host_test PROPERTIES LABELS "contract;m2" TIMEOUT 90)
 
 add_test(
     NAME mira_public_headers_test

@@ -12,13 +12,16 @@ foreach(HEADER IN ITEMS
         mira/core_contracts.hpp
         mira/coordinates.hpp
         mira/observation.hpp
+        mira/observation_pipeline.hpp
         mira/event_store.hpp
         mira/action_journal.hpp
         mira/artifact_store.hpp
         mira/security.hpp
         mira/replay.hpp
         mira/runtime.hpp
-        mira/adapters/simulator/simulator_environment.hpp)
+        mira/adapters/simulator/simulator_environment.hpp
+        mira/adapters/android/host_dispatcher.hpp
+        mira/adapters/android/android_host_adapter.hpp)
     string(REPLACE "/" "_" TARGET_NAME "${HEADER}")
     string(REPLACE "." "_" TARGET_NAME "${TARGET_NAME}")
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.cpp")

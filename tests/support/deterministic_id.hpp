@@ -5,11 +5,11 @@
 namespace mira::test {
 
 class DeterministicIdGenerator final {
-public:
+  public:
     explicit DeterministicIdGenerator(std::uint64_t next = 1) : next_(next) {}
     [[nodiscard]] std::uint64_t next() noexcept { return next_++; }
 
-private:
+  private:
     std::uint64_t next_;
 };
 

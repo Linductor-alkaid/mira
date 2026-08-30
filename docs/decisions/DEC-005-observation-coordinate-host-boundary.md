@@ -37,8 +37,13 @@ transform provenance，不能只返回裸 `x/y`。
 
 ## 验证方式
 
-Simulator 覆盖旋转、裁剪、缩放、多 display 和非同步组件；Android 覆盖前后台、权限撤销、Host
-销毁、JNI 线程 attach/detach 和输入安全释放。
+- Simulator 覆盖旋转、裁剪、letterbox、inset、多 display、非原子组件与 epoch 失效：M2 已由
+  `tests/m2/m2_simulator_scenario_test.cpp` 与 `tests/m2/m2_observation_coordinate_test.cpp` 验证。
+- Android Host 边界：M2 冻结 `include/mira/adapters/android/host_abi.h` 并以 fake host 契约测试
+  （`tests/m2/m2_android_host_abi_test.cpp`）验证 callback exactly-once、lease 恰好一次释放与
+  epoch 递增失效；证据等级见 [android-host-abi.md](../compatibility/android-host-abi.md)。
+- 真实 Android 前后台、权限撤销、Host 销毁、JNI 线程 attach/detach 和输入安全释放：待 JNI
+  Host bridge 交付后在目标环境补跑。
 
 ## 关联文档和工作项
 

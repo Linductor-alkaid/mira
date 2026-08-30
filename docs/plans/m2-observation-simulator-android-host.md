@@ -117,14 +117,17 @@ Android Host 无法取消的原子平台调用返回后只能标记 stale，不�
 
 ## 8. 退出条件
 
-- [ ] `M2-01` 至 `M2-10` 全部完成并有可复现验证记录。
-- [ ] 坐标与 Observation 契约测试矩阵全部通过，负向路径（缺链、错 epoch、奇异、越界、
+- [x] `M2-01` 至 `M2-10` 全部完成并有可复现验证记录。
+- [x] 坐标与 Observation 契约测试矩阵全部通过，负向路径（缺链、错 epoch、奇异、越界、
   NaN）均返回稳定错误且不产生坐标猜测。
-- [ ] Simulator 契约测试覆盖旋转、letterbox、多 display、非原子组件和 epoch 失效。
-- [ ] Android Host ABI 以 fake host 契约测试验证 callback exactly-once 与 lease 释放；
-  真实设备验证保持未勾选并记录补跑条件。
-- [ ] ASAN/UBSAN 通过；支持环境下 TSAN 通过，未支持时保留未完成项和补跑条件。
-- [ ] 公共头独立包含、最小 consumer 构建和文档检查通过。
+- [x] Simulator 契约测试覆盖旋转、letterbox、多 display、非原子组件和 epoch 失效。
+- [x] Android Host ABI 以 fake host 契约测试验证 callback exactly-once 与 lease 释放；
+  真实设备验证保持未勾选并记录补跑条件（见
+  [android-host-abi.md](../compatibility/android-host-abi.md) 第 3 节）。
+- [x] ASAN/UBSAN 通过；支持环境下 TSAN 通过，未支持时保留未完成项和补跑条件。
+- [x] 公共头独立包含、最小 consumer 构建和文档检查通过。
+- [ ] CI 全平台矩阵（Linux GCC/Clang、Windows、Android arm64、sanitizers、quality）在本批
+  变更后全绿；结果记录在下方验证记录。
 
 ## 9. 验证记录
 
@@ -150,3 +153,45 @@ GCC/Clang、Android arm64、ASAN/UBSAN/TSAN 与 quality job 通过；Windows Deb
 在编译 `coordinates.hpp` 时因 MSVC `C3615` 拒绝 `std::isfinite` 出现在 `constexpr` 函数中而
 失败。修复提交移除相关有限性校验、奇异性校验和齐次应用函数的 `constexpr` 修饰，不改变
 运行时语义；修复后的本地五套 GCC 配置均再次通过 13/13，等待后续 CI 复验 Windows 矩阵。
+
+2026-08-30：完成 `M2-05` 至 `M2-10` 第二批交付。
+
+- `M2-05`：`include/mira/environment.hpp` 重写为 capabilities + `OperationContext` +
+  request 驱动 `observe/execute/interrupt`（`Result` 语义）；Runtime 关闭/停机路径、
+  `OfflineReplayEnvironment`（回放不执行真实输入，无记录回执时返回 `ExecutionUncertain`）、
+  示例、consumer 与既有测试一次性迁移；`unsupported_required_components` 提供 fail-closed
+  能力校验。
+- `M2-06`：Simulator 重写为显示拓扑驱动（旋转/density/letterbox/system inset/多 display），
+  每 epoch 发布显式变换链（native→logical→canonical、content→logical、frame→native），
+  支持非原子组件 skew 注入、`atomic_components` 事务模拟、mid-capture epoch 失效注入与
+  required/optional 失败注入；夹具 `SimulatorSetup::single_display/letterboxed_display/
+  inset_display/dual_display`。
+- `M2-07`：`ObservationPipeline`（`include/mira/observation_pipeline.hpp`）以
+  `submit_auto()` 调度组件源，deadline + drain grace 结算，straggler 落入 pending 集合由
+  `drain_pending()` 消费；epoch 不一致组件丢弃并计数；partial 模式显式降级；发布回调异常
+  隔离计数；Pipeline 永不声明 `Atomic`。
+- `M2-08`：冻结 `include/mira/adapters/android/host_abi.h`（纯 C、`MIRA_ANDROID_ABI_VERSION
+  = 1`、版本化 struct、稳定 status code、`MiraHostBufferLeaseV1`、correlation 关联、
+  exactly-once terminal callback、stop/destroy 幂等）。
+- `M2-09`：`mira_android_adapter` 目标（`HostDispatcherBridge` + `AndroidHostAdapter` 骨架）
+  ——回调内仅做有界复制并经 Executor 结算；lease RAII 恰好一次释放（成功/失败/越界/取消
+  路径）；能力快照与 epoch 对齐，旋转后在途帧判 `StaleObservation`；fake host
+  （`tests/support/fake_android_host.*`）实现 C ABI 全套语义与故障注入。
+- `M2-10`：新增 `mira_m2_simulator_test`、`mira_m2_pipeline_test`、`mira_m2_android_host_test`
+  并重写环境契约测试；同步设计 §18.1、DEC-005 验证方式、新增
+  `docs/compatibility/android-host-abi.md`、平台矩阵更新；CI android job 增加
+  `mira_android_adapter` 目标。
+- 附带修复：`make_logical_to_canonical_transform` 对非原点子区域（letterbox）缺少平移，
+  由 M2-06 契约测试暴露并修复为 region 锚定映射；全树统一以 clang-format 18.1.8 格式化，
+  CI quality job 固定 `clang-format==18.1.8`（apt 快照已不可复现）。
+
+2026-08-30：第二批交付本地验证（Linux x86_64，GCC 13.3，CMake 3.28）。`debug`、`release`、
+`asan`、`ubsan` 完成构建与 `ctest`，各 16/16 通过；`tsan` 使用 CI 同等
+`setarch x86_64 -R ctest --test-dir build/tsan --output-on-failure`，16/16 通过（期间修复了
+测试中跨线程非原子 `bool` 取消标志的数据竞争）。`clang-format 18.1.8` 全树格式检查通过
+（`cmake -P cmake/CheckFormat.cmake`），`docs-check`、`sbom-check`、`platform-boundary-check`
+目标与 `git diff --check` 通过；公共头独立包含与安装 consumer 包含在 CTest 中。
+
+限制与待补跑：本机无 `clang++`/`clang-tidy`，Clang 构建、静态分析与 CI quality 门禁待 CI；
+Windows MSVC 与 Android arm64（含新增 `mira_android_adapter` 目标）待 CI。负责人 Mira
+Maintainers，补跑条件为推送后观察本批 CI run 全绿并回填记录。

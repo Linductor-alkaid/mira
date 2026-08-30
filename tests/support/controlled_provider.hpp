@@ -8,7 +8,7 @@
 namespace mira::test {
 
 class ControlledProvider final {
-public:
+  public:
     void push(std::string value) { results_.push_back(std::move(value)); }
 
     [[nodiscard]] std::string invoke() {
@@ -20,7 +20,7 @@ public:
         return result;
     }
 
-private:
+  private:
     std::deque<std::string> results_;
 };
 

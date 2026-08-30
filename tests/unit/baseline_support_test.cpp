@@ -19,12 +19,20 @@ int main() {
     provider.push("controlled");
     MIRA_CHECK(provider.invoke() == "controlled");
 
-    mira::test::FakeEnvironment environment("frame");
-    MIRA_CHECK(environment.observe().content == "frame");
-    const mira::InputSequence input{{"tap", "10,20"}};
-    MIRA_CHECK(environment.execute(input).accepted);
-    MIRA_CHECK(environment.actions().size() == 1);
-    environment.interrupt();
+    mira::test::FakeEnvironment environment;
+    mira::ObservationRequest request;
+    mira::OperationContext context;
+    context.operation = mira::OperationId::generate();
+    context.started_at = mira::Timestamp::now();
+    const auto observed = environment.observe(request, context);
+    MIRA_CHECK(observed.has_value());
+    mira::InputSequence input;
+    input.events.push_back(mira::InputEvent{"tap", "0.5,0.5"});
+    const auto receipt = environment.execute(input, context);
+    MIRA_CHECK(receipt.has_value());
+    MIRA_CHECK(receipt.value().status == mira::ExecutionStatus::Completed);
+    MIRA_CHECK(environment.executed_event_count() == 1);
+    MIRA_CHECK(environment.interrupt(mira::make_control_context()).has_value());
     MIRA_CHECK(environment.interrupted());
     return 0;
 }

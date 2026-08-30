@@ -1,7 +1,7 @@
 #pragma once
 
-#include <mira/event_store.hpp>
 #include <mira/environment.hpp>
+#include <mira/event_store.hpp>
 #include <mira/security.hpp>
 
 #include <mutex>
@@ -36,18 +36,19 @@ struct ActionJournalState final {
 };
 
 class ActionJournal final {
-public:
-    ActionJournal(RuntimeId runtime_id, IEventStore &store) : runtime_id_(runtime_id), store_(store) {}
+  public:
+    ActionJournal(RuntimeId runtime_id, IEventStore &store)
+        : runtime_id_(runtime_id), store_(store) {}
 
     [[nodiscard]] Result<AppendReceipt> prepare(const ActionIntent &intent);
     [[nodiscard]] Result<AppendReceipt> dispatch_started(const ActionIntent &intent);
     [[nodiscard]] Result<AppendReceipt> receipt(const ActionIntent &intent,
                                                 const ExecutionReceipt &execution);
     [[nodiscard]] Result<AppendReceipt> execution_uncertain(const ActionIntent &intent,
-                                                             std::string reason);
+                                                            std::string reason);
     [[nodiscard]] Result<ActionJournalState> recover(const ActionIntent &intent) const;
 
-private:
+  private:
     [[nodiscard]] Result<AppendReceipt> append(const ActionIntent &, std::string type,
                                                std::string data, EventClass classification,
                                                Durability durability);

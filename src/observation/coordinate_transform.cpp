@@ -302,8 +302,25 @@ Result<CoordinateTransform> make_logical_to_canonical_transform(CoordinateSpaceI
                                                                 const RectF &logical_region,
                                                                 double logical_width,
                                                                 double logical_height) {
-    return make_scale_transform(logical_space, canonical_space, logical_region, logical_width,
-                                logical_height, 1.0, 1.0);
+    if (logical_width <= 0.0 || logical_height <= 0.0) {
+        return transform_error(ErrorCode::InvalidArgument, "logical extents must be positive");
+    }
+    // Maps the logical region (extent logical_width x logical_height) onto
+    // the unit square: non-origin regions such as letterboxed windows are
+    // anchored at their own origin, not at the display origin.
+    const double scale_x = 1.0 / logical_width;
+    const double scale_y = 1.0 / logical_height;
+    CoordinateTransform transform;
+    transform.from = logical_space;
+    transform.to = canonical_space;
+    transform.matrix = Matrix3x3::affine(scale_x, 0.0, -logical_region.left * scale_x, 0.0, scale_y,
+                                         -logical_region.top * scale_y);
+    transform.valid_source_region = logical_region;
+    transform.valid_target_region = RectF::from_origin_size(1.0, 1.0);
+    if (const auto validated = validate_coordinate_transform(transform); !validated) {
+        return validated.error();
+    }
+    return transform;
 }
 
 Result<CoordinateTransform> make_native_to_logical_transform(

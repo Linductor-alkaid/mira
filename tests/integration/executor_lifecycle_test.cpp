@@ -4,8 +4,8 @@
 
 #include <executor/executor.hpp>
 
-#include <chrono>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <future>
@@ -16,7 +16,7 @@
 namespace {
 
 class BlockingProbe final : public executor::IBlockingIoWorker {
-public:
+  public:
     explicit BlockingProbe(std::promise<void> &started) : started_(started) {}
 
     void run(executor::StopToken stop_token) override {
@@ -33,7 +33,7 @@ public:
         condition_.notify_all();
     }
 
-private:
+  private:
     std::promise<void> &started_;
     std::mutex mutex_;
     std::condition_variable condition_;
@@ -76,9 +76,9 @@ int main() {
     bool saw_queued_cancellation = false;
     for (std::uint64_t attempt = 0; attempt < 64 && !saw_queued_cancellation; ++attempt) {
         const auto command_id = 100 + attempt;
-        MIRA_CHECK(runtime.submit({command_id, 1000 + attempt, 0,
-                                   mira::BaselineCommandKind::Command})
-                       .admitted);
+        MIRA_CHECK(
+            runtime.submit({command_id, 1000 + attempt, 0, mira::BaselineCommandKind::Command})
+                .admitted);
         const auto cancel = runtime.cancel(command_id);
         const auto result = runtime.wait(command_id, 2s);
         saw_queued_cancellation = cancel.code == mira::BaselineResultCode::Cancelled &&
@@ -107,9 +107,8 @@ int main() {
 
     std::promise<void> admission_release;
     auto admission_release_future = admission_release.get_future().share();
-    auto admission_blocker = direct_executor.submit([&admission_release_future] {
-        admission_release_future.wait();
-    });
+    auto admission_blocker =
+        direct_executor.submit([&admission_release_future] { admission_release_future.wait(); });
     auto capacity_rejection = direct_executor.submit([] { return 2; });
     MIRA_CHECK(capacity_rejection.wait_for(2s) == std::future_status::ready);
     bool saw_capacity = false;

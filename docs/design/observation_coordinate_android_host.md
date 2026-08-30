@@ -450,7 +450,26 @@ provenance 原则。
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [本地感知与任务模型](local_perception_and_task_models.md)
 - [威胁模型与确认协议](../security/threat_model_and_confirmation.md)
-- [M2 里程碑计划](../plans/m2-observation-simulator-android-host.md)：坐标与 Observation 契约
-  已落地为 `include/mira/coordinates.hpp` 与 `include/mira/observation.hpp`；本设计中的结构为
-  规范契约，字段命名以头文件为准。
+- [M2 里程碑计划](../plans/m2-observation-simulator-android-host.md)
+- [Android Host ABI 兼容性记录](../compatibility/android-host-abi.md)
+
+### 18.1 M2 落地映射（实现状态）
+
+本设计中的结构为规范契约，字段命名以头文件为准。截至 M2 收尾：
+
+- 坐标与 Observation 契约：`include/mira/coordinates.hpp`、`include/mira/observation.hpp`，
+  实现在 `src/observation/`。
+- `IEnvironment`（capabilities、request 驱动 `observe/execute/interrupt`、`OperationContext`）：
+  `include/mira/environment.hpp`；Runtime、Replay、示例与测试已迁移。
+- Observation Pipeline 聚合器（deadline 结算、partial 降级、skew/质量计算、发布回调）：
+  `include/mira/observation_pipeline.hpp` 与 `src/observation/observation_pipeline.cpp`。
+  Pipeline 永不标记 `Atomic`：它无法证明平台事务，只有平台环境自身可以。
+- Simulator 参考环境（旋转、density、letterbox、inset、多 display、非原子组件、epoch 失效
+  注入、契约夹具）：`include/mira/adapters/simulator/simulator_environment.hpp`。
+- Android Host ABI v1：`include/mira/adapters/android/host_abi.h`（纯 C）。
+- Host dispatcher 桥与 Native Android Adapter 骨架：`include/mira/adapters/android/`
+  `host_dispatcher.hpp`、`android_host_adapter.hpp`；fake host 契约测试位于
+  `tests/m2/m2_android_host_abi_test.cpp`。
+- 第 8.2 节的生命周期接口草案已按实现调整为：create/start/stop/destroy 加 capability/topology
+  查询与三类异步操作；请求侧携带 native `correlation`，lease 结构体仅在回调期间有效。
 

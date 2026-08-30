@@ -16,8 +16,7 @@
 namespace mira {
 namespace {
 
-BaselineResult make_result(BaselineResultCode code, std::uint64_t command_id,
-                           std::string message) {
+BaselineResult make_result(BaselineResultCode code, std::uint64_t command_id, std::string message) {
     BaselineResult result;
     result.code = code;
     result.command_id = command_id;
@@ -26,8 +25,7 @@ BaselineResult make_result(BaselineResultCode code, std::uint64_t command_id,
 }
 
 BaselineResult consume_result(const std::shared_future<BaselineResult> &future,
-                              std::uint64_t command_id,
-                              std::chrono::milliseconds timeout) {
+                              std::uint64_t command_id, std::chrono::milliseconds timeout) {
     if (future.wait_for(timeout) != std::future_status::ready) {
         return make_result(BaselineResultCode::TimedOut, command_id,
                            "timed out waiting for command result");
@@ -49,7 +47,7 @@ BaselineResult consume_result(const std::shared_future<BaselineResult> &future,
 } // namespace
 
 class RuntimeBaseline::Impl final {
-public:
+  public:
     explicit Impl(BaselineRuntimeConfig runtime_config) : config(runtime_config) {}
 
     struct CommandEntry final {
@@ -194,13 +192,13 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
             try {
                 static_cast<void>(result_future.get());
             } catch (const executor::CapacityExhaustedException &error) {
-                submission.rejection = make_result(BaselineResultCode::Rejected,
-                                                   command.command_id, error.what());
+                submission.rejection =
+                    make_result(BaselineResultCode::Rejected, command.command_id, error.what());
                 impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
                 return submission;
             } catch (const executor::ExecutorStopping &error) {
-                submission.rejection = make_result(BaselineResultCode::Rejected,
-                                                   command.command_id, error.what());
+                submission.rejection =
+                    make_result(BaselineResultCode::Rejected, command.command_id, error.what());
                 impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
                 return submission;
             } catch (const std::exception &) {
@@ -226,8 +224,7 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
     }
 }
 
-BaselineResult RuntimeBaseline::wait(std::uint64_t command_id,
-                                     std::chrono::milliseconds timeout) {
+BaselineResult RuntimeBaseline::wait(std::uint64_t command_id, std::chrono::milliseconds timeout) {
     std::shared_future<BaselineResult> future;
     {
         std::lock_guard lock(impl_->entries_mutex);
@@ -277,18 +274,17 @@ bool RuntimeBaseline::request_shutdown() {
                expected == BaselineRuntimeState::Stopped;
     }
     try {
-        auto submission = impl_->executor.submit_on_with_handle(
-            impl_->control_context, [this] {
-                BaselineResult value;
-                value.code = BaselineResultCode::Applied;
-                value.control_sequence = ++impl_->control_sequence;
-                value.safe_message = "runtime quiesced";
-                impl_->state.store(BaselineRuntimeState::Quiesced,
-                                   std::memory_order_release);
-                return value;
-            });
+        auto submission = impl_->executor.submit_on_with_handle(impl_->control_context, [this] {
+            BaselineResult value;
+            value.code = BaselineResultCode::Applied;
+            value.control_sequence = ++impl_->control_sequence;
+            value.safe_message = "runtime quiesced";
+            impl_->state.store(BaselineRuntimeState::Quiesced, std::memory_order_release);
+            return value;
+        });
         impl_->shutdown_future = submission.future.share();
-        if (impl_->shutdown_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+        if (impl_->shutdown_future.wait_for(std::chrono::milliseconds(0)) ==
+            std::future_status::ready) {
             try {
                 static_cast<void>(impl_->shutdown_future.get());
             } catch (...) {

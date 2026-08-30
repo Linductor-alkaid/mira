@@ -20,7 +20,7 @@
 namespace mira {
 
 class Id128 final {
-public:
+  public:
     using Bytes = std::array<std::uint8_t, 16>;
 
     constexpr Id128() noexcept = default;
@@ -31,8 +31,8 @@ public:
         Bytes bytes{};
         for (std::size_t index = 0; index < bytes.size(); index += sizeof(std::uint32_t)) {
             const auto value = device();
-            for (std::size_t offset = 0; offset < sizeof(std::uint32_t) && index + offset < bytes.size();
-                 ++offset) {
+            for (std::size_t offset = 0;
+                 offset < sizeof(std::uint32_t) && index + offset < bytes.size(); ++offset) {
                 bytes[index + offset] = static_cast<std::uint8_t>(value >> (offset * 8));
             }
         }
@@ -72,8 +72,7 @@ public:
     friend constexpr bool operator==(const Id128 &, const Id128 &) noexcept = default;
     // libc++ in the Android NDK does not provide a three-way comparison for
     // std::array<uint8_t, 16>; compare bytes explicitly for all toolchains.
-    friend constexpr std::strong_ordering operator<=>(const Id128 &lhs,
-                                                       const Id128 &rhs) noexcept {
+    friend constexpr std::strong_ordering operator<=>(const Id128 &lhs, const Id128 &rhs) noexcept {
         for (std::size_t index = 0; index < lhs.bytes_.size(); ++index) {
             if (lhs.bytes_[index] < rhs.bytes_[index]) {
                 return std::strong_ordering::less;
@@ -85,7 +84,7 @@ public:
         return std::strong_ordering::equal;
     }
 
-private:
+  private:
     [[nodiscard]] static std::optional<std::uint8_t> hex_value(char value) noexcept {
         if (value >= '0' && value <= '9') {
             return static_cast<std::uint8_t>(value - '0');
@@ -102,18 +101,18 @@ private:
     Bytes bytes_{};
 };
 
-#define MIRA_DEFINE_ID(name)                                                                    \
-    struct name final {                                                                         \
-        Id128 value{};                                                                          \
-        static name generate() { return name{Id128::generate()}; }                              \
-        static std::optional<name> parse(std::string_view text) noexcept {                     \
-            const auto parsed = Id128::parse(text);                                            \
-            return parsed ? std::optional<name>(name{*parsed}) : std::nullopt;                  \
-        }                                                                                        \
-        [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }                   \
-        [[nodiscard]] std::string to_string() const { return value.to_string(); }               \
-        friend constexpr bool operator==(const name &, const name &) noexcept = default;        \
-        friend constexpr auto operator<=>(const name &, const name &) noexcept = default;       \
+#define MIRA_DEFINE_ID(name)                                                                       \
+    struct name final {                                                                            \
+        Id128 value{};                                                                             \
+        static name generate() { return name{Id128::generate()}; }                                 \
+        static std::optional<name> parse(std::string_view text) noexcept {                         \
+            const auto parsed = Id128::parse(text);                                                \
+            return parsed ? std::optional<name>(name{*parsed}) : std::nullopt;                     \
+        }                                                                                          \
+        [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }                      \
+        [[nodiscard]] std::string to_string() const { return value.to_string(); }                  \
+        friend constexpr bool operator==(const name &, const name &) noexcept = default;           \
+        friend constexpr auto operator<=>(const name &, const name &) noexcept = default;          \
     }
 
 MIRA_DEFINE_ID(RuntimeId);
@@ -160,7 +159,8 @@ using EnvironmentEpoch = std::uint64_t;
 struct SchemaVersion final {
     std::uint16_t major = 1;
     std::uint16_t minor = 0;
-    friend constexpr bool operator==(const SchemaVersion &, const SchemaVersion &) noexcept = default;
+    friend constexpr bool operator==(const SchemaVersion &,
+                                     const SchemaVersion &) noexcept = default;
 };
 
 enum class ErrorCode : std::uint16_t {
@@ -197,9 +197,8 @@ struct Error final {
     std::optional<OperationId> operation_id;
 };
 
-template <typename T>
-class Result final {
-public:
+template <typename T> class Result final {
+  public:
     Result(const T &value) : value_(value) {}
     Result(T &&value) : value_(std::move(value)) {}
     Result(const Error &error) : error_(error) {}
@@ -213,14 +212,13 @@ public:
     [[nodiscard]] const Error &error() const & { return *error_; }
     [[nodiscard]] Error &error() & { return *error_; }
 
-private:
+  private:
     std::optional<T> value_;
     std::optional<Error> error_;
 };
 
-template <>
-class Result<void> final {
-public:
+template <> class Result<void> final {
+  public:
     Result() noexcept = default;
     Result(const Error &error) : error_(error) {}
     Result(Error &&error) : error_(std::move(error)) {}
@@ -228,12 +226,12 @@ public:
     explicit operator bool() const noexcept { return has_value(); }
     [[nodiscard]] const Error &error() const & { return *error_; }
 
-private:
+  private:
     std::optional<Error> error_;
 };
 
-[[nodiscard]] inline Result<void> validate_schema_version(
-    SchemaVersion incoming, SchemaVersion current = {}) {
+[[nodiscard]] inline Result<void> validate_schema_version(SchemaVersion incoming,
+                                                          SchemaVersion current = {}) {
     const bool newer = incoming.major > current.major;
     const bool older = current.major > incoming.major && (current.major - incoming.major > 1);
     if (newer || older) {
@@ -286,7 +284,8 @@ enum class TaskState : std::uint8_t {
 };
 
 [[nodiscard]] inline bool is_terminal(TaskState state) noexcept {
-    return state == TaskState::Completed || state == TaskState::Failed || state == TaskState::Cancelled;
+    return state == TaskState::Completed || state == TaskState::Failed ||
+           state == TaskState::Cancelled;
 }
 
 [[nodiscard]] inline bool is_terminal(SessionState state) noexcept {
@@ -307,7 +306,8 @@ enum class TaskState : std::uint8_t {
     case RuntimeState::Constructed:
         return to == RuntimeState::Initializing || to == RuntimeState::Stopping;
     case RuntimeState::Initializing:
-        return to == RuntimeState::Running || to == RuntimeState::Failed || to == RuntimeState::Stopping;
+        return to == RuntimeState::Running || to == RuntimeState::Failed ||
+               to == RuntimeState::Stopping;
     case RuntimeState::Running:
         return to == RuntimeState::Stopping || to == RuntimeState::Failed;
     case RuntimeState::Stopping:
@@ -329,15 +329,20 @@ enum class TaskState : std::uint8_t {
     }
     switch (from) {
     case SessionState::Opening:
-        return to == SessionState::Autonomous || to == SessionState::Failed || to == SessionState::Closing;
+        return to == SessionState::Autonomous || to == SessionState::Failed ||
+               to == SessionState::Closing;
     case SessionState::Autonomous:
-        return to == SessionState::TakeoverPending || to == SessionState::Closing || to == SessionState::Failed;
+        return to == SessionState::TakeoverPending || to == SessionState::Closing ||
+               to == SessionState::Failed;
     case SessionState::TakeoverPending:
-        return to == SessionState::HumanControlled || to == SessionState::Closing || to == SessionState::Failed;
+        return to == SessionState::HumanControlled || to == SessionState::Closing ||
+               to == SessionState::Failed;
     case SessionState::HumanControlled:
-        return to == SessionState::Resuming || to == SessionState::Closing || to == SessionState::Failed;
+        return to == SessionState::Resuming || to == SessionState::Closing ||
+               to == SessionState::Failed;
     case SessionState::Resuming:
-        return to == SessionState::Autonomous || to == SessionState::Failed || to == SessionState::Closing;
+        return to == SessionState::Autonomous || to == SessionState::Failed ||
+               to == SessionState::Closing;
     case SessionState::Closing:
         return to == SessionState::Closed || to == SessionState::Failed;
     case SessionState::Closed:
@@ -353,30 +358,36 @@ enum class TaskState : std::uint8_t {
     }
     switch (from) {
     case TaskState::Idle:
-        return to == TaskState::Observing || to == TaskState::Pausing || to == TaskState::Cancelling ||
-               to == TaskState::TakeoverSettling;
+        return to == TaskState::Observing || to == TaskState::Pausing ||
+               to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
     case TaskState::Observing:
-        return to == TaskState::Reasoning || to == TaskState::Recovering || to == TaskState::Pausing ||
-               to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
+        return to == TaskState::Reasoning || to == TaskState::Recovering ||
+               to == TaskState::Pausing || to == TaskState::Cancelling ||
+               to == TaskState::TakeoverSettling;
     case TaskState::Reasoning:
-        return to == TaskState::Planning || to == TaskState::Recovering || to == TaskState::Pausing ||
-               to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
+        return to == TaskState::Planning || to == TaskState::Recovering ||
+               to == TaskState::Pausing || to == TaskState::Cancelling ||
+               to == TaskState::TakeoverSettling;
     case TaskState::Planning:
-        return to == TaskState::Acting || to == TaskState::Observing || to == TaskState::Recovering ||
-               to == TaskState::Pausing || to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
-    case TaskState::Acting:
-        return to == TaskState::Verifying || to == TaskState::Recovering || to == TaskState::Pausing ||
+        return to == TaskState::Acting || to == TaskState::Observing ||
+               to == TaskState::Recovering || to == TaskState::Pausing ||
                to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
+    case TaskState::Acting:
+        return to == TaskState::Verifying || to == TaskState::Recovering ||
+               to == TaskState::Pausing || to == TaskState::Cancelling ||
+               to == TaskState::TakeoverSettling;
     case TaskState::Verifying:
-        return to == TaskState::Observing || to == TaskState::Completed || to == TaskState::Recovering ||
-               to == TaskState::Pausing || to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
+        return to == TaskState::Observing || to == TaskState::Completed ||
+               to == TaskState::Recovering || to == TaskState::Pausing ||
+               to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
     case TaskState::Recovering:
         return to == TaskState::Observing || to == TaskState::Failed || to == TaskState::Pausing ||
                to == TaskState::Cancelling || to == TaskState::TakeoverSettling;
     case TaskState::Pausing:
         return to == TaskState::Paused || to == TaskState::Cancelling;
     case TaskState::Paused:
-        return to == TaskState::Observing || to == TaskState::TakeoverSettling || to == TaskState::Cancelling;
+        return to == TaskState::Observing || to == TaskState::TakeoverSettling ||
+               to == TaskState::Cancelling;
     case TaskState::TakeoverSettling:
         return to == TaskState::SuspendedForTakeover || to == TaskState::Cancelling;
     case TaskState::SuspendedForTakeover:
@@ -478,8 +489,7 @@ struct Id128Hash final {
     }
 };
 
-template <typename Id>
-struct StrongIdHash final {
+template <typename Id> struct StrongIdHash final {
     std::size_t operator()(const Id &id) const noexcept { return Id128Hash{}(id.value); }
 };
 

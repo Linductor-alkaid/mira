@@ -74,7 +74,7 @@ struct BaselineRuntimeStatus final {
 // M0 engineering surface. It proves ownership and failure semantics without
 // pre-empting the stable Task/Session API delivered by M1.
 class RuntimeBaseline final {
-public:
+  public:
     explicit RuntimeBaseline(BaselineRuntimeConfig config = {});
     ~RuntimeBaseline();
 
@@ -85,15 +85,14 @@ public:
 
     [[nodiscard]] bool initialize();
     [[nodiscard]] BaselineSubmission submit(BaselineCommand command);
-    [[nodiscard]] BaselineResult wait(
-        std::uint64_t command_id, std::chrono::milliseconds timeout);
+    [[nodiscard]] BaselineResult wait(std::uint64_t command_id, std::chrono::milliseconds timeout);
     [[nodiscard]] BaselineResult cancel(std::uint64_t command_id);
     [[nodiscard]] bool request_shutdown();
     void finish_shutdown();
 
     [[nodiscard]] BaselineRuntimeStatus status() const;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

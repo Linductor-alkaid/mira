@@ -15,9 +15,7 @@ namespace mira {
 struct PointF final {
     double x = 0.0;
     double y = 0.0;
-    [[nodiscard]] bool is_finite() const noexcept {
-        return std::isfinite(x) && std::isfinite(y);
-    }
+    [[nodiscard]] bool is_finite() const noexcept { return std::isfinite(x) && std::isfinite(y); }
     friend constexpr bool operator==(const PointF &, const PointF &) noexcept = default;
 };
 

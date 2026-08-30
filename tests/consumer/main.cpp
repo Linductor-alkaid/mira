@@ -4,8 +4,16 @@
 #include <chrono>
 
 int main() {
-    mira::adapters::simulator::SimulatorEnvironment environment("installed");
-    if (environment.observe().content != "installed") {
+    mira::adapters::simulator::SimulatorEnvironment environment{
+        mira::adapters::simulator::SimulatorSetup::single_display()};
+
+    mira::ObservationRequest request;
+    request.required.screen = true;
+    mira::OperationContext context;
+    context.operation = mira::OperationId::generate();
+    context.started_at = mira::Timestamp::now();
+    const auto observation = environment.observe(request, context);
+    if (!observation.has_value() || !observation.value().screen.has_value()) {
         return 1;
     }
     mira::RuntimeBaseline runtime;

@@ -19,7 +19,13 @@ using PolicyVersion = std::uint64_t;
 
 enum class AuthenticationStrength : std::uint8_t { Anonymous, Session, Strong };
 enum class GrantSource : std::uint8_t { Host, Administrator, System };
-enum class ActionRisk : std::uint8_t { R0ReadOnly, R1ReversibleLow, R2UserVisible, R3Sensitive, R4Critical };
+enum class ActionRisk : std::uint8_t {
+    R0ReadOnly,
+    R1ReversibleLow,
+    R2UserVisible,
+    R3Sensitive,
+    R4Critical
+};
 enum class ConfirmationDecision : std::uint8_t { Approve, Reject };
 
 struct ResourceSelector final {
@@ -91,11 +97,11 @@ struct RequireConfirmationDecision final {
 using PolicyDecision = std::variant<AllowDecision, DenyDecision, RequireConfirmationDecision>;
 
 class PolicyEngine final {
-public:
+  public:
     explicit PolicyEngine(PolicyVersion version = 1) : version_(version) {}
     [[nodiscard]] PolicyDecision evaluate(const PolicyInput &) const;
 
-private:
+  private:
     PolicyVersion version_;
 };
 
@@ -123,18 +129,18 @@ struct ConfirmationResponse final {
 };
 
 class ConfirmationAuthority final {
-public:
-    [[nodiscard]] Result<ConfirmationChallenge> issue(
-        const PrincipalContext &, SessionId, TaskId, std::uint64_t task_epoch,
-        std::uint64_t environment_epoch, const ProposedEffect &, const ResourceDescriptor &,
-        PolicyVersion, std::chrono::seconds lifetime = std::chrono::seconds(60));
+  public:
+    [[nodiscard]] Result<ConfirmationChallenge>
+    issue(const PrincipalContext &, SessionId, TaskId, std::uint64_t task_epoch,
+          std::uint64_t environment_epoch, const ProposedEffect &, const ResourceDescriptor &,
+          PolicyVersion, std::chrono::seconds lifetime = std::chrono::seconds(60));
     [[nodiscard]] Result<void> consume(const ConfirmationChallenge &, const ConfirmationResponse &,
                                        const PrincipalContext &, const ProposedEffect &,
                                        const ResourceDescriptor &, std::uint64_t task_epoch,
                                        std::uint64_t environment_epoch, PolicyVersion);
     [[nodiscard]] bool is_consumed(ConfirmationId) const;
 
-private:
+  private:
     struct State final {
         ConfirmationChallenge challenge;
         bool consumed = false;
@@ -144,7 +150,7 @@ private:
 };
 
 class Redactor final {
-public:
+  public:
     [[nodiscard]] static std::string redact(std::string_view value, Sensitivity sensitivity);
     [[nodiscard]] static RedactionRecord record(std::string_view value, Sensitivity sensitivity);
 };

@@ -13,9 +13,8 @@ int main() {
     MIRA_CHECK(runtime.initialize());
 
     for (std::uint64_t command_id = 1; command_id <= kCommandCount; ++command_id) {
-        mira::BaselineCommandKind kind = command_id % 2 == 0
-                                             ? mira::BaselineCommandKind::Completion
-                                             : mira::BaselineCommandKind::Command;
+        mira::BaselineCommandKind kind = command_id % 2 == 0 ? mira::BaselineCommandKind::Completion
+                                                             : mira::BaselineCommandKind::Command;
         if (command_id == kCommandCount - 1) {
             kind = mira::BaselineCommandKind::CompleteTask;
         }
@@ -27,8 +26,8 @@ int main() {
     for (std::uint64_t command_id = 1; command_id <= kCommandCount; ++command_id) {
         const auto result = runtime.wait(command_id, 30s);
         if (result.control_sequence != prior_sequence + 1) {
-            std::cerr << "command_id=" << command_id << " expected_sequence="
-                      << prior_sequence + 1 << " actual_sequence=" << result.control_sequence
+            std::cerr << "command_id=" << command_id << " expected_sequence=" << prior_sequence + 1
+                      << " actual_sequence=" << result.control_sequence
                       << " code=" << static_cast<int>(result.code)
                       << " message=" << result.safe_message << '\n';
         }

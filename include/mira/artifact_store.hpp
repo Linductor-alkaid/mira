@@ -44,14 +44,14 @@ struct ErasureReceipt final {
 };
 
 class ArtifactWriter final {
-public:
+  public:
     ArtifactWriter() = default;
     [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(bytes_); }
     Result<void> write(const void *data, std::size_t size);
     Result<void> write(const std::vector<std::byte> &data);
     [[nodiscard]] std::size_t size() const noexcept;
 
-private:
+  private:
     friend class MemoryArtifactStore;
     friend class FileArtifactStore;
     ArtifactWriter(std::shared_ptr<std::vector<std::byte>> bytes, ArtifactWriteSpec spec)
@@ -61,7 +61,7 @@ private:
 };
 
 class ArtifactReader final {
-public:
+  public:
     ArtifactReader() = default;
     explicit ArtifactReader(std::shared_ptr<const std::vector<std::byte>> bytes)
         : bytes_(std::move(bytes)) {}
@@ -69,12 +69,12 @@ public:
     [[nodiscard]] const std::vector<std::byte> &bytes() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
 
-private:
+  private:
     std::shared_ptr<const std::vector<std::byte>> bytes_;
 };
 
 class IArtifactStore {
-public:
+  public:
     virtual ~IArtifactStore() = default;
     virtual Result<ArtifactWriter> begin(const ArtifactWriteSpec &) = 0;
     virtual Result<ArtifactDescriptor> commit(ArtifactWriter &) = 0;
@@ -83,7 +83,7 @@ public:
 };
 
 class MemoryArtifactStore final : public IArtifactStore {
-public:
+  public:
     explicit MemoryArtifactStore(std::size_t max_total_bytes = 256ULL * 1024ULL * 1024ULL);
     ~MemoryArtifactStore() override;
     Result<ArtifactWriter> begin(const ArtifactWriteSpec &) override;
@@ -92,13 +92,13 @@ public:
     Result<ErasureReceipt> erase(const ArtifactErasureRequest &) override;
     [[nodiscard]] std::size_t size() const noexcept;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
 
 class FileArtifactStore final : public IArtifactStore {
-public:
+  public:
     FileArtifactStore(std::filesystem::path root,
                       std::size_t max_total_bytes = 2ULL * 1024ULL * 1024ULL * 1024ULL);
     ~FileArtifactStore() override;
@@ -107,7 +107,7 @@ public:
     Result<ArtifactReader> open(const ArtifactDescriptor &) const override;
     Result<ErasureReceipt> erase(const ArtifactErasureRequest &) override;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

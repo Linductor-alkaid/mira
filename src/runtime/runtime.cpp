@@ -24,7 +24,8 @@ Error make_error(ErrorCode code, std::string message, bool retryable = false) {
 
 template <typename T>
 Result<T> wait_result(const std::shared_future<T> &future, std::chrono::milliseconds timeout) {
-    if (!future.valid()) return make_error(ErrorCode::InvalidState, "command handle is invalid");
+    if (!future.valid())
+        return make_error(ErrorCode::InvalidState, "command handle is invalid");
     if (future.wait_for(timeout) != std::future_status::ready) {
         return make_error(ErrorCode::DeadlineExceeded, "command handle wait timed out", true);
     }
@@ -34,8 +35,9 @@ Result<T> wait_result(const std::shared_future<T> &future, std::chrono::millisec
 } // namespace
 
 struct CommandHandle::State final {
-    explicit State(CommandId command_id) : id(command_id), receipt_future(receipt.get_future().share()),
-                                           outcome_future(outcome.get_future().share()) {}
+    explicit State(CommandId command_id)
+        : id(command_id), receipt_future(receipt.get_future().share()),
+          outcome_future(outcome.get_future().share()) {}
     CommandId id;
     std::promise<CommandReceipt> receipt;
     std::promise<CommandOutcome> outcome;
@@ -47,17 +49,19 @@ struct CommandHandle::State final {
 CommandId CommandHandle::id() const noexcept { return state_ ? state_->id : CommandId{}; }
 
 Result<CommandReceipt> CommandHandle::receipt(std::chrono::milliseconds timeout) const {
-    if (!state_) return make_error(ErrorCode::InvalidState, "command handle is invalid");
+    if (!state_)
+        return make_error(ErrorCode::InvalidState, "command handle is invalid");
     return wait_result(state_->receipt_future, timeout);
 }
 
 Result<CommandOutcome> CommandHandle::outcome(std::chrono::milliseconds timeout) const {
-    if (!state_) return make_error(ErrorCode::InvalidState, "command handle is invalid");
+    if (!state_)
+        return make_error(ErrorCode::InvalidState, "command handle is invalid");
     return wait_result(state_->outcome_future, timeout);
 }
 
 class MiraRuntime::Impl final {
-public:
+  public:
     struct SessionRecord final {
         SessionId id;
         SessionState state = SessionState::Opening;
@@ -77,7 +81,8 @@ public:
         OperationState state = OperationState::Created;
     };
 
-    explicit Impl(RuntimeConfig runtime_config) : config(runtime_config), runtime_id(RuntimeId::generate()) {}
+    explicit Impl(RuntimeConfig runtime_config)
+        : config(runtime_config), runtime_id(RuntimeId::generate()) {}
 
     RuntimeConfig config;
     RuntimeId runtime_id;
@@ -96,11 +101,12 @@ public:
         return std::make_shared<CommandHandle::State>(CommandId::generate());
     }
 
-    static void set_receipt(const std::shared_ptr<CommandHandle::State> &state,
-                            CommandKind kind, ReceiptStatus status, std::uint64_t sequence,
+    static void set_receipt(const std::shared_ptr<CommandHandle::State> &state, CommandKind kind,
+                            ReceiptStatus status, std::uint64_t sequence,
                             std::optional<Error> error = std::nullopt) noexcept {
         try {
-            state->receipt.set_value(CommandReceipt{state->id, kind, status, sequence, std::move(error)});
+            state->receipt.set_value(
+                CommandReceipt{state->id, kind, status, sequence, std::move(error)});
         } catch (...) {
         }
     }
@@ -109,7 +115,8 @@ public:
                             SettlementStatus status, std::optional<Error> error = std::nullopt,
                             std::optional<TaskSnapshot> task = std::nullopt) noexcept {
         try {
-            state->outcome.set_value(CommandOutcome{state->id, status, std::move(error), std::move(task)});
+            state->outcome.set_value(
+                CommandOutcome{state->id, status, std::move(error), std::move(task)});
         } catch (...) {
         }
     }
@@ -132,7 +139,8 @@ public:
                         set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
                         set_outcome(handle_state, SettlementStatus::Failed, failure);
                     } catch (...) {
-                        const auto failure = make_error(ErrorCode::Internal, "command callback failed");
+                        const auto failure =
+                            make_error(ErrorCode::Internal, "command callback failed");
                         set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
                         set_outcome(handle_state, SettlementStatus::Failed, failure);
                     }
@@ -142,7 +150,8 @@ public:
                 return make_error(ErrorCode::ResourceExhausted,
                                   "runtime command submission rejected", true);
             }
-            if (submission_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            if (submission_future.wait_for(std::chrono::milliseconds(0)) ==
+                std::future_status::ready) {
                 try {
                     submission_future.get();
                 } catch (const executor::CapacityExhaustedException &exception) {
@@ -170,12 +179,14 @@ public:
         } catch (const std::exception &exception) {
             return make_error(ErrorCode::ResourceExhausted, exception.what(), true);
         } catch (...) {
-            return make_error(ErrorCode::ResourceExhausted, "runtime command submission rejected", true);
+            return make_error(ErrorCode::ResourceExhausted, "runtime command submission rejected",
+                              true);
         }
     }
 
     Result<CommandHandle> simple_task_command(CommandKind kind, TaskId task_id, TaskState target) {
-        return enqueue(kind, [this, kind, task_id, target](std::uint64_t sequence, CommandHandle::State &state) {
+        return enqueue(kind, [this, kind, task_id, target](std::uint64_t sequence,
+                                                           CommandHandle::State &state) {
             std::lock_guard lock(records_mutex);
             const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
             const auto found = tasks.find(task_id);
@@ -208,7 +219,8 @@ public:
                                            transition_via(TaskState::Cancelling);
             const bool allowed = direct_transition || pause_transition || cancel_transition;
             if (!allowed) {
-                const auto reason = make_error(ErrorCode::InvalidState, "task state transition is not allowed");
+                const auto reason =
+                    make_error(ErrorCode::InvalidState, "task state transition is not allowed");
                 set_receipt(handle, kind, ReceiptStatus::Rejected, sequence, reason);
                 set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
                 return;
@@ -216,7 +228,8 @@ public:
             const auto previous_state = snapshot.state;
             snapshot.state = target;
             if (target == TaskState::Observing &&
-                (previous_state == TaskState::Paused || previous_state == TaskState::SuspendedForTakeover)) {
+                (previous_state == TaskState::Paused ||
+                 previous_state == TaskState::SuspendedForTakeover)) {
                 ++snapshot.epoch;
             }
             if (target == TaskState::Paused || target == TaskState::SuspendedForTakeover ||
@@ -269,43 +282,50 @@ Result<void> MiraRuntime::initialize() {
 
 Result<SessionSubmission> MiraRuntime::open_session(std::shared_ptr<IEnvironment> environment,
                                                     SessionConfig config) {
-    if (!environment) return make_error(ErrorCode::InvalidArgument, "environment must not be null");
+    if (!environment)
+        return make_error(ErrorCode::InvalidArgument, "environment must not be null");
     const auto session_id = SessionId::generate();
-    auto command = impl_->enqueue(CommandKind::OpenSession,
-                                  [this, session_id, environment = std::move(environment), config]
-                                  (std::uint64_t sequence, CommandHandle::State &state) {
-        std::lock_guard lock(impl_->records_mutex);
-        if (impl_->sessions.contains(session_id)) {
-            const auto reason = make_error(ErrorCode::AlreadyExists, "session ID collision");
+    auto command = impl_->enqueue(
+        CommandKind::OpenSession, [this, session_id, environment = std::move(environment),
+                                   config](std::uint64_t sequence, CommandHandle::State &state) {
+            std::lock_guard lock(impl_->records_mutex);
+            if (impl_->sessions.contains(session_id)) {
+                const auto reason = make_error(ErrorCode::AlreadyExists, "session ID collision");
+                Impl::set_receipt(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
+                                  CommandKind::OpenSession, ReceiptStatus::Rejected, sequence,
+                                  reason);
+                Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
+                                  SettlementStatus::Failed, reason);
+                return;
+            }
+            impl_->sessions.emplace(session_id,
+                                    Impl::SessionRecord{session_id, SessionState::Autonomous,
+                                                        environment, config.principal, 0});
             Impl::set_receipt(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                              CommandKind::OpenSession, ReceiptStatus::Rejected, sequence, reason);
+                              CommandKind::OpenSession, ReceiptStatus::Accepted, sequence);
             Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                              SettlementStatus::Failed, reason);
-            return;
-        }
-        impl_->sessions.emplace(session_id, Impl::SessionRecord{session_id, SessionState::Autonomous,
-                                                                  environment, config.principal, 0});
-        Impl::set_receipt(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                          CommandKind::OpenSession, ReceiptStatus::Accepted, sequence);
-        Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                          SettlementStatus::Applied);
-    });
-    if (!command) return command.error();
+                              SettlementStatus::Applied);
+        });
+    if (!command)
+        return command.error();
     return SessionSubmission{session_id, std::move(command).value()};
 }
 
 Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task) {
-    if (task.goal.empty()) return make_error(ErrorCode::InvalidArgument, "task goal must not be empty");
+    if (task.goal.empty())
+        return make_error(ErrorCode::InvalidArgument, "task goal must not be empty");
     const auto task_id = TaskId::generate();
-    auto command = impl_->enqueue(CommandKind::SubmitTask,
-                                  [this, session_id, task_id, task = std::move(task)]
-                                  (std::uint64_t sequence, CommandHandle::State &state) {
+    auto command = impl_->enqueue(CommandKind::SubmitTask, [this, session_id, task_id,
+                                                            task = std::move(task)](
+                                                               std::uint64_t sequence,
+                                                               CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         const auto session = impl_->sessions.find(session_id);
         const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
         if (session == impl_->sessions.end() || session->second.state != SessionState::Autonomous) {
             const auto reason = make_error(ErrorCode::InvalidState, "session is not autonomous");
-            Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected, sequence,
+                              reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
@@ -319,7 +339,8 @@ Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec t
         Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
     });
-    if (!command) return command.error();
+    if (!command)
+        return command.error();
     return TaskSubmission{task_id, std::move(command).value()};
 }
 
@@ -336,32 +357,39 @@ Result<CommandHandle> MiraRuntime::cancel_task(TaskId task_id) {
 }
 
 Result<CommandHandle> MiraRuntime::request_human_takeover(SessionId session_id) {
-    return impl_->enqueue(CommandKind::RequestTakeover,
-                          [this, session_id](std::uint64_t sequence, CommandHandle::State &state) {
+    return impl_->enqueue(CommandKind::RequestTakeover, [this,
+                                                         session_id](std::uint64_t sequence,
+                                                                     CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         const auto found = impl_->sessions.find(session_id);
         const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
         if (found == impl_->sessions.end()) {
             const auto reason = make_error(ErrorCode::NotFound, "session was not found");
-            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Rejected,
+                              sequence, reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         auto &session = found->second;
-        if (session.state == SessionState::HumanControlled || session.state == SessionState::TakeoverPending) {
-            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Accepted, sequence);
+        if (session.state == SessionState::HumanControlled ||
+            session.state == SessionState::TakeoverPending) {
+            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Accepted,
+                              sequence);
             Impl::set_outcome(handle, SettlementStatus::NoOp);
             return;
         }
         if (!valid_session_transition(session.state, SessionState::TakeoverPending)) {
-            const auto reason = make_error(ErrorCode::InvalidState, "session cannot enter takeover");
-            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Rejected, sequence, reason);
+            const auto reason =
+                make_error(ErrorCode::InvalidState, "session cannot enter takeover");
+            Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Rejected,
+                              sequence, reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         session.state = SessionState::TakeoverPending;
         for (auto &[task_id, task] : impl_->tasks) {
-            if (task.session_id != session_id || is_terminal(task.snapshot.state)) continue;
+            if (task.session_id != session_id || is_terminal(task.snapshot.state))
+                continue;
             if (valid_task_transition(task.snapshot.state, TaskState::TakeoverSettling)) {
                 task.snapshot.state = TaskState::TakeoverSettling;
                 task.snapshot.epoch++;
@@ -377,34 +405,41 @@ Result<CommandHandle> MiraRuntime::request_human_takeover(SessionId session_id) 
 }
 
 Result<CommandHandle> MiraRuntime::release_human_takeover(SessionId session_id) {
-    return impl_->enqueue(CommandKind::ReleaseTakeover,
-                          [this, session_id](std::uint64_t sequence, CommandHandle::State &state) {
+    return impl_->enqueue(CommandKind::ReleaseTakeover, [this,
+                                                         session_id](std::uint64_t sequence,
+                                                                     CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         const auto found = impl_->sessions.find(session_id);
         const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
         if (found == impl_->sessions.end()) {
             const auto reason = make_error(ErrorCode::NotFound, "session was not found");
-            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Rejected,
+                              sequence, reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         auto &session = found->second;
         if (session.state == SessionState::Autonomous) {
-            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Accepted, sequence);
+            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Accepted,
+                              sequence);
             Impl::set_outcome(handle, SettlementStatus::NoOp);
             return;
         }
         if (session.state != SessionState::HumanControlled ||
             !valid_session_transition(session.state, SessionState::Resuming)) {
-            const auto reason = make_error(ErrorCode::InvalidState, "session is not human controlled");
-            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Rejected, sequence, reason);
+            const auto reason =
+                make_error(ErrorCode::InvalidState, "session is not human controlled");
+            Impl::set_receipt(handle, CommandKind::ReleaseTakeover, ReceiptStatus::Rejected,
+                              sequence, reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         session.state = SessionState::Resuming;
         ++session.environment_epoch;
         for (auto &[task_id, task] : impl_->tasks) {
-            if (task.session_id != session_id || task.snapshot.state != TaskState::SuspendedForTakeover) continue;
+            if (task.session_id != session_id ||
+                task.snapshot.state != TaskState::SuspendedForTakeover)
+                continue;
             task.snapshot.state = TaskState::Observing;
             task.snapshot.epoch++;
             task.snapshot.environment_epoch = session.environment_epoch;
@@ -418,14 +453,16 @@ Result<CommandHandle> MiraRuntime::release_human_takeover(SessionId session_id) 
 }
 
 Result<CommandHandle> MiraRuntime::close_session(SessionId session_id) {
-    return impl_->enqueue(CommandKind::CloseSession,
-                          [this, session_id](std::uint64_t sequence, CommandHandle::State &state) {
+    return impl_->enqueue(CommandKind::CloseSession, [this,
+                                                      session_id](std::uint64_t sequence,
+                                                                  CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         const auto found = impl_->sessions.find(session_id);
         const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
         if (found == impl_->sessions.end()) {
             const auto reason = make_error(ErrorCode::NotFound, "session was not found");
-            Impl::set_receipt(handle, CommandKind::CloseSession, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::CloseSession, ReceiptStatus::Rejected, sequence,
+                              reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
@@ -437,20 +474,24 @@ Result<CommandHandle> MiraRuntime::close_session(SessionId session_id) {
         }
         if (!valid_session_transition(session.state, SessionState::Closing)) {
             const auto reason = make_error(ErrorCode::InvalidState, "session cannot be closed");
-            Impl::set_receipt(handle, CommandKind::CloseSession, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::CloseSession, ReceiptStatus::Rejected, sequence,
+                              reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         session.state = SessionState::Closing;
         for (auto &[task_id, task] : impl_->tasks) {
-            if (task.session_id != session_id || is_terminal(task.snapshot.state)) continue;
+            if (task.session_id != session_id || is_terminal(task.snapshot.state))
+                continue;
             task.snapshot.state = TaskState::Cancelled;
             task.snapshot.epoch++;
             task.snapshot.terminal_outcome = TaskOutcome{TaskState::Cancelled, std::nullopt};
             task.snapshot.control_sequence = sequence;
             task.snapshot.updated_at = Timestamp::now();
         }
-        session.environment->interrupt();
+        // Interrupt is best effort at close; an already stopped environment
+        // is expected and must not fail the close command.
+        static_cast<void>(session.environment->interrupt(make_control_context()));
         session.state = SessionState::Closed;
         Impl::set_receipt(handle, CommandKind::CloseSession, ReceiptStatus::Accepted, sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied);
@@ -459,7 +500,8 @@ Result<CommandHandle> MiraRuntime::close_session(SessionId session_id) {
 
 Result<CommandHandle> MiraRuntime::request_shutdown() {
     const auto current = impl_->runtime_state.load(std::memory_order_acquire);
-    if (current == RuntimeState::Stopped || current == RuntimeState::Quiesced || current == RuntimeState::Stopping) {
+    if (current == RuntimeState::Stopped || current == RuntimeState::Quiesced ||
+        current == RuntimeState::Stopping) {
         return make_error(ErrorCode::InvalidState, "runtime shutdown is already in progress");
     }
     if (current == RuntimeState::Constructed) {
@@ -467,8 +509,8 @@ Result<CommandHandle> MiraRuntime::request_shutdown() {
         return make_error(ErrorCode::InvalidState, "runtime was not initialized");
     }
     impl_->runtime_state.store(RuntimeState::Stopping, std::memory_order_release);
-    return impl_->enqueue(CommandKind::ShutdownRuntime,
-                          [this](std::uint64_t sequence, CommandHandle::State &state) {
+    return impl_->enqueue(CommandKind::ShutdownRuntime, [this](std::uint64_t sequence,
+                                                               CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         for (auto &[task_id, task] : impl_->tasks) {
             if (!is_terminal(task.snapshot.state)) {
@@ -481,43 +523,51 @@ Result<CommandHandle> MiraRuntime::request_shutdown() {
         }
         for (auto &[session_id, session] : impl_->sessions) {
             if (!is_terminal(session.state)) {
-                session.environment->interrupt();
+                static_cast<void>(session.environment->interrupt(make_control_context()));
                 session.state = SessionState::Closed;
             }
         }
         impl_->runtime_state.store(RuntimeState::Quiesced, std::memory_order_release);
         Impl::set_receipt(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
                           CommandKind::ShutdownRuntime, ReceiptStatus::Accepted, sequence);
-        Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}), SettlementStatus::Applied);
+        Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
+                          SettlementStatus::Applied);
     });
 }
 
 Result<OperationKey> MiraRuntime::begin_operation(TaskId task_id, StepId step_id) {
     std::lock_guard lock(impl_->records_mutex);
     const auto found = impl_->tasks.find(task_id);
-    if (found == impl_->tasks.end()) return make_error(ErrorCode::NotFound, "task was not found");
-    if (is_terminal(found->second.snapshot.state)) return make_error(ErrorCode::InvalidState, "task is terminal");
+    if (found == impl_->tasks.end())
+        return make_error(ErrorCode::NotFound, "task was not found");
+    if (is_terminal(found->second.snapshot.state))
+        return make_error(ErrorCode::InvalidState, "task is terminal");
     OperationKey key{task_id, found->second.snapshot.epoch, step_id, OperationId::generate()};
-    impl_->operations.emplace(key.operation_id, Impl::OperationRecord{key, OperationState::Submitted});
+    impl_->operations.emplace(key.operation_id,
+                              Impl::OperationRecord{key, OperationState::Submitted});
     return key;
 }
 
 Result<CommandHandle> MiraRuntime::admit_operation_completion(const OperationKey &key) {
-    return impl_->enqueue(CommandKind::OperationCompletion,
-                          [this, key](std::uint64_t sequence, CommandHandle::State &state) {
+    return impl_->enqueue(CommandKind::OperationCompletion, [this,
+                                                             key](std::uint64_t sequence,
+                                                                  CommandHandle::State &state) {
         std::lock_guard lock(impl_->records_mutex);
         const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
         const auto operation = impl_->operations.find(key.operation_id);
         const auto task = impl_->tasks.find(key.task_id);
         if (operation == impl_->operations.end() || task == impl_->tasks.end()) {
             const auto reason = make_error(ErrorCode::NotFound, "operation or task was not found");
-            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Rejected, sequence, reason);
+            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Rejected,
+                              sequence, reason);
             Impl::set_outcome(handle, SettlementStatus::Failed, reason);
             return;
         }
         if (operation->second.state == OperationState::Settled) {
-            const auto reason = make_error(ErrorCode::InvalidState, "operation completion is duplicate");
-            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted, sequence);
+            const auto reason =
+                make_error(ErrorCode::InvalidState, "operation completion is duplicate");
+            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted,
+                              sequence);
             Impl::set_outcome(handle, SettlementStatus::NoOp, reason, task->second.snapshot);
             return;
         }
@@ -526,15 +576,18 @@ Result<CommandHandle> MiraRuntime::admit_operation_completion(const OperationKey
             task->second.snapshot.state == TaskState::Completed ||
             task->second.snapshot.state == TaskState::Failed) {
             operation->second.state = OperationState::Settled;
-            const auto reason = make_error(ErrorCode::StaleObservation, "stale operation completion ignored");
-            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted, sequence);
+            const auto reason =
+                make_error(ErrorCode::StaleObservation, "stale operation completion ignored");
+            Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted,
+                              sequence);
             Impl::set_outcome(handle, SettlementStatus::NoOp, reason, task->second.snapshot);
             return;
         }
         operation->second.state = OperationState::Settled;
         task->second.snapshot.control_sequence = sequence;
         task->second.snapshot.updated_at = Timestamp::now();
-        Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted, sequence);
+        Impl::set_receipt(handle, CommandKind::OperationCompletion, ReceiptStatus::Accepted,
+                          sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, task->second.snapshot);
     });
 }
@@ -542,19 +595,23 @@ Result<CommandHandle> MiraRuntime::admit_operation_completion(const OperationKey
 Result<TaskSnapshot> MiraRuntime::task_snapshot(TaskId task_id) const {
     std::lock_guard lock(impl_->records_mutex);
     const auto found = impl_->tasks.find(task_id);
-    if (found == impl_->tasks.end()) return make_error(ErrorCode::NotFound, "task was not found");
+    if (found == impl_->tasks.end())
+        return make_error(ErrorCode::NotFound, "task was not found");
     return found->second.snapshot;
 }
 
 Result<SessionSnapshot> MiraRuntime::session_snapshot(SessionId session_id) const {
     std::lock_guard lock(impl_->records_mutex);
     const auto found = impl_->sessions.find(session_id);
-    if (found == impl_->sessions.end()) return make_error(ErrorCode::NotFound, "session was not found");
+    if (found == impl_->sessions.end())
+        return make_error(ErrorCode::NotFound, "session was not found");
     return SessionSnapshot{found->second.id, found->second.state, found->second.environment_epoch,
                            found->second.principal};
 }
 
-RuntimeState MiraRuntime::state() const noexcept { return impl_->runtime_state.load(std::memory_order_acquire); }
+RuntimeState MiraRuntime::state() const noexcept {
+    return impl_->runtime_state.load(std::memory_order_acquire);
+}
 
 ShutdownReport MiraRuntime::finish_shutdown() {
     auto current = impl_->runtime_state.load(std::memory_order_acquire);
@@ -576,7 +633,8 @@ ShutdownReport MiraRuntime::finish_shutdown() {
         std::lock_guard lock(impl_->records_mutex);
         command_futures.reserve(impl_->commands.size());
         for (const auto &command : impl_->commands) {
-            if (command->submission_future.valid()) command_futures.push_back(command->submission_future);
+            if (command->submission_future.valid())
+                command_futures.push_back(command->submission_future);
         }
         impl_->commands.clear();
     }
@@ -589,7 +647,8 @@ ShutdownReport MiraRuntime::finish_shutdown() {
     const auto shutdown_result = impl_->executor.shutdown(true);
     const auto clean = shutdown_result == executor::ShutdownResult::Completed;
     impl_->runtime_state.store(RuntimeState::Stopped, std::memory_order_release);
-    return {clean, RuntimeState::Stopped, 0, clean ? "runtime stopped" : "executor shutdown requested from worker"};
+    return {clean, RuntimeState::Stopped, 0,
+            clean ? "runtime stopped" : "executor shutdown requested from worker"};
 }
 
 } // namespace mira
