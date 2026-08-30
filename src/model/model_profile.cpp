@@ -136,12 +136,14 @@ std::string param_mapping_name(ParamMapping mapping) {
 }
 
 std::string ModelProfile::request_path() const {
-    const std::string prefix = api_prefix.empty() ? std::string() : api_prefix;
+    std::string prefix = api_prefix;
     switch (dialect) {
     case ProtocolDialect::OpenAIResponsesV1:
-        return prefix + "/responses";
+        prefix += "/responses";
+        return prefix;
     case ProtocolDialect::OpenAIChatCompletionsV1:
-        return prefix + "/chat/completions";
+        prefix += "/chat/completions";
+        return prefix;
     }
     return prefix;
 }

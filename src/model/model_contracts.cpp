@@ -497,11 +497,7 @@ Error make_model_error(ModelDomainCode code, std::string safe_message, bool retr
     Error error;
     switch (code) {
     case ModelDomainCode::EndpointPolicyDenied:
-        error.code = ErrorCode::PermissionDenied;
-        break;
     case ModelDomainCode::AuthenticationFailed:
-        error.code = ErrorCode::PermissionDenied;
-        break;
     case ModelDomainCode::ProviderPermissionDenied:
         error.code = ErrorCode::PermissionDenied;
         break;
@@ -518,8 +514,6 @@ Error make_model_error(ModelDomainCode code, std::string safe_message, bool retr
         error.code = ErrorCode::ResourceExhausted;
         break;
     case ModelDomainCode::ProviderOverloaded:
-        error.code = ErrorCode::Unavailable;
-        break;
     case ModelDomainCode::TransportFailed:
         error.code = ErrorCode::Unavailable;
         break;
@@ -530,19 +524,13 @@ Error make_model_error(ModelDomainCode code, std::string safe_message, bool retr
         error.code = ErrorCode::ResourceExhausted;
         break;
     case ModelDomainCode::ModelRefused:
+    case ModelDomainCode::IncompleteModelOutput:
+    case ModelDomainCode::MalformedStructuredOutput:
+    case ModelDomainCode::AmbiguousModelOutput:
         error.code = ErrorCode::InvalidModelOutput;
         break;
     case ModelDomainCode::ContentFiltered:
         error.code = ErrorCode::SafetyRejected;
-        break;
-    case ModelDomainCode::IncompleteModelOutput:
-        error.code = ErrorCode::InvalidModelOutput;
-        break;
-    case ModelDomainCode::MalformedStructuredOutput:
-        error.code = ErrorCode::InvalidModelOutput;
-        break;
-    case ModelDomainCode::AmbiguousModelOutput:
-        error.code = ErrorCode::InvalidModelOutput;
         break;
     case ModelDomainCode::AmbiguousCompletion:
         error.code = ErrorCode::ExecutionUncertain;
@@ -564,7 +552,7 @@ Error make_model_error(ModelDomainCode code, std::string safe_message, bool retr
         safe_message.resize(kMaxSafeMessageBytes);
     }
     error.safe_message = std::move(safe_message);
-    error.operation_id = std::move(operation);
+    error.operation_id = operation;
     return error;
 }
 
@@ -1214,14 +1202,14 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
             if (!parsed) {
                 return contract_error("generation has an unknown reasoning effort");
             }
-            request.generation.reasoning_effort = *parsed;
+            request.generation.reasoning_effort = parsed;
         }
         if (const auto *field = generation->find("service_tier"); field != nullptr) {
             const auto parsed = service_tier_from(*field);
             if (!parsed) {
                 return contract_error("generation has an unknown service tier");
             }
-            request.generation.service_tier = *parsed;
+            request.generation.service_tier = parsed;
         }
     }
 
@@ -1281,7 +1269,7 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
     const auto *data_policy = json.find("data_policy");
     if (data_policy != nullptr && data_policy->is_object()) {
         if (const auto *field = data_policy->find("store"); field != nullptr && field->is_boolean()) {
-            request.data_policy.store = *field->as_boolean();
+            request.data_policy.store = field->as_boolean();
         }
         if (const auto *field = data_policy->find("allow_uploads");
             field != nullptr && field->is_boolean()) {
@@ -1499,7 +1487,7 @@ Result<ModelResponse> model_response_from_json(const JsonValue &json) {
         if (!parsed) {
             return contract_error("model response has an unknown incomplete reason");
         }
-        response.incomplete_reason = *parsed;
+        response.incomplete_reason = parsed;
     }
 
     const auto *output = json.find("output");

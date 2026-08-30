@@ -14,7 +14,6 @@ namespace mira {
 namespace {
 
 constexpr std::size_t kMaxInlineImageBytes = 8ULL * 1024ULL * 1024ULL;
-constexpr std::chrono::milliseconds kRetryAfterCap{120'000};
 
 [[nodiscard]] std::string lowercase_copy(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(),
