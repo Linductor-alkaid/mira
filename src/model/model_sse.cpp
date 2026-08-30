@@ -34,8 +34,8 @@ Result<std::vector<SseMessage>> SseFramingParser::finish() {
     // EOF terminates a final unterminated line; dispatch whatever fields it
     // carried, exactly as a trailing newline would have.
     if (!buffer_.empty()) {
-        const std::string last_line = std::exchange(buffer_, {});
-        const auto messages = process_line(last_line);
+        std::string last_line = std::exchange(buffer_, {});
+        auto messages = process_line(std::move(last_line));
         if (!messages) {
             return messages;
         }
