@@ -147,5 +147,7 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
   `CMAKE_ANDROID_STL_TYPE=c++_static` 输入，不再嵌套 include NDK legacy wrapper；项目配置阶段对
   最终 ABI/API 断言，CI 显式安装 Ninja。Linux GCC
   Debug 本地 `ctest --preset debug --output-on-failure` 通过，12/12。
-- Android 目标的最终 `Build verified` 结论以包含此修复的后续 CI run 为准；在此之前保留平台矩阵的
-  `Configured` 状态。
+- 验证结果：[CI run 33303882772](https://github.com/Linductor-alkaid/mira/actions/runs/33303882772)
+  全部成功，其中 Android job 完成 `android-arm64-release` configure，并构建 `mira_core` 与
+  `mira_simulator_adapter`；Windows、Linux、sanitizer 和 quality jobs 同样通过。Android Core/Simulator
+  证据现提升为 `Build verified`，真实设备、Host/JNI、权限和生命周期验证仍属于 M2/M7。
