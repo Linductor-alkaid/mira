@@ -35,7 +35,7 @@ Result<std::vector<SseMessage>> SseFramingParser::finish() {
     // carried, exactly as a trailing newline would have.
     if (!buffer_.empty()) {
         std::string last_line = std::exchange(buffer_, {});
-        auto messages = process_line(std::move(last_line));
+        auto messages = process_line(last_line);
         if (!messages) {
             return messages;
         }
