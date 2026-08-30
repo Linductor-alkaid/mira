@@ -45,7 +45,6 @@ class AndroidHostAdapter final : public IEnvironment {
   private:
     AndroidHostAdapter(executor::Executor &executor, MiraAndroidHostV1 *host);
 
-    executor::Executor &executor_;
     HostDispatcherBridge bridge_;
     MiraAndroidHostV1 *host_ = nullptr;
     MemoryArtifactStore artifacts_{8ULL * 1024ULL * 1024ULL};

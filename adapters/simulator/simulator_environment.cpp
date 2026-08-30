@@ -378,9 +378,13 @@ Result<Observation> SimulatorEnvironment::observe(const ObservationRequest &requ
                     impl_->published.emplace(committed.value().id, committed.value());
                 }
             }
-            if (!artifact_ok) {
-                (request.required.screen ? missing_required : missing_optional).push_back("screen");
-            } else if (const auto validated = validate_frame_descriptor(descriptor); !validated) {
+            const auto screen_failed = [&] {
+                if (!artifact_ok) {
+                    return true;
+                }
+                return !validate_frame_descriptor(descriptor).has_value();
+            }();
+            if (screen_failed) {
                 (request.required.screen ? missing_required : missing_optional).push_back("screen");
             } else {
                 ObservationComponent<ScreenFrameDescriptor> component;
@@ -848,7 +852,7 @@ Result<EnvironmentEpoch> SimulatorEnvironment::add_display(SimulatorDisplaySetup
     if (find_display(impl_->setup.displays, setup.id) != nullptr) {
         return simulator_error(ErrorCode::AlreadyExists, "display id already present");
     }
-    impl_->setup.displays.push_back(std::move(setup));
+    impl_->setup.displays.push_back(setup);
     return impl_->bump("display added");
 }
 

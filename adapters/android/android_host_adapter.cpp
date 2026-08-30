@@ -198,7 +198,7 @@ AndroidHostAdapter::create(executor::Executor &executor) {
 }
 
 AndroidHostAdapter::AndroidHostAdapter(executor::Executor &executor, MiraAndroidHostV1 *host)
-    : executor_(executor), bridge_(executor), host_(host) {}
+    : bridge_(executor), host_(host) {}
 
 AndroidHostAdapter::~AndroidHostAdapter() {
     if (host_ != nullptr) {
@@ -503,7 +503,7 @@ Result<ExecutionReceipt> AndroidHostAdapter::execute(const InputSequence &input,
     if (!settled) {
         return settled.error();
     }
-    const HostInputOutcome outcome = std::move(settled).value();
+    const HostInputOutcome outcome = settled.value();
     ExecutionReceipt receipt;
     switch (outcome.receipt) {
     case MIRA_HOST_INPUT_RECEIPT_DISPATCHED:

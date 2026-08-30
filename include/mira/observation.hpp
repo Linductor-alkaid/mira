@@ -257,6 +257,7 @@ enum class UiNodeState : std::uint32_t {
 };
 
 [[nodiscard]] constexpr UiNodeState operator|(UiNodeState lhs, UiNodeState rhs) noexcept {
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<UiNodeState>(static_cast<std::uint32_t>(lhs) |
                                     static_cast<std::uint32_t>(rhs));
 }
@@ -281,6 +282,7 @@ enum class UiNodeAction : std::uint32_t {
 };
 
 [[nodiscard]] constexpr UiNodeAction operator|(UiNodeAction lhs, UiNodeAction rhs) noexcept {
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<UiNodeAction>(static_cast<std::uint32_t>(lhs) |
                                      static_cast<std::uint32_t>(rhs));
 }
