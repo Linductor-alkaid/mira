@@ -458,12 +458,14 @@ enum class CompletionDisposition : std::uint8_t {
 
 struct Id128Hash final {
     std::size_t operator()(const Id128 &id) const noexcept {
-        std::size_t result = 1469598103934665603ULL;
+        std::uint64_t result = 1469598103934665603ULL;
         for (const auto byte : id.bytes()) {
             result ^= byte;
             result *= 1099511628211ULL;
         }
-        return result;
+        // Android arm32 has a 32-bit size_t; truncate only at the hash API
+        // boundary instead of narrowing the FNV-1a state during initialization.
+        return static_cast<std::size_t>(result);
     }
 };
 
