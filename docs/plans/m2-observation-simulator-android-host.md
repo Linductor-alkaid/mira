@@ -143,3 +143,10 @@ Android Host 无法取消的原子平台调用返回后只能标记 stale，不�
 检查未执行；Windows 与 Android arm64 交叉编译因本机无对应工具链/NDK 未补跑。负责人为
 Mira Maintainers，补跑条件为 CI 提供目标工具链并执行既有平台矩阵与 quality job；这些项
 不得以本地 GCC 结果替代。
+
+2026-08-30：提交 `01503b2` 的 CI run
+[`33317049305`](https://github.com/Linductor-alkaid/mira/actions/runs/33317049305) 中，Linux
+GCC/Clang、Android arm64、ASAN/UBSAN/TSAN 与 quality job 通过；Windows Debug/Release
+在编译 `coordinates.hpp` 时因 MSVC `C3615` 拒绝 `std::isfinite` 出现在 `constexpr` 函数中而
+失败。修复提交移除相关有限性校验、奇异性校验和齐次应用函数的 `constexpr` 修饰，不改变
+运行时语义；修复后的本地五套 GCC 配置均再次通过 13/13，等待后续 CI 复验 Windows 矩阵。

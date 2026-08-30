@@ -15,7 +15,7 @@ namespace mira {
 struct PointF final {
     double x = 0.0;
     double y = 0.0;
-    [[nodiscard]] constexpr bool is_finite() const noexcept {
+    [[nodiscard]] bool is_finite() const noexcept {
         return std::isfinite(x) && std::isfinite(y);
     }
     friend constexpr bool operator==(const PointF &, const PointF &) noexcept = default;
@@ -35,11 +35,11 @@ struct RectF final {
     [[nodiscard]] constexpr bool is_empty() const noexcept {
         return right <= left || bottom <= top;
     }
-    [[nodiscard]] constexpr bool is_finite() const noexcept {
+    [[nodiscard]] bool is_finite() const noexcept {
         return std::isfinite(left) && std::isfinite(top) && std::isfinite(right) &&
                std::isfinite(bottom);
     }
-    [[nodiscard]] constexpr bool is_well_formed() const noexcept {
+    [[nodiscard]] bool is_well_formed() const noexcept {
         return is_finite() && right >= left && bottom >= top;
     }
     // Contains uses a half-open bound on the far edges so adjacent regions do
@@ -94,7 +94,7 @@ class Matrix3x3 final {
     [[nodiscard]] constexpr bool is_affine() const noexcept {
         return elements_[6U] == 0.0 && elements_[7U] == 0.0 && elements_[8U] == 1.0;
     }
-    [[nodiscard]] constexpr bool is_finite() const noexcept {
+    [[nodiscard]] bool is_finite() const noexcept {
         for (const double value : elements_) {
             if (!std::isfinite(value)) {
                 return false;
@@ -107,7 +107,7 @@ class Matrix3x3 final {
                at(0, 1) * (at(1, 0) * at(2, 2) - at(1, 2) * at(2, 0)) +
                at(0, 2) * (at(1, 0) * at(2, 1) - at(1, 1) * at(2, 0));
     }
-    [[nodiscard]] constexpr bool is_singular(double epsilon = 1e-12) const noexcept {
+    [[nodiscard]] bool is_singular(double epsilon = 1e-12) const noexcept {
         if (!is_finite()) {
             return true;
         }
@@ -115,7 +115,7 @@ class Matrix3x3 final {
         return value <= epsilon && value >= -epsilon;
     }
 
-    [[nodiscard]] constexpr PointF apply(const PointF &point) const noexcept {
+    [[nodiscard]] PointF apply(const PointF &point) const noexcept {
         const double w = at(2, 0) * point.x + at(2, 1) * point.y + at(2, 2);
         if (w == 0.0 || !std::isfinite(w)) {
             return PointF{std::numeric_limits<double>::quiet_NaN(),
