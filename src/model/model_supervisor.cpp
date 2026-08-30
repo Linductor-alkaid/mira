@@ -29,7 +29,7 @@ std::string circuit_state_name(CircuitState state) {
     return "Unknown";
 }
 
-ProviderCircuit::ProviderCircuit(CircuitConfig config) : config_(std::move(config)) {}
+ProviderCircuit::ProviderCircuit(CircuitConfig config) : config_(config) {}
 
 void ProviderCircuit::record_success() {
     ++successes_;

@@ -138,7 +138,7 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
             trace);
         last_trace_ = trace;
         if (info.has_value()) {
-            last_headers_ = std::move(info.value().headers);
+            last_headers_ = info.value().headers;
         }
         sse_stats_ = parser.stats();
         last_preview_ = parser.take_preview();
@@ -149,15 +149,15 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
             return parse_failure.value();
         }
         if (info.value().status < 200 || info.value().status >= 300) {
-            return map_http_error_status(WireHttpResponse{
-                info.value().status, std::move(info.value().headers), std::move(raw)});
+            return map_http_error_status(
+                WireHttpResponse{info.value().status, info.value().headers, raw});
         }
         auto finished = parser.finish();
         if (!finished) {
             return finished.error();
         }
         auto result = std::move(finished).value();
-        result.rate_limit = parse_rate_limit_headers(info.value().headers);
+        result.rate_limit = parse_rate_limit_headers(last_headers_);
         if (options.capture_raw_response && protected_artifacts_ != nullptr) {
             auto reference = store_raw_response(raw);
             if (reference) {
@@ -173,19 +173,23 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
         [&](std::string_view chunk) { raw.append(chunk.data(), chunk.size()); }, trace);
     last_trace_ = trace;
     if (info) {
-        last_headers_ = std::move(info.value().headers);
+        last_headers_ = info.value().headers;
     }
     if (!info) {
         return info.error();
     }
-    auto decoded = mapper.decode_response(
-        request, *profile_,
-        WireHttpResponse{info.value().status, std::move(info.value().headers), std::move(raw)});
+    // The wire object owns the single body copy; decode and the protected
+    // artifact writer both read from it.
+    WireHttpResponse wire_response;
+    wire_response.status = info.value().status;
+    wire_response.headers = info.value().headers;
+    wire_response.body = std::move(raw);
+    auto decoded = mapper.decode_response(request, *profile_, wire_response);
     if (!decoded) {
         return decoded.error();
     }
     if (options.capture_raw_response && protected_artifacts_ != nullptr) {
-        auto reference = store_raw_response(raw);
+        auto reference = store_raw_response(wire_response.body);
         if (reference) {
             decoded.value().protected_raw_response = std::move(reference).value();
         }
