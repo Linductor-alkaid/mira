@@ -10,12 +10,14 @@
 ## 1. 目标
 
 建立可重复构建、测试和诊断的 C++20 空骨架，验证 Mira 对 Executor 的所有权、串行控制、
-取消和关闭假设。M0 不交付真实模型或平台自动化。
+取消和关闭假设，并从构建组合上锁定 Linux、Windows、Android 三个目标族。M0 不交付真实模型
+或平台输入自动化。
 
 ## 2. 范围与非目标
 
 范围包括顶层构建、目标分层、质量工具、依赖锁定、Simulator/Fake 基础、Executor integration
-spike 和 CI 入口。非目标包括完整 Task 闭环、生产 EventStore、Android Adapter 和 ONNX 推理。
+spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 Task 闭环、生产 EventStore、
+真实 Android/Linux/Windows Adapter 和 ONNX 推理。
 
 ## 3. 设计与决策依据
 
@@ -56,6 +58,8 @@ spike 和 CI 入口。非目标包括完整 Task 闭环、生产 EventStore、An
 - [x] `M0-12` 锁定 Executor 版本或 commit，生成直接依赖许可证清单和初始 SBOM。
 - [x] `M0-13` 建立 Linux GCC/Clang 构建测试；其他目标的未运行项明确记录补跑环境。
 - [x] `M0-14` 建立文档链接、Markdown 围栏和公共头独立包含检查。
+- [x] `M0-15` 建立 Linux、Windows 和 Android arm64-v8a 的 CMake 组合入口；Core 平台边界检查
+  拒绝 SDK 头文件和平台宏倒灌，并在 CI 中保留三平台构建门禁。
 
 ## 5. 风险与阻塞
 
@@ -72,7 +76,9 @@ spike 和 CI 入口。非目标包括完整 Task 闭环、生产 EventStore、An
 - [x] 10,000 次混合 Task 命令/completion 压测保持单写者顺序，无终态复活和未观察 future。
 - [x] 排队取消、任务异常、串行上下文关闭、Executor submission rejection 均形成结构化结果。
 - [x] shutdown 后没有 Mira producer、Controller、blocking worker、timer 或 Observer 回调。
-- [x] 所有 `M0-01` 至 `M0-14` 完成，且无未登记的 Executor 绕行。
+- [x] 所有 `M0-01` 至 `M0-15` 完成，且无未登记的 Executor 绕行。
+- [x] Linux、Windows、Android 的目标组合、工具链入口和未运行条件记录在[平台矩阵](../compatibility/platform-matrix.md)；
+  M0 不将未运行的 Windows/Android 目标宣称为 Runtime 支持。
 
 ## 7. 验证记录
 
@@ -104,3 +110,18 @@ spike 和 CI 入口。非目标包括完整 Task 闭环、生产 EventStore、An
 - 未运行平台：Windows、Android、macOS 未在 M0 本机执行；M0 不宣称这些目标已验证。负责人为
   Mira Maintainers；补跑条件为对应 CI runner/NDK toolchain 可用时执行 configure/build/适用 test，
   其跨平台发布门禁仍由后续真实 Adapter 里程碑管理。
+- 跨平台构建入口：新增 `windows-debug`/`windows-release` 和 `android-arm64-release` CMake 预设，
+  并在 `ci.yml` 增加 Windows x64 与 Android arm64-v8a Core/Simulator build job。`platform-boundary-check`
+  及其测试确认 `include/mira`、`src` 不包含平台 SDK 或平台宏；入口配置不等同于目标环境运行证据。
+
+### 2026-08-30：跨平台基线增补验证
+
+- Linux：`cmake --preset debug && cmake --build --preset debug --parallel 2 && ctest --preset debug
+  --output-on-failure`，11/11 通过；新增 `mira_platform_boundary_test` 通过。
+- 静态边界：`python3 tools/check_platform_boundary.py .`、`check_docs.py` 和 `check_sbom.py` 均通过。
+- Windows：本机无 Visual Studio/MSVC，未运行；`windows-debug`/`windows-release` 预设与 CI runner
+  已提交，补跑条件为 Windows 2022 runner。
+- Android：本机无 Android NDK/Ninja，`cmake --preset android-arm64-release` 按预期以明确的 NDK
+  环境错误终止；补跑条件为 NDK 26.3.11579264（或兼容版本）及 Ninja 可用。CI 只构建
+  `mira_core` 和 `mira_simulator_adapter`，真机 Host/Adapter 行为验证仍属于 M2/M7。
+- `format-check` 未在本轮执行：当前容器没有 `clang-format`；CI 的 quality job 安装该工具后执行。

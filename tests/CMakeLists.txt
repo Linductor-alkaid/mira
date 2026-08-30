@@ -39,6 +39,7 @@ add_test(
             -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
             -DGENERATOR=${CMAKE_GENERATOR}
             -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
             -DBUILD_CONFIG=$<CONFIG>
             -DMIRA_ENABLE_ASAN=${MIRA_ENABLE_ASAN}
             -DMIRA_ENABLE_UBSAN=${MIRA_ENABLE_UBSAN}
@@ -56,4 +57,8 @@ if(Python3_Interpreter_FOUND)
         COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_sbom.py"
                 "${PROJECT_SOURCE_DIR}")
     set_tests_properties(mira_sbom_test PROPERTIES LABELS "supply-chain")
+    add_test(NAME mira_platform_boundary_test
+        COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_platform_boundary.py"
+                "${PROJECT_SOURCE_DIR}")
+    set_tests_properties(mira_platform_boundary_test PROPERTIES LABELS "contract;platform")
 endif()

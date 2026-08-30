@@ -1,0 +1,20 @@
+# Keep platform selection in the build composition layer. Core sources must
+# remain platform-neutral and must not branch on these values.
+function(mira_report_platform)
+    if(ANDROID)
+        set(MIRA_PLATFORM_NAME "Android" CACHE INTERNAL "Mira target platform")
+        set(MIRA_PLATFORM_FAMILY "android" CACHE INTERNAL "Mira target platform family")
+    elseif(WIN32)
+        set(MIRA_PLATFORM_NAME "Windows" CACHE INTERNAL "Mira target platform")
+        set(MIRA_PLATFORM_FAMILY "windows" CACHE INTERNAL "Mira target platform family")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(MIRA_PLATFORM_NAME "Linux" CACHE INTERNAL "Mira target platform")
+        set(MIRA_PLATFORM_FAMILY "linux" CACHE INTERNAL "Mira target platform family")
+    else()
+        set(MIRA_PLATFORM_NAME "${CMAKE_SYSTEM_NAME}" CACHE INTERNAL "Mira target platform")
+        set(MIRA_PLATFORM_FAMILY "other" CACHE INTERNAL "Mira target platform family")
+    endif()
+
+    message(STATUS "Mira target platform: ${MIRA_PLATFORM_NAME}")
+    message(STATUS "Mira platform adapters are injected separately; Core has no platform SDK dependency")
+endfunction()

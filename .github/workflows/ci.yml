@@ -35,6 +35,48 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: windows-debug
+            configuration: Debug
+          - preset: windows-release
+            configuration: Release
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --test-dir build/${{ matrix.preset }} -C ${{ matrix.configuration }} --output-on-failure
+
+  android:
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_NDK_VERSION: 26.3.11579264
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-24" "ndk;${ANDROID_NDK_VERSION}"
+          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          echo "ANDROID_NDK_HOME=${android_sdk_root}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+      - name: Configure Android arm64
+        run: cmake --preset android-arm64-release
+      - name: Build Android Core and Simulator
+        run: cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter
+
   sanitizers:
     strategy:
       fail-fast: false
@@ -69,4 +111,4 @@ jobs:
       - name: Static analysis build
         run: cmake --build build --parallel 2
       - name: Format, docs, supply chain
-        run: cmake --build build --target format-check docs-check sbom-check
+        run: cmake --build build --target format-check docs-check sbom-check platform-boundary-check

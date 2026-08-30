@@ -187,6 +187,11 @@ Runtime/Agent/Context/Action/Adapters -> Executor public API
 
 Core 不得包含 `#ifdef __ANDROID__` 等平台分支。平台选择发生在构建组合和宿主注入阶段。
 
+平台组合从 M0 起固定为 Linux、Windows 和 Android 三个目标族：CMake 负责选择工具链和可选
+Adapter，`mira_core` 只编译平台无关源文件。当前阶段 Linux 已有实际构建证据，Windows 与
+Android 提供 CI/交叉编译入口但尚待目标 runner 验证；真实输入、截图、权限和生命周期能力
+仍由后续 Adapter 里程碑交付。状态和可复现命令见[平台构建与 Adapter 兼容性矩阵](../compatibility/platform-matrix.md)。
+
 ## 6. 所有权模型
 
 ```text

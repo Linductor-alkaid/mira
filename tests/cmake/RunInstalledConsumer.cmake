@@ -33,15 +33,24 @@ if(NOT CONFIGURE_RESULT EQUAL 0)
 endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" --build "${CONSUMER_BUILD_DIR}" --parallel 2
+            --config "${BUILD_CONFIG}"
     RESULT_VARIABLE BUILD_RESULT
 )
 if(NOT BUILD_RESULT EQUAL 0)
     message(FATAL_ERROR "Installed consumer build failed")
 endif()
-execute_process(
-    COMMAND "${CONSUMER_BUILD_DIR}/mira_installed_consumer"
-    RESULT_VARIABLE RUN_RESULT
-)
+if(NOT DEFINED EXECUTABLE_SUFFIX)
+    set(EXECUTABLE_SUFFIX "")
+endif()
+set(CONSUMER_BINARY "${CONSUMER_BUILD_DIR}/mira_installed_consumer${EXECUTABLE_SUFFIX}")
+if(NOT EXISTS "${CONSUMER_BINARY}" AND BUILD_CONFIG)
+    set(CONSUMER_BINARY
+        "${CONSUMER_BUILD_DIR}/${BUILD_CONFIG}/mira_installed_consumer${EXECUTABLE_SUFFIX}")
+endif()
+if(NOT EXISTS "${CONSUMER_BINARY}")
+    message(FATAL_ERROR "Installed consumer executable not found: ${CONSUMER_BINARY}")
+endif()
+execute_process(COMMAND "${CONSUMER_BINARY}" RESULT_VARIABLE RUN_RESULT)
 if(NOT RUN_RESULT EQUAL 0)
     message(FATAL_ERROR "Installed consumer returned ${RUN_RESULT}")
 endif()

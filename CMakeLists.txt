@@ -16,6 +16,9 @@ option(MIRA_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Mira targets" OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(MiraWarnings)
 include(MiraSanitizers)
+include(MiraPlatform)
+
+mira_report_platform()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -118,6 +121,13 @@ if(Python3_Interpreter_FOUND)
                 "${CMAKE_CURRENT_SOURCE_DIR}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Checking pinned dependencies and SBOM"
+        VERBATIM
+    )
+    add_custom_target(platform-boundary-check
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_platform_boundary.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Checking Mira Core platform boundary"
         VERBATIM
     )
 endif()
