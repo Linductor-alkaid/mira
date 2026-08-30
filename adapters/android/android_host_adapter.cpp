@@ -55,8 +55,9 @@ std::optional<PixelFormat> host_pixel_format_to_mira(std::uint32_t format) {
         return PixelFormat::YUV420P;
     case MIRA_HOST_PIXEL_GRAY8:
         return PixelFormat::Gray8;
+    default:
+        return std::nullopt;
     }
-    return std::nullopt;
 }
 
 std::optional<Rotation> host_rotation_to_mira(std::uint32_t rotation) {
@@ -69,8 +70,9 @@ std::optional<Rotation> host_rotation_to_mira(std::uint32_t rotation) {
         return Rotation::Rotation180;
     case MIRA_HOST_ROTATION_270:
         return Rotation::Rotation270;
+    default:
+        return std::nullopt;
     }
-    return std::nullopt;
 }
 
 // Bounded cooperative wait for a bridge future: polls the caller-supplied
