@@ -728,7 +728,6 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
                                       job.cancelled);
             if (!writable) {
                 close_socket(socket);
-                socket = kInvalidSocket;
                 if (writable.error().code == ErrorCode::DeadlineExceeded) {
                     return transport_error(ModelDomainCode::ModelDeadlineExceeded,
                                            "connect exceeded its deadline", false);
