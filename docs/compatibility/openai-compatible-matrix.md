@@ -1,8 +1,8 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1  
+> 更新日期：2026-08-31   
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
 
@@ -32,10 +32,11 @@
 
 | Dialect ID | Endpoint family | 本地 mapper | 同步 HTTP | SSE | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `openai.responses.v1` | `/responses` | 尚未实现 | Planned | Planned | `Configured` |
-| `openai.chat-completions.v1` | `/chat/completions` | 尚未实现 | Planned | Capability-gated | `Configured` |
+| `openai.responses.v1` | `/responses` | `ResponsesV1Mapper`（`src/model/model_dialect.cpp`） | `FixtureVerified`（`mira_m3_dialect_test`、`mira_m3_gateway_test`） | `FixtureVerified`（`mira_m3_sse_test`：分片/配对/唯一 terminal/EOF/取消） | `FixtureVerified` |
+| `openai.chat-completions.v1` | `/chat/completions` | `ChatCompletionsV1Mapper`（同上） | `FixtureVerified`（独立 fixtures；不可表示字段显式失败） | Capability-gated（profile 需声明且 fixture 通过后才可用） | `FixtureVerified`（同步） |
 
-`Configured` 只说明设计和 profile ID 已冻结，不表示源码存在。
+`FixtureVerified` 只证明本地 mock/golden contract suite 通过，不构成对任何真实服务的互操作声明；
+真实 endpoint 的状态见第 4 节，全部保持 `Unknown`（`M3-19` 未执行）。
 
 ## 4. Provider 证据总表
 
@@ -117,6 +118,17 @@
 这些资料用于定义 OpenAI reference profile，不是 DeepSeek、Qwen、OpenRouter 或其他兼容服务的证据。
 
 ## 9. 变更记录
+
+### 2026-08-31：方言 fixture 证据
+
+- 范围：两个 dialect 的同步 mapper、Responses SSE 状态机、错误映射与 `Retry-After` 解析的本地实现。
+- 验证：`mira_m3_dialect_test`（golden 编解码、不可表示字段 fail-closed、错误状态映射）、
+  `mira_m3_sse_test`（任意分片、事件配对、唯一 terminal、EOF 无 terminal 判定为
+  `AmbiguousCompletion`、预览隔离）、`mira_m3_gateway_test`（经过 mock transport 的端到端
+  canonical 结果）。传输层证据见 [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)。
+- 限制：全部为本地 fixture；没有对任何真实 endpoint 的调用。互操作状态保持 `Unknown`，
+  `M3-19` 待受控凭据就绪后执行。
+- 关联：[M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)。
 
 ### 2026-08-30：建立基线
 

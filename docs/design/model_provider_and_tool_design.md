@@ -1,8 +1,8 @@
 # Mira Model Provider 与 Tool 扩展设计
 
 > 状态：Active  
-> 版本：1.1  
-> 更新日期：2026-08-30  
+> 版本：1.2  
+> 更新日期：2026-08-31   
 > 适用范围：外部 LLM/VLM、OpenAI-compatible 协议、路由、预算、Tool registry 与隔离  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 协议细化：[LLM API 协议设计](llm-api-protocol-design.md)  
@@ -50,6 +50,11 @@ token/隐藏推理不要求也不保存。
 `ModelRequest`、`ModelResponse`、output item、usage、terminal status 和稳定错误的规范字段定义见
 [LLM API 协议设计](llm-api-protocol-design.md)。Provider transport 成功、协议 terminal 和有效 Decision
 是三层不同结果，不能用单个 HTTP success 合并表示。
+
+M3 实现落点为 `include/mira/model_provider.hpp`（`IModelProvider` 以 `profile()` 暴露
+`ModelCapabilities` 的 manifest 载体 `ModelProfile`，并附带 `last_trace`/`last_sse_stats`/
+`last_retry_after_hint` 诊断）与 `OpenAiCompatibleProvider`；字段级演化以公共头与
+`m3_*` 契约测试为准。
 
 ## 3. OpenAI-compatible Adapter
 

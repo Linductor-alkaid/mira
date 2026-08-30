@@ -24,6 +24,43 @@ mira_add_test(mira_m2_observation_test m2/m2_observation_coordinate_test.cpp con
 mira_add_test(mira_m2_simulator_test m2/m2_simulator_scenario_test.cpp contract)
 mira_add_test(mira_m2_pipeline_test m2/m2_observation_pipeline_test.cpp contract)
 
+# ---------------------------------------------------------------------------
+# M3: model provider and agent loop
+# ---------------------------------------------------------------------------
+
+function(mira_add_m3_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::simulator_adapter Mira::net_transport executor::executor)
+    target_include_directories(${name} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/adapters/net")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "contract;m3" TIMEOUT 120)
+endfunction()
+
+mira_add_m3_test(mira_m3_canonical_test m3/m3_canonical_test.cpp)
+mira_add_m3_test(mira_m3_schema_test m3/m3_schema_test.cpp)
+mira_add_m3_test(mira_m3_dialect_test m3/m3_dialect_test.cpp)
+mira_add_m3_test(mira_m3_sse_test m3/m3_sse_test.cpp)
+mira_add_m3_test(mira_m3_tool_test m3/m3_tool_test.cpp)
+mira_add_m3_test(mira_m3_supervisor_budget_test m3/m3_supervisor_budget_test.cpp)
+mira_add_m3_test(mira_m3_transport_test m3/m3_transport_test.cpp)
+mira_add_m3_test(mira_m3_gateway_test m3/m3_gateway_test.cpp)
+mira_add_m3_test(mira_m3_agent_loop_test m3/m3_agent_loop_test.cpp)
+mira_add_m3_test(mira_m3_replay_test m3/m3_replay_test.cpp)
+
+if(TARGET mira_openssl_transport)
+    mira_add_m3_test(mira_m3_tls_test m3/m3_tls_test.cpp)
+    target_link_libraries(mira_m3_tls_test PRIVATE Mira::openssl_transport)
+endif()
+
 add_executable(mira_m2_android_host_test
     m2/m2_android_host_abi_test.cpp
     support/fake_android_host.cpp

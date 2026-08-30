@@ -187,6 +187,34 @@ Sha256Digest digest_bytes(std::span<const std::byte> bytes) noexcept {
     return hash.finish();
 }
 
+std::optional<Sha256Digest> digest_from_hex(std::string_view text) noexcept {
+    if (text.size() != 64) {
+        return std::nullopt;
+    }
+    Sha256Digest digest;
+    for (std::size_t index = 0; index < digest.bytes.size(); ++index) {
+        auto nibble = [](char value) -> int {
+            if (value >= '0' && value <= '9') {
+                return value - '0';
+            }
+            if (value >= 'a' && value <= 'f') {
+                return value - 'a' + 10;
+            }
+            if (value >= 'A' && value <= 'F') {
+                return value - 'A' + 10;
+            }
+            return -1;
+        };
+        const int high = nibble(text[index * 2]);
+        const int low = nibble(text[index * 2 + 1]);
+        if (high < 0 || low < 0) {
+            return std::nullopt;
+        }
+        digest.bytes[index] = static_cast<std::uint8_t>((high << 4U) | low);
+    }
+    return digest;
+}
+
 class MemoryEventStore::Impl final {
   public:
     explicit Impl(std::size_t max) : max_events(max) {}

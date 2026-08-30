@@ -1,8 +1,8 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.1
-> 更新日期：2026-08-30
+> 版本：0.2
+> 更新日期：2026-08-31
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -23,6 +23,18 @@
 | Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Configured`；CI 配置已提交，待 Windows runner 结果 | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
 | Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 于 CI run
 [`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter 骨架，fake host 契约验证；见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
+
+### M3 传输 Adapter
+
+| 目标 | `mira_net_transport`（socket HTTP/SSE） | `mira_openssl_transport`（TLS 通道） | 证据 |
+| --- | --- | --- | --- |
+| Linux x86_64 | 构建 + loopback 运行测试 | 构建 + 进程内 TLS 握手/错误 CA 测试 | `mira_m3_transport_test`、`mira_m3_tls_test`（OpenSSL 3.0.13，2026-08-31） |
+| Windows x64 | CI 构建（Winsock；`ws2_32`） | 不构建（`MIRA_WITH_OPENSSL` 仅限非 Android UNIX）；https fail closed | 待 CI run 回填 |
+| Android arm64-v8a | CI 构建（POSIX sockets） | 不构建；https fail closed | 待 CI run 回填 |
+
+TLS 通道的平台缺口、fail-closed 语义与依赖决策见
+[DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)。未配置 TLS 工厂时 https 端点在
+任何字节写出前以 `CapabilityMismatch` 拒绝。
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，

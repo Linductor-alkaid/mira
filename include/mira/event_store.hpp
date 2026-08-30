@@ -26,6 +26,9 @@ struct Sha256Digest final {
     [[nodiscard]] std::string to_string() const;
 };
 
+// Parses 64 lowercase-or-uppercase hex characters; nullopt on any other input.
+[[nodiscard]] std::optional<Sha256Digest> digest_from_hex(std::string_view text) noexcept;
+
 [[nodiscard]] Sha256Digest digest_bytes(std::span<const std::byte> bytes) noexcept;
 [[nodiscard]] inline Sha256Digest digest_string(std::string_view value) noexcept {
     return digest_bytes(std::as_bytes(std::span(value.data(), value.size())));

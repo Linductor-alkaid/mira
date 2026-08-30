@@ -23,6 +23,7 @@ option(MIRA_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(MIRA_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(MIRA_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(MIRA_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Mira targets" OFF)
+option(MIRA_WITH_OPENSSL "Build the OpenSSL-backed TLS channel adapter" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(MiraWarnings)
@@ -73,6 +74,20 @@ add_library(mira_core
     src/storage/action_journal.cpp
     src/security/security.cpp
     src/replay/replay.cpp
+    src/support/json.cpp
+    src/model/model_contracts.cpp
+    src/model/model_profile.cpp
+    src/model/model_digest.cpp
+    src/model/model_schema.cpp
+    src/model/model_dialect.cpp
+    src/model/model_sse.cpp
+    src/model/model_tool.cpp
+    src/model/model_budget.cpp
+    src/model/model_supervisor.cpp
+    src/model/model_provider.cpp
+    src/model/model_gateway.cpp
+    src/model/model_replay.cpp
+    src/model/agent_loop.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 target_include_directories(mira_core
@@ -150,6 +165,83 @@ endif()
 mira_enable_sanitizers(mira_android_adapter)
 set_target_properties(mira_android_adapter PROPERTIES EXPORT_NAME android_adapter)
 
+# Portable socket HTTP/SSE transport adapter (POSIX sockets + Winsock).
+add_library(mira_net_transport
+    adapters/net/socket_transport.cpp
+)
+add_library(Mira::net_transport ALIAS mira_net_transport)
+target_include_directories(mira_net_transport
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
+)
+target_link_libraries(mira_net_transport
+    PUBLIC Mira::core
+    PRIVATE executor::executor
+)
+target_include_directories(mira_net_transport SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+)
+target_compile_features(mira_net_transport PUBLIC cxx_std_20)
+mira_enable_warnings(mira_net_transport)
+if(MIRA_ENABLE_CLANG_TIDY)
+    set_property(TARGET mira_net_transport PROPERTY CXX_CLANG_TIDY
+        "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*"
+    )
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(mira_net_transport PRIVATE -Wno-deprecated-declarations)
+endif()
+mira_enable_sanitizers(mira_net_transport)
+set_target_properties(mira_net_transport PROPERTIES EXPORT_NAME net_transport)
+if(WIN32)
+    target_link_libraries(mira_net_transport PRIVATE ws2_32)
+endif()
+
+# Optional OpenSSL-backed TLS channel for https endpoints. Built only where
+# OpenSSL development files exist and the platform combination is verified;
+# everywhere else https fails closed at the transport boundary.
+if(MIRA_WITH_OPENSSL AND UNIX AND NOT ANDROID)
+    find_package(OpenSSL QUIET)
+    if(OpenSSL_FOUND)
+        add_library(mira_openssl_transport
+            adapters/net/openssl_tls.cpp
+        )
+        add_library(Mira::openssl_transport ALIAS mira_openssl_transport)
+        target_include_directories(mira_openssl_transport
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
+        )
+        target_link_libraries(mira_openssl_transport
+            PUBLIC Mira::core
+            PRIVATE OpenSSL::SSL executor::executor
+        )
+        target_include_directories(mira_openssl_transport SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+        )
+        target_compile_features(mira_openssl_transport PUBLIC cxx_std_20)
+        mira_enable_warnings(mira_openssl_transport)
+        if(MIRA_ENABLE_CLANG_TIDY)
+            set_property(TARGET mira_openssl_transport PROPERTY CXX_CLANG_TIDY
+                "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*"
+            )
+        endif()
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(mira_openssl_transport PRIVATE -Wno-deprecated-declarations)
+        endif()
+        mira_enable_sanitizers(mira_openssl_transport)
+        set_target_properties(mira_openssl_transport PROPERTIES EXPORT_NAME openssl_transport)
+        message(STATUS "Mira: OpenSSL ${OPENSSL_VERSION} found; building the TLS channel adapter")
+    else()
+        message(STATUS "Mira: OpenSSL not found; https endpoints will fail closed")
+    endif()
+endif()
+
 add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
 target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
 mira_enable_warnings(mira_minimal_consumer)
@@ -193,12 +285,20 @@ if(MIRA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mira_core mira_simulator_adapter mira_android_adapter
+install(TARGETS mira_core mira_simulator_adapter mira_android_adapter mira_net_transport
     EXPORT MiraTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+if(TARGET mira_openssl_transport)
+    install(TARGETS mira_openssl_transport
+        EXPORT MiraTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT MiraTargets
     FILE MiraTargets.cmake

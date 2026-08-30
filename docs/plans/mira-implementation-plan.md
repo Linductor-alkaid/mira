@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers  
-> 更新日期：2026-08-30  
+> 更新日期：2026-08-31  
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)
 
@@ -61,7 +61,7 @@
 | [M0](m0-engineering-baseline.md) | 仓库、跨平台构建组合、Executor 集成和质量基线 | 无 | 内部工程基线 | Completed |
 | [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
-| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | Planned |
+| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | In Progress（实现与本地验证完成；interop/代理/upload 子项开放） |
 | M4 | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Proposed |
 | M5 | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Proposed |
 | M6 | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Proposed |
@@ -82,6 +82,7 @@
 | [DEC-005](../decisions/DEC-005-observation-coordinate-host-boundary.md) | Observation 坐标与 Android Host 边界 | Accepted | M2 |
 | [DEC-006](../decisions/DEC-006-local-perception-task-models.md) | 本地感知和任务 ONNX 模型边界 | Accepted | M5 |
 | [DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md) | LLM API 规范契约与协议方言策略 | Accepted | M3 |
+| [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) | M3 传输层依赖策略（自研 transport + 可插拔 TLS） | Accepted | M3 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。

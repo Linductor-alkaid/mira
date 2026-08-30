@@ -1,8 +1,8 @@
 # Mira LLM API 协议设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1  
+> 更新日期：2026-08-31   
 > 负责人：Mira Maintainers  
 > 适用范围：远端 LLM/VLM 请求、OpenAI-compatible wire dialect、流式响应、Structured Outputs、
 > Tool Calling、Provider 状态与费用核算  
@@ -653,9 +653,20 @@ Decision。删除原始 payload 后保留 tombstone，并明确 Replay quality �
 交付工作项和退出条件见
 [M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)。
 
+M3 实现落点：canonical 契约与错误（`include/mira/model_contracts.hpp`）、profile/路由
+（`model_profile.hpp`）、digest 与脱敏（`model_digest.hpp`）、JSON Schema 子集与 Decision/repair
+（`model_schema.hpp`）、两个方言 mapper（`model_dialect.hpp`）、Responses SSE 状态机
+（`model_sse.hpp`）、Tool 桥（`model_tool.hpp`）、预算（`model_budget.hpp`）、重试/circuit
+（`model_supervisor.hpp`）、Provider 与传输契约（`model_provider.hpp`、`model_transport.hpp`）、
+网关与 admission（`model_gateway.hpp`）、回放 Provider（`model_replay.hpp`）与闭环
+（`agent_loop.hpp`）；传输实现位于 `adapters/net/`。设计文档中的 C++ 片段与实现存在字段级
+演化（如 `TransportTrace` 阶段回填），以公共头与测试为准。
+
 ## 20. 已知限制与待验证项
 
-- 具体 C++ HTTP/TLS 库及其 Android NDK、代理、HTTP/2、SSE 和取消行为尚未选型。
+- 传输实现已按 [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) 落地为自研
+  socket transport + 可插拔 TLS 通道；Windows/Android 的 TLS 通道与 HTTP 代理仍缺目标平台证据，
+  https 在这些平台 fail closed。真实 endpoint 互操作（`M3-19`）待受控凭据。
 - 各 Provider 对 strict JSON Schema 子集、usage、rate-limit header、idempotency 和 model alias 的实际
   行为必须逐 profile 验证。
 - 官方 API 会演进；上游新增字段不自动成为 Mira 支持能力，须经 schema/fixture 版本更新。
