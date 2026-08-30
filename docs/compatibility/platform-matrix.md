@@ -21,7 +21,8 @@
 | --- | --- | --- | --- | --- |
 | Linux x86_64 | GCC 13、Clang 18；`debug`/`release`/sanitizer | `Build verified`（M0，Ubuntu 24.04） | `Planned`（`adapters/linux`，M7） | Linux GCC/Clang CI |
 | Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Configured`；CI 配置已提交，待 Windows runner 结果 | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
-| Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 已加入待后续 run 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter 骨架，fake host 契约验证；见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
+| Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 于 CI run
+[`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter 骨架，fake host 契约验证；见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，

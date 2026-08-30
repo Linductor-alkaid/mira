@@ -1,6 +1,6 @@
 # M2：Observation、坐标、Simulator 与 Android Host ABI
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M1
@@ -126,7 +126,7 @@ Android Host 无法取消的原子平台调用返回后只能标记 stale，不�
   [android-host-abi.md](../compatibility/android-host-abi.md) 第 3 节）。
 - [x] ASAN/UBSAN 通过；支持环境下 TSAN 通过，未支持时保留未完成项和补跑条件。
 - [x] 公共头独立包含、最小 consumer 构建和文档检查通过。
-- [ ] CI 全平台矩阵（Linux GCC/Clang、Windows、Android arm64、sanitizers、quality）在本批
+- [x] CI 全平台矩阵（Linux GCC/Clang、Windows、Android arm64、sanitizers、quality）在本批
   变更后全绿；结果记录在下方验证记录。
 
 ## 9. 验证记录
@@ -195,3 +195,20 @@ GCC/Clang、Android arm64、ASAN/UBSAN/TSAN 与 quality job 通过；Windows Deb
 限制与待补跑：本机无 `clang++`/`clang-tidy`，Clang 构建、静态分析与 CI quality 门禁待 CI；
 Windows MSVC 与 Android arm64（含新增 `mira_android_adapter` 目标）待 CI。负责人 Mira
 Maintainers，补跑条件为推送后观察本批 CI run 全绿并回填记录。
+
+2026-08-30：CI 收敛记录。提交 `12b923a` 的 run
+[`33320373456`](https://github.com/Linductor-alkaid/mira/actions/runs/33320373456) 中
+Windows Debug/Release、Linux GCC 与 sanitizers 通过；Android、Linux Clang 因
+`AndroidHostAdapter` 未使用的 `executor_` 成员（`-Wunused-private-field`）失败，quality 的
+clang-tidy 报出无效 `std::move`（trivially-copyable）、重复分支与 bitmask 或运算的
+opt-in 枚举范围检查。修复提交 `bf8053c` 移除该成员、清理无效 move、合并重复分支，并以
+NOLINT 抑制位掩码 `operator|` 的 `clang-analyzer-optin.core.EnumCastOutOfRange`；其 run
+[`33321080332`](https://github.com/Linductor-alkaid/mira/actions/runs/33321080332) 仅余
+quality 一项（`HostInputOutcome` 的无效 move）。修复提交 `70b3bac` 后 run
+[`33321314376`](https://github.com/Linductor-alkaid/mira/actions/runs/33321314376) 仅余
+quality 的 `bugprone-switch-missing-default-case`。最终修复提交 `ba95943`（uint32 映射
+switch 补 default）后 run
+[`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 全部 11
+个 job 通过：Linux GCC/Clang Debug+Release、Windows Debug/Release、Android arm64（含
+`mira_android_adapter`）、ASAN/UBSAN/TSAN 与 quality（clang-tidy、clang-format 18.1.8、
+docs、SBOM、平台边界）。中间两次失败均由逐层暴露的静态检查驱动修复，无行为变更。
