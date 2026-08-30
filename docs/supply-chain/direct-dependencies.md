@@ -6,7 +6,7 @@
 
 | 依赖 | 固定版本 | 来源 | 许可证 | 许可证文件 |
 | --- | --- | --- | --- | --- |
-| Executor | `2af11a3466dd4a97a31d8784d01a892876aeeb1a`（`v0.4.0-77-g2af11a3`） | git submodule | MIT | [`third_party/executor/LICENSE`](../../third_party/executor/LICENSE) |
+| Executor | `4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9`（`v0.4.0-82-g4fd8e60`） | git submodule | MIT | [`third_party/executor/LICENSE`](../../third_party/executor/LICENSE) |
 
 机器可读锁定信息位于 [`dependencies.lock.json`](../../dependencies.lock.json)，CycloneDX SBOM
 位于 [`sbom.cdx.json`](sbom.cdx.json)。M0 关闭 Executor 的可选 GPU 后端，因此当前 Mira 构建

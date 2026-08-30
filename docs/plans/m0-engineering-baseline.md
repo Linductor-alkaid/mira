@@ -43,12 +43,12 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
 - [x] `M0-06` 原型验证每个 Runtime 一个 `executor::SerialExecutionContext`：多 Task 命令和
   completion 按接纳顺序提交，回调只做有界状态提交且不等待 future。
 - [x] `M0-07` 验证 `submit_on_with_handle()` 的排队取消、异常传播、上下文关闭拒绝和迟到
-  completion 隔离；活动路径因 `EXE-20260830-002`、`EXE-20260830-003` 改由非阻塞 tracked
-  dispatch compatibility boundary 承载，保存并消费全部 dispatch/business future。
+  completion 隔离；Executor `4fd8e60` 提供非阻塞共享状态结算后，Runtime 已恢复直接 facade，
+  保存并消费全部 future。
 - [x] `M0-08` 验证关闭顺序：停止 producer、取消 operation、回收并结算 blocking/realtime/store
   路径、进入 `Quiesced`、关闭串行上下文并消费其 future，最后由外部 owner 关闭 Executor。
-- [x] `M0-09` 用小线程池和满队列验证 admission rejection 不丢失控制命令；若当前 API 无法满足
-  必需语义，登记 `EXE-*` 反馈而不是增加私有线程或无界队列。
+- [x] `M0-09` 用小线程池和总量 admission 验证 rejection 不丢失控制命令；当前直接配置
+  `ExecutorConfig::max_in_flight_tasks`，并在 `EXE-20260830-001` 中记录迁移证据。
 
 ### 4.3 测试与供应链
 
@@ -151,3 +151,33 @@ spike、Linux/Windows/Android 构建入口和 CI 门禁。非目标包括完整 
   全部成功，其中 Android job 完成 `android-arm64-release` configure，并构建 `mira_core` 与
   `mira_simulator_adapter`；Windows、Linux、sanitizer 和 quality jobs 同样通过。Android Core/Simulator
   证据现提升为 `Build verified`，真实设备、Host/JNI、权限和生命周期验证仍属于 M2/M7。
+
+### 2026-08-30：Executor master 迁移验收
+
+- 依赖：`third_party/executor` 固定到 `4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9`
+  （`v0.4.0-82-g4fd8e60`）；同步更新 `dependencies.lock.json`、直接依赖表和 CycloneDX SBOM。
+- 实现：`MiraRuntime` 与 `RuntimeBaseline` 均配置 `ExecutorConfig::max_in_flight_tasks` 并直接使用
+  `submit_on_with_handle()`；删除 Mira 应用侧 admission counter、`reserve`/`post_reserved` 兼容派发、
+  独立 dispatch/business future 组合。Facade future 仍由 Runtime 保存并消费，capacity/stopping 拒绝
+  转换为明确结果。
+- 验证：`cmake --preset debug && cmake --build --preset debug -j2 && ctest --preset debug
+  --output-on-failure`，Mira 12/12 通过；上游 `test_bounded_admission` 与 `test_serial_context_stress`
+  使用 GCC 13.3、Unix Makefiles 构建并通过。
+- 限制：本轮尚未运行 Windows/Android 目标和 Mira TSAN；TSAN 补跑条件仍为 `setarch x86_64 -R`，
+  目标平台验证沿用既有 CI/NDK 记录。Executor 的 standalone Ninja 入口因本机未安装 Ninja 未执行，
+  已使用 Unix Makefiles 完成等价两项回归。
+
+### 2026-08-30：运行时实现逐段复核
+
+- 复核范围：`src/runtime/runtime.cpp`、`src/runtime/runtime_baseline.cpp` 和
+  `tests/integration/executor_lifecycle_test.cpp`；确认当前路径直接使用
+  `submit_on_with_handle()`，没有旧的 `admission_slots`、`post_reserved`、ticket/abandon 或
+  `dispatch_future` 命名，也没有空逻辑 `if` 块。容器 `reserve()` 仅用于结果集合容量预分配。
+- 修正：将 `MiraRuntime` 控制提交 future 统一命名为 `submission_future`；将基线 `wait()` 的空分支
+  改为显式消费 `mark_observed()` 返回值，行为保持不变。
+- 验证：GCC Debug、Release、ASAN、UBSAN 和 `setarch x86_64 -R` 条件下的 TSAN 均执行完整
+  `ctest`，每套 12/12 通过；`static-analysis`（clang-tidy，warnings-as-errors）构建和 CTest
+  均通过；`git diff --check`、`check_docs.py`、`check_sbom.py` 和
+  `check_platform_boundary.py` 均通过。
+- 限制：本轮 `format-check` 未执行，原因是容器没有 `clang-format`；负责人为 Mira Maintainers，
+  补跑条件为安装 clang-format 17/18/19 后运行 `cmake --build build/debug --target format-check`。

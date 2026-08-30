@@ -99,13 +99,12 @@ Platform 和 Model Provider 不创建 Mira 自有线程或返回自行管理的�
 完成消息只有在这些标识仍与 Task 当前状态匹配时才可提交结果。迟到响应会被记录为
 `StaleCompletionIgnored`，不得让终态或新 epoch 回退。
 
-M0 在 Executor 提交 facade 上确认了三个已登记边界：默认异步队列缺少总量 admission
+M0 在 Executor 提交 facade 上确认并登记了三个边界：默认异步队列缺少总量 admission
 （`EXE-20260830-001`），多 worker 的 `submit_on_with_handle()` wrapper 可能因 ticket 等待互相
 饥饿（`EXE-20260830-002`），且其栈条件变量存在 TSAN 可见的生命周期竞争
-（`EXE-20260830-003`）。在上游修复前，Mira 的兼容边界先预留 serial ticket，再通过 Executor
-tracked task 非阻塞调用 `post_reserved()`，并以独立共享 promise 结算业务结果；dispatch future
-与业务 future 均由 `ExecutionSupervisor` 保存和消费，排队取消显式 abandon ticket。该边界不创建
-线程或私有调度器。完整证据与移除条件见[Executor 反馈台账](../executor_feedback/ledger.md)。
+（`EXE-20260830-003`）。Executor `4fd8e60` 已提供总量 `max_in_flight_tasks`、非阻塞串行派发和
+共享状态结算；Mira 当前直接配置并使用这些公开能力，不再维护 ticket/post_reserved 兼容层或
+应用侧 admission 计数。完整历史证据与迁移记录见[Executor 反馈台账](../executor_feedback/ledger.md)。
 
 ### 3.5 副作用默认至多执行一次
 

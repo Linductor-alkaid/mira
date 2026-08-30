@@ -28,11 +28,11 @@ Task 状态，将产生终态复活、错 epoch 提交和 shutdown 竞态。原�
    结算 completion 提交到控制面并进入 `Quiesced`；关闭串行上下文并消费对应 future；最后从非
    worker 线程关闭 Executor。`Stopped` 不依赖关闭后的 Executor 回调。
 
-M0 验证发现当前 `submit_on_with_handle()` 在多 worker 下存在进展和同步对象生命周期问题，记录为
-`EXE-20260830-002`、`EXE-20260830-003`。在上游修复前，决策第 2 条由单一 compatibility boundary
-实现：先 reserve FIFO ticket，再由普通 Executor tracked task 非阻塞 `post_reserved()`，独立业务
-promise 在串行 callback 内结算；两类 future 都必须消费，取消必须 abandon 未发布 ticket。该兼容
-边界保持同一串行上下文和 Executor 所有权，不等同于允许自建 actor 线程或队列。
+M0 验证发现 Executor 的提交 facade 存在进展、同步对象生命周期和总量 admission 问题，记录为
+`EXE-20260830-001`、`EXE-20260830-002`、`EXE-20260830-003`。Executor `4fd8e60` 已解决这些问题；
+Mira 直接配置 `max_in_flight_tasks` 并使用 `submit_on_with_handle()`，所有返回 future 仍由 Runtime
+保存和消费。此前的 `reserve`/`post_reserved` compatibility boundary 仅保留在历史验证记录中，
+不再属于当前实现。
 
 ## 备选方案
 
@@ -45,8 +45,8 @@ promise 在串行 callback 内结算；两类 future 都必须消费，取消必
 ## 影响与风险
 
 - 控制回调慢会阻塞全部 Session，因此必须监测执行时间并禁止外部工作。
-- `submit_on` facade wrapper 在默认池等待串行回调完成；M0 必须在小线程池、突发 completion、排队
-  取消和 shutdown 下验证容量。验证失败时先登记 Executor 反馈，不静默自建线程。
+- `submit_on_with_handle()` 的容量、突发 completion、排队取消和 shutdown 语义由 Executor 原生
+  admission/serial dispatch 契约提供；Mira 必须继续保存并消费 facade future。
 - 后续若单 Runtime 多 Session 的控制吞吐成为实测瓶颈，可通过新 DEC 按 Session 分片；同一
   Session/Task 的单写者和序号语义不得改变。
 

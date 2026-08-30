@@ -46,28 +46,6 @@ BaselineResult consume_result(const std::shared_future<BaselineResult> &future,
     }
 }
 
-std::optional<BaselineResult> consume_dispatch_result(const std::shared_future<void> &future,
-                                                      std::uint64_t command_id,
-                                                      std::chrono::milliseconds timeout) {
-    if (future.wait_for(timeout) != std::future_status::ready) {
-        return make_result(BaselineResultCode::TimedOut, command_id,
-                           "timed out waiting for command dispatch");
-    }
-    try {
-        future.get();
-        return std::nullopt;
-    } catch (const executor::TaskCancelled &error) {
-        return make_result(BaselineResultCode::Cancelled, command_id, error.what());
-    } catch (const executor::ExecutorStopping &error) {
-        return make_result(BaselineResultCode::ContextStopped, command_id, error.what());
-    } catch (const std::exception &error) {
-        return make_result(BaselineResultCode::Failed, command_id, error.what());
-    } catch (...) {
-        return make_result(BaselineResultCode::Failed, command_id,
-                           "command dispatch failed with an unknown exception");
-    }
-}
-
 } // namespace
 
 class RuntimeBaseline::Impl final {
@@ -76,8 +54,6 @@ public:
 
     struct CommandEntry final {
         executor::TaskHandle handle;
-        executor::SerialExecutionContext::Ticket ticket = 0;
-        std::shared_future<void> dispatch_future;
         std::shared_future<BaselineResult> future;
         bool observed = false;
     };
@@ -117,25 +93,6 @@ public:
         return result;
     }
 
-    executor::TaskSubmission<void> dispatch(
-        executor::SerialExecutionContext::Ticket ticket, BaselineCommand command,
-        const std::shared_ptr<std::promise<BaselineResult>> &result) {
-        // EXE-20260830-002/003 compatibility boundary: an Executor tracked
-        // task performs only a non-blocking post. The serial callback owns
-        // state mutation and settles an independent business promise.
-        return executor.submit_with_handle([this, ticket, command, result] {
-            if (!control_context.post_reserved(ticket, [this, command, result] {
-                    try {
-                        result->set_value(apply(command));
-                    } catch (...) {
-                        result->set_exception(std::current_exception());
-                    }
-                })) {
-                throw executor::ExecutorStopping("Serial execution context is stopped");
-            }
-        });
-    }
-
     bool mark_observed(std::uint64_t command_id) {
         std::lock_guard lock(entries_mutex);
         const auto found = entries.find(command_id);
@@ -155,11 +112,9 @@ public:
     mutable std::mutex entries_mutex;
     std::unordered_map<std::uint64_t, CommandEntry> entries;
     std::unordered_map<std::uint64_t, TaskState> tasks;
-    std::shared_future<void> shutdown_dispatch_future;
     std::shared_future<BaselineResult> shutdown_future;
 
     std::atomic<BaselineRuntimeState> state{BaselineRuntimeState::Constructed};
-    std::atomic<std::size_t> admission_slots{0};
     std::atomic<std::size_t> admission_rejections{0};
     std::atomic<std::size_t> unobserved_results{0};
     std::atomic<std::uint64_t> control_sequence{0};
@@ -195,6 +150,7 @@ bool RuntimeBaseline::initialize() {
     executor_config.queue_capacity = impl_->config.executor_queue_capacity;
     executor_config.enable_work_stealing = impl_->config.worker_threads > 1;
     executor_config.task_graph_retention_capacity = impl_->config.max_in_flight;
+    executor_config.max_in_flight_tasks = impl_->config.max_in_flight;
     impl_->executor.set_cancellation_registry_capacity(impl_->config.max_in_flight + 1);
     const auto initialized = impl_->executor.initialize_ex(executor_config);
     if (!initialized.ok) {
@@ -220,25 +176,9 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
         return submission;
     }
 
-    // EXE-20260830-001: Executor's async queue_capacity is not a total
-    // admission bound, so Mira owns this bounded command-lifecycle counter.
-    auto slots = impl_->admission_slots.load(std::memory_order_relaxed);
-    while (slots < impl_->config.max_in_flight &&
-           !impl_->admission_slots.compare_exchange_weak(slots, slots + 1,
-                                                        std::memory_order_acq_rel,
-                                                        std::memory_order_relaxed)) {
-    }
-    if (slots >= impl_->config.max_in_flight) {
-        submission.rejection = make_result(BaselineResultCode::Rejected, command.command_id,
-                                           "runtime admission capacity exhausted");
-        impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
-        return submission;
-    }
-
     {
         std::lock_guard lock(impl_->entries_mutex);
         if (impl_->entries.contains(command.command_id)) {
-            impl_->admission_slots.fetch_sub(1, std::memory_order_release);
             submission.rejection = make_result(BaselineResultCode::Rejected, command.command_id,
                                                "duplicate command_id");
             impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
@@ -247,17 +187,29 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
     }
 
     try {
-        const auto ticket = impl_->control_context.reserve();
-        if (!ticket) {
-            throw executor::ExecutorStopping("Serial execution context is stopped");
+        auto tracked = impl_->executor.submit_on_with_handle(
+            impl_->control_context, [this, command] { return impl_->apply(command); });
+        auto result_future = tracked.future.share();
+        if (result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            try {
+                static_cast<void>(result_future.get());
+            } catch (const executor::CapacityExhaustedException &error) {
+                submission.rejection = make_result(BaselineResultCode::Rejected,
+                                                   command.command_id, error.what());
+                impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
+                return submission;
+            } catch (const executor::ExecutorStopping &error) {
+                submission.rejection = make_result(BaselineResultCode::Rejected,
+                                                   command.command_id, error.what());
+                impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
+                return submission;
+            } catch (const std::exception &) {
+                // A callback exception is an admitted command failure and is
+                // converted by wait(), not a submission rejection.
+            }
         }
-        auto result = std::make_shared<std::promise<BaselineResult>>();
-        auto result_future = result->get_future().share();
-        auto tracked = impl_->dispatch(*ticket, command, result);
         Impl::CommandEntry entry;
         entry.handle = tracked.handle;
-        entry.ticket = *ticket;
-        entry.dispatch_future = tracked.future.share();
         entry.future = std::move(result_future);
         {
             std::lock_guard lock(impl_->entries_mutex);
@@ -267,7 +219,6 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
         submission.admitted = true;
         return submission;
     } catch (const std::exception &error) {
-        impl_->admission_slots.fetch_sub(1, std::memory_order_release);
         impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
         submission.rejection =
             make_result(BaselineResultCode::Rejected, command.command_id, error.what());
@@ -277,7 +228,6 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
 
 BaselineResult RuntimeBaseline::wait(std::uint64_t command_id,
                                      std::chrono::milliseconds timeout) {
-    std::shared_future<void> dispatch_future;
     std::shared_future<BaselineResult> future;
     {
         std::lock_guard lock(impl_->entries_mutex);
@@ -285,28 +235,17 @@ BaselineResult RuntimeBaseline::wait(std::uint64_t command_id,
         if (found == impl_->entries.end()) {
             return make_result(BaselineResultCode::NotFound, command_id, "command was not found");
         }
-        dispatch_future = found->second.dispatch_future;
         future = found->second.future;
     }
-    auto dispatch_result = consume_dispatch_result(dispatch_future, command_id, timeout);
-    if (dispatch_result && dispatch_result->code != BaselineResultCode::TimedOut) {
-        std::lock_guard lock(impl_->entries_mutex);
-        const auto found = impl_->entries.find(command_id);
-        if (found != impl_->entries.end()) {
-            impl_->control_context.abandon(found->second.ticket);
-        }
-    }
-    auto result = dispatch_result ? std::move(*dispatch_result)
-                                  : consume_result(future, command_id, timeout);
-    if (result.code != BaselineResultCode::TimedOut && impl_->mark_observed(command_id)) {
-        impl_->admission_slots.fetch_sub(1, std::memory_order_release);
+    auto result = consume_result(future, command_id, timeout);
+    if (result.code != BaselineResultCode::TimedOut) {
+        static_cast<void>(impl_->mark_observed(command_id));
     }
     return result;
 }
 
 BaselineResult RuntimeBaseline::cancel(std::uint64_t command_id) {
     executor::TaskHandle handle;
-    executor::SerialExecutionContext::Ticket ticket = 0;
     {
         std::lock_guard lock(impl_->entries_mutex);
         const auto found = impl_->entries.find(command_id);
@@ -314,15 +253,11 @@ BaselineResult RuntimeBaseline::cancel(std::uint64_t command_id) {
             return make_result(BaselineResultCode::NotFound, command_id, "command was not found");
         }
         handle = found->second.handle;
-        ticket = found->second.ticket;
     }
     const auto response = impl_->executor.request_task_cancel(handle);
     if (response.result == executor::TaskCancellationResult::RequestedBeforeStart ||
         response.result == executor::TaskCancellationResult::RequestedRunning ||
         response.result == executor::TaskCancellationResult::AlreadyRequested) {
-        if (response.result == executor::TaskCancellationResult::RequestedBeforeStart) {
-            impl_->control_context.abandon(ticket);
-        }
         return make_result(BaselineResultCode::Cancelled, command_id,
                            executor::to_string(response.result));
     }
@@ -342,27 +277,25 @@ bool RuntimeBaseline::request_shutdown() {
                expected == BaselineRuntimeState::Stopped;
     }
     try {
-        const auto ticket = impl_->control_context.reserve();
-        if (!ticket) {
-            throw executor::ExecutorStopping("Serial execution context is stopped");
-        }
-        auto result = std::make_shared<std::promise<BaselineResult>>();
-        impl_->shutdown_future = result->get_future().share();
-        auto submission = impl_->executor.submit_with_handle([this, ticket = *ticket, result] {
-            if (!impl_->control_context.post_reserved(ticket, [this, result] {
-                    BaselineResult value;
-                    value.code = BaselineResultCode::Applied;
-                    value.control_sequence = ++impl_->control_sequence;
-                    value.safe_message = "runtime quiesced";
-                    impl_->state.store(BaselineRuntimeState::Quiesced,
-                                       std::memory_order_release);
-                    result->set_value(std::move(value));
-                })) {
-                result->set_exception(std::make_exception_ptr(
-                    executor::ExecutorStopping("Serial execution context is stopped")));
+        auto submission = impl_->executor.submit_on_with_handle(
+            impl_->control_context, [this] {
+                BaselineResult value;
+                value.code = BaselineResultCode::Applied;
+                value.control_sequence = ++impl_->control_sequence;
+                value.safe_message = "runtime quiesced";
+                impl_->state.store(BaselineRuntimeState::Quiesced,
+                                   std::memory_order_release);
+                return value;
+            });
+        impl_->shutdown_future = submission.future.share();
+        if (impl_->shutdown_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            try {
+                static_cast<void>(impl_->shutdown_future.get());
+            } catch (...) {
+                impl_->state.store(BaselineRuntimeState::Failed, std::memory_order_release);
+                return false;
             }
-        });
-        impl_->shutdown_dispatch_future = submission.future.share();
+        }
         return true;
     } catch (...) {
         impl_->state.store(BaselineRuntimeState::Failed, std::memory_order_release);
@@ -384,19 +317,16 @@ void RuntimeBaseline::finish_shutdown() {
     if (current == BaselineRuntimeState::Running) {
         static_cast<void>(request_shutdown());
     }
+    impl_->control_context.shutdown();
     if (impl_->shutdown_future.valid()) {
-        const auto dispatch_result = consume_dispatch_result(
-            impl_->shutdown_dispatch_future, 0, std::chrono::seconds(30));
-        if (!dispatch_result) {
-            static_cast<void>(consume_result(impl_->shutdown_future, 0, std::chrono::seconds(30)));
+        try {
+            static_cast<void>(impl_->shutdown_future.get());
+        } catch (...) {
         }
     }
 
-    impl_->control_context.shutdown();
-
     struct PendingResult final {
         std::uint64_t command_id;
-        std::shared_future<void> dispatch;
         std::shared_future<BaselineResult> result;
     };
     std::vector<PendingResult> pending;
@@ -405,20 +335,14 @@ void RuntimeBaseline::finish_shutdown() {
         pending.reserve(impl_->entries.size());
         for (const auto &[command_id, entry] : impl_->entries) {
             if (!entry.observed) {
-                pending.push_back({command_id, entry.dispatch_future, entry.future});
+                pending.push_back({command_id, entry.future});
             }
         }
     }
     for (const auto &entry : pending) {
-        const auto dispatch_result = consume_dispatch_result(
-            entry.dispatch, entry.command_id, std::chrono::seconds(30));
-        if (!dispatch_result) {
-            static_cast<void>(
-                consume_result(entry.result, entry.command_id, std::chrono::seconds(30)));
-        }
+        static_cast<void>(consume_result(entry.result, entry.command_id, std::chrono::seconds(30)));
         static_cast<void>(impl_->mark_observed(entry.command_id));
     }
-    impl_->admission_slots.store(0, std::memory_order_release);
     static_cast<void>(impl_->executor.shutdown(true));
     impl_->state.store(BaselineRuntimeState::Stopped, std::memory_order_release);
 }
@@ -426,7 +350,7 @@ void RuntimeBaseline::finish_shutdown() {
 BaselineRuntimeStatus RuntimeBaseline::status() const {
     BaselineRuntimeStatus result;
     result.state = impl_->state.load(std::memory_order_acquire);
-    result.in_flight = impl_->admission_slots.load(std::memory_order_relaxed);
+    result.in_flight = impl_->executor.get_in_flight_submissions();
     result.admission_rejections = impl_->admission_rejections.load(std::memory_order_relaxed);
     result.unobserved_results = impl_->unobserved_results.load(std::memory_order_relaxed);
     result.last_control_sequence = impl_->control_sequence.load(std::memory_order_acquire);

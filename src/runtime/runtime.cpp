@@ -41,7 +41,7 @@ struct CommandHandle::State final {
     std::promise<CommandOutcome> outcome;
     std::shared_future<CommandReceipt> receipt_future;
     std::shared_future<CommandOutcome> outcome_future;
-    std::shared_future<void> dispatch_future;
+    std::shared_future<void> submission_future;
 };
 
 CommandId CommandHandle::id() const noexcept { return state_ ? state_->id : CommandId{}; }
@@ -121,43 +121,55 @@ public:
             return make_error(ErrorCode::InvalidState, "runtime is not accepting this command");
         }
         auto handle_state = make_handle();
-        const auto ticket = control_context.reserve();
-        if (!ticket) return make_error(ErrorCode::Unavailable, "runtime control context is stopped", true);
         try {
-            auto submission = executor.submit_with_handle([this, ticket = *ticket, kind,
-                                                            callback = std::move(callback), handle_state] {
-                if (!control_context.post_reserved(ticket, [this, kind, callback = std::move(callback), handle_state] {
-                        const auto sequence = ++control_sequence;
-                        try {
-                            callback(sequence, *handle_state);
-                        } catch (const std::exception &exception) {
-                            const auto failure = make_error(ErrorCode::Internal, exception.what());
-                            set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
-                            set_outcome(handle_state, SettlementStatus::Failed, failure);
-                        } catch (...) {
-                            const auto failure = make_error(ErrorCode::Internal, "command callback failed");
-                            set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
-                            set_outcome(handle_state, SettlementStatus::Failed, failure);
-                        }
-                    })) {
-                    throw executor::ExecutorStopping("runtime control context stopped");
-                }
-            });
-            if (!submission.future.valid()) {
-                control_context.abandon(*ticket);
-                return make_error(ErrorCode::ResourceExhausted, "runtime command submission rejected", true);
+            auto submission = executor.submit_on_with_handle(
+                control_context, [this, kind, callback = std::move(callback), handle_state] {
+                    const auto sequence = ++control_sequence;
+                    try {
+                        callback(sequence, *handle_state);
+                    } catch (const std::exception &exception) {
+                        const auto failure = make_error(ErrorCode::Internal, exception.what());
+                        set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
+                        set_outcome(handle_state, SettlementStatus::Failed, failure);
+                    } catch (...) {
+                        const auto failure = make_error(ErrorCode::Internal, "command callback failed");
+                        set_receipt(handle_state, kind, ReceiptStatus::Accepted, sequence, failure);
+                        set_outcome(handle_state, SettlementStatus::Failed, failure);
+                    }
+                });
+            auto submission_future = submission.future.share();
+            if (!submission_future.valid()) {
+                return make_error(ErrorCode::ResourceExhausted,
+                                  "runtime command submission rejected", true);
             }
-            handle_state->dispatch_future = submission.future.share();
+            if (submission_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                try {
+                    submission_future.get();
+                } catch (const executor::CapacityExhaustedException &exception) {
+                    auto failure = make_error(ErrorCode::ResourceExhausted, exception.what(), true);
+                    set_receipt(handle_state, kind, ReceiptStatus::Rejected, 0, failure);
+                    set_outcome(handle_state, SettlementStatus::Failed, failure);
+                    return failure;
+                } catch (const executor::ExecutorStopping &exception) {
+                    auto failure = make_error(ErrorCode::Unavailable, exception.what(), true);
+                    set_receipt(handle_state, kind, ReceiptStatus::Rejected, 0, failure);
+                    set_outcome(handle_state, SettlementStatus::Failed, failure);
+                    return failure;
+                } catch (const std::exception &) {
+                    // The callback itself reports business failures through
+                    // the Mira outcome; only facade admission/stopping is a
+                    // submission error here.
+                }
+            }
+            handle_state->submission_future = std::move(submission_future);
             {
                 std::lock_guard lock(records_mutex);
                 commands.push_back(handle_state);
             }
             return CommandHandle(std::move(handle_state));
         } catch (const std::exception &exception) {
-            control_context.abandon(*ticket);
             return make_error(ErrorCode::ResourceExhausted, exception.what(), true);
         } catch (...) {
-            control_context.abandon(*ticket);
             return make_error(ErrorCode::ResourceExhausted, "runtime command submission rejected", true);
         }
     }
@@ -246,6 +258,7 @@ Result<void> MiraRuntime::initialize() {
     executor_config.max_threads = impl_->config.worker_threads;
     executor_config.queue_capacity = impl_->config.executor_queue_capacity;
     executor_config.task_graph_retention_capacity = impl_->config.max_in_flight;
+    executor_config.max_in_flight_tasks = impl_->config.max_in_flight;
     if (!impl_->executor.initialize(executor_config)) {
         impl_->runtime_state.store(RuntimeState::Failed, std::memory_order_release);
         return make_error(ErrorCode::Unavailable, "executor initialization failed", true);
@@ -558,16 +571,20 @@ ShutdownReport MiraRuntime::finish_shutdown() {
         }
     }
     impl_->control_context.shutdown();
+    std::vector<std::shared_future<void>> command_futures;
     {
         std::lock_guard lock(impl_->records_mutex);
+        command_futures.reserve(impl_->commands.size());
         for (const auto &command : impl_->commands) {
-            if (!command->dispatch_future.valid()) continue;
-            try {
-                command->dispatch_future.get();
-            } catch (...) {
-            }
+            if (command->submission_future.valid()) command_futures.push_back(command->submission_future);
         }
         impl_->commands.clear();
+    }
+    for (const auto &future : command_futures) {
+        try {
+            future.get();
+        } catch (...) {
+        }
     }
     const auto shutdown_result = impl_->executor.shutdown(true);
     const auto clean = shutdown_result == executor::ShutdownResult::Completed;

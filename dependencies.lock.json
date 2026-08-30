@@ -5,8 +5,8 @@
       "name": "executor",
       "source": "https://github.com/Linductor-alkaid/executor.git",
       "path": "third_party/executor",
-      "version": "0.4.0-77-g2af11a3",
-      "commit": "2af11a3466dd4a97a31d8784d01a892876aeeb1a",
+      "version": "0.4.0-82-g4fd8e60",
+      "commit": "4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
       "license": "MIT",
       "license_file": "third_party/executor/LICENSE"
     }

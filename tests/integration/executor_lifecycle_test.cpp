@@ -45,24 +45,22 @@ private:
 int main() {
     using namespace std::chrono_literals;
 
-    // EXE-20260830-002/003 compatibility dispatch supports a small multi-worker
-    // pool without blocking facade wrappers.
+    // The upstream facade now provides non-blocking serial dispatch for a
+    // small multi-worker pool.
     mira::RuntimeBaseline multi_worker({2, 2, 8});
     MIRA_CHECK(multi_worker.initialize());
     MIRA_CHECK(multi_worker.request_shutdown());
     multi_worker.finish_shutdown();
 
-    // EXE-20260830-001: Mira rejects beyond its explicit in-flight bound even
-    // though Executor's local worker queue capacity is not a total bound.
+    // Native Executor admission is now authoritative; the baseline exposes
+    // the same in-flight count after each settled command.
     mira::RuntimeBaseline bounded({1, 1, 1});
     MIRA_CHECK(bounded.initialize());
     MIRA_CHECK(bounded.submit({10, 10, 0, mira::BaselineCommandKind::Command}).admitted);
-    const auto capacity_rejection =
-        bounded.submit({11, 11, 0, mira::BaselineCommandKind::Command});
-    MIRA_CHECK(!capacity_rejection.admitted);
-    MIRA_CHECK(capacity_rejection.rejection.has_value());
-    MIRA_CHECK(capacity_rejection.rejection->code == mira::BaselineResultCode::Rejected);
     MIRA_CHECK(bounded.wait(10, 2s).code == mira::BaselineResultCode::Applied);
+    MIRA_CHECK(bounded.status().in_flight == 0);
+    MIRA_CHECK(bounded.submit({11, 11, 0, mira::BaselineCommandKind::Command}).admitted);
+    MIRA_CHECK(bounded.wait(11, 2s).code == mira::BaselineResultCode::Applied);
     MIRA_CHECK(bounded.request_shutdown());
     bounded.finish_shutdown();
 
@@ -104,7 +102,27 @@ int main() {
     direct_config.min_threads = 1;
     direct_config.max_threads = 1;
     direct_config.queue_capacity = 1;
+    direct_config.max_in_flight_tasks = 1;
     MIRA_CHECK(direct_executor.initialize(direct_config));
+
+    std::promise<void> admission_release;
+    auto admission_release_future = admission_release.get_future().share();
+    auto admission_blocker = direct_executor.submit([&admission_release_future] {
+        admission_release_future.wait();
+    });
+    auto capacity_rejection = direct_executor.submit([] { return 2; });
+    MIRA_CHECK(capacity_rejection.wait_for(2s) == std::future_status::ready);
+    bool saw_capacity = false;
+    try {
+        static_cast<void>(capacity_rejection.get());
+    } catch (const executor::CapacityExhaustedException &) {
+        saw_capacity = true;
+    }
+    MIRA_CHECK(saw_capacity);
+    admission_release.set_value();
+    admission_blocker.get();
+    MIRA_CHECK(direct_executor.get_in_flight_submissions() == 0);
+
     executor::SerialExecutionContext stopped_context;
     stopped_context.shutdown();
     auto stopped_future = direct_executor.submit_on(stopped_context, [] { return 1; });
