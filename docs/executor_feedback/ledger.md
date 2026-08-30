@@ -15,9 +15,9 @@
 
 | ID | 日期 | 状态 | 能力摘要 | Mira 影响 | 临时方案 | 上游引用 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `EXE-20260830-001` | 2026-08-30 | Open | 默认异步提交缺少总量有界 admission | M0 控制命令无法由线程池容量得到拒绝语义 | Mira Runtime 边界使用有界在途 admission | 待创建 |
-| `EXE-20260830-002` | 2026-08-30 | Open | 多 worker 串行 facade wrapper 可互相饥饿 | M0 突发 completion 无法结算 | 非阻塞 tracked dispatch | 待创建 |
-| `EXE-20260830-003` | 2026-08-30 | Open | 串行 facade wrapper 的栈同步对象存在竞争 | TSAN 报告 callback notify 与析构竞争 | 非阻塞 tracked dispatch + 独立 business promise | 待创建 |
+| `EXE-20260830-001` | 2026-08-30 | Accepted | 默认异步提交缺少总量有界 admission | M0 控制命令无法由线程池容量得到拒绝语义 | Mira Runtime 边界使用有界在途 admission | [executor#179](https://github.com/Linductor-alkaid/executor/issues/179)（master `def5200`） |
+| `EXE-20260830-002` | 2026-08-30 | Accepted | 多 worker 串行 facade wrapper 可互相饥饿 | M0 突发 completion 无法结算 | 非阻塞 tracked dispatch | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（master `def5200`） |
+| `EXE-20260830-003` | 2026-08-30 | Accepted | 串行 facade wrapper 的栈同步对象存在竞争 | TSAN 报告 callback notify 与析构竞争 | 非阻塞 tracked dispatch + 独立 business promise | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（master `def5200`） |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -72,13 +72,13 @@
 
 ### EXE-20260830-001：默认异步提交缺少总量有界 admission
 
-- 状态：`Open`
+- 状态：`Accepted`
 - 发现日期：`2026-08-30`
 - 记录人/责任人：Mira Maintainers
 - 影响组件：Mira Runtime 控制命令 admission、`ExecutionSupervisor`
 - Executor 版本或提交：`2af11a3466dd4a97a31d8784d01a892876aeeb1a`
 - 关联代码/测试：`src/runtime/runtime_baseline.cpp`、`tests/integration/executor_lifecycle_test.cpp`
-- 上游 issue/PR：待创建
+- 上游 issue/PR：[executor#179](https://github.com/Linductor-alkaid/executor/issues/179)（实现合入 executor master：`13214c0` + `def5200`）
 
 #### 使用场景
 
@@ -133,16 +133,18 @@ future 必须就绪，failure event/计数同步增加；正常完成、异常�
 | 日期 | 状态变化 | 说明 | 证据/链接 |
 | --- | --- | --- | --- |
 | 2026-08-30 | Open | M0 集成核查确认，采用单一 Runtime admission boundary | `tests/integration/executor_lifecycle_test.cpp` |
+| 2026-08-30 | Open → Proposed | 上游提案：`ExecutorConfig::max_in_flight_tasks`（facade 总量 admission、`CapacityExhaustedException` 拒绝、恰好一次释放），设计稿 `docs/design/bounded_admission.md` 已随实现合入 executor master | [executor#179](https://github.com/Linductor-alkaid/executor/issues/179) |
+| 2026-08-30 | Proposed → Accepted | 实现与文档已合入 executor master（`13214c0` 实现+测试，`def5200` 文档+网站；135 项 CTest 全绿、TSAN 0 报告）。等待可用版本后 Mira 移除 Runtime 在途计数临时方案 | [executor#179](https://github.com/Linductor-alkaid/executor/issues/179)、executor master `def5200` |
 
 ### EXE-20260830-002：多 worker 串行 facade wrapper 可互相饥饿
 
-- 状态：`Open`
+- 状态：`Accepted`
 - 发现日期：`2026-08-30`
 - 记录人/责任人：Mira Maintainers
 - 影响组件：Mira Runtime 串行控制面、`SerialExecutionContext`
 - Executor 版本或提交：`2af11a3466dd4a97a31d8784d01a892876aeeb1a`
 - 关联代码/测试：`src/runtime/runtime_baseline.cpp`、`tests/stress/runtime_ordering_stress_test.cpp`
-- 上游 issue/PR：待创建
+- 上游 issue/PR：[executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（实现合入 executor master：`13214c0` + `def5200`）
 
 #### 使用场景
 
@@ -195,16 +197,18 @@ shutdown。增加 worker 只能降低复现概率，不能证明安全；Mira �
 | 日期 | 状态变化 | 说明 | 证据/链接 |
 | --- | --- | --- | --- |
 | 2026-08-30 | Open | M0 两 worker 压测复现，改用非阻塞 tracked dispatch compatibility boundary | `tests/stress/runtime_ordering_stress_test.cpp` |
+| 2026-08-30 | Open → Proposed | 上游重构为派发/结算分离（非阻塞发布 + 串行线程直接结算）；两 worker × 10,000 突发在压测中约 1s 全部 FIFO 结算，实现已随 executor master 合入 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178) |
+| 2026-08-30 | Proposed → Accepted | 实现与文档已合入 executor master（`13214c0` 实现+测试，`def5200` 文档+网站；两 worker × 10,000 突发约 1s、1..4 worker 扫描、TSAN 0 报告）。等待可用版本后 Mira 恢复直接 `submit_on_with_handle()` | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)、executor master `def5200` |
 
 ### EXE-20260830-003：串行 facade wrapper 的栈同步对象存在竞争
 
-- 状态：`Open`
+- 状态：`Accepted`
 - 发现日期：`2026-08-30`
 - 记录人/责任人：Mira Maintainers
 - 影响组件：Mira Runtime 串行控制面、`submit_on_with_handle()`
 - Executor 版本或提交：`2af11a3466dd4a97a31d8784d01a892876aeeb1a`
 - 关联代码/测试：`src/runtime/runtime_baseline.cpp`、`tests/stress/runtime_ordering_stress_test.cpp`
-- 上游 issue/PR：待创建
+- 上游 issue/PR：[executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（实现合入 executor master：`13214c0` + `def5200`）
 
 #### 使用场景
 
@@ -258,3 +262,5 @@ future ready 语义，也不能要求应用延长栈对象生命周期。
 | 日期 | 状态变化 | 说明 | 证据/链接 |
 | --- | --- | --- | --- |
 | 2026-08-30 | Open | M0 TSAN 捕获栈条件变量竞争，切换到非阻塞 tracked dispatch boundary | `src/runtime/runtime_baseline.cpp` |
+| 2026-08-30 | Open → Proposed | 上游重构消除全部栈同步对象（共享状态 + 串行线程结算）；gcc-13 TSAN 下 4 轮 3 万+ 次串行提交 0 报告，实现已随 executor master 合入 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178) |
+| 2026-08-30 | Proposed → Accepted | 实现与文档已合入 executor master（`13214c0` 实现+测试，`def5200` 文档+网站；TSAN 0 报告，condition-variable lifetime race 按构造消除）。等待可用版本后 Mira 移除非阻塞 tracked dispatch 临时方案 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)、executor master `def5200` |

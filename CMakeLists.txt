@@ -53,6 +53,12 @@ endif()
 
 add_library(mira_core
     src/runtime/runtime_baseline.cpp
+    src/runtime/runtime.cpp
+    src/storage/event_store.cpp
+    src/storage/artifact_store.cpp
+    src/storage/action_journal.cpp
+    src/security/security.cpp
+    src/replay/replay.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 target_include_directories(mira_core

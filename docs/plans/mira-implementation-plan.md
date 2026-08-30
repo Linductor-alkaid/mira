@@ -59,7 +59,7 @@
 | 里程碑 | 目标 | 前置 | 建议发布点 | 状态 |
 | --- | --- | --- | --- | --- |
 | [M0](m0-engineering-baseline.md) | 仓库、跨平台构建组合、Executor 集成和质量基线 | 无 | 内部工程基线 | Completed |
-| [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Planned |
+| [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | M2 | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Proposed |
 | [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | Planned |
 | M4 | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Proposed |

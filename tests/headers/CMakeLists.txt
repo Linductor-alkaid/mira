@@ -9,6 +9,13 @@ foreach(HEADER IN ITEMS
         mira/version.hpp
         mira/environment.hpp
         mira/runtime_baseline.hpp
+        mira/core_contracts.hpp
+        mira/event_store.hpp
+        mira/action_journal.hpp
+        mira/artifact_store.hpp
+        mira/security.hpp
+        mira/replay.hpp
+        mira/runtime.hpp
         mira/adapters/simulator/simulator_environment.hpp)
     string(REPLACE "/" "_" TARGET_NAME "${HEADER}")
     string(REPLACE "." "_" TARGET_NAME "${TARGET_NAME}")

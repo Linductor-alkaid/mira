@@ -19,6 +19,7 @@ mira_add_test(mira_executor_integration_test integration/executor_lifecycle_test
 mira_add_test(mira_replay_test replay/deterministic_replay_test.cpp replay)
 mira_add_test(mira_stress_test stress/runtime_ordering_stress_test.cpp stress)
 mira_add_test(mira_benchmark_smoke benchmark/control_plane_benchmark.cpp benchmark)
+mira_add_test(mira_m1_core_test m1/m1_core_test.cpp contract)
 
 add_test(
     NAME mira_public_headers_test
