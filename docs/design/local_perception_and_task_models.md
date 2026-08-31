@@ -1,8 +1,8 @@
 # Mira 本地感知与任务 ONNX 模型设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1  
+> 更新日期：2026-08-31  
 > 适用范围：OCR、目标/元素检测、状态识别、模型蒸馏、ONNX 推理、模型包与评估  
 > 上位决策：[DEC-006](../decisions/DEC-006-local-perception-task-models.md)
 
@@ -362,7 +362,9 @@ struct ExportManifest {
 - OCR：teacher transcription/boxes，结合语言词典但保留原始/规范化文本两列。
 - State model：teacher explanation 不作为 target；使用固定 state schema、概率/transition label。
 - Policy candidate：可蒸馏 action distribution/价值，但必须对安全反例和 abstain 单独训练，且上线仍经
-  Planner/Policy。
+  Planner/Policy。产出 ToolIntent 候选的 policy 包必须在 manifest 声明 `bindings.tool_modules`，
+  Runtime 只接受绑定模组内且当前协商可用的工具，越权候选拒绝；绑定与协商契约见
+  [工具模组设计](tool_module_design.md)与[DEC-009](../decisions/DEC-009-tool-module-boundary.md)。
 - Feature/logit distillation 需要 teacher 输出许可和可复现版本；只保存必要输出，不保存隐藏推理。
 
 ### 9.3 Active learning
@@ -552,6 +554,7 @@ Executor 公开能力缺口时才登记 `EXE-*`，不能把 ORT 内部行为误�
 
 - [Observation、坐标与 Android Host ABI](observation_coordinate_android_host.md)
 - [Context 与 Memory](context_and_memory_design.md)
+- [工具模组设计](tool_module_design.md)
 - [威胁模型与确认协议](../security/threat_model_and_confirmation.md)
 - [Mira 实施总计划](../plans/mira-implementation-plan.md)：M5
 

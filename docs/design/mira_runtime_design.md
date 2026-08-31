@@ -1,8 +1,8 @@
 # Mira Runtime 设计文档
 
 > 状态：Active  
-> 版本：0.5
-> 更新日期：2026-08-30  
+> 版本：0.6  
+> 更新日期：2026-08-31  
 > 适用范围：Mira Core、Provider、Controller、Platform Adapter 及其宿主集成
 
 ## 1. 文档目的
@@ -143,6 +143,8 @@ flowchart LR
     Events --> Consolidator[Memory Consolidator]
     Consolidator --> Memory
     Coordinator --> Tools[ITool Registry]
+    Modules[ToolModule Registry / Negotiation] --> Tools
+    Env --> Modules
     Runtime --> Events[Event Bus and Event Store]
     Runtime --> Executor[Executor Runtime]
 
@@ -203,6 +205,7 @@ Host
     ├── ContextManager
     ├── CheckpointStore
     ├── MemoryStore and indexes
+    ├── ToolModuleRegistry
     ├── ToolRegistry
     ├── ModelProviderRegistry
     ├── PerceptionModelRegistry
@@ -410,6 +413,11 @@ public:
 
 工具由 `ToolRegistry` 显式注册。模型只能引用注册过的工具和 schema；Runtime 在调用前执行参数
 验证、权限检查和确认策略。具有副作用的 Tool 与输入动作遵循相同的至多一次和验证规则。
+
+工具以 `ToolModule` 为单位定义和注册：宿主/设备通过带 manifest 与签名的模组贡献成组工具，
+`ToolModuleRegistry` 用 `EnvironmentCapabilities` 做能力协商，fail closed 地决定整组可用性；
+LLM 的 per-request 暴露与蒸馏 policy model 的模组绑定共用同一投影，且都经 Decision/Planner/
+Policy 门禁。规范见[工具模组设计](tool_module_design.md)与[DEC-009](../decisions/DEC-009-tool-module-boundary.md)。
 
 ### 8.5 IMemory
 
@@ -1311,6 +1319,7 @@ Executor。Fake Provider 可以使用屏障和可控结果，但其异步生命�
 - 本地模型：[本地感知与任务 ONNX 模型](local_perception_and_task_models.md)
 - 实时控制：[实时控制层设计](realtime_control_design.md)
 - Provider 与 Tool：[Model Provider 与 Tool 扩展设计](model_provider_and_tool_design.md)
+- 工具模组：[工具模组设计](tool_module_design.md)
 - LLM API 协议：[LLM API 协议设计](llm-api-protocol-design.md)
 - Provider 兼容性：[OpenAI-compatible 兼容性矩阵](../compatibility/openai-compatible-matrix.md)
 - 评估：[评估与基准体系](evaluation_and_benchmark_design.md)

@@ -65,7 +65,7 @@
 | M4 | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Proposed |
 | M5 | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Proposed |
 | M6 | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Proposed |
-| M7 | Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Proposed |
+| M7 | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Proposed |
 
 关键路径为 `M0 -> M1 -> M2 -> M3 -> M4 -> M7`。M5 可在 M3 后与 M4 并行；M6 依赖 M2
 的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都不得以“后续再补取消、安全或验证”
@@ -83,6 +83,7 @@
 | [DEC-006](../decisions/DEC-006-local-perception-task-models.md) | 本地感知和任务 ONNX 模型边界 | Accepted | M5 |
 | [DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md) | LLM API 规范契约与协议方言策略 | Accepted | M3 |
 | [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) | M3 传输层依赖策略（自研 transport + 可插拔 TLS） | Accepted | M3 |
+| [DEC-009](../decisions/DEC-009-tool-module-boundary.md) | 工具模组边界与能力协商 | Accepted | M7 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。

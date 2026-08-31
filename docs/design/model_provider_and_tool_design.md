@@ -1,7 +1,7 @@
 # Mira Model Provider 与 Tool 扩展设计
 
 > 状态：Active  
-> 版本：1.2  
+> 版本：1.3  
 > 更新日期：2026-08-31   
 > 适用范围：外部 LLM/VLM、OpenAI-compatible 协议、路由、预算、Tool registry 与隔离  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
@@ -150,6 +150,11 @@ public:
 Tool name 只用于模型 schema，内部使用稳定 ID+version。注册时验证名称冲突、schema size/depth、权限、
 签名/来源和 shutdown contract。运行中不能由模型新增 native Tool。
 
+工具以 `ToolModule` 为唯一定义与注册单元进入 `ToolRegistry`：设备/宿主通过带 manifest、签名与
+能力需求的模组贡献成组工具，Runtime 用 `EnvironmentCapabilities` 协商决定整组可用性，LLM 暴露与
+蒸馏 policy model 绑定共用同一投影。模组不改变本节的单工具契约与调用协议，详见
+[工具模组设计](tool_module_design.md)与[DEC-009](../decisions/DEC-009-tool-module-boundary.md)。
+
 ## 8. Tool 调用协议
 
 1. DecisionParser 只接受当前 Task 暴露的 Tool ID/version。
@@ -194,7 +199,8 @@ OutOfProcess Tool：
 ## 11. Tool schema 暴露与 Context
 
 每次模型请求只暴露当前状态、权限和任务真正可用的 Tool schema，避免全部 registry 消耗 context
-并扩大攻击面。ContextManager 记录选择/排除理由。Tool output：
+并扩大攻击面。ContextManager 记录选择/排除理由，区分模组级理由（capability 缺失、冲突、未注册、
+revoked）与任务级理由（policy、预算、confirmation）。Tool output：
 
 - 未消费结果保留到模型产生依赖它的后续 Decision。
 - 已消费大载荷替换为 ArtifactRef/结构化摘要。
@@ -207,7 +213,8 @@ OutOfProcess Tool：
 - Task 计划绑定 Tool ID+major；minor 更新只有在向后兼容测试通过后热更新。
 - 在途 invocation 固定 registry snapshot，更新不改变其实现 identity。
 - removed/revoked Tool 不接受新调用；旧 completion 仍结算但不能开启后续 action。
-- Replay 使用 recorded ToolSpec digest/result，不加载真实 Tool。
+- Replay 使用 recorded ToolSpec digest/result，不加载真实 Tool；涉及模组时一并记录 module
+  digest，不加载真实模组。
 
 ## 13. Executor 与关闭
 
@@ -248,6 +255,7 @@ latency、sandbox/exit、idempotency 和 Verification。敏感 argument/result �
 ## 16. 关联文档
 
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
+- [工具模组设计](tool_module_design.md)
 - [威胁模型与确认协议](../security/threat_model_and_confirmation.md)
 - [Event/Artifact 与崩溃一致性](event_artifact_crash_consistency.md)
 - [Context 与 Memory](context_and_memory_design.md)
