@@ -28,9 +28,9 @@
 
 | 目标 | `mira_net_transport`（socket HTTP/SSE） | `mira_openssl_transport`（TLS 通道） | 证据 |
 | --- | --- | --- | --- |
-| Linux x86_64 | 构建 + loopback 运行测试 | 构建 + 进程内 TLS 握手/错误 CA 测试 | `mira_m3_transport_test`、`mira_m3_tls_test`（OpenSSL 3.0.13，2026-08-31） |
-| Windows x64 | CI 构建（Winsock；`ws2_32`） | 不构建（`MIRA_WITH_OPENSSL` 仅限非 Android UNIX）；https fail closed | 待 CI run 回填 |
-| Android arm64-v8a | CI 构建（POSIX sockets） | 不构建；https fail closed | 待 CI run 回填 |
+| Linux x86_64 | 构建 + loopback 运行测试 | 构建 + 进程内 TLS 握手/错误 CA 测试 | 本地 `mira_m3_transport_test`、`mira_m3_tls_test`（OpenSSL 3.0.13）与 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（2026-08-31） |
+| Windows x64 | CI 构建 + loopback 运行测试（Winsock；`ws2_32`） | 不构建（`MIRA_WITH_OPENSSL` 仅限非 Android UNIX）；https fail closed | CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（MSVC Debug/Release，2026-08-31） |
+| Android arm64-v8a | CI 构建（POSIX sockets；android job 显式构建 `mira_net_transport`） | 不构建；https fail closed | CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（NDK 26.3 arm64-v8a，2026-08-31） |
 
 TLS 通道的平台缺口、fail-closed 语义与依赖决策见
 [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)。未配置 TLS 工厂时 https 端点在

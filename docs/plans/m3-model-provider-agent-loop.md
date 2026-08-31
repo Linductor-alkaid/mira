@@ -74,10 +74,13 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   已交付：依赖决策落定（[DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)：自研
   socket transport + 可插拔 TLS 通道 + Linux OpenSSL 参考通道）；Linux 桌面完成 HTTP/1.1、chunked、
   SSE、DNS、redirect、取消与 shutdown 的 loopback 验证，TLS 完成真实握手与错误 CA fail-closed 验证
-  （`mira_m3_transport_test`、`mira_m3_tls_test`）。
-  未完成：HTTP(S) 代理未实现；Windows/Android 构建与平台 TLS 通道证据待 CI 与后续里程碑
-  （android CI 已加入 `mira_net_transport` 目标）。负责人 Mira Maintainers；补跑条件为推送后 CI 全绿
-  并为 Windows/Android 选择锁定 TLS 依赖。
+  （`mira_m3_transport_test`、`mira_m3_tls_test`）。跨平台构建证据：CI run
+  [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) 中 Windows
+  MSVC Debug/Release（含 Winsock 传输与其 loopback 测试）与 Android arm64（显式构建
+  `mira_net_transport`）均通过。
+  未完成：HTTP(S) 代理未实现；Windows/Android 平台 TLS 通道未交付（https 在这些平台 fail closed）。
+  负责人 Mira Maintainers；补跑条件为 M4 前为 Windows/Android 选择锁定 TLS 依赖并通过目标平台
+  构建与运行门禁。
 - [x] `M3-05` 实现 Executor 受管 transport：blocking worker或批准的 external-loop bridge、可解除 socket
   等待、分阶段 deadline、大小上限和确定 shutdown。（`adapters/net/socket_transport.cpp`：
   `mira-provider-io` blocking I/O worker、poll 切片取消、DNS/connect/TLS/write/first-byte/idle/total
@@ -227,8 +230,11 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
   含 canonical 坐标校验）
 - [x] Simulator 闭环覆盖成功、拒绝、incomplete、schema失败、429、取消、Takeover和Verify恢复。
   （Takeover 以 admission 拒绝路径覆盖：迟到的 takeover 语义 = 任务未准入，闭环停止派发新动作）
-- [ ] ASAN/UBSAN通过；支持环境下 TSAN通过，未支持时保留未完成项和补跑条件。
-  （2026-08-31 本地 Linux：ASAN/UBSAN/TSAN 27/27 通过；Clang 构建、clang-tidy 与 MSVC 待 CI）
+- [x] ASAN/UBSAN通过；支持环境下 TSAN通过，未支持时保留未完成项和补跑条件。
+  （本地 Linux：ASAN/UBSAN/TSAN 27/27 通过；CI run
+  [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) 复验
+  ASAN/UBSAN/TSAN、Clang Debug/Release、clang-tidy/clang-format 18.1.8、MSVC Debug/Release 与
+  Android arm64 全部通过）
 - [x] Shutdown 后无在途 transport、timer、future、callback或第三方 SDK worker；迟到结果不改变终态。
   （`mira_m3_transport_test` 的 shutdown 结算/入队拒绝用例；gateway admission 用例；无第三方 SDK
   worker——自研 transport 的 worker 经 `WorkerHandle` join）
@@ -273,7 +279,20 @@ transport 层 SSRF/allowlist/redirect 凭证剥离/取消/shutdown/上限/deadli
 `mira_m3_agent_loop_test`；预算与重试表驱动在 `mira_m3_supervisor_budget_test`；回放无副作用与
 tombstone 在 `mira_m3_replay_test`。
 
-限制与待补跑：本机无 `clang++`/`clang-tidy`，Clang 构建、静态分析与 MSVC/NDK 构建待 CI
-（负责人 Mira Maintainers，补跑条件为推送后观察 CI run 全绿并回填 run 链接）；`M3-04` 代理
-子项、`M3-15` upload 生命周期与 `M3-19` 互操作未完成（原因与补跑条件见工作项注记）。
+限制与待补跑：`M3-04` 代理子项、Windows/Android TLS 通道、`M3-15` upload 生命周期与 `M3-19`
+互操作未完成（原因与补跑条件见工作项注记）。
+
+2026-08-31：CI 收敛记录。首推提交 `99f28c1` 的 run
+[`33329362206`](https://github.com/Linductor-alkaid/mira/actions/runs/33329362206) 中 Windows
+Debug/Release、Linux GCC、全部 sanitizer 通过；Linux/Clang 与 Android 因
+`-Wunused-const-variable` 失败，quality 的 clang-tidy 报出 branch-clone、无效 move、optional
+往返转换等 8 项。修复提交 `4e05adb`、`9f5adfa`、`65273f9`、`dd47246`、`64a9689` 依次消除
+clang/clang-tidy 逐层暴露的问题（无效 move、moved-from 使用、死存储、trivially-copyable move、
+noexcept 相等比较等），对应 runs `33329703785`、`33330168349`、`33330792453`、`33331083224`、
+`33331850562` 均仅余 quality 一项且逐次收敛。最终修复提交 `f96d170`（connect 路径死存储）后
+run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) 全部
+11 个 job 通过：Linux GCC/Clang Debug+Release、Windows Debug/Release（含 Winsock 传输目标与
+m3 loopback 测试）、Android arm64（含 `mira_net_transport`）、ASAN/UBSAN/TSAN 与 quality
+（clang-tidy、clang-format 18.1.8、docs、SBOM、平台边界）。中间失败均由静态检查驱动，无行为
+变更；据此把退出条件中的 sanitizer/Clang/MSVC 项与 `M3-04` 的跨平台构建证据回填为已验证。
 
