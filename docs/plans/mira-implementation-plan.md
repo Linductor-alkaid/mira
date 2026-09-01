@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers  
-> 更新日期：2026-08-31  
+> 更新日期：2026-09-01
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)
 
@@ -62,14 +62,20 @@
 | [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
 | [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | In Progress（实现与本地验证完成；interop/代理/upload 子项开放） |
-| M4 | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Proposed |
-| M5 | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Proposed |
-| M6 | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Proposed |
-| M7 | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Proposed |
+| [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Planned |
+| [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Planned |
+| [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Planned |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Planned |
 
-关键路径为 `M0 -> M1 -> M2 -> M3 -> M4 -> M7`。M5 可在 M3 后与 M4 并行；M6 依赖 M2
-的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都不得以“后续再补取消、安全或验证”
+主干依赖先经过 `M0 -> M1 -> M2 -> M3`，随后分为 `M3 -> M4` 与 `M3 -> M5 -> M6` 两条
+可并行交付链，最终在 M7 汇合；实际关键路径由 M4 与 M5/M6 两条链的完成时间决定。M6 同时复用
+M2 的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都不得以“后续再补取消、安全或验证”
 关闭。
+
+M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
+文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 当前开放的代理、
+Windows/Android TLS、远端 upload/delete 和真实 Provider 互操作仍由 `M3-04`、`M3-15`、`M3-19`
+原编号跟踪；后续里程碑不得通过复制或改号绕过 M3 退出条件。
 
 ## 5. 首批架构决策
 
