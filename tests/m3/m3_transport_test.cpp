@@ -1,7 +1,7 @@
 #include "support/m3_support.hpp"
 
-#include <executor/executor.hpp>
 #include "support/test.hpp"
+#include <executor/executor.hpp>
 
 #include "socket_transport.hpp"
 #include <mira/model_contracts.hpp>
@@ -80,11 +80,9 @@ int happy_path_sync_and_sse() {
         server.close_client();
     });
     TransportTrace trace;
-    auto response = transport.execute(request, loopback_limits(), make_context(),
-                                      [&](std::string_view chunk) {
-                                          received_body.append(chunk.data(), chunk.size());
-                                      },
-                                      trace);
+    auto response = transport.execute(
+        request, loopback_limits(), make_context(),
+        [&](std::string_view chunk) { received_body.append(chunk.data(), chunk.size()); }, trace);
     server_task.get();
     const auto &body = received_body;
     MIRA_CHECK(response.has_value());
@@ -121,8 +119,7 @@ int secrets_arrive_at_socket_only() {
         server.write_all("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n");
         server.close_client();
     });
-    auto response =
-        transport.execute(request, loopback_limits(), make_context(), nullptr, trace);
+    auto response = transport.execute(request, loopback_limits(), make_context(), nullptr, trace);
     server_task.get();
     MIRA_CHECK(response.has_value());
     // The credential reached the socket boundary...
@@ -150,7 +147,8 @@ int ssrf_and_allowlist_fail_closed() {
 
     // Private ranges beyond loopback are denied too.
     request.url = "http://10.0.0.1/x";
-    auto private_denied = transport.execute(request, TransportLimits{}, make_context(), nullptr, trace);
+    auto private_denied =
+        transport.execute(request, TransportLimits{}, make_context(), nullptr, trace);
     MIRA_CHECK(!private_denied.has_value());
 
     // Non-http schemes and credentials-in-URL are policy failures.
@@ -175,7 +173,8 @@ int ssrf_and_allowlist_fail_closed() {
     request.url = "http://this-host-does-not-exist.invalid./x";
     auto dns = transport.execute(request, TransportLimits{}, make_context(), nullptr, trace);
     MIRA_CHECK(!dns.has_value());
-    MIRA_CHECK(dns.error().domain_code == static_cast<std::int32_t>(ModelDomainCode::TransportFailed));
+    MIRA_CHECK(dns.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::TransportFailed));
     transport.shutdown();
     return 0;
 }
@@ -246,6 +245,90 @@ int redirects_revalidate_policy_and_drop_credentials() {
     loop_task.get();
     MIRA_CHECK(!chain.has_value());
     MIRA_CHECK(chain.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::EndpointPolicyDenied));
+    transport.shutdown();
+    return 0;
+}
+
+int proxy_paths_are_explicit_and_credentials_stay_at_proxy() {
+    ExecutorFixture fixture;
+    auto secrets = std::make_shared<MapSecretResolver>();
+    secrets->set("proxy-credential", "Basic cHJveHk6c2VjcmV0");
+    SocketHttpTransport transport(fixture.executor(), secrets);
+    MIRA_CHECK(transport.start());
+
+    // HTTP proxy requests use absolute-form and carry the proxy credential,
+    // while the configured destination is still independently SSRF-checked.
+    testing::ScriptedHttpServer proxy;
+    MIRA_CHECK(proxy.valid());
+    std::string proxy_request;
+    auto proxy_task = fixture.executor().submit_auto([&proxy, &proxy_request] {
+        if (!proxy.accept_client(std::chrono::milliseconds{5'000})) {
+            return;
+        }
+        proxy_request = proxy.read_request(std::chrono::milliseconds{2'000});
+        proxy.write_all("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        proxy.close_client();
+    });
+    HttpRequest request;
+    request.method = "POST";
+    request.url = "http://127.0.0.1:9/v1/responses?mode=test";
+    request.body = "{}";
+    TransportLimits limits = loopback_limits();
+    limits.proxy = ModelProxyConfig{"http://127.0.0.1:" + std::to_string(proxy.port()),
+                                    SecretRef{"proxy-credential"},
+                                    true,
+                                    {"127.0.0.1"}};
+    TransportTrace trace;
+    auto response = transport.execute(request, limits, make_context(), nullptr, trace);
+    proxy_task.get();
+    MIRA_CHECK(response.has_value());
+    MIRA_CHECK(proxy_request.find("POST http://127.0.0.1:9/v1/responses?mode=test HTTP/1.1") == 0);
+    MIRA_CHECK(proxy_request.find("Proxy-Authorization: Basic cHJveHk6c2VjcmV0") !=
+               std::string::npos);
+
+    // HTTPS begins with CONNECT. A 407 is classified as authentication
+    // failure before any model request bytes are written, and no secret is
+    // copied into the returned error.
+    testing::ScriptedHttpServer rejecting_proxy;
+    std::string connect_request;
+    auto connect_task = fixture.executor().submit_auto([&rejecting_proxy, &connect_request] {
+        if (!rejecting_proxy.accept_client(std::chrono::milliseconds{5'000})) {
+            return;
+        }
+        connect_request = rejecting_proxy.read_request(std::chrono::milliseconds{2'000}, false);
+        rejecting_proxy.write_all(
+            "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n");
+        rejecting_proxy.close_client();
+    });
+    request.url = "https://127.0.0.1:443/v1/responses";
+    limits.proxy->url = "http://127.0.0.1:" + std::to_string(rejecting_proxy.port());
+    trace = TransportTrace{};
+    auto rejected = transport.execute(request, limits, make_context(), nullptr, trace);
+    connect_task.get();
+    MIRA_CHECK(!rejected.has_value());
+    MIRA_CHECK(rejected.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::AuthenticationFailed));
+    MIRA_CHECK(!trace.write_started);
+    MIRA_CHECK(connect_request.find("CONNECT 127.0.0.1:443 HTTP/1.1") == 0);
+    MIRA_CHECK(connect_request.find("Proxy-Authorization: Basic cHJveHk6c2VjcmV0") !=
+               std::string::npos);
+    MIRA_CHECK(rejected.error().safe_message.find("cHJveHk6c2VjcmV0") == std::string::npos);
+
+    // Proxy policy is separate from destination policy.
+    limits.proxy->allowed_hosts = {"proxy.example.test"};
+    auto denied = transport.execute(request, limits, make_context(), nullptr, trace);
+    MIRA_CHECK(!denied.has_value());
+    MIRA_CHECK(denied.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::EndpointPolicyDenied));
+
+    // Provider-supplied organization/project metadata cannot inject a second
+    // target or proxy header at serialization time.
+    request.headers.emplace_back("OpenAI-Project", "safe\r\nProxy-Authorization: stolen");
+    limits.proxy.reset();
+    auto injected = transport.execute(request, limits, make_context(), nullptr, trace);
+    MIRA_CHECK(!injected.has_value());
+    MIRA_CHECK(injected.error().domain_code ==
                static_cast<std::int32_t>(ModelDomainCode::EndpointPolicyDenied));
     transport.shutdown();
     return 0;
@@ -323,10 +406,9 @@ int shutdown_settles_pending_exchanges() {
         server.close_client();
     });
     // The exchange itself runs as an Executor-managed finite task.
-    auto pending = fixture.executor().submit_auto(
-        [&transport, &request, &limits, &trace] {
-            return transport.execute(request, limits, make_context(), nullptr, trace);
-        });
+    auto pending = fixture.executor().submit_auto([&transport, &request, &limits, &trace] {
+        return transport.execute(request, limits, make_context(), nullptr, trace);
+    });
     std::this_thread::sleep_for(std::chrono::milliseconds{300});
     transport.shutdown();
     auto settled = pending.get();
@@ -358,9 +440,8 @@ int chunked_and_oversize_bodies() {
                 return;
             }
             (void)server.read_request(std::chrono::milliseconds{2'000});
-            server.write_all(
-                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-                "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n");
+            server.write_all("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                             "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n");
             server.close_client();
         });
         HttpRequest request;
@@ -461,6 +542,9 @@ int main() {
         return status;
     }
     if (const int status = redirects_revalidate_policy_and_drop_credentials(); status != 0) {
+        return status;
+    }
+    if (const int status = proxy_paths_are_explicit_and_credentials_stay_at_proxy(); status != 0) {
         return status;
     }
     if (const int status = cancellation_releases_socket_waits(); status != 0) {

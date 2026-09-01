@@ -372,7 +372,8 @@ class ScriptedHttpServer final {
     }
 
     // Reads whatever the client sent within the timeout.
-    [[nodiscard]] std::string read_request(std::chrono::milliseconds timeout) {
+    [[nodiscard]] std::string read_request(std::chrono::milliseconds timeout,
+                                           bool wait_for_body = true) {
         std::string received;
         if (client_ == MIRA_TEST_INVALID_SOCKET) {
             return received;
@@ -382,6 +383,9 @@ class ScriptedHttpServer final {
         char buffer[4096];
         for (;;) {
             if (received.find("\r\n\r\n") != std::string::npos) {
+                if (!wait_for_body) {
+                    break;
+                }
                 // Wait briefly for any body bytes following the headers.
                 const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                     deadline - std::chrono::steady_clock::now());

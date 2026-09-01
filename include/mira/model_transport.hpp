@@ -41,6 +41,10 @@ struct TransportLimits final {
     bool allow_private_endpoints = false;
     // When non-empty, every hop (including redirects) must match a host.
     std::vector<std::string> allowed_hosts;
+    // HTTP uses absolute-form requests. HTTPS establishes a CONNECT tunnel
+    // before the verified TLS handshake. Proxy and destination policies are
+    // evaluated independently.
+    std::optional<ModelProxyConfig> proxy;
 };
 
 struct HttpResponseInfo final {

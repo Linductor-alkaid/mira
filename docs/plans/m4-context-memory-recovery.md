@@ -59,7 +59,7 @@ M4 完成后，Mira 能证明恢复不会盲目重放外部副作用，Memory �
   [DEC-002](../decisions/DEC-002-public-contract-versioning.md)、
   [DEC-003](../decisions/DEC-003-event-sourced-persistence.md)、
   [DEC-004](../decisions/DEC-004-security-authority-confirmation.md)、
-  [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)
+  [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)
 
 ## 4. 工作项
 

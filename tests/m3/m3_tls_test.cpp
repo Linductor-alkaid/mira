@@ -2,13 +2,17 @@
 // self-signed certificate. Built only when the OpenSSL adapter target
 // exists; skipped (not faked) elsewhere.
 
+#include "socket_transport.hpp"
 #include "support/m3_support.hpp"
 #include "support/test.hpp"
-#include "socket_transport.hpp"
+#ifdef MIRA_TEST_MBEDTLS
+#include "mbedtls_tls.hpp"
+#else
 #include "openssl_tls.hpp"
+#endif
 
-#include <mira/model_contracts.hpp>
 #include <executor/executor.hpp>
+#include <mira/model_contracts.hpp>
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -30,6 +34,12 @@ using namespace mira;
 using namespace mira::adapters::net;
 using namespace mira::testing;
 
+#ifdef MIRA_TEST_MBEDTLS
+using TestTlsChannelFactory = MbedTlsChannelFactory;
+#else
+using TestTlsChannelFactory = OpenSslTlsChannelFactory;
+#endif
+
 // Minimal self-signed certificate generation for the test CA.
 class TestCertificate final {
   public:
@@ -45,8 +55,7 @@ class TestCertificate final {
         X509_set_pubkey(x509_.get(), pkey_.get());
         X509_NAME *name = X509_get_subject_name(x509_.get());
         X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-                                   reinterpret_cast<const unsigned char *>("127.0.0.1"), -1, -1,
-                                   0);
+                                   reinterpret_cast<const unsigned char *>("127.0.0.1"), -1, -1, 0);
         X509_set_issuer_name(x509_.get(), name);
         X509_sign(x509_.get(), pkey_.get(), EVP_sha256());
     }
@@ -100,10 +109,24 @@ class TlsServer final {
 
     // Accepts one client, handshakes, reads the request, answers with a
     // fixed body over TLS.
-    [[nodiscard]] bool serve_one(const TestCertificate &certificate, std::string &seen_request) {
+    [[nodiscard]] bool serve_one(const TestCertificate &certificate, std::string &seen_request,
+                                 std::string *seen_connect = nullptr) {
         client_ = ::accept(listener_, nullptr, nullptr);
         if (client_ < 0) {
             return false;
+        }
+        if (seen_connect != nullptr) {
+            char connect_buffer[4096];
+            const auto connect_bytes = ::recv(client_, connect_buffer, sizeof(connect_buffer), 0);
+            if (connect_bytes <= 0) {
+                return false;
+            }
+            seen_connect->assign(connect_buffer, static_cast<std::size_t>(connect_bytes));
+            const std::string established =
+                "HTTP/1.1 200 Connection Established\r\nContent-Length: 0\r\n\r\n";
+            if (::send(client_, established.data(), established.size(), MSG_NOSIGNAL) <= 0) {
+                return false;
+            }
         }
         ctx_.reset(SSL_CTX_new(TLS_server_method()));
         if (ctx_ == nullptr) {
@@ -169,16 +192,14 @@ int happy_path_over_tls() {
         }
     }
 
-    auto factory = std::make_shared<OpenSslTlsChannelFactory>(ca_path.string());
+    auto factory = std::make_shared<TestTlsChannelFactory>(ca_path.string());
     MIRA_CHECK(factory->initialize());
     auto secrets = std::make_shared<MapSecretResolver>();
     SocketHttpTransport transport(ex, secrets, factory);
     MIRA_CHECK(transport.start());
 
     std::string seen_request;
-    auto server_task = ex.submit_auto([&] {
-        (void)server.serve_one(certificate, seen_request);
-    });
+    auto server_task = ex.submit_auto([&] { (void)server.serve_one(certificate, seen_request); });
 
     HttpRequest request;
     request.method = "POST";
@@ -234,7 +255,7 @@ int untrusted_certificate_fails_closed() {
             std::fclose(file);
         }
     }
-    auto factory = std::make_shared<OpenSslTlsChannelFactory>(ca_path.string());
+    auto factory = std::make_shared<TestTlsChannelFactory>(ca_path.string());
     MIRA_CHECK(factory->initialize());
     auto secrets = std::make_shared<MapSecretResolver>();
     SocketHttpTransport transport(ex, secrets, factory);
@@ -264,6 +285,71 @@ int untrusted_certificate_fails_closed() {
     return 0;
 }
 
+int https_connect_proxy_then_verified_tls() {
+    executor::Executor ex;
+    executor::ExecutorConfig config;
+    config.min_threads = 2;
+    config.max_threads = 2;
+    config.queue_capacity = 32;
+    ex.initialize(config);
+
+    TestCertificate certificate;
+    MIRA_CHECK(certificate.valid());
+    TlsServer proxy;
+    MIRA_CHECK(proxy.valid());
+    const auto ca_path = std::filesystem::temp_directory_path() /
+                         ("mira-test-proxy-ca-" + std::to_string(::getpid()) + ".pem");
+    {
+        FILE *file = std::fopen(ca_path.string().c_str(), "wb");
+        if (file != nullptr) {
+            PEM_write_X509(file, certificate.cert());
+            std::fclose(file);
+        }
+    }
+    auto factory = std::make_shared<TestTlsChannelFactory>(ca_path.string());
+    MIRA_CHECK(factory->initialize());
+    auto secrets = std::make_shared<MapSecretResolver>();
+    secrets->set("proxy-auth", "Basic dGVzdDp0ZXN0");
+    SocketHttpTransport transport(ex, secrets, factory);
+    MIRA_CHECK(transport.start());
+
+    std::string seen_connect;
+    std::string seen_request;
+    auto server_task =
+        ex.submit_auto([&] { (void)proxy.serve_one(certificate, seen_request, &seen_connect); });
+    HttpRequest request;
+    request.method = "POST";
+    request.url = "https://127.0.0.1:" + std::to_string(proxy.port()) + "/v1/responses";
+    request.body = R"({"model":"m"})";
+    TransportLimits limits;
+    limits.deadlines.connect = std::chrono::milliseconds{3'000};
+    limits.deadlines.total = std::chrono::milliseconds{8'000};
+    limits.allow_private_endpoints = true;
+    limits.proxy = ModelProxyConfig{"http://127.0.0.1:" + std::to_string(proxy.port()),
+                                    SecretRef{"proxy-auth"},
+                                    true,
+                                    {"127.0.0.1"}};
+    OperationContext operation;
+    operation.operation = OperationId::generate();
+    operation.started_at = Timestamp::now();
+    TransportTrace trace;
+    std::string body;
+    auto response = transport.execute(
+        request, limits, operation,
+        [&](std::string_view chunk) { body.append(chunk.data(), chunk.size()); }, trace);
+    server_task.get();
+    MIRA_CHECK(response.has_value());
+    MIRA_CHECK(body == R"({"status":"completed","id":"tls"})");
+    MIRA_CHECK(seen_connect.find("CONNECT 127.0.0.1:") == 0);
+    MIRA_CHECK(seen_connect.find("Proxy-Authorization: Basic dGVzdDp0ZXN0") != std::string::npos);
+    MIRA_CHECK(seen_request.find("POST /v1/responses") == 0);
+    MIRA_CHECK(seen_request.find("Proxy-Authorization") == std::string::npos);
+    std::filesystem::remove(ca_path);
+    transport.shutdown();
+    static_cast<void>(ex.shutdown(true));
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -271,6 +357,9 @@ int main() {
         return status;
     }
     if (const int status = untrusted_certificate_fails_closed(); status != 0) {
+        return status;
+    }
+    if (const int status = https_connect_proxy_then_verified_tls(); status != 0) {
         return status;
     }
     return 0;

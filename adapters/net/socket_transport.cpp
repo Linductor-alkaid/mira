@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -52,6 +53,12 @@ constexpr std::size_t kMaxHeaderBlockBytes = 64 * 1024;
     return lowered;
 }
 
+[[nodiscard]] bool valid_header_name(const std::string &name) {
+    return !name.empty() && std::all_of(name.begin(), name.end(), [](unsigned char ch) {
+        return std::isalnum(ch) != 0 || ch == '-' || ch == '_';
+    });
+}
+
 #ifdef _WIN32
 class WinsockGuard final {
   public:
@@ -95,7 +102,9 @@ void close_native(std::intptr_t handle) noexcept {
 #endif
 }
 
-void close_socket(SocketHandle socket) noexcept { close_native(static_cast<std::intptr_t>(socket)); }
+void close_socket(SocketHandle socket) noexcept {
+    close_native(static_cast<std::intptr_t>(socket));
+}
 
 [[nodiscard]] bool address_is_private(const sockaddr_storage &address) {
     if (address.ss_family == AF_INET) {
@@ -223,8 +232,7 @@ std::string SocketHttpTransport::UrlParts::origin() const {
     return scheme + "://" + host + ":" + std::to_string(port);
 }
 
-SocketHttpTransport::Exchange::Exchange(std::intptr_t handle,
-                                        std::unique_ptr<ITlsChannel> channel)
+SocketHttpTransport::Exchange::Exchange(std::intptr_t handle, std::unique_ptr<ITlsChannel> channel)
     : socket(handle), tls(std::move(channel)) {}
 
 SocketHttpTransport::Exchange::Exchange(Exchange &&other) noexcept
@@ -242,15 +250,15 @@ void SocketHttpTransport::Exchange::close() noexcept {
     socket = -1;
 }
 
-Result<void> SocketHttpTransport::Exchange::wait(
-    bool readable, std::chrono::steady_clock::time_point until,
-    const std::function<bool()> &cancelled) const {
+Result<void> SocketHttpTransport::Exchange::wait(bool readable,
+                                                 std::chrono::steady_clock::time_point until,
+                                                 const std::function<bool()> &cancelled) const {
     return poll_wait(socket, readable, until, cancelled);
 }
 
-Result<void> SocketHttpTransport::Exchange::handshake(
-    std::chrono::steady_clock::time_point until,
-    const std::function<bool()> &cancelled) const {
+Result<void>
+SocketHttpTransport::Exchange::handshake(std::chrono::steady_clock::time_point until,
+                                         const std::function<bool()> &cancelled) const {
     for (;;) {
         bool want_read = false;
         bool want_write = false;
@@ -268,9 +276,10 @@ Result<void> SocketHttpTransport::Exchange::handshake(
     }
 }
 
-Result<std::size_t> SocketHttpTransport::Exchange::write_all(
-    const std::string &data, std::chrono::steady_clock::time_point until,
-    const std::function<bool()> &cancelled) const {
+Result<std::size_t>
+SocketHttpTransport::Exchange::write_all(const std::string &data,
+                                         std::chrono::steady_clock::time_point until,
+                                         const std::function<bool()> &cancelled) const {
     std::size_t written = 0;
     const auto *bytes = reinterpret_cast<const std::byte *>(data.data());
     while (written < data.size()) {
@@ -297,13 +306,12 @@ Result<std::size_t> SocketHttpTransport::Exchange::write_all(
             return ready.error();
         }
 #ifdef _WIN32
-        const int status =
-            ::send(native(socket), data.data() + written,
-                   static_cast<int>(data.size() - written), 0);
+        const int status = ::send(native(socket), data.data() + written,
+                                  static_cast<int>(data.size() - written), 0);
         const bool would_block = status == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK;
 #else
-        const ssize_t status = ::send(native(socket), bytes + written, data.size() - written,
-                                      MSG_NOSIGNAL);
+        const ssize_t status =
+            ::send(native(socket), bytes + written, data.size() - written, MSG_NOSIGNAL);
         const bool would_block = status < 0 && (errno == EAGAIN || errno == EWOULDBLOCK);
 #endif
         if (status <= 0) {
@@ -317,9 +325,10 @@ Result<std::size_t> SocketHttpTransport::Exchange::write_all(
     return written;
 }
 
-Result<std::size_t> SocketHttpTransport::Exchange::read_some(
-    std::byte *data, std::size_t capacity, std::chrono::steady_clock::time_point until,
-    const std::function<bool()> &cancelled) const {
+Result<std::size_t>
+SocketHttpTransport::Exchange::read_some(std::byte *data, std::size_t capacity,
+                                         std::chrono::steady_clock::time_point until,
+                                         const std::function<bool()> &cancelled) const {
     for (;;) {
         if (tls != nullptr) {
             bool want_read = false;
@@ -455,9 +464,9 @@ bool SocketHttpTransport::start() {
     }
     for (std::size_t index = 0; index < config_.worker_count; ++index) {
         executor::BlockingIoConfig worker_config;
-        worker_config.thread_name =
-            config_.worker_count == 1 ? config_.worker_name
-                                      : config_.worker_name + "-" + std::to_string(index);
+        worker_config.thread_name = config_.worker_count == 1
+                                        ? config_.worker_name
+                                        : config_.worker_name + "-" + std::to_string(index);
         auto handle = executor_.start_worker(executor::BlockingWorkerSpec{
             worker_config.thread_name, worker_config, std::make_unique<Worker>(*this)});
         if (!handle.started()) {
@@ -569,9 +578,9 @@ namespace {
     }
 
     const auto authority_end = url.find('/', scheme_end + 3);
-    std::string authority = url.substr(
-        scheme_end + 3,
-        authority_end == std::string::npos ? std::string::npos : authority_end - scheme_end - 3);
+    std::string authority = url.substr(scheme_end + 3, authority_end == std::string::npos
+                                                           ? std::string::npos
+                                                           : authority_end - scheme_end - 3);
     if (authority.empty() || authority.find('@') != std::string::npos) {
         return transport_error(ModelDomainCode::EndpointPolicyDenied,
                                "url authority is empty or carries credentials", false);
@@ -631,6 +640,23 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
         total_deadline = *job.deadline;
     }
 
+    if (job.request.method.empty() ||
+        !std::all_of(job.request.method.begin(), job.request.method.end(),
+                     [](unsigned char ch) { return ch >= 'A' && ch <= 'Z'; })) {
+        return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                               "http method contains invalid characters", false);
+    }
+    for (const auto &header : job.request.headers) {
+        const auto lowered = lowercase_name(header.first);
+        if (!valid_header_name(header.first) || header.second.find('\r') != std::string::npos ||
+            header.second.find('\n') != std::string::npos || lowered == "host" ||
+            lowered == "content-length" || lowered == "connection" || lowered == "authorization" ||
+            lowered == "proxy-authorization") {
+            return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                                   "http request header is invalid or reserved", false);
+        }
+    }
+
     std::optional<std::string> authorization;
     if (job.request.authorization.has_value()) {
         auto secret = secrets_->resolve(*job.request.authorization);
@@ -638,6 +664,20 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
             return secret.error();
         }
         authorization = std::move(secret).value();
+    }
+
+    std::optional<std::string> proxy_authorization;
+    if (job.limits.proxy.has_value() && job.limits.proxy->authorization.has_value()) {
+        auto secret = secrets_->resolve(*job.limits.proxy->authorization);
+        if (!secret) {
+            return secret.error();
+        }
+        proxy_authorization = std::move(secret).value();
+        if (proxy_authorization->find('\r') != std::string::npos ||
+            proxy_authorization->find('\n') != std::string::npos) {
+            return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                                   "proxy authorization contains invalid characters", false);
+        }
     }
 
     auto parts = parse_url(job.request.url);
@@ -655,43 +695,84 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
                                "endpoint host is not in the allowlist", false);
     }
 
-    // DNS resolution. The resolver call itself is not interruptible; the
-    // stage budget is enforced by measurement afterwards.
-    const auto dns_began = std::chrono::steady_clock::now();
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-    addrinfo *raw_addresses = nullptr;
-    const std::string port_text = std::to_string(parts.value().port);
-    const int dns_status =
-        ::getaddrinfo(parts.value().host.c_str(), port_text.c_str(), &hints, &raw_addresses);
-    if (dns_status != 0) {
-        return transport_error(ModelDomainCode::TransportFailed, "dns resolution failed", true);
-    }
-    std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> addresses(raw_addresses, &::freeaddrinfo);
-    if (std::chrono::steady_clock::now() - dns_began > job.limits.deadlines.dns) {
-        return transport_error(ModelDomainCode::ModelDeadlineExceeded,
-                               "dns resolution exceeded its deadline", false);
+    const auto resolve_candidates =
+        [&](const UrlParts &subject, bool allow_private,
+            const char *label) -> Result<std::vector<sockaddr_storage>> {
+        // getaddrinfo itself is not interruptible; enforce its budget by
+        // measurement and keep it on the transport's Executor worker.
+        const auto dns_began = std::chrono::steady_clock::now();
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+        addrinfo *raw_addresses = nullptr;
+        const std::string port_text = std::to_string(subject.port);
+        const int dns_status =
+            ::getaddrinfo(subject.host.c_str(), port_text.c_str(), &hints, &raw_addresses);
+        if (dns_status != 0) {
+            return transport_error(ModelDomainCode::TransportFailed,
+                                   std::string(label) + " dns resolution failed", true);
+        }
+        std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> addresses(raw_addresses,
+                                                                       &::freeaddrinfo);
+        if (std::chrono::steady_clock::now() - dns_began > job.limits.deadlines.dns) {
+            return transport_error(ModelDomainCode::ModelDeadlineExceeded,
+                                   std::string(label) + " dns resolution exceeded its deadline",
+                                   false);
+        }
+        std::vector<sockaddr_storage> resolved;
+        for (auto *entry = addresses.get(); entry != nullptr; entry = entry->ai_next) {
+            sockaddr_storage storage{};
+            if (entry->ai_addrlen > sizeof(storage)) {
+                continue;
+            }
+            std::memcpy(&storage, entry->ai_addr, entry->ai_addrlen);
+            if (!allow_private && address_is_private(storage)) {
+                continue;
+            }
+            resolved.push_back(storage);
+        }
+        if (resolved.empty()) {
+            return transport_error(
+                ModelDomainCode::EndpointPolicyDenied,
+                std::string("no policy-compliant address was resolved for the ") + label, false);
+        }
+        return resolved;
+    };
+
+    // Always resolve and validate the destination, even when the proxy will
+    // perform the actual connect, so a proxy cannot become an SSRF bypass.
+    auto destination_candidates =
+        resolve_candidates(parts.value(), job.limits.allow_private_endpoints, "endpoint");
+    if (!destination_candidates) {
+        return destination_candidates.error();
     }
 
-    // SSRF posture: every resolved address is validated before connect.
-    std::vector<sockaddr_storage> candidates;
-    for (auto *entry = addresses.get(); entry != nullptr; entry = entry->ai_next) {
-        sockaddr_storage storage{};
-        if (entry->ai_addrlen > sizeof(storage)) {
-            continue;
+    std::optional<UrlParts> proxy_parts;
+    std::vector<sockaddr_storage> candidates = std::move(destination_candidates).value();
+    if (job.limits.proxy.has_value()) {
+        auto parsed_proxy = parse_url(job.limits.proxy->url);
+        if (!parsed_proxy) {
+            return parsed_proxy.error();
         }
-        std::memcpy(&storage, entry->ai_addr, entry->ai_addrlen);
-        if (!job.limits.allow_private_endpoints && address_is_private(storage)) {
-            continue;
+        if (parsed_proxy.value().tls || parsed_proxy.value().path_query != "/") {
+            return transport_error(ModelDomainCode::CapabilityMismatch,
+                                   "proxy must be an http origin without a path", false);
         }
-        candidates.push_back(storage);
-    }
-    if (candidates.empty()) {
-        return transport_error(ModelDomainCode::EndpointPolicyDenied,
-                               "no policy-compliant address was resolved for the endpoint",
-                               false);
+        if (!job.limits.proxy->allowed_hosts.empty() &&
+            std::find(job.limits.proxy->allowed_hosts.begin(),
+                      job.limits.proxy->allowed_hosts.end(),
+                      parsed_proxy.value().host) == job.limits.proxy->allowed_hosts.end()) {
+            return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                                   "proxy host is not in the allowlist", false);
+        }
+        auto proxy_candidates = resolve_candidates(
+            parsed_proxy.value(), job.limits.proxy->allow_private_endpoint, "proxy");
+        if (!proxy_candidates) {
+            return proxy_candidates.error();
+        }
+        candidates = std::move(proxy_candidates).value();
+        proxy_parts = std::move(parsed_proxy).value();
     }
 
     SocketHandle socket = kInvalidSocket;
@@ -751,24 +832,70 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
                                "no candidate address accepted the connection", true);
     }
 
+    Exchange exchange(static_cast<std::intptr_t>(socket), nullptr);
+
+    // HTTPS proxies are deliberately unsupported above. For an HTTPS target,
+    // establish a plain CONNECT tunnel first; model request bytes have not
+    // started at this point, so a rejected tunnel remains a pre-write failure.
+    if (proxy_parts.has_value() && parts.value().tls) {
+        const std::string authority = parts.value().host + ":" + std::to_string(parts.value().port);
+        std::string connect_request = "CONNECT " + authority + " HTTP/1.1\r\nHost: " + authority +
+                                      "\r\nProxy-Connection: keep-alive\r\n";
+        if (proxy_authorization.has_value()) {
+            connect_request += "Proxy-Authorization: " + *proxy_authorization + "\r\n";
+        }
+        connect_request += "\r\n";
+        const auto connect_deadline =
+            std::min(started_at + job.limits.deadlines.connect, total_deadline);
+        if (auto sent = exchange.write_all(connect_request, connect_deadline, job.cancelled);
+            !sent) {
+            return sent.error();
+        }
+        std::string response_headers;
+        while (response_headers.find("\r\n\r\n") == std::string::npos) {
+            if (response_headers.size() > kMaxHeaderBlockBytes) {
+                return transport_error(ModelDomainCode::ProtocolViolation,
+                                       "proxy CONNECT response headers exceeded the limit", false);
+            }
+            std::array<std::byte, 1024> chunk{};
+            auto received =
+                exchange.read_some(chunk.data(), chunk.size(), connect_deadline, job.cancelled);
+            if (!received) {
+                return received.error();
+            }
+            if (received.value() == 0) {
+                return transport_error(ModelDomainCode::TransportFailed,
+                                       "proxy closed the CONNECT tunnel", true);
+            }
+            response_headers.append(reinterpret_cast<const char *>(chunk.data()), received.value());
+        }
+        std::istringstream status_stream(response_headers.substr(0, response_headers.find("\r\n")));
+        std::string version;
+        int proxy_status = 0;
+        status_stream >> version >> proxy_status;
+        if (proxy_status != 200) {
+            return transport_error(proxy_status == 407 ? ModelDomainCode::AuthenticationFailed
+                                                       : ModelDomainCode::TransportFailed,
+                                   "proxy CONNECT request was rejected", proxy_status >= 500);
+        }
+    }
+
     std::unique_ptr<ITlsChannel> channel;
     if (parts.value().tls) {
         if (tls_ == nullptr) {
-            close_socket(socket);
             return transport_error(ModelDomainCode::CapabilityMismatch,
                                    "https endpoint configured without a TLS channel factory",
                                    false);
         }
-        auto created = tls_->create(static_cast<std::intptr_t>(socket), parts.value().host,
-                                    TlsOptions{});
+        auto created =
+            tls_->create(static_cast<std::intptr_t>(socket), parts.value().host, TlsOptions{});
         if (!created) {
-            close_socket(socket);
             return created.error();
         }
         channel = std::move(created).value();
+        exchange.tls = std::move(channel);
     }
 
-    Exchange exchange(static_cast<std::intptr_t>(socket), std::move(channel));
     if (parts.value().tls) {
         auto tls_deadline = std::min(started_at + job.limits.deadlines.tls, total_deadline);
         auto status = exchange.handshake(tls_deadline, job.cancelled);
@@ -778,17 +905,20 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
     }
     const bool cross_origin = parts.value().origin() != job.original_origin;
     return finish_exchange(std::move(exchange), job, parts.value(), authorization, cross_origin,
+                           proxy_parts.has_value() && !parts.value().tls, proxy_authorization,
                            total_deadline, started_at, trace);
 }
 
 Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
     Exchange exchange, Job &job, const UrlParts &parts,
-    const std::optional<std::string> &authorization, bool cross_origin,
+    const std::optional<std::string> &authorization, bool cross_origin, bool forward_proxy,
+    const std::optional<std::string> &proxy_authorization,
     std::chrono::steady_clock::time_point total_deadline,
     std::chrono::steady_clock::time_point started_at, TransportTrace &trace) {
     std::string request_text;
     request_text.reserve(256 + job.request.body.size());
-    request_text += job.request.method + " " + parts.path_query + " HTTP/1.1\r\n";
+    const std::string request_target = forward_proxy ? job.request.url : parts.path_query;
+    request_text += job.request.method + " " + request_target + " HTTP/1.1\r\n";
     request_text += "Host: " + parts.host + "\r\n";
     for (const auto &header : job.request.headers) {
         request_text += header.first + ": " + header.second + "\r\n";
@@ -799,6 +929,9 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
     // Credentials follow redirects only within the original origin.
     if (authorization.has_value() && !cross_origin) {
         request_text += "Authorization: Bearer " + *authorization + "\r\n";
+    }
+    if (forward_proxy && proxy_authorization.has_value()) {
+        request_text += "Proxy-Authorization: " + *proxy_authorization + "\r\n";
     }
     request_text += "\r\n";
     request_text += job.request.body;
@@ -821,9 +954,8 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
         }
         std::array<std::byte, 2048> chunk{};
         const auto stage_deadline =
-            first_byte
-                ? std::min(started_at + job.limits.deadlines.first_byte, total_deadline)
-                : std::min(now + job.limits.deadlines.idle_read, total_deadline);
+            first_byte ? std::min(started_at + job.limits.deadlines.first_byte, total_deadline)
+                       : std::min(now + job.limits.deadlines.idle_read, total_deadline);
         auto received =
             exchange.read_some(chunk.data(), chunk.size(), stage_deadline, job.cancelled);
         if (!received) {
@@ -866,8 +998,8 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
         std::string version;
         status_stream >> version >> status;
         if (status == 0) {
-            return transport_error(ModelDomainCode::ProtocolViolation,
-                                   "malformed http status line", false);
+            return transport_error(ModelDomainCode::ProtocolViolation, "malformed http status line",
+                                   false);
         }
     }
     std::vector<std::pair<std::string, std::string>> headers;
@@ -943,10 +1075,9 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
     const auto read_more = [&](std::string &sink) -> Result<bool> {
         const auto now = std::chrono::steady_clock::now();
         std::array<std::byte, 8192> chunk{};
-        auto received =
-            exchange.read_some(chunk.data(), chunk.size(),
-                               std::min(now + job.limits.deadlines.idle_read, total_deadline),
-                               job.cancelled);
+        auto received = exchange.read_some(
+            chunk.data(), chunk.size(),
+            std::min(now + job.limits.deadlines.idle_read, total_deadline), job.cancelled);
         if (!received) {
             return received.error();
         }
@@ -1018,8 +1149,7 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
         }
         if (!buffered.empty()) {
             const auto take = std::min<std::uint64_t>(buffered.size(), expected);
-            if (auto delivered = deliver(std::string_view(buffered).substr(0, take));
-                !delivered) {
+            if (auto delivered = deliver(std::string_view(buffered).substr(0, take)); !delivered) {
                 return delivered.error();
             }
             buffered.erase(0, static_cast<std::size_t>(take));
@@ -1035,8 +1165,7 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
             }
             const auto remaining = static_cast<std::size_t>(expected - body_bytes);
             const auto take = std::min(remaining, buffered.size());
-            if (auto delivered = deliver(std::string_view(buffered).substr(0, take));
-                !delivered) {
+            if (auto delivered = deliver(std::string_view(buffered).substr(0, take)); !delivered) {
                 return delivered.error();
             }
             buffered.erase(0, take);

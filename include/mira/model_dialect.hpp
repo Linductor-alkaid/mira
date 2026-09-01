@@ -24,6 +24,11 @@ class IArtifactSource {
   public:
     virtual ~IArtifactSource() = default;
     virtual Result<std::vector<std::byte>> fetch(const ArtifactRef &reference) = 0;
+    // Provider-local binding produced by an explicit upload lifecycle. The
+    // default keeps existing sources inline-only.
+    [[nodiscard]] virtual std::optional<std::string> remote_file_id(const ArtifactRef &) const {
+        return std::nullopt;
+    }
 };
 
 // A null source for requests that carry no binary parts.
@@ -45,9 +50,9 @@ class IDialectMapper {
     [[nodiscard]] virtual ProtocolDialect dialect() const = 0;
     // `stream` requests an SSE response; mappers that have not verified SSE
     // fixtures must reject it with CapabilityMismatch.
-    [[nodiscard]] virtual Result<JsonValue>
-    encode_request(const ModelRequest &request, const ModelProfile &profile, bool stream,
-                   IArtifactSource &artifacts) const = 0;
+    [[nodiscard]] virtual Result<JsonValue> encode_request(const ModelRequest &request,
+                                                           const ModelProfile &profile, bool stream,
+                                                           IArtifactSource &artifacts) const = 0;
     [[nodiscard]] virtual Result<ModelResponse>
     decode_response(const ModelRequest &request, const ModelProfile &profile,
                     const WireHttpResponse &wire) const = 0;
@@ -65,9 +70,9 @@ class ResponsesV1Mapper final : public IDialectMapper {
     [[nodiscard]] Result<JsonValue> encode_request(const ModelRequest &request,
                                                    const ModelProfile &profile, bool stream,
                                                    IArtifactSource &artifacts) const override;
-    [[nodiscard]] Result<ModelResponse> decode_response(const ModelRequest &request,
-                                                        const ModelProfile &profile,
-                                                        const WireHttpResponse &wire) const override;
+    [[nodiscard]] Result<ModelResponse>
+    decode_response(const ModelRequest &request, const ModelProfile &profile,
+                    const WireHttpResponse &wire) const override;
 };
 
 // ---------------------------------------------------------------------------
@@ -82,9 +87,9 @@ class ChatCompletionsV1Mapper final : public IDialectMapper {
     [[nodiscard]] Result<JsonValue> encode_request(const ModelRequest &request,
                                                    const ModelProfile &profile, bool stream,
                                                    IArtifactSource &artifacts) const override;
-    [[nodiscard]] Result<ModelResponse> decode_response(const ModelRequest &request,
-                                                        const ModelProfile &profile,
-                                                        const WireHttpResponse &wire) const override;
+    [[nodiscard]] Result<ModelResponse>
+    decode_response(const ModelRequest &request, const ModelProfile &profile,
+                    const WireHttpResponse &wire) const override;
 };
 
 // Maps a non-2xx HTTP result to a stable model error. Shared by both dialects;
@@ -94,9 +99,9 @@ class ChatCompletionsV1Mapper final : public IDialectMapper {
 // Decodes one parsed Responses API response object (synchronous body or the
 // `response` member of a terminal SSE event). Shared by the sync mapper and
 // the SSE reducer so both paths produce identical canonical items.
-[[nodiscard]] Result<ModelResponse>
-decode_responses_terminal_body(const ModelRequest &request, const ModelProfile &profile,
-                               const JsonValue &body);
+[[nodiscard]] Result<ModelResponse> decode_responses_terminal_body(const ModelRequest &request,
+                                                                   const ModelProfile &profile,
+                                                                   const JsonValue &body);
 
 // Parses an RFC 7231 Retry-After header (seconds or HTTP-date) into a bounded
 // delay; nullopt when absent, invalid or beyond the cap.

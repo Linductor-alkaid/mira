@@ -1,7 +1,8 @@
-#include <mira/model_provider.hpp>
 #include <mira/model_digest.hpp>
+#include <mira/model_provider.hpp>
 
 #include <chrono>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -10,12 +11,60 @@
 namespace mira {
 namespace {
 
+class BoundArtifactSource final : public IArtifactSource {
+  public:
+    explicit BoundArtifactSource(std::shared_ptr<IArtifactSource> source)
+        : source_(std::move(source)) {}
+
+    Result<std::vector<std::byte>> fetch(const ArtifactRef &reference) override {
+        return source_->fetch(reference);
+    }
+
+    std::optional<std::string> remote_file_id(const ArtifactRef &reference) const override {
+        const auto found = bindings_.find(reference.id.to_string());
+        return found == bindings_.end() ? std::nullopt : std::optional<std::string>(found->second);
+    }
+
+    void bind(const RemoteFileRef &file) {
+        bindings_[file.source.id.to_string()] = file.provider_file_id;
+    }
+
+  private:
+    std::shared_ptr<IArtifactSource> source_;
+    std::map<std::string, std::string> bindings_;
+};
+
+class UploadRetirement final {
+  public:
+    UploadRetirement(std::shared_ptr<IRemoteFileStore> store, std::chrono::seconds retention)
+        : store_(std::move(store)), retention_(retention) {}
+    ~UploadRetirement() {
+        if (store_ == nullptr) {
+            return;
+        }
+        for (const auto &file : files_) {
+            static_cast<void>(store_->retire(file, retention_));
+        }
+    }
+    void add(RemoteFileRef file) { files_.push_back(std::move(file)); }
+
+  private:
+    std::shared_ptr<IRemoteFileStore> store_;
+    std::chrono::seconds retention_;
+    std::vector<RemoteFileRef> files_;
+};
+
 [[nodiscard]] TransportLimits limits_from_profile(const ModelProfile &profile,
-                                                 const ModelRequest &request) {
+                                                  const ModelRequest &request) {
     TransportLimits limits;
     limits.deadlines = profile.deadlines;
     limits.max_response_bytes = profile.capabilities.limits.max_response_bytes;
     limits.max_redirects = profile.max_redirects;
+    limits.proxy = profile.proxy;
+    const auto host = profile.endpoint_host();
+    if (!host.empty()) {
+        limits.allowed_hosts.push_back(host);
+    }
     limits.allow_private_endpoints = false;
     if (profile.endpoint_origin.rfind("http://", 0) == 0) {
         // Plain-http origins are a test/dev configuration; production
@@ -58,10 +107,11 @@ RequestStage classify_provider_stage(const TransportTrace &trace, const Error &f
 
 OpenAiCompatibleProvider::OpenAiCompatibleProvider(
     std::shared_ptr<const ModelProfile> profile, std::shared_ptr<IHttpTransport> transport,
-    std::shared_ptr<IArtifactSource> artifacts,
-    std::shared_ptr<IArtifactStore> protected_artifacts)
+    std::shared_ptr<IArtifactSource> artifacts, std::shared_ptr<IArtifactStore> protected_artifacts,
+    std::shared_ptr<IRemoteFileStore> remote_files)
     : profile_(std::move(profile)), transport_(std::move(transport)),
-      artifacts_(std::move(artifacts)), protected_artifacts_(std::move(protected_artifacts)) {}
+      artifacts_(std::move(artifacts)), protected_artifacts_(std::move(protected_artifacts)),
+      remote_files_(std::move(remote_files)) {}
 
 OpenAiCompatibleProvider::~OpenAiCompatibleProvider() = default;
 
@@ -81,12 +131,40 @@ std::optional<UnvalidatedModelPreview> OpenAiCompatibleProvider::take_last_previ
 Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &request,
                                                       const OperationContext &context,
                                                       const ProviderInferOptions &options) {
-    const IDialectMapper &mapper =
-        profile_->dialect == ProtocolDialect::OpenAIResponsesV1
-            ? static_cast<const IDialectMapper &>(responses_)
-            : static_cast<const IDialectMapper &>(chat_);
+    const IDialectMapper &mapper = profile_->dialect == ProtocolDialect::OpenAIResponsesV1
+                                       ? static_cast<const IDialectMapper &>(responses_)
+                                       : static_cast<const IDialectMapper &>(chat_);
 
-    auto wire = mapper.encode_request(request, *profile_, options.stream, *artifacts_);
+    BoundArtifactSource bound_artifacts(artifacts_);
+    UploadRetirement retirement(remote_files_, request.data_policy.remote_retention);
+    if (remote_files_ != nullptr && request.data_policy.allow_uploads &&
+        profile_->dialect == ProtocolDialect::OpenAIResponsesV1) {
+        for (const auto &item : request.input) {
+            for (const auto &part : item.content) {
+                const ArtifactRef *source = nullptr;
+                std::string display_name;
+                if (const auto *image = std::get_if<ImagePart>(&part)) {
+                    source = &image->source;
+                    display_name = "image-" + image->source.digest.to_string().substr(0, 12);
+                } else if (const auto *file = std::get_if<FilePart>(&part)) {
+                    source = &file->source;
+                    display_name = file->display_name;
+                }
+                if (source == nullptr || bound_artifacts.remote_file_id(*source).has_value()) {
+                    continue;
+                }
+                auto uploaded =
+                    remote_files_->upload(*source, display_name, request.data_policy, context);
+                if (!uploaded) {
+                    return uploaded.error();
+                }
+                bound_artifacts.bind(uploaded.value());
+                retirement.add(std::move(uploaded).value());
+            }
+        }
+    }
+
+    auto wire = mapper.encode_request(request, *profile_, options.stream, bound_artifacts);
     if (!wire) {
         return wire.error();
     }
@@ -96,8 +174,7 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     http.url = profile_->endpoint_url();
     http.body = to_json_string(wire.value());
     http.headers.emplace_back("Content-Type", "application/json");
-    http.headers.emplace_back(
-        "Accept", options.stream ? "text/event-stream" : "application/json");
+    http.headers.emplace_back("Accept", options.stream ? "text/event-stream" : "application/json");
     if (request.data_policy.organization.has_value()) {
         http.headers.emplace_back("OpenAI-Organization", *request.data_policy.organization);
     }
@@ -110,9 +187,10 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     last_trace_ = TransportTrace{};
     last_headers_.clear();
 
-    const auto stash_headers = [this](const std::vector<std::pair<std::string, std::string>> &headers) {
-        last_headers_ = headers;
-    };
+    const auto stash_headers =
+        [this](const std::vector<std::pair<std::string, std::string>> &headers) {
+            last_headers_ = headers;
+        };
     static_cast<void>(stash_headers);
 
     if (options.stream) {

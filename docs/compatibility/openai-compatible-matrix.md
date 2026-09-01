@@ -1,8 +1,8 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.1  
-> 更新日期：2026-08-31   
+> 版本：1.2
+> 更新日期：2026-09-01
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
 
@@ -93,8 +93,26 @@
 - 数据分类、region、`store`/retention 和 remote upload cleanup 结果；
 - 已知偏差、失败项、负责人和补跑条件。
 
-真实请求只在测试数据、费用预算、endpoint allowlist 和授权凭据已就绪时执行。禁止用生产用户的
+真实请求只在测试数据、费用预算、endpoint/proxy allowlist 和授权凭据已就绪时执行。禁止用生产用户的
 截图、Memory 或 Tool output 做 capability probe。
+
+仓库提供默认不联网的 `mira_m3_interop_probe`。它在缺少 `MIRA_INTEROP_API_KEY`、明确 model、PEM CA
+bundle 或 `MIRA_INTEROP_MAX_REQUESTS=2|3` 时退出 2；授权后覆盖 Responses 同步与 SSE strict schema，
+三请求模式额外覆盖受控 text fixture 的 upload/delete。输出只含 profile digest、requested/resolved model、
+usage quality 和 upload cleanup 结论。该 probe 不能单独替代本节要求的 image、Tool、错误、取消和政策记录；
+未执行能力仍必须保持 `Unknown`。
+
+授权环境的最小复现入口（key 由受控 secret 注入，不写入命令、日志或仓库）：
+
+```sh
+MIRA_INTEROP_MODEL='<approved-model>' \
+MIRA_INTEROP_CA_FILE='<approved-ca-bundle.pem>' \
+MIRA_INTEROP_MAX_REQUESTS=2 \
+./build/debug/tests/mira_m3_interop_probe
+```
+
+三请求模式把 `MIRA_INTEROP_MAX_REQUESTS` 设为 `3` 并额外执行 upload/delete；需要显式代理时只接受
+不含 userinfo 的 `MIRA_INTEROP_PROXY_URL`，credential 通过 `MIRA_INTEROP_PROXY_AUTH` 单独注入。
 
 ## 7. 失效与降级
 
@@ -114,6 +132,8 @@
 - [Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 - [Function calling](https://developers.openai.com/api/docs/guides/function-calling)
 - [Conversation state](https://developers.openai.com/api/docs/guides/conversation-state)
+- [Upload a file](https://developers.openai.com/api/reference/resources/files/methods/create)
+- [Delete a file](https://developers.openai.com/api/reference/resources/files/methods/delete)
 
 这些资料用于定义 OpenAI reference profile，不是 DeepSeek、Qwen、OpenRouter 或其他兼容服务的证据。
 
@@ -130,10 +150,19 @@
   `M3-19` 待受控凭据就绪后执行。
 - 关联：[M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)。
 
+### 2026-09-01：代理、TLS 与 upload fixture 证据
+
+- 范围：HTTP/HTTPS proxy、锁定 Mbed TLS 通道、remote `/files` upload/delete 和 fail-closed interop
+  probe admission。
+- 验证：Linux Debug 29/29；`mira_m3_mbedtls_test` 覆盖 direct/CONNECT TLS 与错误 CA；
+  `mira_m3_upload_test` 覆盖 file ID、retention timer、shutdown 和删除失败；probe 缺凭据退出 2 且未联网。
+- 限制：没有受控 API credential，因此 Provider 表的 `Interop` 仍全部为 `Unknown`；Windows/Android
+  Mbed TLS 目标证据见平台矩阵。
+- 关联：[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)、`M3-04`、`M3-15`、`M3-19`。
+
 ### 2026-08-30：建立基线
 
 - 范围：冻结两个 dialect ID、证据等级和 profile 记录模板。
 - 验证：只核对官方文档和仓库设计；未实现 mapper，未执行 API 调用。
 - 限制：所有真实互操作状态保持 `Unknown`。
 - 关联：[M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)。
-

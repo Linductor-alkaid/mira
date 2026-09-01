@@ -61,7 +61,7 @@
 | [M0](m0-engineering-baseline.md) | 仓库、跨平台构建组合、Executor 集成和质量基线 | 无 | 内部工程基线 | Completed |
 | [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
-| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | In Progress（实现与本地验证完成；interop/代理/upload 子项开放） |
+| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | In Progress（代理/upload 已交付；目标平台 TLS 证据与 interop 开放） |
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Planned |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Planned |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Planned |
@@ -73,9 +73,9 @@ M2 的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都
 关闭。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
-文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 当前开放的代理、
-Windows/Android TLS、远端 upload/delete 和真实 Provider 互操作仍由 `M3-04`、`M3-15`、`M3-19`
-原编号跟踪；后续里程碑不得通过复制或改号绕过 M3 退出条件。
+文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 当前开放的
+Windows/Android TLS 目标证据和真实 Provider 互操作仍由 `M3-04`、`M3-19` 原编号跟踪；后续里程碑
+不得通过复制或改号绕过 M3 退出条件。
 
 ## 5. 首批架构决策
 
@@ -88,8 +88,9 @@ Windows/Android TLS、远端 upload/delete 和真实 Provider 互操作仍由 `M
 | [DEC-005](../decisions/DEC-005-observation-coordinate-host-boundary.md) | Observation 坐标与 Android Host 边界 | Accepted | M2 |
 | [DEC-006](../decisions/DEC-006-local-perception-task-models.md) | 本地感知和任务 ONNX 模型边界 | Accepted | M5 |
 | [DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md) | LLM API 规范契约与协议方言策略 | Accepted | M3 |
-| [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) | M3 传输层依赖策略（自研 transport + 可插拔 TLS） | Accepted | M3 |
+| [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) | 历史 M3 传输基线 | Superseded by DEC-010 | M3 |
 | [DEC-009](../decisions/DEC-009-tool-module-boundary.md) | 工具模组边界与能力协商 | Accepted | M7 |
+| [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) | 锁定 Mbed TLS、受管代理与远端文件生命周期 | Accepted | M3 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。

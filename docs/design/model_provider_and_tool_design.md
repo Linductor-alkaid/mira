@@ -58,7 +58,7 @@ M3 实现落点为 `include/mira/model_provider.hpp`（`IModelProvider` 以 `pro
 
 ## 3. OpenAI-compatible Adapter
 
-配置 profile 包含 endpoint、model、protocol dialect、capabilities、timeouts、proxy/TLS、SecretRef、
+配置 profile 包含 endpoint、model、protocol dialect、capabilities、timeouts、`ModelProxyConfig`/TLS、SecretRef、
 token/byte/cost limit、retry 和 data policy。兼容服务差异通过 profile/capability plugin，不在 Core
 按品牌分支。
 
@@ -79,7 +79,8 @@ token/byte/cost limit、retry 和 data policy。兼容服务差异通过 profile
 7. Core DecisionParser 对完整 response 做 schema/Policy 校验。
 
 图片 transport（base64、URL、upload/file ID）各自声明生命周期。临时 URL/token 最小权限、短 TTL，
-redirect 和 endpoint 受 SSRF policy；remote upload artifact 在 Task/retention 后清理并审计。
+redirect、目标和 proxy 分别受 SSRF/allowlist policy；remote upload artifact 在 Task/retention 后由
+`OpenAiRemoteFileStore` 立即删除或经 Executor timer 清理，并以 provider ID digest 审计。
 
 ## 4. 取消、超时与重试
 

@@ -1,8 +1,8 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.2
-> 更新日期：2026-08-31
+> 版本：0.3
+> 更新日期：2026-09-01
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -26,15 +26,18 @@
 
 ### M3 传输 Adapter
 
-| 目标 | `mira_net_transport`（socket HTTP/SSE） | `mira_openssl_transport`（TLS 通道） | 证据 |
-| --- | --- | --- | --- |
-| Linux x86_64 | 构建 + loopback 运行测试 | 构建 + 进程内 TLS 握手/错误 CA 测试 | 本地 `mira_m3_transport_test`、`mira_m3_tls_test`（OpenSSL 3.0.13）与 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（2026-08-31） |
-| Windows x64 | CI 构建 + loopback 运行测试（Winsock；`ws2_32`） | 不构建（`MIRA_WITH_OPENSSL` 仅限非 Android UNIX）；https fail closed | CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（MSVC Debug/Release，2026-08-31） |
-| Android arm64-v8a | CI 构建（POSIX sockets；android job 显式构建 `mira_net_transport`） | 不构建；https fail closed | CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)（NDK 26.3 arm64-v8a，2026-08-31） |
+| 目标 | `mira_net_transport`（HTTP/SSE/proxy） | `mira_mbedtls_transport` | OpenSSL 参考通道 | 证据 |
+| --- | --- | --- | --- | --- |
+| Linux x86_64 | Runtime verified（direct + HTTP proxy + HTTPS CONNECT） | Runtime verified（direct/CONNECT handshake、错误 CA） | Runtime verified | 本地 `mira_m3_transport_test`、`mira_m3_mbedtls_test`、`mira_m3_tls_test`（2026-09-01）；既有 socket CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) |
+| Windows x64 | 既有 CI build/runtime verified（Winsock） | Configured（MSVC 全量 build 会构建；本轮 runner 未执行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
+| Android arm64-v8a | 既有 CI build verified | Configured（Android job 已显式加入目标；本轮 NDK 未执行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
 
-TLS 通道的平台缺口、fail-closed 语义与依赖决策见
-[DEC-008](../decisions/DEC-008-transport-dependency-strategy.md)。未配置 TLS 工厂时 https 端点在
-任何字节写出前以 `CapabilityMismatch` 拒绝。
+跨平台 TLS、proxy、CA bundle 和 fail-closed 语义见
+[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。未配置 TLS 工厂时 https 端点在
+model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows/Android 当前只能声明
+`Configured`：负责人 Mira Maintainers；补跑条件为 recursive submodule checkout 后分别执行
+MSVC Debug/Release 全量构建，以及 NDK 26.3/API 24 arm64 构建 `mira_mbedtls_transport`；runtime 声明
+还需在对应平台执行 direct TLS、CONNECT TLS 和错误 CA contract。
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，
@@ -62,7 +65,7 @@ Android（设置 `ANDROID_NDK_HOME` 或 `ANDROID_NDK_ROOT`）：
 
 ```sh
 cmake --preset android-arm64-release
-cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter
+cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport
 ```
 
 Android toolchain 不把 SDK/NDK 路径写入仓库；CI 使用 `ANDROID_NDK_VERSION=26.3.11579264`，
