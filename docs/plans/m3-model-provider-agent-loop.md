@@ -335,6 +335,8 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
 - `cmake --preset windows-release && cmake --build --preset windows-release`：通过。
 - `clang-format 18.1.8 --dry-run --Werror`（受影响 `.cpp`）、`check_docs.py`、`check_sbom.py`、
   `check_platform_boundary.py` 与 `git diff --check`：通过。
-- 当前主机没有 Linux Clang 或 Android NDK 26.3，故这两项不在本地标记完成。负责人 Mira
-  Maintainers；补跑条件：将本修复推送至 PR #1，等待同一 workflow 的 Clang Debug/Release、Android、
-  Windows Debug/Release 与 quality jobs 全部通过，并在本记录追加 run 链接。
+- GitHub Actions run
+  [`33541025071`](https://github.com/Linductor-alkaid/mira/actions/runs/33541025071)：11/11 jobs
+  通过，包括 Linux GCC/Clang Debug+Release、Windows Debug/Release、Android arm64、
+  ASAN/UBSAN/TSAN 与 quality；据此关闭本次 PR CI 缺陷。该 run 只证明目标构建及既有测试矩阵，
+  不替代 `M3-04` 尚未完成的 Android/Windows TLS 目标运行证据或 `M3-19` 真实 Provider 互操作。
