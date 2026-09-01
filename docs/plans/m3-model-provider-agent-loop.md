@@ -321,3 +321,20 @@ OpenSSL 3.0.13，Mbed TLS `v3.6.7`/`068ff080b369`）。`M3-15` 完成；`M3-04` 
   Android NDK r26d 从
   Google/GitHub 官方 binary 端点下载均在当前代理 TLS handshake 失败；无 MSVC runner，故相应证据保持
   未完成。负责人 Mira Maintainers；补跑命令与条件见平台矩阵。
+
+2026-09-02：PR #1 CI 修复记录（工作树，Windows x64，MSVC 19.44.35214，Windows SDK
+10.0.26100.0，CMake 4.1.0，Mbed TLS `v3.6.7`/`068ff080b369`）。失败 run
+[`33483539978`](https://github.com/Linductor-alkaid/mira/actions/runs/33483539978) 暴露三项跨平台问题：
+Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-cast -Werror` 处理；MSVC
+拒绝 interop probe 的 `getenv`；Windows CONNECT 407 测试服务器等待不存在的 body，耗尽与客户端
+相同的 2 秒 deadline。修复将锁定的 Mbed TLS include 标记为 system include，probe 在 Windows 使用
+`_dupenv_s` 并以 RAII 释放副本，CONNECT fixture 增加 headers-only 读取模式。
+
+- `cmake --preset windows-debug && cmake --build --preset windows-debug`：通过；
+  `ctest --test-dir build/windows-debug -C Debug --output-on-failure`：27/27 通过。
+- `cmake --preset windows-release && cmake --build --preset windows-release`：通过。
+- `clang-format 18.1.8 --dry-run --Werror`（受影响 `.cpp`）、`check_docs.py`、`check_sbom.py`、
+  `check_platform_boundary.py` 与 `git diff --check`：通过。
+- 当前主机没有 Linux Clang 或 Android NDK 26.3，故这两项不在本地标记完成。负责人 Mira
+  Maintainers；补跑条件：将本修复推送至 PR #1，等待同一 workflow 的 Clang Debug/Release、Android、
+  Windows Debug/Release 与 quality jobs 全部通过，并在本记录追加 run 链接。

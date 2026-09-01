@@ -25,8 +25,18 @@ using namespace mira;
 using namespace mira::adapters::net;
 
 [[nodiscard]] std::optional<std::string> environment(const char *name) {
+#ifdef _WIN32
+    char *raw = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&raw, &size, name) != 0 || raw == nullptr) {
+        return std::nullopt;
+    }
+    const std::unique_ptr<char, decltype(&std::free)> value(raw, &std::free);
+    return *value == '\0' ? std::nullopt : std::optional<std::string>(value.get());
+#else
     const char *value = std::getenv(name);
     return value == nullptr || *value == '\0' ? std::nullopt : std::optional<std::string>(value);
+#endif
 }
 
 class ProbeSecrets final : public ISecretResolver {

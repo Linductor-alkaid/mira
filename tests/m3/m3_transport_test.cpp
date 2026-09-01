@@ -296,7 +296,7 @@ int proxy_paths_are_explicit_and_credentials_stay_at_proxy() {
         if (!rejecting_proxy.accept_client(std::chrono::milliseconds{5'000})) {
             return;
         }
-        connect_request = rejecting_proxy.read_request(std::chrono::milliseconds{2'000});
+        connect_request = rejecting_proxy.read_request(std::chrono::milliseconds{2'000}, false);
         rejecting_proxy.write_all(
             "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n");
         rejecting_proxy.close_client();

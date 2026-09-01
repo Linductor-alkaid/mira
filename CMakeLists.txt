@@ -269,6 +269,12 @@ if(MIRA_WITH_MBEDTLS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
     )
+    # Mbed TLS exposes C-style compatibility macros in public headers. Treat
+    # the pinned dependency as a system include so Mira's C++ warning policy
+    # does not turn upstream -Wold-style-cast diagnostics into build errors.
+    target_include_directories(mira_mbedtls_transport SYSTEM PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/mbedtls/include
+    )
     target_link_libraries(mira_mbedtls_transport
         PUBLIC Mira::core
         PRIVATE MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto
