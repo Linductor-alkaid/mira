@@ -6,6 +6,7 @@
 #include <mira/model_sse.hpp>
 #include <mira/model_supervisor.hpp>
 #include <mira/model_transport.hpp>
+#include <mira/model_upload.hpp>
 
 #include <memory>
 #include <optional>
@@ -33,8 +34,7 @@ class IModelProvider {
     // Diagnostics from the most recent call; defaults report an empty trace.
     [[nodiscard]] virtual const TransportTrace &last_trace() const;
     [[nodiscard]] virtual const SseStreamStats &last_sse_stats() const;
-    [[nodiscard]] virtual std::optional<std::chrono::milliseconds>
-    last_retry_after_hint() const;
+    [[nodiscard]] virtual std::optional<std::chrono::milliseconds> last_retry_after_hint() const;
 };
 
 // OpenAI-compatible endpoint over the two fixed M3 dialects. Each instance
@@ -45,7 +45,8 @@ class OpenAiCompatibleProvider final : public IModelProvider {
     OpenAiCompatibleProvider(std::shared_ptr<const ModelProfile> profile,
                              std::shared_ptr<IHttpTransport> transport,
                              std::shared_ptr<IArtifactSource> artifacts,
-                             std::shared_ptr<IArtifactStore> protected_artifacts = nullptr);
+                             std::shared_ptr<IArtifactStore> protected_artifacts = nullptr,
+                             std::shared_ptr<IRemoteFileStore> remote_files = nullptr);
     ~OpenAiCompatibleProvider() override;
 
     [[nodiscard]] const ModelProfile &profile() const override { return *profile_; }
@@ -54,14 +55,11 @@ class OpenAiCompatibleProvider final : public IModelProvider {
                                               const ProviderInferOptions &options) override;
 
     // Diagnostics from the last call (test surface).
-    [[nodiscard]] const TransportTrace &last_trace() const noexcept override {
-        return last_trace_;
-    }
+    [[nodiscard]] const TransportTrace &last_trace() const noexcept override { return last_trace_; }
     [[nodiscard]] const SseStreamStats &last_sse_stats() const noexcept override {
         return sse_stats_;
     }
-    [[nodiscard]] std::optional<std::chrono::milliseconds>
-    last_retry_after_hint() const override;
+    [[nodiscard]] std::optional<std::chrono::milliseconds> last_retry_after_hint() const override;
     [[nodiscard]] std::optional<UnvalidatedModelPreview> take_last_preview();
 
   private:
@@ -71,6 +69,7 @@ class OpenAiCompatibleProvider final : public IModelProvider {
     std::shared_ptr<IHttpTransport> transport_;
     std::shared_ptr<IArtifactSource> artifacts_;
     std::shared_ptr<IArtifactStore> protected_artifacts_;
+    std::shared_ptr<IRemoteFileStore> remote_files_;
     ResponsesV1Mapper responses_;
     ChatCompletionsV1Mapper chat_;
     TransportTrace last_trace_;

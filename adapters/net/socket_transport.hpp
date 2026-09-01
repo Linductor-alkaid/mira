@@ -32,8 +32,7 @@ struct SocketTransportConfig final {
 // latency is bounded without cross-thread socket closes.
 class SocketHttpTransport final : public IHttpTransport {
   public:
-    SocketHttpTransport(executor::Executor &executor,
-                        std::shared_ptr<ISecretResolver> secrets,
+    SocketHttpTransport(executor::Executor &executor, std::shared_ptr<ISecretResolver> secrets,
                         std::shared_ptr<ITlsChannelFactory> tls = nullptr,
                         SocketTransportConfig config = SocketTransportConfig{});
     ~SocketHttpTransport() override;
@@ -50,8 +49,7 @@ class SocketHttpTransport final : public IHttpTransport {
     [[nodiscard]] bool running() const noexcept;
     [[nodiscard]] std::size_t queued_exchanges() const;
 
-    Result<HttpResponseInfo> execute(const HttpRequest &request,
-                                     const TransportLimits &limits,
+    Result<HttpResponseInfo> execute(const HttpRequest &request, const TransportLimits &limits,
                                      const OperationContext &context,
                                      const HttpChunkCallback &on_chunk,
                                      TransportTrace &trace) override;
@@ -78,19 +76,16 @@ class SocketHttpTransport final : public IHttpTransport {
         Exchange &operator=(const Exchange &) = delete;
         ~Exchange();
 
-        [[nodiscard]] Result<void> wait(bool readable,
-                                        std::chrono::steady_clock::time_point until,
+        [[nodiscard]] Result<void> wait(bool readable, std::chrono::steady_clock::time_point until,
                                         const std::function<bool()> &cancelled) const;
-        [[nodiscard]] Result<void>
-        handshake(std::chrono::steady_clock::time_point until,
-                  const std::function<bool()> &cancelled) const;
-        [[nodiscard]] Result<std::size_t>
-        write_all(const std::string &data, std::chrono::steady_clock::time_point until,
-                  const std::function<bool()> &cancelled) const;
-        [[nodiscard]] Result<std::size_t>
-        read_some(std::byte *data, std::size_t capacity,
-                  std::chrono::steady_clock::time_point until,
-                  const std::function<bool()> &cancelled) const;
+        [[nodiscard]] Result<void> handshake(std::chrono::steady_clock::time_point until,
+                                             const std::function<bool()> &cancelled) const;
+        [[nodiscard]] Result<std::size_t> write_all(const std::string &data,
+                                                    std::chrono::steady_clock::time_point until,
+                                                    const std::function<bool()> &cancelled) const;
+        [[nodiscard]] Result<std::size_t> read_some(std::byte *data, std::size_t capacity,
+                                                    std::chrono::steady_clock::time_point until,
+                                                    const std::function<bool()> &cancelled) const;
         void close() noexcept;
     };
 
@@ -115,6 +110,7 @@ class SocketHttpTransport final : public IHttpTransport {
     [[nodiscard]] Result<HttpResponseInfo>
     finish_exchange(Exchange exchange, Job &job, const UrlParts &parts,
                     const std::optional<std::string> &authorization, bool cross_origin,
+                    bool forward_proxy, const std::optional<std::string> &proxy_authorization,
                     std::chrono::steady_clock::time_point total_deadline,
                     std::chrono::steady_clock::time_point started_at, TransportTrace &trace);
 

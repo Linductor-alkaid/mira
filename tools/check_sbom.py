@@ -11,24 +11,38 @@ from pathlib import Path
 
 def main() -> int:
     root = Path(sys.argv[1]).resolve()
-    expected_commit = subprocess.check_output(
-        ["git", "-C", str(root / "third_party/executor"), "rev-parse", "HEAD"], text=True
-    ).strip()
     lock = json.loads((root / "dependencies.lock.json").read_text(encoding="utf-8"))
     sbom = json.loads((root / "docs/supply-chain/sbom.cdx.json").read_text(encoding="utf-8"))
-    executor = lock["dependencies"][0]
     errors: list[str] = []
-    if executor["name"] != "executor" or executor["commit"] != expected_commit:
-        errors.append("dependencies.lock.json does not match the executor submodule commit")
-    if not (root / executor["license_file"]).is_file():
-        errors.append("executor license file is missing")
     components = {component["name"]: component for component in sbom.get("components", [])}
-    if components.get("executor", {}).get("version") != expected_commit:
-        errors.append("CycloneDX SBOM does not match the executor submodule commit")
+    verified: list[str] = []
+    for dependency in lock.get("dependencies", []):
+        name = dependency["name"]
+        path = root / dependency["path"]
+        expected_commit = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+        ).strip()
+        if dependency["commit"] != expected_commit:
+            errors.append(f"dependencies.lock.json does not match {name} commit")
+        if not (root / dependency["license_file"]).is_file():
+            errors.append(f"{name} license file is missing")
+        if components.get(name, {}).get("version") != expected_commit:
+            errors.append(f"CycloneDX SBOM does not match {name} commit")
+        for transitive in dependency.get("transitive_submodules", []):
+            transitive_path = path / transitive["name"].removeprefix("mbedtls-")
+            if not transitive_path.is_dir():
+                errors.append(f"{name} transitive submodule {transitive['name']} is missing")
+                continue
+            actual = subprocess.check_output(
+                ["git", "-C", str(transitive_path), "rev-parse", "HEAD"], text=True
+            ).strip()
+            if transitive["commit"] != actual:
+                errors.append(f"{name} transitive submodule {transitive['name']} is not locked")
+        verified.append(f"{name}@{expected_commit[:12]}")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print(f"Dependency lock and SBOM: OK ({expected_commit})")
+    print(f"Dependency lock and SBOM: OK ({', '.join(verified)})")
     return 0
 
 

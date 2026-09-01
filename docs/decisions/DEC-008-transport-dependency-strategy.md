@@ -1,10 +1,10 @@
 # DEC-008：M3 传输层不引入第三方 HTTP/TLS 库，采用自研受管 transport 与可插拔 TLS 通道
 
-> 状态：Accepted
+> 状态：Superseded（2026-09-01 由 [DEC-010](DEC-010-cross-platform-tls-proxy-upload.md) 替代）
 > 日期：2026-08-31
 > 负责人：Mira Maintainers
 > 冻结里程碑：M3（HTTP/1.1 + SSE + Linux TLS 通道）；Windows/Android TLS 通道冻结点顺延至 M4 前置验证
-> 替代/被替代：无（与 [DEC-007](DEC-007-llm-api-protocol-strategy.md) 互补：DEC-007 定协议方言，本决策定传输实现）
+> 替代/被替代：被 [DEC-010](DEC-010-cross-platform-tls-proxy-upload.md) 替代（历史 Linux/OpenSSL 基线继续保留）
 
 ## 背景与问题
 

@@ -343,6 +343,12 @@ capability 并产生访问记录。
 ### 17.4 工具与网络
 
 - redirect-to-private、DNS rebinding、metadata endpoint、proxy credential leak。
+- M3 proxy contract 要求目标与 proxy 分别执行 DNS/SSRF/allowlist；proxy credential 只能由独立
+  `SecretRef` 解析到 `Proxy-Authorization`，CONNECT 后不得进入目标 TLS request。组织/project header、
+  proxy auth 和 media type 的 CR/LF 注入由 transport/upload 边界拒绝；验证见
+  `mira_m3_transport_test` 与 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。
+- Remote upload 只允许非 Sensitive/Secret Artifact；provider file ID 在 URL path 使用前限制字符集，
+  普通审计只保存 ID digest。立即/延时删除失败保持可见，不把原始 payload 或 opaque ID 写入事件。
 - `../`、symlink race、device path、UNC/alternate data stream 等平台路径边界。
 - Tool 超时、崩溃、输出过大、谎报副作用/idempotency。
 

@@ -150,6 +150,23 @@ std::string ModelProfile::request_path() const {
 
 std::string ModelProfile::endpoint_url() const { return endpoint_origin + request_path(); }
 
+std::string ModelProfile::endpoint_host() const {
+    const auto scheme = endpoint_origin.find("://");
+    if (scheme == std::string::npos) {
+        return {};
+    }
+    const auto begin = scheme + 3;
+    if (begin < endpoint_origin.size() && endpoint_origin[begin] == '[') {
+        const auto bracket = endpoint_origin.find(']', begin + 1);
+        return bracket == std::string::npos
+                   ? std::string{}
+                   : endpoint_origin.substr(begin + 1, bracket - begin - 1);
+    }
+    const auto end = endpoint_origin.find_first_of(":/", begin);
+    return endpoint_origin.substr(begin,
+                                  end == std::string::npos ? std::string::npos : end - begin);
+}
+
 JsonValue ModelProfile::manifest_to_json() const {
     JsonValue::Object root;
     root.emplace_back("id", id.to_string());
@@ -177,13 +194,12 @@ JsonValue ModelProfile::manifest_to_json() const {
     capabilities_json.emplace_back("exact_token_count",
                                    flag_to_json(capabilities.exact_token_count));
     capabilities_json.emplace_back("continuation", flag_to_json(capabilities.continuation));
-    capabilities_json.emplace_back("remote_retention",
-                                   flag_to_json(capabilities.remote_retention));
+    capabilities_json.emplace_back("remote_retention", flag_to_json(capabilities.remote_retention));
     capabilities_json.emplace_back("upload", flag_to_json(capabilities.upload));
 
     JsonValue::Object generation_json;
-    generation_json.emplace_back(
-        "max_output_tokens", param_mapping_name(capabilities.generation.max_output_tokens));
+    generation_json.emplace_back("max_output_tokens",
+                                 param_mapping_name(capabilities.generation.max_output_tokens));
     generation_json.emplace_back("temperature",
                                  param_mapping_name(capabilities.generation.temperature));
     generation_json.emplace_back("top_p", param_mapping_name(capabilities.generation.top_p));
@@ -198,6 +214,20 @@ JsonValue ModelProfile::manifest_to_json() const {
 
     root.emplace_back("default_data_policy", data_policy_to_json(default_data_policy));
     root.emplace_back("deadlines", deadlines_to_json(deadlines));
+    if (proxy.has_value()) {
+        JsonValue::Object proxy_json;
+        proxy_json.emplace_back("url", proxy->url);
+        proxy_json.emplace_back("allow_private_endpoint", proxy->allow_private_endpoint);
+        JsonValue::Array allowed_hosts;
+        for (const auto &host : proxy->allowed_hosts) {
+            allowed_hosts.emplace_back(host);
+        }
+        proxy_json.emplace_back("allowed_hosts", std::move(allowed_hosts));
+        if (proxy->authorization.has_value()) {
+            proxy_json.emplace_back("credential_name", proxy->authorization->name);
+        }
+        root.emplace_back("proxy", std::move(proxy_json));
+    }
     root.emplace_back("max_redirects", static_cast<std::int64_t>(max_redirects));
     return JsonValue(std::move(root));
 }
@@ -218,8 +248,21 @@ Result<void> ModelProfile::validate() const {
         endpoint_origin.find(' ') != std::string::npos) {
         return route_error("profile endpoint origin must not carry credentials or spaces");
     }
+    if (endpoint_host().empty()) {
+        return route_error("profile endpoint origin must carry a valid host");
+    }
     if (!api_prefix.empty() && api_prefix.front() != '/') {
         return route_error("profile api prefix must start with '/'");
+    }
+    if (proxy.has_value()) {
+        if (proxy->url.rfind("http://", 0) != 0 || proxy->url.find('@') != std::string::npos ||
+            proxy->url.find(' ') != std::string::npos) {
+            return route_error("profile proxy must be an absolute http origin without credentials");
+        }
+        const auto authority_end = proxy->url.find('/', 7);
+        if (authority_end != std::string::npos && authority_end + 1 != proxy->url.size()) {
+            return route_error("profile proxy must not carry a path");
+        }
     }
     const auto &limits = capabilities.limits;
     if (limits.max_context_tokens == 0 || limits.max_output_tokens == 0 ||
@@ -303,16 +346,16 @@ std::vector<std::string> profile_mismatches(const ModelProfile &profile, const R
     return mismatches;
 }
 
-std::vector<std::string> unsupported_generation_parameters(const GenerationParamPolicy &policy,
-                                                           const ModelGenerationOptions &generation) {
+std::vector<std::string>
+unsupported_generation_parameters(const GenerationParamPolicy &policy,
+                                  const ModelGenerationOptions &generation) {
     std::vector<std::string> unsupported;
     const auto check = [&unsupported](const char *name, ParamMapping mapping, bool set) {
         if (set && mapping == ParamMapping::Unsupported) {
             unsupported.push_back(std::string("generation parameter is unsupported: ") + name);
         }
     };
-    check("max_output_tokens", policy.max_output_tokens,
-          generation.max_output_tokens.has_value());
+    check("max_output_tokens", policy.max_output_tokens, generation.max_output_tokens.has_value());
     check("temperature", policy.temperature, generation.temperature.has_value());
     check("top_p", policy.top_p, generation.top_p.has_value());
     check("seed", policy.seed, generation.seed.has_value());
@@ -325,10 +368,9 @@ void ModelRouter::register_profile(std::shared_ptr<const ModelProfile> profile) 
     if (profile == nullptr) {
         return;
     }
-    const auto found = std::find_if(profiles_.begin(), profiles_.end(),
-                                    [&](const auto &candidate) {
-                                        return candidate->id == profile->id;
-                                    });
+    const auto found = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto &candidate) {
+        return candidate->id == profile->id;
+    });
     if (found != profiles_.end()) {
         *found = std::move(profile);
         return;
@@ -337,20 +379,20 @@ void ModelRouter::register_profile(std::shared_ptr<const ModelProfile> profile) 
 }
 
 std::shared_ptr<const ModelProfile> ModelRouter::find(const ModelProfileId &profile_id) const {
-    const auto found = std::find_if(profiles_.begin(), profiles_.end(),
-                                    [&](const auto &candidate) { return candidate->id == profile_id; });
+    const auto found = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto &candidate) {
+        return candidate->id == profile_id;
+    });
     return found == profiles_.end() ? nullptr : *found;
 }
 
-std::vector<std::shared_ptr<const ModelProfile>> ModelRouter::profiles() const {
-    return profiles_;
-}
+std::vector<std::shared_ptr<const ModelProfile>> ModelRouter::profiles() const { return profiles_; }
 
 Result<RouteDecision> ModelRouter::route(const RouteQuery &query) const {
     RouteDecision decision;
     for (const auto &profile : profiles_) {
         if (!profile->validate()) {
-            decision.rejections.push_back(RouteRejection{profile->id, "profile manifest is invalid"});
+            decision.rejections.push_back(
+                RouteRejection{profile->id, "profile manifest is invalid"});
             continue;
         }
         auto mismatches = profile_mismatches(*profile, query);

@@ -24,6 +24,7 @@ option(MIRA_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(MIRA_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(MIRA_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Mira targets" OFF)
 option(MIRA_WITH_OPENSSL "Build the OpenSSL-backed TLS channel adapter" ON)
+option(MIRA_WITH_MBEDTLS "Build the pinned cross-platform Mbed TLS channel adapter" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(MiraWarnings)
@@ -49,6 +50,16 @@ set(EXECUTOR_ENABLE_GPU OFF CACHE BOOL "" FORCE)
 set(EXECUTOR_ENABLE_CUDA OFF CACHE BOOL "" FORCE)
 set(EXECUTOR_ENABLE_OPENCL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/executor)
+
+if(MIRA_WITH_MBEDTLS)
+    set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+    set(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL)
+    set_target_properties(mbedcrypto mbedx509 mbedtls everest p256m
+        PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if(MIRA_ENABLE_ASAN)
     target_compile_options(executor PRIVATE -fsanitize=address -fno-omit-frame-pointer)
@@ -85,6 +96,7 @@ add_library(mira_core
     src/model/model_budget.cpp
     src/model/model_supervisor.cpp
     src/model/model_provider.cpp
+    src/model/model_upload.cpp
     src/model/model_gateway.cpp
     src/model/model_replay.cpp
     src/model/agent_loop.cpp
@@ -242,6 +254,42 @@ if(MIRA_WITH_OPENSSL AND UNIX AND NOT ANDROID)
     endif()
 endif()
 
+# Pinned cross-platform TLS channel. Mbed TLS owns no worker threads here: its
+# nonblocking BIO callbacks operate on SocketHttpTransport's native socket and
+# all waits remain on the Executor blocking-I/O worker.
+if(MIRA_WITH_MBEDTLS)
+    add_library(mira_mbedtls_transport SHARED
+        adapters/net/mbedtls_tls.cpp
+    )
+    add_library(Mira::mbedtls_transport ALIAS mira_mbedtls_transport)
+    target_include_directories(mira_mbedtls_transport
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
+    )
+    target_link_libraries(mira_mbedtls_transport
+        PUBLIC Mira::core
+        PRIVATE MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto
+    )
+    target_compile_features(mira_mbedtls_transport PUBLIC cxx_std_20)
+    mira_enable_warnings(mira_mbedtls_transport)
+    if(MIRA_ENABLE_CLANG_TIDY)
+        set_property(TARGET mira_mbedtls_transport PROPERTY CXX_CLANG_TIDY
+            "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*"
+        )
+    endif()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(mira_mbedtls_transport PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(mira_mbedtls_transport)
+    set_target_properties(mira_mbedtls_transport PROPERTIES
+        EXPORT_NAME mbedtls_transport
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+endif()
+
 add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
 target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
 mira_enable_warnings(mira_minimal_consumer)
@@ -293,6 +341,14 @@ install(TARGETS mira_core mira_simulator_adapter mira_android_adapter mira_net_t
 )
 if(TARGET mira_openssl_transport)
     install(TARGETS mira_openssl_transport
+        EXPORT MiraTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
+if(TARGET mira_mbedtls_transport)
+    install(TARGETS mira_mbedtls_transport
         EXPORT MiraTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

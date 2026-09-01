@@ -55,10 +55,32 @@ mira_add_m3_test(mira_m3_transport_test m3/m3_transport_test.cpp)
 mira_add_m3_test(mira_m3_gateway_test m3/m3_gateway_test.cpp)
 mira_add_m3_test(mira_m3_agent_loop_test m3/m3_agent_loop_test.cpp)
 mira_add_m3_test(mira_m3_replay_test m3/m3_replay_test.cpp)
+mira_add_m3_test(mira_m3_upload_test m3/m3_upload_test.cpp)
 
 if(TARGET mira_openssl_transport)
     mira_add_m3_test(mira_m3_tls_test m3/m3_tls_test.cpp)
     target_link_libraries(mira_m3_tls_test PRIVATE Mira::openssl_transport)
+endif()
+
+if(TARGET mira_mbedtls_transport AND OpenSSL_FOUND)
+    mira_add_m3_test(mira_m3_mbedtls_test m3/m3_tls_test.cpp)
+    target_compile_definitions(mira_m3_mbedtls_test PRIVATE MIRA_TEST_MBEDTLS=1)
+    target_link_libraries(mira_m3_mbedtls_test PRIVATE Mira::mbedtls_transport OpenSSL::SSL)
+endif()
+
+if(TARGET mira_mbedtls_transport)
+    add_executable(mira_m3_interop_probe m3/m3_interop_probe.cpp)
+    target_link_libraries(mira_m3_interop_probe PRIVATE
+        Mira::core Mira::net_transport Mira::mbedtls_transport executor::executor)
+    target_include_directories(mira_m3_interop_probe PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/adapters/net")
+    target_include_directories(mira_m3_interop_probe SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(mira_m3_interop_probe)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(mira_m3_interop_probe PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(mira_m3_interop_probe)
 endif()
 
 add_executable(mira_m2_android_host_test

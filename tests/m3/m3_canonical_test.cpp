@@ -140,8 +140,8 @@ int json_round_trip_and_unknown_enums() {
 
     // Unknown enum values fail closed instead of coercing.
     auto replace_first_input_item = [](JsonValue root, JsonValue item) {
-        JsonValue::Array items = root.find("input")->as_array() ? *root.find("input")->as_array()
-                                                                : JsonValue::Array{};
+        JsonValue::Array items =
+            root.find("input")->as_array() ? *root.find("input")->as_array() : JsonValue::Array{};
         if (!items.empty()) {
             items[0] = std::move(item);
         }
@@ -158,9 +158,8 @@ int json_round_trip_and_unknown_enums() {
     auto with_unknown_part = parse_json(to_json_string(json));
     with_unknown_part.value() = replace_first_input_item(
         std::move(with_unknown_part.value()),
-        JsonValue::Object{
-            {"role", "user"},
-            {"content", JsonValue::Array{JsonValue::Object{{"kind", "hologram"}}}}});
+        JsonValue::Object{{"role", "user"},
+                          {"content", JsonValue::Array{JsonValue::Object{{"kind", "hologram"}}}}});
     MIRA_CHECK(!model_request_from_json(with_unknown_part.value()).has_value());
 
     // Response side: unknown output item type fails closed.
@@ -172,8 +171,8 @@ int json_round_trip_and_unknown_enums() {
     response_json.value().set("output", JsonValue(std::move(output_items)));
     MIRA_CHECK(!model_response_from_json(response_json.value()).has_value());
 
-    auto restored_response =
-        model_response_from_json(parse_json(to_json_string(model_response_to_json(response))).value());
+    auto restored_response = model_response_from_json(
+        parse_json(to_json_string(model_response_to_json(response))).value());
     MIRA_CHECK(restored_response.has_value());
     MIRA_CHECK(restored_response.value().status == ModelCompletionStatus::Completed);
     MIRA_CHECK(restored_response.value().usage.input_tokens == 12);
@@ -184,7 +183,8 @@ int error_domain_mapping() {
     const auto auth = make_model_error(ModelDomainCode::AuthenticationFailed, "x");
     MIRA_CHECK(auth.domain == "mira.model");
     MIRA_CHECK(auth.code == ErrorCode::PermissionDenied);
-    MIRA_CHECK(model_domain_code_name(ModelDomainCode::AuthenticationFailed) == "AuthenticationFailed");
+    MIRA_CHECK(model_domain_code_name(ModelDomainCode::AuthenticationFailed) ==
+               "AuthenticationFailed");
 
     const auto ambiguous = make_model_error(ModelDomainCode::AmbiguousCompletion, "x");
     MIRA_CHECK(ambiguous.code == ErrorCode::ExecutionUncertain);
@@ -240,11 +240,26 @@ int profile_manifest_and_routing() {
     mutated.model_selector = "other-model";
     MIRA_CHECK(mutated.profile_digest() != digest);
 
+    // Proxy policy and credential references are profile-bound, while secret
+    // plaintext remains outside the manifest.
+    mutated = *profile;
+    mutated.proxy = ModelProxyConfig{"http://proxy.example.test:8080",
+                                     SecretRef{"proxy-credential"},
+                                     false,
+                                     {"proxy.example.test"}};
+    MIRA_CHECK(mutated.validate().has_value());
+    MIRA_CHECK(mutated.profile_digest() != digest);
+    const auto proxy_manifest = to_json_string(mutated.manifest_to_json());
+    MIRA_CHECK(proxy_manifest.find("proxy-credential") != std::string::npos);
+    MIRA_CHECK(proxy_manifest.find("Proxy-Authorization") == std::string::npos);
+    mutated.proxy->url = "http://user:pass@proxy.example.test";
+    MIRA_CHECK(!mutated.validate().has_value());
+
     // Generation gate rejects unsupported parameters.
     ModelGenerationOptions generation;
     generation.seed = 7;
-    MIRA_CHECK(!unsupported_generation_parameters(profile->capabilities.generation, generation)
-                    .empty());
+    MIRA_CHECK(
+        !unsupported_generation_parameters(profile->capabilities.generation, generation).empty());
     generation.seed.reset();
     MIRA_CHECK(
         unsupported_generation_parameters(profile->capabilities.generation, generation).empty());
@@ -281,8 +296,7 @@ int wire_digest_excludes_secrets() {
 
     MIRA_CHECK(redact_url_for_log("https://h.example/p?sig=abc&x=1") == "https://h.example/p");
     const std::vector<std::string> forbidden = {"sk-secret-value"};
-    MIRA_CHECK(
-        contains_none(to_json_string(sanitize_wire_for_events(wire.value())), forbidden));
+    MIRA_CHECK(contains_none(to_json_string(sanitize_wire_for_events(wire.value())), forbidden));
 
     // Prompt digest covers artifact digests, not payload bytes.
     const auto request = sample_request();

@@ -107,6 +107,16 @@ struct TransportDeadlines final {
     std::chrono::milliseconds total{120'000};
 };
 
+// Explicit forward-proxy configuration. The resolved credential is the full
+// Proxy-Authorization field value (for example, "Basic ...") and is only
+// materialized inside the transport. Proxy URLs may not contain userinfo.
+struct ModelProxyConfig final {
+    std::string url;
+    std::optional<SecretRef> authorization;
+    bool allow_private_endpoint = false;
+    std::vector<std::string> allowed_hosts;
+};
+
 // A fixed provider endpoint profile. The endpoint origin and API prefix are
 // configuration; mappers never accept model- or response-supplied URLs.
 struct ModelProfile final {
@@ -122,11 +132,13 @@ struct ModelProfile final {
     ModelProfileCapabilities capabilities;
     ModelDataPolicy default_data_policy;
     TransportDeadlines deadlines;
+    std::optional<ModelProxyConfig> proxy;
     std::uint32_t max_redirects = 2;
 
     // Dialect-specific request path; never derived from model output.
     [[nodiscard]] std::string request_path() const;
     [[nodiscard]] std::string endpoint_url() const;
+    [[nodiscard]] std::string endpoint_host() const;
     // Versioned manifest digest covering identity, dialect, endpoint and
     // capabilities; used to bind RouteDecisions and continuations.
     [[nodiscard]] Hash profile_digest() const;
@@ -170,8 +182,7 @@ class ModelRouter final {
   public:
     void register_profile(std::shared_ptr<const ModelProfile> profile);
     [[nodiscard]] Result<RouteDecision> route(const RouteQuery &query) const;
-    [[nodiscard]] std::shared_ptr<const ModelProfile>
-    find(const ModelProfileId &profile_id) const;
+    [[nodiscard]] std::shared_ptr<const ModelProfile> find(const ModelProfileId &profile_id) const;
     [[nodiscard]] std::vector<std::shared_ptr<const ModelProfile>> profiles() const;
 
   private:

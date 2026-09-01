@@ -21,8 +21,9 @@ constexpr std::size_t kMaxInlineImageBytes = 8ULL * 1024ULL * 1024ULL;
     return text;
 }
 
-[[nodiscard]] const std::string *find_header(const std::vector<std::pair<std::string, std::string>> &headers,
-                                             const std::string &name) {
+[[nodiscard]] const std::string *
+find_header(const std::vector<std::pair<std::string, std::string>> &headers,
+            const std::string &name) {
     const auto lower = lowercase_copy(name);
     for (const auto &header : headers) {
         if (lowercase_copy(header.first) == lower) {
@@ -92,8 +93,7 @@ constexpr std::size_t kMaxInlineImageBytes = 8ULL * 1024ULL * 1024ULL;
         details != nullptr && details->is_object()) {
         if (const auto *reasoning = details->find("reasoning_tokens");
             reasoning != nullptr && reasoning->is_integer()) {
-            result.reasoning_tokens =
-                static_cast<std::uint64_t>(reasoning->as_integer().value());
+            result.reasoning_tokens = static_cast<std::uint64_t>(reasoning->as_integer().value());
         }
     }
     if (result.reasoning_tokens == std::nullopt) {
@@ -137,8 +137,8 @@ constexpr std::size_t kMaxInlineImageBytes = 8ULL * 1024ULL * 1024ULL;
 
 [[nodiscard]] Result<void> gate_generation_options(const ModelProfile &profile,
                                                    const ModelGenerationOptions &generation) {
-    const auto unsupported = unsupported_generation_parameters(profile.capabilities.generation,
-                                                               generation);
+    const auto unsupported =
+        unsupported_generation_parameters(profile.capabilities.generation, generation);
     if (!unsupported.empty()) {
         std::string message = "generation parameters cannot be represented by the dialect:";
         for (const auto &item : unsupported) {
@@ -244,15 +244,15 @@ Error map_http_error_status(const WireHttpResponse &wire) {
                                 true);
     default:
         if (wire.status >= 500) {
-            return make_model_error(ModelDomainCode::ProviderOverloaded,
-                                    message_with_code("provider reported a retryable server failure"),
-                                    true);
+            return make_model_error(
+                ModelDomainCode::ProviderOverloaded,
+                message_with_code("provider reported a retryable server failure"), true);
         }
         // Unknown terminal statuses fail closed instead of being guessed.
-        return make_model_error(
-            ModelDomainCode::ProtocolViolation,
-            "unexpected provider http status: " + std::to_string(wire.status) + provider_code,
-            false);
+        return make_model_error(ModelDomainCode::ProtocolViolation,
+                                "unexpected provider http status: " + std::to_string(wire.status) +
+                                    provider_code,
+                                false);
     }
 }
 
@@ -360,13 +360,17 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
                     return make_model_error(ModelDomainCode::CapabilityMismatch,
                                             "profile does not accept image input");
                 }
-                auto data_url = fetch_image_data_url(image->source, artifacts);
-                if (!data_url) {
-                    return data_url.error();
-                }
                 JsonValue::Object part_json;
                 part_json.emplace_back("type", "input_image");
-                part_json.emplace_back("image_url", std::move(data_url).value());
+                if (auto file_id = artifacts.remote_file_id(image->source); file_id.has_value()) {
+                    part_json.emplace_back("file_id", *file_id);
+                } else {
+                    auto data_url = fetch_image_data_url(image->source, artifacts);
+                    if (!data_url) {
+                        return data_url.error();
+                    }
+                    part_json.emplace_back("image_url", std::move(data_url).value());
+                }
                 switch (image->detail) {
                 case ImageDetail::Low:
                     part_json.emplace_back("detail", "low");
@@ -385,14 +389,18 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
                     return make_model_error(ModelDomainCode::CapabilityMismatch,
                                             "profile does not accept file input");
                 }
-                auto data_url = fetch_image_data_url(file->source, artifacts);
-                if (!data_url) {
-                    return data_url.error();
-                }
                 JsonValue::Object part_json;
                 part_json.emplace_back("type", "input_file");
-                part_json.emplace_back("file_data", std::move(data_url).value());
-                part_json.emplace_back("filename", file->display_name);
+                if (auto file_id = artifacts.remote_file_id(file->source); file_id.has_value()) {
+                    part_json.emplace_back("file_id", *file_id);
+                } else {
+                    auto data_url = fetch_image_data_url(file->source, artifacts);
+                    if (!data_url) {
+                        return data_url.error();
+                    }
+                    part_json.emplace_back("file_data", std::move(data_url).value());
+                    part_json.emplace_back("filename", file->display_name);
+                }
                 parts.emplace_back(std::move(part_json));
             }
         }
@@ -401,8 +409,7 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
     }
     if (request.continuation.has_value() &&
         request.continuation->previous_response_id.has_value()) {
-        root.emplace_back("previous_response_id",
-                          *request.continuation->previous_response_id);
+        root.emplace_back("previous_response_id", *request.continuation->previous_response_id);
     }
     root.emplace_back("input", std::move(input));
 
@@ -619,11 +626,10 @@ Result<ModelResponse> decode_responses_terminal_body(const ModelRequest &request
                                             "function call carries no name");
                 }
                 call.provider_name = *name->as_string();
-                const auto found = std::find_if(
-                    request.tools.begin(), request.tools.end(),
-                    [&](const ExposedToolSpec &tool) {
-                        return tool.wire_name == call.provider_name;
-                    });
+                const auto found = std::find_if(request.tools.begin(), request.tools.end(),
+                                                [&](const ExposedToolSpec &tool) {
+                                                    return tool.wire_name == call.provider_name;
+                                                });
                 if (found != request.tools.end()) {
                     call.tool_id = found->tool_id;
                 }
@@ -642,8 +648,7 @@ Result<ModelResponse> decode_responses_terminal_body(const ModelRequest &request
                 response.output.emplace_back(std::move(call));
             } else if (type_text == "refusal") {
                 RefusalOutput refusal;
-                if (const auto *text = item.find("refusal");
-                    text != nullptr && text->is_string()) {
+                if (const auto *text = item.find("refusal"); text != nullptr && text->is_string()) {
                     refusal.safe_summary = *text->as_string();
                 }
                 response.output.emplace_back(std::move(refusal));
@@ -1039,9 +1044,8 @@ Result<ModelResponse> ChatCompletionsV1Mapper::decode_response(const ModelReques
             }
             call.provider_name = *name->as_string();
             const auto found = std::find_if(
-                request.tools.begin(), request.tools.end(), [&](const ExposedToolSpec &tool) {
-                    return tool.wire_name == call.provider_name;
-                });
+                request.tools.begin(), request.tools.end(),
+                [&](const ExposedToolSpec &tool) { return tool.wire_name == call.provider_name; });
             if (found != request.tools.end()) {
                 call.tool_id = found->tool_id;
             }

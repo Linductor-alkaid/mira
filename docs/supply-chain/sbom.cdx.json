@@ -4,7 +4,7 @@
   "serialNumber": "urn:uuid:216da08f-e191-4afe-8ffc-a74d7dba8975",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-30T00:00:00Z",
+    "timestamp": "2026-09-01T00:00:00Z",
     "component": {
       "type": "library",
       "name": "mira",
@@ -19,11 +19,23 @@
       "version": "4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
       "licenses": [{ "license": { "id": "MIT" } }],
       "purl": "pkg:github/Linductor-alkaid/executor@4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5",
+      "name": "mbedtls",
+      "version": "068ff080b369adfac81509f9b57b2afabaf82dc5",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "purl": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5"
     }
   ],
   "dependencies": [
     {
       "ref": "pkg:github/Linductor-alkaid/executor@4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5",
       "dependsOn": []
     }
   ]

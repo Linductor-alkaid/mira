@@ -664,9 +664,11 @@ M3 实现落点：canonical 契约与错误（`include/mira/model_contracts.hpp`
 
 ## 20. 已知限制与待验证项
 
-- 传输实现已按 [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) 落地为自研
-  socket transport + 可插拔 TLS 通道；Windows/Android 的 TLS 通道与 HTTP 代理仍缺目标平台证据，
-  https 在这些平台 fail closed。真实 endpoint 互操作（`M3-19`）待受控凭据。
+- 传输实现已按 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) 落地为自研
+  socket transport + 可插拔 TLS 通道，并锁定 Mbed TLS `v3.6.7` 作为
+  Windows/Linux/Android 共用实现；HTTP absolute-form 与 HTTPS CONNECT 代理已交付。Linux 的直接
+  TLS、CONNECT 后 TLS 和错误 CA 已运行验证；Windows/Android 仍缺本轮目标 runner 构建/运行证据。
+  真实 endpoint 互操作（`M3-19`）待受控凭据。
 - 各 Provider 对 strict JSON Schema 子集、usage、rate-limit header、idempotency 和 model alias 的实际
   行为必须逐 profile 验证。
 - 官方 API 会演进；上游新增字段不自动成为 Mira 支持能力，须经 schema/fixture 版本更新。
@@ -677,6 +679,7 @@ M3 实现落点：canonical 契约与错误（`include/mira/model_contracts.hpp`
 ## 21. 关联文档与官方依据
 
 - [DEC-007：LLM API 规范契约与协议方言策略](../decisions/DEC-007-llm-api-protocol-strategy.md)
+- [DEC-010：跨平台 TLS、代理与 upload 生命周期](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)
 - [OpenAI-compatible 兼容性矩阵](../compatibility/openai-compatible-matrix.md)
 - [Model Provider 与 Tool 扩展设计](model_provider_and_tool_design.md)
 - [Context 与 Memory 设计](context_and_memory_design.md)
