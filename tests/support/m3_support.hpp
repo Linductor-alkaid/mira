@@ -348,6 +348,7 @@ class ScriptedHttpServer final {
             ;
     }
     [[nodiscard]] std::uint16_t port() const noexcept { return port_; }
+    [[nodiscard]] TestSocket native_client() const noexcept { return client_; }
 
     // Blocks until a client connects; returns false on timeout/invalid.
     [[nodiscard]] bool accept_client(std::chrono::milliseconds timeout) {

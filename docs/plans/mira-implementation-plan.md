@@ -61,7 +61,7 @@
 | [M0](m0-engineering-baseline.md) | 仓库、跨平台构建组合、Executor 集成和质量基线 | 无 | 内部工程基线 | Completed |
 | [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
-| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | In Progress（代理/upload 已交付；目标平台 TLS 证据与 interop 开放） |
+| [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | Completed |
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Planned |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Planned |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Planned |
@@ -73,9 +73,9 @@ M2 的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都
 关闭。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
-文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 当前开放的
-Windows/Android TLS 目标证据和真实 Provider 互操作仍由 `M3-04`、`M3-19` 原编号跟踪；后续里程碑
-不得通过复制或改号绕过 M3 退出条件。
+文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
+完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
+矩阵中标记 `InteropVerified` 的字段，image=`Failed` 和其他 `Unknown` 能力不被外推。
 
 ## 5. 首批架构决策
 

@@ -1,11 +1,11 @@
 # M3：Model Provider 与视觉离散 Agent 闭环
 
-> 状态：In Progress（代理与 upload/delete 已交付；`M3-04` Windows/Android 目标构建/运行证据和 `M3-19` 互操作未完成，里程碑保持打开）
+> 状态：Completed（实现、跨平台传输与 MiniMax-M3 Responses 分能力互操作证据已验收）
 > 负责人：Mira Maintainers  
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)  
 > 前置：M2  
 > 建议发布点：Agent loop alpha（[发布说明](../releases/agent-loop-alpha.md)）  
-> 更新日期：2026-09-01
+> 更新日期：2026-09-02
 
 ## 1. 目标
 
@@ -70,7 +70,7 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
 
 ### 4.2 Transport 与方言
 
-- [ ] `M3-04` 选择并锁定 C++ HTTP/TLS 依赖，验证桌面和目标 Android NDK 构建、TLS、代理、DNS、
+- [x] `M3-04` 选择并锁定 C++ HTTP/TLS 依赖，验证桌面和目标 Android NDK 构建、TLS、代理、DNS、
   redirect、SSE、取消及内部线程/shutdown；同步供应链与兼容性记录。
   已交付：依赖决策由 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) 锁定为自研
   socket transport + Mbed TLS `v3.6.7` 跨平台通道 + Linux OpenSSL 参考通道；Linux 桌面完成 HTTP/1.1、chunked、
@@ -82,9 +82,12 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   2026-09-01 新增 HTTP absolute-form、HTTPS CONNECT、proxy/target 双重 SSRF/allowlist、独立
   Proxy SecretRef 和 CONNECT 后真实 TLS 测试（`mira_m3_transport_test`、两种 `m3_*tls_test`）。
   `mira_mbedtls_transport` 使用 nonblocking BIO，不创建线程，Windows/Android CI 构建目标已接入。
-  未完成：当前主机无 MSVC/Android NDK runner；Google/GitHub NDK binary 下载经当前代理 TLS 失败，故尚无
-  新目标构建/运行证据。负责人 Mira Maintainers；补跑条件：递归 checkout 后运行 Windows CI 与 Android
-  NDK 26.3 arm64 构建 `mira_mbedtls_transport`，并在至少一个目标平台执行 TLS contract test。
+  2026-09-02 新增不依赖 OpenSSL 的 `mira_m3_mbedtls_portable_test`，以锁定的 Mbed TLS 作为
+  loopback server，覆盖 direct TLS、CONNECT 后 TLS、proxy credential 和错误 CA fail-closed。CI run
+  [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 完成 Windows
+  Debug/Release 运行（各 28/28）及 Android NDK 26.3 arm64 构建；Windows 日志明确执行并通过该
+  portable contract，据此关闭目标构建与至少一个非 Linux 目标 TLS runtime 验收。Android 设备/模拟器
+  runtime 支持声明仍属于后续平台交付，不由 M3 的 NDK 构建证据外推。
 - [x] `M3-05` 实现 Executor 受管 transport：blocking worker或批准的 external-loop bridge、可解除 socket
   等待、分阶段 deadline、大小上限和确定 shutdown。（`adapters/net/socket_transport.cpp`：
   `mira-provider-io` blocking I/O worker、poll 切片取消、DNS/connect/TLS/write/first-byte/idle/total
@@ -165,11 +168,15 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   transport 契约：`tests/support/m3_support.hpp` 的 `MockHttpTransport`；真实 socket 故障注入 server：
   `ScriptedHttpServer` 覆盖连接中断/挂起/SSE 中途取消/超限/redirect 循环；协议故障注入（序列 gap、
   重复 terminal、字段不匹配）在 `mira_m3_sse_test`）
-- [ ] `M3-19` 在受控测试账户、非用户数据和费用上限下，至少完成一个明确 Provider/dialect/model 的
+- [x] `M3-19` 在受控测试账户、非用户数据和费用上限下，至少完成一个明确 Provider/dialect/model 的
   `InteropVerified`，并更新兼容性矩阵；没有凭据或网络时本项保持未完成。
-  当前环境无受控凭据；网络只通过受限代理部分可用，不能替代账户授权。负责人 Mira Maintainers；
-  补跑条件：受控测试账户 + 明确 model + 费用上限 + CA bundle + endpoint/proxy allowlist，运行默认
-  fail-closed 的 `mira_m3_interop_probe`，按兼容性矩阵第 6 节补齐其余 capability 并回填。
+  2026-09-02 使用受控 MiniMax 测试凭据、`https://api.minimaxi.com/v1`、
+  `openai.responses.v1` 和 `MiniMax-M3` 完成最多六请求的真实互操作。text、同步/SSE strict schema、
+  Provider-reported usage、命名 Function Tool、错误映射和协作取消达到 `InteropVerified`；Responses
+  image 真实返回 5xx 并记为 `Failed`；file/upload、parallel Tool、continuation、429/Retry-After、region/ZDR
+  保持 `Unknown`。逐项证据、digest、环境和补跑条件见[兼容性矩阵 §5.1](../compatibility/openai-compatible-matrix.md)。
+  同日补充排查确认 image 失败与 data URL 编码、图片尺寸无关，归因 MiniMax 服务端图片管道或账号能力，
+  见本文验证记录末条与矩阵同日补充记录。
 - [x] `M3-20` 同步公共 API、示例、设计、安全、兼容性、供应链和验证记录，产出 Agent loop alpha
   release notes。（[发布说明](../releases/agent-loop-alpha.md)；[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)；
   设计 §20、兼容性矩阵、平台矩阵、供应链说明与本文验证记录同步）
@@ -196,17 +203,19 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 
 - `RISK-2026-010`：第三方“compatible”语义漂移。Owner：M3 Provider owner。缓解：固定 dialect/profile
   digest、证据有效期、fixture 和 fail-closed capability；解除条件：至少一个 profile 真实互操作通过。
-  状态（2026-08-31）：fixture 层已固化（`FixtureVerified`）；互操作仍未执行，风险未解除。
+  状态（2026-09-02）：M3 范围已解除。MiniMax-M3 Responses 的逐 capability 互操作揭示并修复 SSE
+  官方事件名前缀差异；image 失败和所有未运行字段继续由矩阵隔离，证明不能按品牌整体推断兼容。
 - `RISK-2026-011`：HTTP/TLS 库可能在 Android、SSE取消或 Executor 生命周期方面不满足要求。
   Owner：M3 transport owner。解除条件：`M3-04` 原型验证并记录依赖/线程/shutdown证据；若是 Executor
   通用能力不足，登记 `EXE-*` 后再决定兼容边界。
-  状态（2026-09-01）：DEC-010 锁定 Mbed TLS `v3.6.7`；nonblocking BIO 无隐藏线程，Linux direct/
-  CONNECT TLS、取消、shutdown、deadline 证据齐备。Windows/Android 构建与运行待目标 runner，风险
-  部分缓解未解除。
+  状态（2026-09-02）：已解除。DEC-010 锁定 Mbed TLS `v3.6.7`；nonblocking BIO 无隐藏线程；Linux
+  direct/CONNECT TLS、取消、shutdown、deadline，Windows direct/CONNECT/错误 CA runtime，以及
+  Android NDK arm64 构建证据均由本地测试与 CI run `33578613423` 固化。
 - `RISK-2026-012`：严格 schema 的供应商子集或首次编译延迟影响闭环。Owner：M3 model owner。
   缓解：发送前 dialect gate、schema cache telemetry、有限 repair 和预热基准。
-- `RISK-2026-013`：真实 API 测试需要凭据、费用、网络和数据政策。Owner：M3 release owner。未具备时
-  `M3-19` 和里程碑保持未完成，不能用 mock 代替互操作声明。
+- `RISK-2026-013`：真实 API 测试需要凭据、费用、网络和数据政策。Owner：M3 release owner。
+  状态（2026-09-02）：M3 范围已解除；受控 MiniMax-M3 Responses 测试完成，credential 未入库或日志。
+  image=`Failed` 与未执行能力仍保留在兼容性矩阵，不由已通过的 text/Tool 能力外推。
 
 当前没有确认的 Executor 能力缺口，因此不新增 `docs/executor_feedback/ledger.md` 记录。
 
@@ -227,8 +236,8 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 
 ## 8. 退出条件
 
-- [ ] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-01：`M3-15` 已关闭；仅
-  `M3-04` Windows/Android 目标证据与 `M3-19` 互操作保持开放）
+- [x] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-02：跨平台传输、upload fixture 与
+  MiniMax-M3 Responses 分能力互操作均已回填）
 - [x] 两个 dialect 的同步 mapper contract suite 通过；Responses SSE 全部状态、分片和取消用例通过。
   （`mira_m3_dialect_test`、`mira_m3_sse_test`）
 - [x] 所有模型 Action 都来自完整 terminal response 并通过本地 schema、epoch、Policy 和 Planner 校验。
@@ -244,8 +253,9 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 - [x] Shutdown 后无在途 transport、timer、future、callback或第三方 SDK worker；迟到结果不改变终态。
   （`mira_m3_transport_test` 的 shutdown 结算/入队拒绝用例；gateway admission 用例；无第三方 SDK
   worker——自研 transport 的 worker 经 `WorkerHandle` join）
-- [ ] 至少一个明确 Provider/dialect/model 达到 `InteropVerified`，其余服务不被误标为支持。
-  （未执行；所有真实服务保持 `Unknown`，见 `M3-19`）
+- [x] 至少一个明确 Provider/dialect/model 达到 `InteropVerified`，其余服务不被误标为支持。
+  （MiniMax-M3 / `https://api.minimaxi.com/v1` / `openai.responses.v1` 的 text、strict schema、Function Tool、
+  同步/SSE、usage、错误和取消范围达到 `InteropVerified`；image=`Failed`，其余能力仍为 `Unknown`）
 - [x] OfflineReplay 在能力图和测试中无法访问真实 Network、Tool 或 Input。
   （`ReplayModelProvider` 无网络路径；`mira_m3_replay_test` 断言回放环境无 capture/dispatch 能力）
 - [x] Secret、Authorization、signed URL、敏感 prompt/截图/response 不出现在普通日志和事件。
@@ -285,8 +295,8 @@ transport 层 SSRF/allowlist/redirect 凭证剥离/取消/shutdown/上限/deadli
 `mira_m3_agent_loop_test`；预算与重试表驱动在 `mira_m3_supervisor_budget_test`；回放无副作用与
 tombstone 在 `mira_m3_replay_test`。
 
-限制与待补跑：`M3-04` 代理子项、Windows/Android TLS 通道、`M3-15` upload 生命周期与 `M3-19`
-互操作未完成（原因与补跑条件见工作项注记）。
+历史限制与待补跑（截至 2026-08-31）：当时 `M3-04` 代理/目标 TLS、`M3-15` upload 生命周期与
+`M3-19` 互操作尚未完成；其后验收见本文后续日期记录，不能把这段历史状态当作当前结论。
 
 2026-08-31：CI 收敛记录。首推提交 `99f28c1` 的 run
 [`33329362206`](https://github.com/Linductor-alkaid/mira/actions/runs/33329362206) 中 Windows
@@ -340,3 +350,89 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
   通过，包括 Linux GCC/Clang Debug+Release、Windows Debug/Release、Android arm64、
   ASAN/UBSAN/TSAN 与 quality；据此关闭本次 PR CI 缺陷。该 run 只证明目标构建及既有测试矩阵，
   不替代 `M3-04` 尚未完成的 Android/Windows TLS 目标运行证据或 `M3-19` 真实 Provider 互操作。
+- 后续验收新增 `mira_m3_mbedtls_portable_test`，移除 Windows TLS contract 对 OpenSSL test server 的
+  依赖；Linux Debug 全量 30/30（M3 14 项）与 clang-tidy 18.1.3 `--warnings-as-errors=*` 全量构建通过。
+  本记录待 follow-up PR 的 Windows test job 通过后回填 run 链接并关闭 `M3-04`。
+- Follow-up PR #2 首次 run
+  [`33578014919`](https://github.com/Linductor-alkaid/mira/actions/runs/33578014919) 验证了 Android NDK
+  构建，但 Windows CTest 因未把 `mira_mbedtls_transport.dll` 目录加入测试 `PATH` 以 `0xc0000135`
+  退出；TSAN 则发现同进程 Mbed TLS client/server fixture 共享上游 PSA 全局状态。修复为 Windows
+  CTest 显式注入目标 DLL 目录，并仅在 TSAN 配置禁用该双端同库 fixture；TSAN 下 Mbed TLS client
+  仍由既有 OpenSSL server contract 覆盖。两项均为测试基础设施边界，不改变生产 transport 并发模型。
+- 修复后 PR run
+  [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 11/11 jobs 通过：
+  Windows Debug/Release 各 28/28，日志明确执行 `mira_m3_mbedtls_portable_test` 并通过；Android NDK
+  arm64 显式构建 `mira_mbedtls_transport`；Linux GCC/Clang Debug+Release、ASAN/UBSAN/TSAN 与 quality
+  全绿。据此关闭 `M3-04`；该证据不替代仍开放的 `M3-19` 真实 Provider 互操作。
+
+2026-09-02：MiniMax-M3 Responses 互操作验收（Linux x86_64，Ubuntu 24.04，GCC 13.3.0，Debug，
+Mbed TLS `3.6.7`，branch `codex/m3-final-acceptance`，worktree based on
+`d57e4cf99aee7114830f2fe833b638e469a4a0e0`）。凭据通过本地精确忽略且权限 `0600` 的 secret 文件注入；
+其内容、Authorization、原始响应和账户标识均未打印或提交。请求使用公开文本、1×1 合成 PNG、无副作用
+Tool schema，明确 `store=false`，完整模式最多六次请求。
+
+- 首次真实 SSE 暴露 parser 只接受无前缀别名、拒绝官方 `response.output_item.added` 的缺陷；修复为仅对
+  已知 Responses 子事件规范化 `response.` 前缀，未知事件继续 fail closed，`mira_m3_sse_test` 以官方事件名
+  增加回归。同步/SSE strict schema 随后均通过。
+- 最终 profile ID `8d8e365190e84a508f0908be9b53f70d`，digest
+  `2a498cea2bec7f41899ff185c987eed70becad9b6347e5830636aca9b7b96a9b`；请求与 resolved model 均为
+  `MiniMax-M3`，sync/stream usage 均为 `ProviderReported`。schema digest
+  `79a8e4f7f22c08f2fbd0847e5e2803f3c771318088bae2c03ba20798ecdc6122`，同步 response digest
+  `62bb15a259e032a6f45128b6e47215864e68a4c0d51687c4928f8e9524f65d2e`，Provider response ID 只记录摘要
+  `4fc7966678127cbf13381948cff510cc32da75690faa9ec95896f891001c8d5a`。
+- text、同步/SSE strict schema、命名 Function Tool、usage、无效 model 错误映射和 Executor timer 驱动的
+  10ms 协作取消通过。Responses image 使用有效 1×1 PNG 返回 5xx，Mira 映射为 `ProviderOverloaded`，
+  因此明确记为 `Failed`；完整 probe 退出 1 正是该 capability failure，不隐藏为绿色总布尔值。
+- upload/delete、parallel Tool、continuation、429/Retry-After、region/ZDR 未运行并保持 `Unknown`；负责人
+  Mira Maintainers，补跑条件为对应 capability 的独立费用/副作用授权与受控测试窗口。逐字段结论见
+  [兼容性矩阵 §5.1](../compatibility/openai-compatible-matrix.md)。据此关闭 `M3-19` 和 M3，但支持声明严格
+  限于已通过字段。
+- 代码与文档回填后的本地门禁：Debug 全量 30/30（M3 14 项）通过；`MIRA_ENABLE_CLANG_TIDY=ON`
+  全量构建通过；`format-check`、`docs-check`、`sbom-check`、`platform-boundary-check` 与
+  `git diff --check` 通过。跨平台复验由本分支 PR CI 记录补充。
+
+2026-09-02：MiniMax-M3 image 编码因素补充排查（同环境，branch `codex/m3-final-acceptance` 工作
+树，凭据注入与脱敏方式同上，共 7 请求、`store=false`、全部公开合成数据与公网 fixture）。应验收
+追问“排除 data URL 格式因素”，`mira_m3_interop_probe` 新增单请求诊断 case（`MIRA_INTEROP_CASE=
+image|image-red|image-red-b64|image-url|image-red-chat|text-chat`）与只改写 `image_url` 编码、
+打印 HTTP 状态和 4xx/5xx 错误体摘要的传输装饰器；其余 Executor/TLS/provider 栈保持真实路径。
+
+- 基线复现：Responses + data URL + 1×1 PNG 稳定复现 HTTP 500 `system error (1033)`/
+  `server_error`，排除瞬时故障。
+- 图片尺寸/内容（部分降级）：当轮 64×64 红色 PNG + data URL 同样 500 (1033)；事后发现该
+  fixture 存在转录缺陷（132/134 字节，损坏 IDAT），此条不再单独作为尺寸排除证据（见同日
+  SiliconFlow 条目），有效 fixture 重跑待执行；下述其余证据不受影响。
+- data URL 格式排除：裸 base64 得到确定性 HTTP 400 `invalid param: image url must be
+  http(s):// or data:...;base64 (2013)`——MiniMax 明确要求 data URL 或 http(s) URL，Mira
+  原有编码格式正确，5xx 不是格式错误。
+- URL 形式排除：公网 http PNG URL 亦 500 `unknown error (1000)`。
+- 方言对照：Chat Completions + data URL 红图同样 500 (1033)；Chat Completions 纯文本对照
+  HTTP 200（64 token 上限时 `Incomplete`，1024 时 `Completed`，strict `json_schema` 决策未过
+  本地校验，疑与 MiniMax-M3 thinking 输出或 `response_format` 支持相关，未深入，不作为能力
+  声明）。
+- 结论：MiniMax 官方文档声明 MiniMax-M3 原生支持图片/视频输入，但受控账号在两种方言、两种
+  官方要求编码下 image 请求均为服务端 5xx。image=`Failed` 维持；归因候选为 MiniMax 服务端图片
+  管道缺陷或该测试账号多模态能力未开通，需供应商侧确认，Mira 侧无需改动 wire 格式。补跑条件：
+  供应商确认或能力开通后重跑诊断 case。新增潜在偏差登记：MiniMax `detail` 枚举为
+  `low`/`default`/`high`（无 `auto`），Mira `ImageDetail::Auto` 默认发送 `auto`，image 通道恢复
+  后需 profile 级映射修正（后续工作项跟踪）。
+- 本地门禁：Debug 全量 30/30 通过；`clang-format --dry-run --Werror` 通过；docs-check、
+  sbom-check、platform-boundary-check 与 `git diff --check` 通过；clang-tidy 本机不可用
+  （仅有 conda clang-format 18.x），由本分支 PR CI quality job 复验。
+
+2026-09-02：SiliconFlow `Qwen/Qwen3.5-4B` 视觉互操作（同环境，受控测试凭据，公开合成
+fixture，`mira_m3_interop_probe` 单请求 case + curl 隔离实验，共 5 请求）。这是首个 image
+input 达到 `InteropVerified` 的 profile，为 Mira 视觉闭环提供可用 VLM 通道；逐项证据见
+[兼容性矩阵 §5.2](../compatibility/openai-compatible-matrix.md)。
+
+- text + strict `json_schema`：200/`Completed`，本地 decision 校验通过。
+- image input：64×64 纯红 PNG data URL（base64 含 `+`），模型正确返回 `{"red":true}`；
+  走 Mira 真实 Executor/TLS/chat mapper 栈。`Qwen/Qwen3-VL-8B-Instruct` 交叉验证通过。
+- 隔离实验：裸 `+` 可用、`%2B` 预转义被 400 拒绝（服务端不做 URL 解码）、损坏 PNG 被确定性
+  400 拒绝。配置勘误：硅基流动无 `/responses` 端点，`wire_api` 必须为 chat；
+  `reasoning_effort` 仅个别模型支持。
+- 过程更正与 MiniMax 证据影响：初轮 image 失败（`broken PNG`）系探针红色 fixture 转录缺陷
+  （132/134 字节），已程序化重嵌并复验通过；同缺陷波及上文 MiniMax 补测的 image-red 条目，
+  已在该条降级标注，MiniMax 归因结论依赖的有效 1×1 基线与公网 URL 证据不受影响。
+- 后续：有效 fixture 的 MiniMax image-red 重跑（1 请求）待执行；SiliconFlow 正式接入需独立
+  profile 固化（含 SSE、Tool、upload 等 `Unknown` 项的补测），可作为视觉闭环短期通道。

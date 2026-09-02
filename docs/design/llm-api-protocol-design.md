@@ -667,8 +667,9 @@ M3 实现落点：canonical 契约与错误（`include/mira/model_contracts.hpp`
 - 传输实现已按 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) 落地为自研
   socket transport + 可插拔 TLS 通道，并锁定 Mbed TLS `v3.6.7` 作为
   Windows/Linux/Android 共用实现；HTTP absolute-form 与 HTTPS CONNECT 代理已交付。Linux 的直接
-  TLS、CONNECT 后 TLS 和错误 CA 已运行验证；Windows/Android 仍缺本轮目标 runner 构建/运行证据。
-  真实 endpoint 互操作（`M3-19`）待受控凭据。
+  TLS、CONNECT 后 TLS 和错误 CA 已运行验证；Windows 已运行 portable direct/CONNECT/error-CA
+  contract，Android NDK arm64 构建通过（设备 runtime 不由此外推）。MiniMax-M3 Responses 已完成
+  分 capability 互操作；支持与失败边界见兼容性矩阵。
 - 各 Provider 对 strict JSON Schema 子集、usage、rate-limit header、idempotency 和 model alias 的实际
   行为必须逐 profile 验证。
 - 官方 API 会演进；上游新增字段不自动成为 Mira 支持能力，须经 schema/fixture 版本更新。

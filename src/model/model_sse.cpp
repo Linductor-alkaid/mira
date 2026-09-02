@@ -260,7 +260,17 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
         return sequence;
     }
 
-    const auto &event = message.event;
+    // The Responses API names item/content/delta events with a `response.`
+    // prefix on the wire (for example `response.output_item.added`).  Early
+    // compatible endpoints emitted the same closed vocabulary without that
+    // prefix, so retain those aliases while normalizing the official form.
+    std::string_view event = message.event;
+    constexpr std::string_view response_prefix = "response.";
+    if (event.starts_with(response_prefix) && event != "response.created" &&
+        event != "response.in_progress" && event != "response.completed" &&
+        event != "response.failed" && event != "response.incomplete") {
+        event.remove_prefix(response_prefix.size());
+    }
     if (event == "response.created" || event == "response.in_progress") {
         return Result<void>{};
     }
@@ -467,7 +477,7 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
     }
     if (event == "response.completed" || event == "response.failed" ||
         event == "response.incomplete") {
-        auto status = note_terminal(event.c_str());
+        auto status = note_terminal(message.event.c_str());
         if (!status) {
             return status;
         }
