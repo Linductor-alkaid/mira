@@ -1,6 +1,6 @@
 # M3：Model Provider 与视觉离散 Agent 闭环
 
-> 状态：In Progress（代理与 upload/delete 已交付；`M3-04` Windows/Android 目标构建/运行证据和 `M3-19` 互操作未完成，里程碑保持打开）
+> 状态：In Progress（实现与跨平台传输验收已交付；仅 `M3-19` 真实 Provider 互操作未完成，里程碑保持打开）
 > 负责人：Mira Maintainers  
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)  
 > 前置：M2  
@@ -70,7 +70,7 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
 
 ### 4.2 Transport 与方言
 
-- [ ] `M3-04` 选择并锁定 C++ HTTP/TLS 依赖，验证桌面和目标 Android NDK 构建、TLS、代理、DNS、
+- [x] `M3-04` 选择并锁定 C++ HTTP/TLS 依赖，验证桌面和目标 Android NDK 构建、TLS、代理、DNS、
   redirect、SSE、取消及内部线程/shutdown；同步供应链与兼容性记录。
   已交付：依赖决策由 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) 锁定为自研
   socket transport + Mbed TLS `v3.6.7` 跨平台通道 + Linux OpenSSL 参考通道；Linux 桌面完成 HTTP/1.1、chunked、
@@ -83,11 +83,11 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   Proxy SecretRef 和 CONNECT 后真实 TLS 测试（`mira_m3_transport_test`、两种 `m3_*tls_test`）。
   `mira_mbedtls_transport` 使用 nonblocking BIO，不创建线程，Windows/Android CI 构建目标已接入。
   2026-09-02 新增不依赖 OpenSSL 的 `mira_m3_mbedtls_portable_test`，以锁定的 Mbed TLS 作为
-  loopback server，覆盖 direct TLS、CONNECT 后 TLS、proxy credential 和错误 CA fail-closed；Linux
-  本地已通过，Windows runner 证据待 follow-up PR。
-  未完成：当前主机无 MSVC/Android NDK runner；Google/GitHub NDK binary 下载经当前代理 TLS 失败，故尚无
-  新目标构建/运行证据。负责人 Mira Maintainers；补跑条件：递归 checkout 后运行 Windows CI 与 Android
-  NDK 26.3 arm64 构建 `mira_mbedtls_transport`，并在至少一个目标平台执行 TLS contract test。
+  loopback server，覆盖 direct TLS、CONNECT 后 TLS、proxy credential 和错误 CA fail-closed。CI run
+  [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 完成 Windows
+  Debug/Release 运行（各 28/28）及 Android NDK 26.3 arm64 构建；Windows 日志明确执行并通过该
+  portable contract，据此关闭目标构建与至少一个非 Linux 目标 TLS runtime 验收。Android 设备/模拟器
+  runtime 支持声明仍属于后续平台交付，不由 M3 的 NDK 构建证据外推。
 - [x] `M3-05` 实现 Executor 受管 transport：blocking worker或批准的 external-loop bridge、可解除 socket
   等待、分阶段 deadline、大小上限和确定 shutdown。（`adapters/net/socket_transport.cpp`：
   `mira-provider-io` blocking I/O worker、poll 切片取消、DNS/connect/TLS/write/first-byte/idle/total
@@ -203,9 +203,9 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 - `RISK-2026-011`：HTTP/TLS 库可能在 Android、SSE取消或 Executor 生命周期方面不满足要求。
   Owner：M3 transport owner。解除条件：`M3-04` 原型验证并记录依赖/线程/shutdown证据；若是 Executor
   通用能力不足，登记 `EXE-*` 后再决定兼容边界。
-  状态（2026-09-01）：DEC-010 锁定 Mbed TLS `v3.6.7`；nonblocking BIO 无隐藏线程，Linux direct/
-  CONNECT TLS、取消、shutdown、deadline 证据齐备。Windows/Android 构建与运行待目标 runner，风险
-  部分缓解未解除。
+  状态（2026-09-02）：已解除。DEC-010 锁定 Mbed TLS `v3.6.7`；nonblocking BIO 无隐藏线程；Linux
+  direct/CONNECT TLS、取消、shutdown、deadline，Windows direct/CONNECT/错误 CA runtime，以及
+  Android NDK arm64 构建证据均由本地测试与 CI run `33578613423` 固化。
 - `RISK-2026-012`：严格 schema 的供应商子集或首次编译延迟影响闭环。Owner：M3 model owner。
   缓解：发送前 dialect gate、schema cache telemetry、有限 repair 和预热基准。
 - `RISK-2026-013`：真实 API 测试需要凭据、费用、网络和数据政策。Owner：M3 release owner。未具备时
@@ -230,8 +230,8 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 
 ## 8. 退出条件
 
-- [ ] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-01：`M3-15` 已关闭；仅
-  `M3-04` Windows/Android 目标证据与 `M3-19` 互操作保持开放）
+- [ ] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-02：`M3-04`、`M3-15` 已关闭；
+  仅 `M3-19` 真实 Provider 互操作保持开放）
 - [x] 两个 dialect 的同步 mapper contract suite 通过；Responses SSE 全部状态、分片和取消用例通过。
   （`mira_m3_dialect_test`、`mira_m3_sse_test`）
 - [x] 所有模型 Action 都来自完整 terminal response 并通过本地 schema、epoch、Policy 和 Planner 校验。
@@ -352,3 +352,8 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
   退出；TSAN 则发现同进程 Mbed TLS client/server fixture 共享上游 PSA 全局状态。修复为 Windows
   CTest 显式注入目标 DLL 目录，并仅在 TSAN 配置禁用该双端同库 fixture；TSAN 下 Mbed TLS client
   仍由既有 OpenSSL server contract 覆盖。两项均为测试基础设施边界，不改变生产 transport 并发模型。
+- 修复后 PR run
+  [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 11/11 jobs 通过：
+  Windows Debug/Release 各 28/28，日志明确执行 `mira_m3_mbedtls_portable_test` 并通过；Android NDK
+  arm64 显式构建 `mira_mbedtls_transport`；Linux GCC/Clang Debug+Release、ASAN/UBSAN/TSAN 与 quality
+  全绿。据此关闭 `M3-04`；该证据不替代仍开放的 `M3-19` 真实 Provider 互操作。

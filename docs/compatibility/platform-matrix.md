@@ -20,7 +20,7 @@
 | 目标 | 编译组合 | Core/Simulator/Host Adapter 证据 | 真实平台能力 | 运行门禁 |
 | --- | --- | --- | --- | --- |
 | Linux x86_64 | GCC 13、Clang 18；`debug`/`release`/sanitizer | `Build verified`（M0，Ubuntu 24.04） | `Planned`（`adapters/linux`，M7） | Linux GCC/Clang CI |
-| Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Configured`；CI 配置已提交，待 Windows runner 结果 | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
+| Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Build verified`（CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423)，Debug/Release） | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
 | Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 于 CI run
 [`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter 骨架，fake host 契约验证；见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
 
@@ -29,16 +29,14 @@
 | 目标 | `mira_net_transport`（HTTP/SSE/proxy） | `mira_mbedtls_transport` | OpenSSL 参考通道 | 证据 |
 | --- | --- | --- | --- | --- |
 | Linux x86_64 | Runtime verified（direct + HTTP proxy + HTTPS CONNECT） | Runtime verified（direct/CONNECT handshake、错误 CA） | Runtime verified | 本地 `mira_m3_transport_test`、`mira_m3_mbedtls_test`、`mira_m3_mbedtls_portable_test`、`mira_m3_tls_test`（2026-09-02）；既有 socket CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) |
-| Windows x64 | 既有 CI build/runtime verified（Winsock） | Configured（`mira_m3_mbedtls_portable_test` 已移除 OpenSSL test-server 依赖，待 Windows CI 运行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
-| Android arm64-v8a | 既有 CI build verified | Configured（Android job 已显式加入目标；本轮 NDK 未执行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
+| Windows x64 | Runtime verified（Winsock） | Runtime verified（direct/CONNECT handshake、proxy credential、错误 CA） | 不构建 | CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423)：Debug/Release 各 28/28，`mira_m3_mbedtls_portable_test` 通过 |
+| Android arm64-v8a | Build verified | Build verified（NDK 26.3/API 24 arm64） | 不构建 | CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 显式构建两个 transport；设备 runtime 由后续平台里程碑验证 |
 
 跨平台 TLS、proxy、CA bundle 和 fail-closed 语义见
 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。未配置 TLS 工厂时 https 端点在
-model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows/Android 当前只能声明
-`Configured`：负责人 Mira Maintainers；补跑条件为 recursive submodule checkout 后执行 MSVC
-Debug/Release 全量构建与 `mira_m3_mbedtls_portable_test`，以及 NDK 26.3/API 24 arm64 构建
-`mira_mbedtls_transport`。Windows runtime 声明需要 direct TLS、CONNECT TLS 和错误 CA contract 全部
-通过；Android runtime 支持声明仍需后续设备/模拟器证据，M3 只以其 NDK 构建作为门禁。
+model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows 已具备构建与适用 runtime contract
+证据；Android 已具备 NDK arm64 构建证据。Android runtime 支持声明仍需后续设备/模拟器证据，M3
+只以其 NDK 构建作为门禁，不把 `Build verified` 外推为真机网络、CA store 或代理支持。
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，
