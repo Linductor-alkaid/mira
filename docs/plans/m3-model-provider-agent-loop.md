@@ -346,3 +346,9 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
 - 后续验收新增 `mira_m3_mbedtls_portable_test`，移除 Windows TLS contract 对 OpenSSL test server 的
   依赖；Linux Debug 全量 30/30（M3 14 项）与 clang-tidy 18.1.3 `--warnings-as-errors=*` 全量构建通过。
   本记录待 follow-up PR 的 Windows test job 通过后回填 run 链接并关闭 `M3-04`。
+- Follow-up PR #2 首次 run
+  [`33578014919`](https://github.com/Linductor-alkaid/mira/actions/runs/33578014919) 验证了 Android NDK
+  构建，但 Windows CTest 因未把 `mira_mbedtls_transport.dll` 目录加入测试 `PATH` 以 `0xc0000135`
+  退出；TSAN 则发现同进程 Mbed TLS client/server fixture 共享上游 PSA 全局状态。修复为 Windows
+  CTest 显式注入目标 DLL 目录，并仅在 TSAN 配置禁用该双端同库 fixture；TSAN 下 Mbed TLS client
+  仍由既有 OpenSSL server contract 覆盖。两项均为测试基础设施边界，不改变生产 transport 并发模型。

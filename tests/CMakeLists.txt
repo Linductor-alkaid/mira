@@ -75,6 +75,17 @@ if(TARGET mira_mbedtls_transport)
         "${PROJECT_SOURCE_DIR}/third_party/mbedtls/tests/include")
     target_link_libraries(mira_m3_mbedtls_portable_test PRIVATE
         Mira::mbedtls_transport MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
+    if(WIN32)
+        set_tests_properties(mira_m3_mbedtls_portable_test PROPERTIES
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:mira_mbedtls_transport>")
+    endif()
+    if(MIRA_ENABLE_TSAN)
+        # The portable fixture runs a Mbed TLS server and client in one process.
+        # Their shared upstream PSA global state is not a Mira concurrency path;
+        # TSAN still covers the client adapter against the OpenSSL server fixture.
+        set_tests_properties(mira_m3_mbedtls_portable_test PROPERTIES DISABLED TRUE)
+    endif()
 endif()
 
 if(TARGET mira_mbedtls_transport)
