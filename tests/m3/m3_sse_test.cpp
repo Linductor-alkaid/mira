@@ -81,19 +81,19 @@ int reducer_happy_path_and_terminal_reduction() {
 
     std::string stream;
     stream += sse_event("response.created", R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_1"}})");
-    stream += sse_event("output_item.added",
+    stream += sse_event("response.output_item.added",
                         R"({"type":"output_item.added","sequence_number":1,"item":{"id":"msg_1","type":"message"}})");
-    stream += sse_event("content_part.added",
+    stream += sse_event("response.content_part.added",
                         R"({"type":"content_part.added","sequence_number":2,"item_id":"msg_1","output_index":0})");
-    stream += sse_event("output_text.delta",
+    stream += sse_event("response.output_text.delta",
                         R"({"type":"output_text.delta","sequence_number":3,"item_id":"msg_1","delta":"{\"act"})");
-    stream += sse_event("output_text.delta",
+    stream += sse_event("response.output_text.delta",
                         R"({"type":"output_text.delta","sequence_number":4,"item_id":"msg_1","delta":"ion\":\"back\"}"})");
-    stream += sse_event("output_text.done",
+    stream += sse_event("response.output_text.done",
                         R"({"type":"output_text.done","sequence_number":5,"item_id":"msg_1","text":"{\"action\":\"back\"}"})");
-    stream += sse_event("content_part.done",
+    stream += sse_event("response.content_part.done",
                         R"({"type":"content_part.done","sequence_number":6,"item_id":"msg_1","output_index":0})");
-    stream += sse_event("output_item.done",
+    stream += sse_event("response.output_item.done",
                         R"({"type":"output_item.done","sequence_number":7,"item":{"id":"msg_1","type":"message"}})");
     stream += completed_event(8, "dGFw");
     MIRA_CHECK(parser.feed(stream).has_value());

@@ -1,6 +1,6 @@
 # M3：Model Provider 与视觉离散 Agent 闭环
 
-> 状态：In Progress（实现与跨平台传输验收已交付；仅 `M3-19` 真实 Provider 互操作未完成，里程碑保持打开）
+> 状态：Completed（实现、跨平台传输与 MiniMax-M3 Responses 分能力互操作证据已验收）
 > 负责人：Mira Maintainers  
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)  
 > 前置：M2  
@@ -168,11 +168,13 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   transport 契约：`tests/support/m3_support.hpp` 的 `MockHttpTransport`；真实 socket 故障注入 server：
   `ScriptedHttpServer` 覆盖连接中断/挂起/SSE 中途取消/超限/redirect 循环；协议故障注入（序列 gap、
   重复 terminal、字段不匹配）在 `mira_m3_sse_test`）
-- [ ] `M3-19` 在受控测试账户、非用户数据和费用上限下，至少完成一个明确 Provider/dialect/model 的
+- [x] `M3-19` 在受控测试账户、非用户数据和费用上限下，至少完成一个明确 Provider/dialect/model 的
   `InteropVerified`，并更新兼容性矩阵；没有凭据或网络时本项保持未完成。
-  当前环境无受控凭据；网络只通过受限代理部分可用，不能替代账户授权。负责人 Mira Maintainers；
-  补跑条件：受控测试账户 + 明确 model + 费用上限 + CA bundle + endpoint/proxy allowlist，运行默认
-  fail-closed 的 `mira_m3_interop_probe`，按兼容性矩阵第 6 节补齐其余 capability 并回填。
+  2026-09-02 使用受控 MiniMax 测试凭据、`https://api.minimaxi.com/v1`、
+  `openai.responses.v1` 和 `MiniMax-M3` 完成最多六请求的真实互操作。text、同步/SSE strict schema、
+  Provider-reported usage、命名 Function Tool、错误映射和协作取消达到 `InteropVerified`；Responses
+  image 真实返回 5xx 并记为 `Failed`；file/upload、parallel Tool、continuation、429/Retry-After、region/ZDR
+  保持 `Unknown`。逐项证据、digest、环境和补跑条件见[兼容性矩阵 §5.1](../compatibility/openai-compatible-matrix.md)。
 - [x] `M3-20` 同步公共 API、示例、设计、安全、兼容性、供应链和验证记录，产出 Agent loop alpha
   release notes。（[发布说明](../releases/agent-loop-alpha.md)；[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)；
   设计 §20、兼容性矩阵、平台矩阵、供应链说明与本文验证记录同步）
@@ -199,7 +201,8 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 
 - `RISK-2026-010`：第三方“compatible”语义漂移。Owner：M3 Provider owner。缓解：固定 dialect/profile
   digest、证据有效期、fixture 和 fail-closed capability；解除条件：至少一个 profile 真实互操作通过。
-  状态（2026-08-31）：fixture 层已固化（`FixtureVerified`）；互操作仍未执行，风险未解除。
+  状态（2026-09-02）：M3 范围已解除。MiniMax-M3 Responses 的逐 capability 互操作揭示并修复 SSE
+  官方事件名前缀差异；image 失败和所有未运行字段继续由矩阵隔离，证明不能按品牌整体推断兼容。
 - `RISK-2026-011`：HTTP/TLS 库可能在 Android、SSE取消或 Executor 生命周期方面不满足要求。
   Owner：M3 transport owner。解除条件：`M3-04` 原型验证并记录依赖/线程/shutdown证据；若是 Executor
   通用能力不足，登记 `EXE-*` 后再决定兼容边界。
@@ -208,8 +211,9 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
   Android NDK arm64 构建证据均由本地测试与 CI run `33578613423` 固化。
 - `RISK-2026-012`：严格 schema 的供应商子集或首次编译延迟影响闭环。Owner：M3 model owner。
   缓解：发送前 dialect gate、schema cache telemetry、有限 repair 和预热基准。
-- `RISK-2026-013`：真实 API 测试需要凭据、费用、网络和数据政策。Owner：M3 release owner。未具备时
-  `M3-19` 和里程碑保持未完成，不能用 mock 代替互操作声明。
+- `RISK-2026-013`：真实 API 测试需要凭据、费用、网络和数据政策。Owner：M3 release owner。
+  状态（2026-09-02）：M3 范围已解除；受控 MiniMax-M3 Responses 测试完成，credential 未入库或日志。
+  image=`Failed` 与未执行能力仍保留在兼容性矩阵，不由已通过的 text/Tool 能力外推。
 
 当前没有确认的 Executor 能力缺口，因此不新增 `docs/executor_feedback/ledger.md` 记录。
 
@@ -230,8 +234,8 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 
 ## 8. 退出条件
 
-- [ ] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-02：`M3-04`、`M3-15` 已关闭；
-  仅 `M3-19` 真实 Provider 互操作保持开放）
+- [x] `M3-01` 至 `M3-20` 全部完成并有可复现验证记录。（2026-09-02：跨平台传输、upload fixture 与
+  MiniMax-M3 Responses 分能力互操作均已回填）
 - [x] 两个 dialect 的同步 mapper contract suite 通过；Responses SSE 全部状态、分片和取消用例通过。
   （`mira_m3_dialect_test`、`mira_m3_sse_test`）
 - [x] 所有模型 Action 都来自完整 terminal response 并通过本地 schema、epoch、Policy 和 Planner 校验。
@@ -247,8 +251,9 @@ Executor反馈台账；不得新增裸线程或隐藏全局 loop。
 - [x] Shutdown 后无在途 transport、timer、future、callback或第三方 SDK worker；迟到结果不改变终态。
   （`mira_m3_transport_test` 的 shutdown 结算/入队拒绝用例；gateway admission 用例；无第三方 SDK
   worker——自研 transport 的 worker 经 `WorkerHandle` join）
-- [ ] 至少一个明确 Provider/dialect/model 达到 `InteropVerified`，其余服务不被误标为支持。
-  （未执行；所有真实服务保持 `Unknown`，见 `M3-19`）
+- [x] 至少一个明确 Provider/dialect/model 达到 `InteropVerified`，其余服务不被误标为支持。
+  （MiniMax-M3 / `https://api.minimaxi.com/v1` / `openai.responses.v1` 的 text、strict schema、Function Tool、
+  同步/SSE、usage、错误和取消范围达到 `InteropVerified`；image=`Failed`，其余能力仍为 `Unknown`）
 - [x] OfflineReplay 在能力图和测试中无法访问真实 Network、Tool 或 Input。
   （`ReplayModelProvider` 无网络路径；`mira_m3_replay_test` 断言回放环境无 capture/dispatch 能力）
 - [x] Secret、Authorization、signed URL、敏感 prompt/截图/response 不出现在普通日志和事件。
@@ -288,8 +293,8 @@ transport 层 SSRF/allowlist/redirect 凭证剥离/取消/shutdown/上限/deadli
 `mira_m3_agent_loop_test`；预算与重试表驱动在 `mira_m3_supervisor_budget_test`；回放无副作用与
 tombstone 在 `mira_m3_replay_test`。
 
-限制与待补跑：`M3-04` 代理子项、Windows/Android TLS 通道、`M3-15` upload 生命周期与 `M3-19`
-互操作未完成（原因与补跑条件见工作项注记）。
+历史限制与待补跑（截至 2026-08-31）：当时 `M3-04` 代理/目标 TLS、`M3-15` upload 生命周期与
+`M3-19` 互操作尚未完成；其后验收见本文后续日期记录，不能把这段历史状态当作当前结论。
 
 2026-08-31：CI 收敛记录。首推提交 `99f28c1` 的 run
 [`33329362206`](https://github.com/Linductor-alkaid/mira/actions/runs/33329362206) 中 Windows
@@ -357,3 +362,29 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
   Windows Debug/Release 各 28/28，日志明确执行 `mira_m3_mbedtls_portable_test` 并通过；Android NDK
   arm64 显式构建 `mira_mbedtls_transport`；Linux GCC/Clang Debug+Release、ASAN/UBSAN/TSAN 与 quality
   全绿。据此关闭 `M3-04`；该证据不替代仍开放的 `M3-19` 真实 Provider 互操作。
+
+2026-09-02：MiniMax-M3 Responses 互操作验收（Linux x86_64，Ubuntu 24.04，GCC 13.3.0，Debug，
+Mbed TLS `3.6.7`，branch `codex/m3-final-acceptance`，worktree based on
+`d57e4cf99aee7114830f2fe833b638e469a4a0e0`）。凭据通过本地精确忽略且权限 `0600` 的 secret 文件注入；
+其内容、Authorization、原始响应和账户标识均未打印或提交。请求使用公开文本、1×1 合成 PNG、无副作用
+Tool schema，明确 `store=false`，完整模式最多六次请求。
+
+- 首次真实 SSE 暴露 parser 只接受无前缀别名、拒绝官方 `response.output_item.added` 的缺陷；修复为仅对
+  已知 Responses 子事件规范化 `response.` 前缀，未知事件继续 fail closed，`mira_m3_sse_test` 以官方事件名
+  增加回归。同步/SSE strict schema 随后均通过。
+- 最终 profile ID `8d8e365190e84a508f0908be9b53f70d`，digest
+  `2a498cea2bec7f41899ff185c987eed70becad9b6347e5830636aca9b7b96a9b`；请求与 resolved model 均为
+  `MiniMax-M3`，sync/stream usage 均为 `ProviderReported`。schema digest
+  `79a8e4f7f22c08f2fbd0847e5e2803f3c771318088bae2c03ba20798ecdc6122`，同步 response digest
+  `62bb15a259e032a6f45128b6e47215864e68a4c0d51687c4928f8e9524f65d2e`，Provider response ID 只记录摘要
+  `4fc7966678127cbf13381948cff510cc32da75690faa9ec95896f891001c8d5a`。
+- text、同步/SSE strict schema、命名 Function Tool、usage、无效 model 错误映射和 Executor timer 驱动的
+  10ms 协作取消通过。Responses image 使用有效 1×1 PNG 返回 5xx，Mira 映射为 `ProviderOverloaded`，
+  因此明确记为 `Failed`；完整 probe 退出 1 正是该 capability failure，不隐藏为绿色总布尔值。
+- upload/delete、parallel Tool、continuation、429/Retry-After、region/ZDR 未运行并保持 `Unknown`；负责人
+  Mira Maintainers，补跑条件为对应 capability 的独立费用/副作用授权与受控测试窗口。逐字段结论见
+  [兼容性矩阵 §5.1](../compatibility/openai-compatible-matrix.md)。据此关闭 `M3-19` 和 M3，但支持声明严格
+  限于已通过字段。
+- 代码与文档回填后的本地门禁：Debug 全量 30/30（M3 14 项）通过；`MIRA_ENABLE_CLANG_TIDY=ON`
+  全量构建通过；`format-check`、`docs-check`、`sbom-check`、`platform-boundary-check` 与
+  `git diff --check` 通过。跨平台复验由本分支 PR CI 记录补充。

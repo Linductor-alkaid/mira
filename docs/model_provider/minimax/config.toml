@@ -1,0 +1,10 @@
+model_provider = "custom"
+model = "MiniMax-M3"
+model_reasoning_effort = "medium"
+disable_response_storage = true
+
+[model_providers.custom]
+name = "minimax"
+base_url = "https://api.minimaxi.com/v1"
+wire_api = "responses"
+requires_openai_auth = true

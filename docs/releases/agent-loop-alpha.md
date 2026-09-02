@@ -1,10 +1,10 @@
 # Agent loop alpha（M3）发布说明
 
-> 日期：2026-09-01
+> 日期：2026-09-02
 > 里程碑：[M3 Model Provider 与视觉离散 Agent 闭环](../plans/m3-model-provider-agent-loop.md)
 > 发布点：Agent loop alpha
-> 状态：代码与本地契约测试交付；真实 Provider 互操作（`M3-19`）未执行，不构成对任何外部服务的
-> 互操作或生产能力声明
+> 状态：M3 Completed；MiniMax-M3 Responses 的 text、strict schema、Function Tool、同步/SSE、usage、
+> 错误与取消范围达到 `InteropVerified`，其他 Provider 或未验证 capability 不在声明范围
 
 ## 摘要
 
@@ -47,11 +47,11 @@ Simulator 上的完整闭环。
 
 ## 已知限制
 
-- **无互操作声明**：所有 Provider 证据为 `FixtureVerified`；`M3-19` 需要受控凭据、费用上限与
-  endpoint allowlist，未执行前任何真实服务状态保持 `Unknown`。
-- **Windows/Android 证据待补**：跨平台 Mbed TLS 源码与 CI build target 已交付，但本轮尚无 MSVC/
-  Android NDK runner 结果，不能声明目标平台 build/runtime verified；补齐条件见
-  [平台矩阵](../compatibility/platform-matrix.md)。
+- **互操作范围有限**：仅 `https://api.minimaxi.com/v1`、`MiniMax-M3`、`openai.responses.v1` 的已验证
+  字段可声明互操作；Responses image 实测 5xx 并标记 `Failed`，file/upload、parallel Tool、continuation、
+  429/Retry-After、region/ZDR 保持 `Unknown`。详见[兼容性矩阵](../compatibility/openai-compatible-matrix.md)。
+- **平台证据边界**：Windows Debug/Release 已运行 Mbed TLS direct/CONNECT/error-CA contract；Android
+  NDK 26.3 arm64 构建通过，但 Android 设备/模拟器 runtime 仍属于后续平台交付，不能从构建证据外推。
 - **DNS 解析不可中断**：`getaddrinfo` 阶段预算以事后测量执行，受 total deadline 兜底。
 - **Chat Completions SSE**：仅当 profile 声明且独立 fixture 通过后可用（本里程碑未开启）。
 
@@ -59,7 +59,7 @@ Simulator 上的完整闭环。
 
 ```sh
 cmake --preset debug && cmake --build --preset debug
-ctest --preset debug --output-on-failure   # 29/29，其中 m3 标签 13 项
+ctest --preset debug --output-on-failure   # 当前本地基线 30/30，其中 m3 标签 14 项
 ```
 
 故障注入与 golden 细节见 [M3 验证记录](../plans/m3-model-provider-agent-loop.md)。
