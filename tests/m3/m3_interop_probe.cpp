@@ -63,13 +63,25 @@ class ProbeArtifacts final : public IArtifactSource {
   public:
     ProbeArtifacts()
         : text_payload_("Mira controlled interop fixture. No user data.\n"),
-          image_payload_{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
-                         0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-                         0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5,
-                         0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41,
-                         0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03,
-                         0x02, 0x00, 0xef, 0xa3, 0x07, 0x5d, 0x00, 0x00, 0x00, 0x00,
-                         0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82} {
+          image_payload_{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+                         0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                         0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00,
+                         0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00,
+                         0x03, 0x03, 0x02, 0x00, 0xef, 0xa3, 0x07, 0x5d, 0x00, 0x00, 0x00, 0x00,
+                         0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82},
+          // 64x64 solid red RGB PNG; vision diagnostic fixture with an
+          // unambiguous answer ("is the solid color red?").
+          red_payload_{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+                       0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40, 0x08, 0x02,
+                       0x00, 0x00, 0x00, 0x25, 0x0b, 0xe6, 0x89, 0x00, 0x00, 0x00, 0x4d, 0x49, 0x44,
+                       0x41, 0x54, 0x78, 0xda, 0xed, 0xcf, 0x41, 0x09, 0x00, 0x00, 0x08, 0x00, 0xb1,
+                       0xeb, 0x9f, 0xca, 0x68, 0x46, 0xf0, 0x2d, 0x0c, 0x56, 0x60, 0x4d, 0xbd, 0x96,
+                       0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                       0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                       0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                       0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xc0, 0x65, 0x01, 0x28, 0x73, 0x00,
+                       0xb5, 0x2b, 0xc3, 0x48, 0xd9, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+                       0xae, 0x42, 0x60, 0x82} {
         text_reference_.id = ArtifactId::generate();
         text_reference_.digest = digest_string(text_payload_);
         text_reference_.byte_size = text_payload_.size();
@@ -81,6 +93,12 @@ class ProbeArtifacts final : public IArtifactSource {
         image_reference_.byte_size = image_payload_.size();
         image_reference_.media_type = "image/png";
         image_reference_.sensitivity = Sensitivity::Public;
+        red_reference_.id = ArtifactId::generate();
+        red_reference_.digest =
+            digest_bytes(std::as_bytes(std::span(red_payload_.data(), red_payload_.size())));
+        red_reference_.byte_size = red_payload_.size();
+        red_reference_.media_type = "image/png";
+        red_reference_.sensitivity = Sensitivity::Public;
     }
 
     Result<std::vector<std::byte>> fetch(const ArtifactRef &reference) override {
@@ -100,18 +118,99 @@ class ProbeArtifacts final : public IArtifactSource {
             }
             return bytes;
         }
+        if (reference.id == red_reference_.id) {
+            std::vector<std::byte> bytes;
+            bytes.reserve(red_payload_.size());
+            for (const auto value : red_payload_) {
+                bytes.push_back(static_cast<std::byte>(value));
+            }
+            return bytes;
+        }
         return make_model_error(ModelDomainCode::InvalidModelRequest,
                                 "interop artifact reference is unknown");
     }
 
     [[nodiscard]] const ArtifactRef &text_reference() const noexcept { return text_reference_; }
     [[nodiscard]] const ArtifactRef &image_reference() const noexcept { return image_reference_; }
+    [[nodiscard]] const ArtifactRef &red_reference() const noexcept { return red_reference_; }
 
   private:
     std::string text_payload_;
     std::vector<std::uint8_t> image_payload_;
+    std::vector<std::uint8_t> red_payload_;
     ArtifactRef text_reference_;
     ArtifactRef image_reference_;
+    ArtifactRef red_reference_;
+};
+
+// Diagnostic decorator: keeps the real Executor/TLS/provider stack and varies
+// only how the image part is encoded on the wire, so a 5xx can be attributed
+// to the encoding instead of the transport or the request shape.
+class ImageRewriteTransport final : public IHttpTransport {
+  public:
+    enum class Mode { Passthrough, RawBase64, RemoteUrl };
+
+    ImageRewriteTransport(std::shared_ptr<IHttpTransport> inner, Mode mode, std::string remote_url)
+        : inner_(std::move(inner)), mode_(mode), remote_url_(std::move(remote_url)) {}
+
+    Result<HttpResponseInfo> execute(const HttpRequest &request, const TransportLimits &limits,
+                                     const OperationContext &context,
+                                     const HttpChunkCallback &on_chunk,
+                                     TransportTrace &trace) override {
+        HttpRequest rewritten = request;
+        if (mode_ == Mode::RawBase64) {
+            // "image_url":"data:image/png;base64,<payload>" -> "<payload>"
+            constexpr std::string_view prefix = "data:image/png;base64,";
+            for (std::size_t at = rewritten.body.find(prefix); at != std::string::npos;
+                 at = rewritten.body.find(prefix, at)) {
+                rewritten.body.erase(at, prefix.size());
+            }
+        } else if (mode_ == Mode::RemoteUrl) {
+            constexpr std::string_view key = "\"image_url\":\"";
+            const auto at = rewritten.body.find(key);
+            if (at != std::string::npos) {
+                const auto value_begin = at + key.size();
+                const auto value_end = rewritten.body.find('"', value_begin);
+                if (value_end != std::string::npos) {
+                    rewritten.body.replace(value_begin, value_end - value_begin, remote_url_);
+                }
+            }
+        }
+        std::string body_snippet;
+        HttpChunkCallback capturing = on_chunk;
+        if (on_chunk) {
+            capturing = [&body_snippet, &on_chunk](std::string_view chunk) {
+                if (body_snippet.size() < 400) {
+                    body_snippet.append(chunk.substr(0, 400 - body_snippet.size()));
+                }
+                on_chunk(chunk);
+            };
+        }
+        auto result = inner_->execute(rewritten, limits, context, capturing, trace);
+        if (result.has_value()) {
+            std::cout << "{\"wire\":\"http\",\"status\":" << result.value().status;
+            if (result.value().status >= 400) {
+                std::cout << ",\"error_body\":\"";
+                for (const char value : body_snippet) {
+                    if (value == '"' || value == '\\') {
+                        std::cout << '\\';
+                    }
+                    std::cout << (value == '\n' ? 'n' : value);
+                }
+                std::cout << '"';
+            }
+            std::cout << "}\n";
+        } else {
+            std::cout << "{\"wire\":\"transport\",\"error\":\"" << result.error().safe_message
+                      << "\"}\n";
+        }
+        return result;
+    }
+
+  private:
+    std::shared_ptr<IHttpTransport> inner_;
+    Mode mode_;
+    std::string remote_url_;
 };
 
 [[nodiscard]] ModelProfile make_profile(const std::string &origin, const std::string &prefix,
@@ -119,8 +218,22 @@ class ProbeArtifacts final : public IArtifactSource {
                                         const std::optional<std::string> &proxy_url) {
     ModelProfile profile;
     profile.id = ModelProfileId{Id128(Id128::Bytes{
-        0x8d, 0x8e, 0x36, 0x51, 0x90, 0xe8, 0x4a, 0x50,
-        0x8f, 0x09, 0x08, 0xbe, 0x9b, 0x53, 0xf7, 0x0d,
+        0x8d,
+        0x8e,
+        0x36,
+        0x51,
+        0x90,
+        0xe8,
+        0x4a,
+        0x50,
+        0x8f,
+        0x09,
+        0x08,
+        0xbe,
+        0x9b,
+        0x53,
+        0xf7,
+        0x0d,
     })};
     profile.display_name = "controlled-interop-profile";
     profile.version = SemanticVersion{1, 0, 0};
@@ -193,6 +306,55 @@ class ProbeArtifacts final : public IArtifactSource {
     return request;
 }
 
+// Vision-diagnostic request: one image plus a yes/no question whose expected
+// answer is known for the fixture, so acceptance and actual image
+// comprehension are both observable.
+[[nodiscard]] ModelRequest make_image_request(const ModelProfile &profile, const ArtifactRef &image,
+                                              std::string question, const char *key) {
+    ModelRequest request;
+    request.contract_version = SchemaVersion{1, 0};
+    request.request_id = ModelRequestId::generate();
+    request.operation_id = OperationId::generate();
+    request.task_id = TaskId::generate();
+    request.profile_id = profile.id;
+    ModelInputItem system;
+    system.role = ModelRole::System;
+    system.content.emplace_back(
+        TextPart{"Answer strictly from the image content.", Sensitivity::Public});
+    request.input.push_back(std::move(system));
+    ModelInputItem item;
+    item.role = ModelRole::User;
+    item.content.emplace_back(ImagePart{image, ImageDetail::Low, "image/png"});
+    item.content.emplace_back(TextPart{std::move(question), Sensitivity::Public});
+    request.input.push_back(std::move(item));
+    request.output_contract.mode = OutputMode::StrictJsonSchema;
+    request.output_contract.schema_id = SchemaId::generate();
+    request.output_contract.schema_version = SemanticVersion{1, 0, 0};
+    const auto schema_text = std::string(R"({"type":"object","properties":{")") + key +
+                             R"(":{"type":"boolean"}},"required":[")" + key +
+                             R"("],"additionalProperties":false})";
+    auto schema = parse_json(schema_text);
+    request.output_contract.schema.root = std::move(schema).value();
+    request.output_contract.canonical_schema_digest =
+        canonical_json_digest(request.output_contract.schema.root);
+    request.generation.max_output_tokens = 64;
+    request.data_policy.store = false;
+    request.data_policy.remote_retention = std::chrono::seconds{0};
+    request.budget.max_output_tokens = 64;
+    request.budget.max_requests = 1;
+    return request;
+}
+
+[[nodiscard]] bool valid_image_decision(const ModelRequest &request, const ModelResponse &response,
+                                        const char *key) {
+    const auto parsed = parse_decision(request, response);
+    if (parsed.outcome != DecisionParseOutcome::Decision || !parsed.decision.has_value()) {
+        return false;
+    }
+    const auto *value = parsed.decision->value.find(key);
+    return value != nullptr && value->as_boolean().value_or(false);
+}
+
 [[nodiscard]] ModelRequest make_tool_request(const ModelProfile &profile) {
     auto request = make_request(profile);
     request.input.back().content.clear();
@@ -205,9 +367,10 @@ class ProbeArtifacts final : public IArtifactSource {
     tool.version = SemanticVersion{1, 0, 0};
     tool.wire_name = "mira_protocol_probe";
     tool.description = "Returns the controlled protocol-test marker.";
-    tool.parameters_schema.root = parse_json(
-        R"({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false})")
-                                      .value();
+    tool.parameters_schema.root =
+        parse_json(
+            R"({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false})")
+            .value();
     request.tools.push_back(std::move(tool));
     request.tools.front().spec_digest = tool_snapshot_digest(request.tools);
     request.tool_choice.mode = ToolChoiceMode::Named;
@@ -236,8 +399,7 @@ class ProbeArtifacts final : public IArtifactSource {
 }
 
 [[nodiscard]] bool has_domain_code(const Result<ModelResponse> &result, ModelDomainCode code) {
-    return !result.has_value() &&
-           result.error().domain_code == static_cast<std::int32_t>(code);
+    return !result.has_value() && result.error().domain_code == static_cast<std::int32_t>(code);
 }
 
 [[nodiscard]] OperationContext context() {
@@ -301,13 +463,17 @@ int main() {
     const auto ca_file = environment("MIRA_INTEROP_CA_FILE");
     const auto max_requests = environment("MIRA_INTEROP_MAX_REQUESTS");
     const auto selected_case = environment("MIRA_INTEROP_CASE");
-    const bool image_only = max_requests == "1" && selected_case == "image";
+    const bool image_case = max_requests == "1" && selected_case.has_value() &&
+                            (*selected_case == "image" || *selected_case == "image-red" ||
+                             *selected_case == "image-red-b64" || *selected_case == "image-url" ||
+                             *selected_case == "image-red-chat" || *selected_case == "text-chat");
     if (!key.has_value() || !model.has_value() || !ca_file.has_value() ||
-        !max_requests.has_value() || (!image_only && *max_requests != "2" &&
-                                     *max_requests != "3" && *max_requests != "6")) {
+        !max_requests.has_value() ||
+        (!image_case && *max_requests != "2" && *max_requests != "3" && *max_requests != "6")) {
         std::cerr << "refusing network interop: set MIRA_INTEROP_API_KEY, MIRA_INTEROP_MODEL, "
                      "MIRA_INTEROP_CA_FILE and MIRA_INTEROP_MAX_REQUESTS=2, 3, or 6 "
-                     "(or 1 with MIRA_INTEROP_CASE=image)\n";
+                     "(or 1 with MIRA_INTEROP_CASE=image, image-red, image-red-b64, image-url, "
+                     "image-red-chat or text-chat)\n";
         return 2;
     }
     const bool test_upload = *max_requests == "3";
@@ -354,18 +520,70 @@ int main() {
     auto remote = std::make_shared<OpenAiRemoteFileStore>(executor, profile, transport, artifacts);
     OpenAiCompatibleProvider provider(profile, transport, artifacts, nullptr, remote);
 
-    if (image_only) {
-        auto image_request = make_request(*profile);
-        image_request.input.back().content.emplace_back(
-            ImagePart{artifacts->image_reference(), ImageDetail::Low, "image/png"});
-        auto image = provider.infer(image_request, context(), ProviderInferOptions{});
+    if (image_case) {
+        const auto &case_name = *selected_case;
+        // MiniMax documents multimodal input under Chat Completions; the chat
+        // cases exercise that officially supported dialect through the same
+        // provider stack. text-chat is the no-image control.
+        auto case_profile = profile;
+        if (case_name == "image-red-chat" || case_name == "text-chat") {
+            case_profile = std::make_shared<ModelProfile>(*profile);
+            case_profile->dialect = ProtocolDialect::OpenAIChatCompletionsV1;
+        }
+        ModelRequest image_request = [&]() -> ModelRequest {
+            if (case_name == "text-chat") {
+                auto request = make_request(*case_profile);
+                if (const auto tokens = environment("MIRA_INTEROP_MAX_TOKENS");
+                    tokens.has_value()) {
+                    const auto limit = static_cast<std::uint64_t>(std::stoull(*tokens));
+                    request.generation.max_output_tokens = limit;
+                    request.budget.max_output_tokens = limit;
+                }
+                return request;
+            }
+            if (case_name == "image") {
+                auto request = make_request(*case_profile);
+                request.input.back().content.emplace_back(
+                    ImagePart{artifacts->image_reference(), ImageDetail::Low, "image/png"});
+                return request;
+            }
+            if (case_name == "image-url") {
+                return make_image_request(
+                    *case_profile, artifacts->image_reference(),
+                    "The image is a small monochrome toolbar icon. If it shows a left-pointing "
+                    "arrow return {\"arrow\":true}, otherwise {\"arrow\":false}.",
+                    "arrow");
+            }
+            return make_image_request(
+                *case_profile, artifacts->red_reference(),
+                "The image is one solid color. If that color is red return {\"red\":true}, "
+                "otherwise {\"red\":false}.",
+                "red");
+        }();
+        auto wire = std::make_shared<ImageRewriteTransport>(
+            transport,
+            case_name == "image-red-b64" ? ImageRewriteTransport::Mode::RawBase64
+            : case_name == "image-url"   ? ImageRewriteTransport::Mode::RemoteUrl
+                                         : ImageRewriteTransport::Mode::Passthrough,
+            environment("MIRA_INTEROP_IMAGE_URL")
+                .value_or(
+                    "https://raw.githubusercontent.com/matplotlib/matplotlib/main/lib/matplotlib/"
+                    "mpl-data/images/back.png"));
+        OpenAiCompatibleProvider image_provider(case_profile, wire, artifacts);
+        const bool plain_decision = case_name == "image" || case_name == "text-chat";
+        const char *decision_key = case_name == "image-url" ? "arrow"
+                                   : plain_decision         ? "ok"
+                                                            : "red";
+        auto image = image_provider.infer(image_request, context(), ProviderInferOptions{});
         if (image.has_value()) {
-            std::cout << "{\"case\":\"image\",\"result\":\""
-                      << (valid_decision(image_request, image.value()) ? "passed" : "not-passed")
-                      << "\",\"completion\":\"" << completion_name(image.value().status)
-                      << "\"}\n";
+            const bool passed =
+                plain_decision ? valid_decision(image_request, image.value())
+                               : valid_image_decision(image_request, image.value(), decision_key);
+            std::cout << "{\"case\":\"" << case_name << "\",\"result\":\""
+                      << (passed ? "passed" : "not-passed") << "\",\"completion\":\""
+                      << completion_name(image.value().status) << "\"}\n";
         } else {
-            std::cout << "{\"case\":\"image\",\"result\":\"error\",\"domain_code\":\""
+            std::cout << "{\"case\":\"" << case_name << "\",\"result\":\"error\",\"domain_code\":\""
                       << model_domain_code_name(
                              static_cast<ModelDomainCode>(image.error().domain_code))
                       << "\"}\n";
@@ -373,7 +591,7 @@ int main() {
         remote->shutdown();
         transport->shutdown();
         static_cast<void>(executor.shutdown(true));
-        return 0;
+        return image.has_value() ? 0 : 1;
     }
 
     const auto sync_request = make_request(*profile);
@@ -429,15 +647,15 @@ int main() {
         } else if (has_domain_code(image, ModelDomainCode::InvalidModelRequest) ||
                    has_domain_code(image, ModelDomainCode::CapabilityMismatch)) {
             image_result = "unsupported";
-            image_detail = model_domain_code_name(
-                static_cast<ModelDomainCode>(image.error().domain_code));
+            image_detail =
+                model_domain_code_name(static_cast<ModelDomainCode>(image.error().domain_code));
         } else if (image.has_value()) {
             image_result = "failed";
             image_detail = completion_name(image.value().status);
         } else {
             image_result = "failed";
-            image_detail = model_domain_code_name(
-                static_cast<ModelDomainCode>(image.error().domain_code));
+            image_detail =
+                model_domain_code_name(static_cast<ModelDomainCode>(image.error().domain_code));
         }
 
         auto invalid_profile = std::make_shared<ModelProfile>(*profile);
@@ -467,29 +685,29 @@ int main() {
 
     const auto profile_digest = profile->profile_digest().to_string();
     const auto resolved = sync.value().resolved_model.value_or("unreported");
-    const bool passed = upload_ok && tool_ok && image_result != "failed" && error_ok &&
-                        cancellation_ok;
+    const bool passed =
+        upload_ok && tool_ok && image_result != "failed" && error_ok && cancellation_ok;
     const auto response_digest = canonical_json_digest(model_response_to_json(sync.value()));
-    const auto provider_id_digest = sync.value().provider_response_id.has_value()
-                                        ? digest_string(*sync.value().provider_response_id).to_string()
-                                        : "unreported";
+    const auto provider_id_digest =
+        sync.value().provider_response_id.has_value()
+            ? digest_string(*sync.value().provider_response_id).to_string()
+            : "unreported";
     std::cout << "{\"status\":\"" << (passed ? "passed" : "failed") << "\",\"profile_digest\":\""
               << profile_digest << "\",\"requested_model\":\"" << profile->model_selector
               << "\",\"resolved_model\":\"" << resolved << "\",\"sync_usage\":\""
               << usage_name(sync.value().usage.quality) << "\",\"stream_usage\":\""
               << usage_name(stream.value().usage.quality) << "\",\"upload_cleanup\":\""
-              << (test_upload ? (upload_ok ? "passed" : "failed") : "not-run")
-              << "\",\"tool\":\"" << (test_full ? (tool_ok ? "passed" : "failed") : "not-run")
-              << "\",\"image\":\"" << image_result << "\",\"image_detail\":\""
-              << image_detail << "\",\"error_mapping\":\""
+              << (test_upload ? (upload_ok ? "passed" : "failed") : "not-run") << "\",\"tool\":\""
+              << (test_full ? (tool_ok ? "passed" : "failed") : "not-run") << "\",\"image\":\""
+              << image_result << "\",\"image_detail\":\"" << image_detail
+              << "\",\"error_mapping\":\""
               << (test_full ? (error_ok ? "passed" : "failed") : "not-run")
               << "\",\"cancellation\":\""
               << (test_full ? (cancellation_ok ? "passed" : "failed") : "not-run")
               << "\",\"schema_digest\":\""
               << sync_request.output_contract.canonical_schema_digest.to_string()
               << "\",\"response_digest\":\"" << response_digest.to_string()
-              << "\",\"provider_id_digest\":\"" << provider_id_digest
-              << "\",\"store\":false}\n";
+              << "\",\"provider_id_digest\":\"" << provider_id_digest << "\",\"store\":false}\n";
 
     remote->shutdown();
     transport->shutdown();

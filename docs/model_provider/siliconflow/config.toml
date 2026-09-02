@@ -1,0 +1,9 @@
+model_provider = "custom"
+model = "Qwen/Qwen3.5-4B"
+disable_response_storage = true
+
+[model_providers.custom]
+name = "siliconflow"
+base_url = "https://api.siliconflow.cn/v1"
+wire_api = "chat"
+requires_openai_auth = true

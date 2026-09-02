@@ -175,6 +175,8 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   Provider-reported usage、命名 Function Tool、错误映射和协作取消达到 `InteropVerified`；Responses
   image 真实返回 5xx 并记为 `Failed`；file/upload、parallel Tool、continuation、429/Retry-After、region/ZDR
   保持 `Unknown`。逐项证据、digest、环境和补跑条件见[兼容性矩阵 §5.1](../compatibility/openai-compatible-matrix.md)。
+  同日补充排查确认 image 失败与 data URL 编码、图片尺寸无关，归因 MiniMax 服务端图片管道或账号能力，
+  见本文验证记录末条与矩阵同日补充记录。
 - [x] `M3-20` 同步公共 API、示例、设计、安全、兼容性、供应链和验证记录，产出 Agent loop alpha
   release notes。（[发布说明](../releases/agent-loop-alpha.md)；[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)；
   设计 §20、兼容性矩阵、平台矩阵、供应链说明与本文验证记录同步）
@@ -388,3 +390,49 @@ Tool schema，明确 `store=false`，完整模式最多六次请求。
 - 代码与文档回填后的本地门禁：Debug 全量 30/30（M3 14 项）通过；`MIRA_ENABLE_CLANG_TIDY=ON`
   全量构建通过；`format-check`、`docs-check`、`sbom-check`、`platform-boundary-check` 与
   `git diff --check` 通过。跨平台复验由本分支 PR CI 记录补充。
+
+2026-09-02：MiniMax-M3 image 编码因素补充排查（同环境，branch `codex/m3-final-acceptance` 工作
+树，凭据注入与脱敏方式同上，共 7 请求、`store=false`、全部公开合成数据与公网 fixture）。应验收
+追问“排除 data URL 格式因素”，`mira_m3_interop_probe` 新增单请求诊断 case（`MIRA_INTEROP_CASE=
+image|image-red|image-red-b64|image-url|image-red-chat|text-chat`）与只改写 `image_url` 编码、
+打印 HTTP 状态和 4xx/5xx 错误体摘要的传输装饰器；其余 Executor/TLS/provider 栈保持真实路径。
+
+- 基线复现：Responses + data URL + 1×1 PNG 稳定复现 HTTP 500 `system error (1033)`/
+  `server_error`，排除瞬时故障。
+- 图片尺寸/内容（部分降级）：当轮 64×64 红色 PNG + data URL 同样 500 (1033)；事后发现该
+  fixture 存在转录缺陷（132/134 字节，损坏 IDAT），此条不再单独作为尺寸排除证据（见同日
+  SiliconFlow 条目），有效 fixture 重跑待执行；下述其余证据不受影响。
+- data URL 格式排除：裸 base64 得到确定性 HTTP 400 `invalid param: image url must be
+  http(s):// or data:...;base64 (2013)`——MiniMax 明确要求 data URL 或 http(s) URL，Mira
+  原有编码格式正确，5xx 不是格式错误。
+- URL 形式排除：公网 http PNG URL 亦 500 `unknown error (1000)`。
+- 方言对照：Chat Completions + data URL 红图同样 500 (1033)；Chat Completions 纯文本对照
+  HTTP 200（64 token 上限时 `Incomplete`，1024 时 `Completed`，strict `json_schema` 决策未过
+  本地校验，疑与 MiniMax-M3 thinking 输出或 `response_format` 支持相关，未深入，不作为能力
+  声明）。
+- 结论：MiniMax 官方文档声明 MiniMax-M3 原生支持图片/视频输入，但受控账号在两种方言、两种
+  官方要求编码下 image 请求均为服务端 5xx。image=`Failed` 维持；归因候选为 MiniMax 服务端图片
+  管道缺陷或该测试账号多模态能力未开通，需供应商侧确认，Mira 侧无需改动 wire 格式。补跑条件：
+  供应商确认或能力开通后重跑诊断 case。新增潜在偏差登记：MiniMax `detail` 枚举为
+  `low`/`default`/`high`（无 `auto`），Mira `ImageDetail::Auto` 默认发送 `auto`，image 通道恢复
+  后需 profile 级映射修正（后续工作项跟踪）。
+- 本地门禁：Debug 全量 30/30 通过；`clang-format --dry-run --Werror` 通过；docs-check、
+  sbom-check、platform-boundary-check 与 `git diff --check` 通过；clang-tidy 本机不可用
+  （仅有 conda clang-format 18.x），由本分支 PR CI quality job 复验。
+
+2026-09-02：SiliconFlow `Qwen/Qwen3.5-4B` 视觉互操作（同环境，受控测试凭据，公开合成
+fixture，`mira_m3_interop_probe` 单请求 case + curl 隔离实验，共 5 请求）。这是首个 image
+input 达到 `InteropVerified` 的 profile，为 Mira 视觉闭环提供可用 VLM 通道；逐项证据见
+[兼容性矩阵 §5.2](../compatibility/openai-compatible-matrix.md)。
+
+- text + strict `json_schema`：200/`Completed`，本地 decision 校验通过。
+- image input：64×64 纯红 PNG data URL（base64 含 `+`），模型正确返回 `{"red":true}`；
+  走 Mira 真实 Executor/TLS/chat mapper 栈。`Qwen/Qwen3-VL-8B-Instruct` 交叉验证通过。
+- 隔离实验：裸 `+` 可用、`%2B` 预转义被 400 拒绝（服务端不做 URL 解码）、损坏 PNG 被确定性
+  400 拒绝。配置勘误：硅基流动无 `/responses` 端点，`wire_api` 必须为 chat；
+  `reasoning_effort` 仅个别模型支持。
+- 过程更正与 MiniMax 证据影响：初轮 image 失败（`broken PNG`）系探针红色 fixture 转录缺陷
+  （132/134 字节），已程序化重嵌并复验通过；同缺陷波及上文 MiniMax 补测的 image-red 条目，
+  已在该条降级标注，MiniMax 归因结论依赖的有效 1×1 基线与公网 URL 证据不受影响。
+- 后续：有效 fixture 的 MiniMax image-red 重跑（1 请求）待执行；SiliconFlow 正式接入需独立
+  profile 固化（含 SSE、Tool、upload 等 `Unknown` 项的补测），可作为视觉闭环短期通道。

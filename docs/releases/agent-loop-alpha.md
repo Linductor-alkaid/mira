@@ -48,8 +48,10 @@ Simulator 上的完整闭环。
 ## 已知限制
 
 - **互操作范围有限**：仅 `https://api.minimaxi.com/v1`、`MiniMax-M3`、`openai.responses.v1` 的已验证
-  字段可声明互操作；Responses image 实测 5xx 并标记 `Failed`，file/upload、parallel Tool、continuation、
-  429/Retry-After、region/ZDR 保持 `Unknown`。详见[兼容性矩阵](../compatibility/openai-compatible-matrix.md)。
+  字段可声明互操作；Responses image 实测 5xx 并标记 `Failed`（补充排查已排除 data URL 编码与图片
+  尺寸因素——MiniMax 400 错误信息明确要求 data URL 格式，两种官方编码在两种方言下均服务端 5xx，
+  纯文本对照 200，归因见兼容性矩阵），file/upload、parallel Tool、continuation、429/Retry-After、
+  region/ZDR 保持 `Unknown`。详见[兼容性矩阵](../compatibility/openai-compatible-matrix.md)。
 - **平台证据边界**：Windows Debug/Release 已运行 Mbed TLS direct/CONNECT/error-CA contract；Android
   NDK 26.3 arm64 构建通过，但 Android 设备/模拟器 runtime 仍属于后续平台交付，不能从构建证据外推。
 - **DNS 解析不可中断**：`getaddrinfo` 阶段预算以事后测量执行，受 total deadline 兜底。

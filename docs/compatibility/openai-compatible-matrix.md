@@ -1,7 +1,7 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.3
+> 版本：1.5
 > 更新日期：2026-09-02
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
@@ -45,6 +45,7 @@
 | OpenAI Responses reference profile | `openai.responses.v1` | `https://api.openai.com/v1` | 未选择 | `Documented` | `Unknown` | `Unknown` | 仅作为首个实现目标，尚未声明可互操作 |
 | OpenAI Chat Completions reference profile | `openai.chat-completions.v1` | `https://api.openai.com/v1` | 未选择 | `Documented` | `Unknown` | `Unknown` | 尚未声明可互操作 |
 | MiniMax controlled Responses profile | `openai.responses.v1` | `https://api.minimaxi.com/v1` | `MiniMax-M3` | `Documented` | `FixtureVerified` | `InteropVerified`（仅 text、strict schema、Function Tool、同步/SSE、usage、错误与取消） | image=`Failed`；file/upload、parallel Tool、continuation、429 等保持 `Unknown` |
+| SiliconFlow controlled Chat Completions profile | `openai.chat-completions.v1` | `https://api.siliconflow.cn/v1` | `Qwen/Qwen3.5-4B` | `Documented` | `FixtureVerified` | `InteropVerified`（text、strict `json_schema`、data URL image input；2026-09-02 探针单 case 证据） | 无 `/responses` 端点；SSE、file/upload、Tool 等保持 `Unknown`；见 §5.2 |
 | DeepSeek | 未选择 | 未登记 | 未登记 | `Unknown` | `Unknown` | `Unknown` | 不按品牌推断 |
 | Qwen | 未选择 | 未登记 | 未登记 | `Unknown` | `Unknown` | `Unknown` | 不按品牌推断 |
 | OpenRouter | 未选择 | 未登记 | 未登记 | `Unknown` | `Unknown` | `Unknown` | 不按品牌推断 |
@@ -63,7 +64,7 @@ OpenAI endpoint 的凭据调用。MiniMax 结论只适用于第 5.1 节的明确
 | Base endpoint/API version | `https://api.minimaxi.com/v1`，`POST /responses` |
 | Dialect | `openai.responses.v1` |
 | Model selector/resolved revision | 请求与返回均为 `MiniMax-M3`；Provider 未返回更细 revision |
-| Text/image/file input | text=`InteropVerified`；Responses image=`Failed`（有效 1×1 PNG 得到 5xx，Mira 映射 `ProviderOverloaded`）；file=`Unknown` |
+| Text/image/file input | text=`InteropVerified`；Responses image=`Failed`（2026-09-02 补测排除 data URL 编码因素——MiniMax 400 明确要求 `http(s)://` 或 `data:...;base64` 格式，有效 1×1 基线与公网 URL 均服务端 5xx，chat 纯文本对照 200，归因 MiniMax 服务端图片管道或账号能力未开通）；file=`Unknown` |
 | Strict JSON Schema/dialect subset | `InteropVerified`：object、required、additionalProperties=false、boolean const=true；schema digest `79a8e4f7f22c08f2fbd0847e5e2803f3c771318088bae2c03ba20798ecdc6122` |
 | Function Tool/parallel Tool | 单个命名 Function Tool=`InteropVerified`；parallel=`Unknown`。实际 endpoint 接受 named choice，官方 Responses 页面只列 `none`/`auto`，作为已知文档偏差保留 |
 | Synchronous HTTP/SSE | 均为 `InteropVerified`；真实 SSE 使用 `response.output_item.*` 等官方前缀事件，促成解析器修复与回归 fixture |
@@ -77,14 +78,39 @@ OpenAI endpoint 的凭据调用。MiniMax 结论只适用于第 5.1 节的明确
 | Region/retention/ZDR policy | region/ZDR=`Unknown`；wire 明确发送 `store=false`，无用户数据、Memory 或真实 Tool output |
 | Evidence level/date/owner | 上述通过项=`InteropVerified`，image=`Failed`，其余逐项如表；2026-09-02；Mira Maintainers |
 | Fixture or test report | Linux x86_64 Ubuntu 24.04、GCC 13.3.0、Debug、Mbed TLS `3.6.7`；branch `codex/m3-final-acceptance`，worktree based on `d57e4cf99aee7114830f2fe833b638e469a4a0e0`；完整探针请求上限 6，退出 1 仅因 image Failed |
-| Known deviations | Responses image 5xx；upload、parallel Tool、continuation、429/Retry-After、region/ZDR 未运行。任何这些字段都不得从 text/Tool 成功外推 |
+| Known deviations | Responses/Chat Completions image 均为服务端 5xx（data URL 稳定 `system error (1033)`，http URL `unknown error (1000)`）；裸 base64 被确定性 400 拒绝（`image url must be http(s):// or data:...;base64 (2013)`），即 MiniMax 要求的正是 Mira 已发送的 data URL 格式；MiniMax `detail` 枚举为 `low`/`default`/`high`、无 `auto`，Mira 默认 `ImageDetail::Auto` 会发送 `auto`，属 image 通道恢复后需修正的潜在偏差；Chat Completions 纯文本 200/`Completed` 但 strict `json_schema` 决策未通过本地校验（64 token 上限时 `Incomplete`，1024 时 `Completed`），疑与 thinking 输出或 `response_format` 支持相关，未深入；upload、parallel Tool、continuation、429/Retry-After、region/ZDR 未运行。任何这些字段都不得从 text/Tool 成功外推 |
 
 脱敏证据：同步 canonical response digest 为
 `62bb15a259e032a6f45128b6e47215864e68a4c0d51687c4928f8e9524f65d2e`，Provider response ID 仅记录摘要
 `4fc7966678127cbf13381948cff510cc32da75690faa9ec95896f891001c8d5a`。凭据来自本地忽略文件，经进程环境
 注入；文件内容、Authorization 和原始响应均未写入日志或仓库。
 
-### 5.2 空白模板
+### 5.2 SiliconFlow / Qwen3.5-4B 受控 profile
+
+2026-09-02 用 Mira 探针新增单请求诊断 case 验证；这是首个 image input 达到
+`InteropVerified` 的 profile，为 Mira 视觉闭环提供可用 VLM 通道。
+
+| 字段 | 记录值 |
+| --- | --- |
+| Profile ID/version/digest | 探针临时 profile（复用探针固定 ID，未固化独立 digest）；正式接入前需建立独立 profile 并固化 |
+| Provider/service | 硅基流动 SiliconFlow；受控开发测试凭据，不记录 credential 或账户标识 |
+| Base endpoint/API version | `https://api.siliconflow.cn/v1`，`POST /chat/completions`；官方文档未提供 `/responses` 端点 |
+| Dialect | `openai.chat-completions.v1`（同步） |
+| Model selector/resolved revision | 请求 `Qwen/Qwen3.5-4B`（命名无 VL 后缀但实测为 VLM，由维护者确认并经 image case 验证）；返回 revision 未断言 |
+| Text/image/file input | text=`InteropVerified`（strict schema + 本地 decision 校验）；image=`InteropVerified`（64×64 纯红 PNG data URL，base64 含 `+`，模型正确返回 `{"red":true}`）；file=`Unknown` |
+| Strict JSON Schema/dialect subset | `InteropVerified`：`response_format: json_schema` 生效，`{"red":boolean}` 决策通过本地校验 |
+| Function Tool/parallel Tool | `Unknown`，未测 |
+| Synchronous HTTP/SSE | 同步=`InteropVerified`；SSE=`Unknown`（Chat Completions SSE 需 profile 声明并过 fixture，未运行） |
+| Token count/usage detail | 返回 usage（curl 对照可见 `prompt_tokens`/`completion_tokens`）；质量分级未断言 |
+| `max_completion_tokens`/`detail` 字段 | Mira 发送 OpenAI 新字段 `max_completion_tokens` 与 `image_url` 对象内 `detail:"low"` 均被接受（未断言生效语义） |
+| Upload/delete lifecycle | `Unknown` |
+| Rate-limit headers/`Retry-After` | `Unknown` |
+| Region/retention/ZDR policy | `Unknown`；请求未含用户数据 |
+| Evidence level/date/owner | 上述通过项=`InteropVerified`；2026-09-02；Mira Maintainers |
+| Fixture or test report | Linux x86_64 Ubuntu 24.04、GCC 13.3.0、Debug、Mbed TLS `3.6.7`；`mira_m3_interop_probe` 单请求 case（text-chat、image-red-chat）+ curl 隔离实验；交叉验证模型 `Qwen/Qwen3-VL-8B-Instruct` |
+| Known deviations | 无 `/responses` 端点，配置必须走 Chat Completions；base64 含 `+` 直接可用，预转义 `%2B` 被 400 拒绝（服务端不做 URL 解码，符合标准语义）；损坏 PNG 被确定性 400 拒绝（`Verify image file failed`），校验行为健康 |
+
+### 5.3 空白模板
 
 每个实际 profile 增加一张表，不要直接把“总表结论”复制为支持：
 
@@ -132,9 +158,13 @@ OpenAI endpoint 的凭据调用。MiniMax 结论只适用于第 5.1 节的明确
 仓库提供默认不联网的 `mira_m3_interop_probe`。它在缺少 `MIRA_INTEROP_API_KEY`、明确 model、PEM CA
 bundle 或显式请求上限时退出 2。两请求模式覆盖 Responses 同步与 SSE strict schema；三请求模式额外覆盖
 受控 text fixture 的 upload/delete；六请求模式还覆盖 Function Tool、1×1 合成 PNG、无效 model 错误映射
-和 Executor timer 驱动的协作取消。`MIRA_INTEROP_MAX_REQUESTS=1` 仅在
-`MIRA_INTEROP_CASE=image` 时可用于脱敏诊断。输出只含 digest、model、usage quality 和 capability 结论。
-未执行能力仍必须保持 `Unknown`。
+和 Executor timer 驱动的协作取消。`MIRA_INTEROP_MAX_REQUESTS=1` 配合
+`MIRA_INTEROP_CASE=image|image-red|image-red-b64|image-url|image-red-chat|text-chat`
+可用于单请求脱敏诊断：分别覆盖 1×1 data URL 基线、64×64 data URL、裸 base64、公网 http URL、
+Chat Completions data URL 与 Chat Completions 纯文本对照（`MIRA_INTEROP_IMAGE_URL`、
+`MIRA_INTEROP_MAX_TOKENS` 可覆盖默认值）。诊断经只改写 `image_url` 编码的传输装饰器执行，
+保留真实 Executor/TLS/provider 栈，并打印 HTTP 状态与 4xx/5xx 错误体摘要。输出只含 digest、
+model、usage quality 和 capability 结论。未执行能力仍必须保持 `Unknown`。
 
 授权环境的最小复现入口（key 由受控 secret 注入，不写入命令、日志或仓库）：
 
@@ -181,6 +211,42 @@ MIRA_INTEROP_MAX_REQUESTS=2 \
 - [错误码](https://platform.minimaxi.com/docs/api-reference/errorcode)
 
 ## 9. 变更记录
+
+### 2026-09-02：SiliconFlow Qwen3.5-4B 视觉互操作（首个 image `InteropVerified`）
+
+- 范围：`mira_m3_interop_probe` 单请求 case（`text-chat`、`image-red-chat`）走 Mira 真实
+  Executor/TLS/chat mapper 栈，`Qwen/Qwen3.5-4B`；辅以 curl 单变量隔离实验与
+  `Qwen/Qwen3-VL-8B-Instruct` 交叉验证。公开合成 fixture，无用户数据。
+- 结果：text + strict `json_schema` 通过（200/`Completed`/本地 decision 校验）；image input
+  通过（64×64 纯红 PNG data URL，base64 含 `+`，模型正确返回 `{"red":true}`）。
+  隔离实验确认：裸 `+` 直接可用，`%2B` 预转义被 400 拒绝（服务端不做 URL 解码）；损坏 PNG
+  被确定性 400 拒绝。配置勘误：原配置 `wire_api="responses"` 有误（硅基流动无 `/responses`
+  端点），已改 `chat`；`model_reasoning_effort` 仅个别模型支持，已移除。
+- 过程更正：初轮 image 探针失败（`broken PNG (bad header checksum)`）系探针红色 fixture
+  转录缺陷（132/134 字节），非 SiliconFlow 问题；fixture 已程序化重嵌并复验，重跑通过。
+- 关联：本节 5.2、[M3 计划验证记录](../plans/m3-model-provider-agent-loop.md)、
+  [SiliconFlow Chat Completions 文档](https://api-docs.siliconflow.cn/docs/api/chat-completions-post)。
+
+### 2026-09-02：MiniMax-M3 image 编码因素排查（补充）
+
+- 范围：单请求诊断 case（`MIRA_INTEROP_CASE=image|image-red|image-red-b64|image-url|
+  image-red-chat|text-chat`），公开合成 fixture（1×1 PNG、64×64 纯红 PNG）与公网 PNG URL，
+  `store=false`，共 7 请求；未使用用户数据。凭据注入方式同日首条记录。
+- 结果：基线（Responses + data URL + 1×1）稳定复现 HTTP 500 `system error (1033)`，排除瞬时故障；
+  裸 base64 得到确定性 HTTP 400 `invalid param: image url must be http(s):// or data:...;base64
+  (2013)`，证明 MiniMax 要求的正是 Mira 已发送的 data URL 格式；公网 http URL 500
+  `unknown error (1000)`；Chat Completions + data URL 500 (1033)，Chat Completions 纯文本对照
+  HTTP 200。事后更正：当轮 64×64 红色 PNG fixture 存在转录缺陷（132/134 字节，损坏 IDAT），
+  硅基流动对同一损坏图返回确定性 400 而非 5xx，故该轮“image-red 500”不能单独作为尺寸排除证据；
+  但有效 1×1 基线与公网 URL 均 500，MiniMax 服务端图片管道归因不变。有效 fixture 的 image-red
+  重跑（1 请求）待执行。
+- 结论：image 维持 `Failed`，归因候选为 MiniMax 服务端图片管道缺陷或该测试账号多模态能力未开通
+  ——与官方文档"MiniMax-M3 原生支持图片/视频输入"冲突，需供应商侧确认；Mira 侧 wire 格式无需改动。
+  补跑条件：供应商确认或能力开通后重跑上述诊断 case。
+- 新记录偏差：`detail` 枚举无 `auto`（Mira 默认发送 `auto`，待 image 通道恢复后需 profile 级映射）；
+  Chat Completions 纯文本 200/`Completed` 但 strict `json_schema` 决策未过本地校验（64 token 时
+  `Incomplete`，1024 时 `Completed`），未作为任何能力声明。
+- 关联：`M3-19`、本节 5.1、[M3 计划验证记录](../plans/m3-model-provider-agent-loop.md)。
 
 ### 2026-09-02：MiniMax-M3 Responses 真实互操作
 
