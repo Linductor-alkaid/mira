@@ -5,7 +5,7 @@
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)  
 > 前置：M2  
 > 建议发布点：Agent loop alpha（[发布说明](../releases/agent-loop-alpha.md)）  
-> 更新日期：2026-09-01
+> 更新日期：2026-09-02
 
 ## 1. 目标
 
@@ -82,6 +82,9 @@ OpenAI-compatible 服务、所有模型、连续控制、本地 ONNX 或生产 T
   2026-09-01 新增 HTTP absolute-form、HTTPS CONNECT、proxy/target 双重 SSRF/allowlist、独立
   Proxy SecretRef 和 CONNECT 后真实 TLS 测试（`mira_m3_transport_test`、两种 `m3_*tls_test`）。
   `mira_mbedtls_transport` 使用 nonblocking BIO，不创建线程，Windows/Android CI 构建目标已接入。
+  2026-09-02 新增不依赖 OpenSSL 的 `mira_m3_mbedtls_portable_test`，以锁定的 Mbed TLS 作为
+  loopback server，覆盖 direct TLS、CONNECT 后 TLS、proxy credential 和错误 CA fail-closed；Linux
+  本地已通过，Windows runner 证据待 follow-up PR。
   未完成：当前主机无 MSVC/Android NDK runner；Google/GitHub NDK binary 下载经当前代理 TLS 失败，故尚无
   新目标构建/运行证据。负责人 Mira Maintainers；补跑条件：递归 checkout 后运行 Windows CI 与 Android
   NDK 26.3 arm64 构建 `mira_mbedtls_transport`，并在至少一个目标平台执行 TLS contract test。
@@ -340,3 +343,6 @@ Clang/Android 将 Mbed TLS 上游 C 头中的旧式转换按 Mira `-Wold-style-c
   通过，包括 Linux GCC/Clang Debug+Release、Windows Debug/Release、Android arm64、
   ASAN/UBSAN/TSAN 与 quality；据此关闭本次 PR CI 缺陷。该 run 只证明目标构建及既有测试矩阵，
   不替代 `M3-04` 尚未完成的 Android/Windows TLS 目标运行证据或 `M3-19` 真实 Provider 互操作。
+- 后续验收新增 `mira_m3_mbedtls_portable_test`，移除 Windows TLS contract 对 OpenSSL test server 的
+  依赖；Linux Debug 全量 30/30（M3 14 项）与 clang-tidy 18.1.3 `--warnings-as-errors=*` 全量构建通过。
+  本记录待 follow-up PR 的 Windows test job 通过后回填 run 链接并关闭 `M3-04`。

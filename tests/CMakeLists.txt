@@ -69,6 +69,15 @@ if(TARGET mira_mbedtls_transport AND OpenSSL_FOUND)
 endif()
 
 if(TARGET mira_mbedtls_transport)
+    mira_add_m3_test(mira_m3_mbedtls_portable_test m3/m3_mbedtls_portable_test.cpp)
+    target_include_directories(mira_m3_mbedtls_portable_test SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/mbedtls/include"
+        "${PROJECT_SOURCE_DIR}/third_party/mbedtls/tests/include")
+    target_link_libraries(mira_m3_mbedtls_portable_test PRIVATE
+        Mira::mbedtls_transport MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
+endif()
+
+if(TARGET mira_mbedtls_transport)
     add_executable(mira_m3_interop_probe m3/m3_interop_probe.cpp)
     target_link_libraries(mira_m3_interop_probe PRIVATE
         Mira::core Mira::net_transport Mira::mbedtls_transport executor::executor)

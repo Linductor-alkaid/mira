@@ -1,8 +1,8 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.3
-> 更新日期：2026-09-01
+> 版本：0.4
+> 更新日期：2026-09-02
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -28,16 +28,17 @@
 
 | 目标 | `mira_net_transport`（HTTP/SSE/proxy） | `mira_mbedtls_transport` | OpenSSL 参考通道 | 证据 |
 | --- | --- | --- | --- | --- |
-| Linux x86_64 | Runtime verified（direct + HTTP proxy + HTTPS CONNECT） | Runtime verified（direct/CONNECT handshake、错误 CA） | Runtime verified | 本地 `mira_m3_transport_test`、`mira_m3_mbedtls_test`、`mira_m3_tls_test`（2026-09-01）；既有 socket CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) |
-| Windows x64 | 既有 CI build/runtime verified（Winsock） | Configured（MSVC 全量 build 会构建；本轮 runner 未执行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
+| Linux x86_64 | Runtime verified（direct + HTTP proxy + HTTPS CONNECT） | Runtime verified（direct/CONNECT handshake、错误 CA） | Runtime verified | 本地 `mira_m3_transport_test`、`mira_m3_mbedtls_test`、`mira_m3_mbedtls_portable_test`、`mira_m3_tls_test`（2026-09-02）；既有 socket CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) |
+| Windows x64 | 既有 CI build/runtime verified（Winsock） | Configured（`mira_m3_mbedtls_portable_test` 已移除 OpenSSL test-server 依赖，待 Windows CI 运行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
 | Android arm64-v8a | 既有 CI build verified | Configured（Android job 已显式加入目标；本轮 NDK 未执行） | 不构建 | socket 证据为 CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571)；Mbed TLS 补跑条件见下文 |
 
 跨平台 TLS、proxy、CA bundle 和 fail-closed 语义见
 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。未配置 TLS 工厂时 https 端点在
 model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows/Android 当前只能声明
-`Configured`：负责人 Mira Maintainers；补跑条件为 recursive submodule checkout 后分别执行
-MSVC Debug/Release 全量构建，以及 NDK 26.3/API 24 arm64 构建 `mira_mbedtls_transport`；runtime 声明
-还需在对应平台执行 direct TLS、CONNECT TLS 和错误 CA contract。
+`Configured`：负责人 Mira Maintainers；补跑条件为 recursive submodule checkout 后执行 MSVC
+Debug/Release 全量构建与 `mira_m3_mbedtls_portable_test`，以及 NDK 26.3/API 24 arm64 构建
+`mira_mbedtls_transport`。Windows runtime 声明需要 direct TLS、CONNECT TLS 和错误 CA contract 全部
+通过；Android runtime 支持声明仍需后续设备/模拟器证据，M3 只以其 NDK 构建作为门禁。
 
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，
