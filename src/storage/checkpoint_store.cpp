@@ -23,10 +23,15 @@ namespace {
 }
 
 [[nodiscard]] Timestamp timestamp_from_nanos(std::int64_t nanos, std::int64_t monotonic_nanos) {
+    // Clock tick periods differ across platforms (msvc 100ns, libc++ micro on
+    // some Android builds); round-trip through explicit duration casts.
     Timestamp stamp;
-    stamp.wall = std::chrono::system_clock::time_point{} + std::chrono::nanoseconds(nanos);
-    stamp.monotonic =
-        std::chrono::steady_clock::time_point{} + std::chrono::nanoseconds(monotonic_nanos);
+    stamp.wall = std::chrono::system_clock::time_point(
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            std::chrono::nanoseconds(nanos)));
+    stamp.monotonic = std::chrono::steady_clock::time_point(
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::nanoseconds(monotonic_nanos)));
     return stamp;
 }
 
@@ -512,7 +517,7 @@ void apply_json_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Confi
             return;
         }
         if (is_terminal(*target)) {
-            checkpoint.terminal_state = *target;
+            checkpoint.terminal_state = target;
         }
     } else if (type == "TaskEpochAdvanced") {
         const auto *epoch = payload.find("epoch");
@@ -579,7 +584,7 @@ void apply_json_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Confi
             terminal = TaskState::Cancelled;
         }
         if (terminal.has_value() && !checkpoint.terminal_state.has_value()) {
-            checkpoint.terminal_state = *terminal;
+            checkpoint.terminal_state = terminal;
         }
     } else {
         ++stats.ignored;
@@ -984,7 +989,7 @@ MemoryCheckpointStore::MemoryCheckpointStore(std::size_t max_checkpoints_per_tas
 MemoryCheckpointStore::~MemoryCheckpointStore() = default;
 
 Result<void> MemoryCheckpointStore::put(const TaskCheckpoint &checkpoint) {
-    const auto valid = checkpoint.validate();
+    auto valid = checkpoint.validate();
     if (!valid) {
         return valid;
     }
