@@ -77,7 +77,7 @@ jobs:
       - name: Configure Android arm64
         run: cmake --preset android-arm64-release
       - name: Build Android Core, Simulator and Host Adapter
-        run: cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport
+        run: cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport mira_state_store mira_stateful_consumer
 
   sanitizers:
     strategy:

@@ -61,6 +61,9 @@ if(MIRA_WITH_MBEDTLS)
         PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
 
+# Pinned SQLite amalgamation backing the durable state stores (M4-06/M4-09).
+add_subdirectory(third_party/sqlite)
+
 if(MIRA_ENABLE_ASAN)
     target_compile_options(executor PRIVATE -fsanitize=address -fno-omit-frame-pointer)
     target_link_options(executor PRIVATE -fsanitize=address)
@@ -78,9 +81,11 @@ add_library(mira_core
     src/runtime/runtime_baseline.cpp
     src/runtime/runtime.cpp
     src/runtime/task_recovery.cpp
+    src/runtime/context_memory_supervisor.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/memory_contracts.cpp
+    src/context/memory_consolidation.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp
@@ -90,6 +95,7 @@ add_library(mira_core
     src/storage/checkpoint_store.cpp
     src/security/security.cpp
     src/replay/replay.cpp
+    src/replay/stateful_replay.cpp
     src/support/json.cpp
     src/model/model_contracts.cpp
     src/model/model_profile.cpp
@@ -98,6 +104,7 @@ add_library(mira_core
     src/model/model_dialect.cpp
     src/model/model_sse.cpp
     src/model/model_tool.cpp
+    src/model/provider_continuation.cpp
     src/model/model_budget.cpp
     src/model/model_supervisor.cpp
     src/model/model_provider.cpp
@@ -107,6 +114,38 @@ add_library(mira_core
     src/model/agent_loop.cpp
 )
 add_library(Mira::core ALIAS mira_core)
+
+# Durable SQLite/WAL reference stores for checkpoints and long-term memory.
+# Kept outside mira_core so the installed Core contract stays SQLite-free;
+# public headers in include/mira never expose sqlite3 types.
+add_library(mira_state_store
+    src/storage/sqlite_support.cpp
+    src/storage/sqlite_checkpoint_store.cpp
+    src/storage/sqlite_memory_store.cpp
+)
+add_library(Mira::state_store ALIAS mira_state_store)
+target_include_directories(mira_state_store
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(mira_state_store
+    PUBLIC Mira::core
+    PRIVATE Mira::sqlite3 executor::executor
+)
+target_include_directories(mira_state_store SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+)
+target_compile_features(mira_state_store PUBLIC cxx_std_20)
+mira_enable_warnings(mira_state_store)
+if(MIRA_ENABLE_CLANG_TIDY)
+    set_property(TARGET mira_state_store PROPERTY CXX_CLANG_TIDY
+        "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*")
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(mira_state_store PRIVATE -Wno-deprecated-declarations)
+endif()
+mira_enable_sanitizers(mira_state_store)
 target_include_directories(mira_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -305,6 +344,19 @@ add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
 target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
 mira_enable_warnings(mira_minimal_consumer)
 mira_enable_sanitizers(mira_minimal_consumer)
+
+# Stateful agent beta example (M4-18): durable stores are in-tree targets.
+add_executable(mira_stateful_consumer examples/stateful_agent_consumer.cpp)
+target_link_libraries(mira_stateful_consumer PRIVATE
+    Mira::core Mira::state_store executor::executor)
+target_include_directories(mira_stateful_consumer SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include")
+mira_enable_warnings(mira_stateful_consumer)
+mira_enable_sanitizers(mira_stateful_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_stateful_consumer_test COMMAND mira_stateful_consumer)
+    set_tests_properties(mira_stateful_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
+endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)

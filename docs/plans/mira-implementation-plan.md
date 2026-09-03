@@ -62,7 +62,7 @@
 | [M1](m1-core-contracts.md) | 公共契约、状态机、持久化和安全边界冻结 | M0 | Core contract alpha | Completed |
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
 | [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | Completed |
-| [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | In Progress |
+| [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Planned |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Planned |
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Planned |

@@ -828,10 +828,23 @@ JsonValue model_request_to_json(const ModelRequest &request) {
             continuation.emplace_back("previous_response_id",
                                       *request.continuation->previous_response_id);
         }
+        if (!request.continuation->provider.empty()) {
+            continuation.emplace_back("provider", request.continuation->provider);
+        }
+        if (!request.continuation->conversation.empty()) {
+            continuation.emplace_back("conversation", request.continuation->conversation);
+        }
         continuation.emplace_back("profile_id", request.continuation->profile_id.to_string());
+        if (!(request.continuation->profile_digest == Hash{})) {
+            continuation.emplace_back("profile_digest",
+                                      request.continuation->profile_digest.to_string());
+        }
         continuation.emplace_back("task_id", request.continuation->task_id.to_string());
+        continuation.emplace_back("session_id", request.continuation->session_id.to_string());
         continuation.emplace_back("task_epoch",
                                   static_cast<std::int64_t>(request.continuation->task_epoch));
+        continuation.emplace_back("environment_epoch",
+                                  static_cast<std::int64_t>(request.continuation->environment_epoch));
         continuation.emplace_back("prompt_digest", request.continuation->prompt_digest.to_string());
         continuation.emplace_back("schema_digest", request.continuation->schema_digest.to_string());
         continuation.emplace_back("tool_snapshot_digest",
@@ -1224,6 +1237,32 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
         const auto *previous = continuation->find("previous_response_id");
         if (previous != nullptr && previous->is_string()) {
             value.previous_response_id = *previous->as_string();
+        }
+        const auto *provider = continuation->find("provider");
+        if (provider != nullptr && provider->is_string()) {
+            value.provider = *provider->as_string();
+        }
+        const auto *conversation = continuation->find("conversation");
+        if (conversation != nullptr && conversation->is_string()) {
+            value.conversation = *conversation->as_string();
+        }
+        const auto *profile_digest = continuation->find("profile_digest");
+        if (profile_digest != nullptr && profile_digest->is_string()) {
+            if (auto parsed = digest_from_hex(*profile_digest->as_string()); parsed) {
+                value.profile_digest = *parsed;
+            }
+        }
+        const auto *session = continuation->find("session_id");
+        if (session != nullptr && session->is_string()) {
+            if (auto parsed = SessionId::parse(*session->as_string()); parsed) {
+                value.session_id = *parsed;
+            }
+        }
+        const auto *environment_epoch = continuation->find("environment_epoch");
+        if (environment_epoch != nullptr && environment_epoch->is_integer() &&
+            environment_epoch->as_integer().value() >= 0) {
+            value.environment_epoch =
+                static_cast<std::uint64_t>(environment_epoch->as_integer().value());
         }
         const auto *profile = continuation->find("profile_id");
         if (profile != nullptr && profile->is_string()) {

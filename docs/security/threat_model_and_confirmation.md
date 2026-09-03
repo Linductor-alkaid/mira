@@ -269,6 +269,13 @@ Headless/远程部署没有可信确认通道时，`RequireConfirmation` 不能�
 - Event/Artifact 使用完整性校验、内容寻址和受控目录；外部 ID 不直接成为路径。
 - 普通日志不保存模型原始响应、截图、UI Tree、输入文本或 confirmation auth evidence。
 - Erasure Pending 的 scope 不能再次进入模型 context 或训练 export。
+- M4 参考后端（`SqliteMemoryStore`）落地以上边界的证据：scope 相等性在 SQL 层强制、
+  FTS 命中不越权（`mira_m4_sqlite_memory_test` 跨 tenant/tenant-less 负向用例）、
+  Secret 敏感度与导入 HumanConfirmed 在写入前拒绝、注入形模型文本在
+  `memory_consolidation` 策略层拒绝（`mira_m4_consolidation_test`）、Erasure 部分失败
+  回滚并持 scope fail-closed 且审计不含正文（`mira_m4_sqlite_memory_test`）、
+  Replay 无 Network/Tool/Input 能力且缺失 artifact 显式降级
+  （`mira_m4_stateful_replay_test`）。
 
 ## 13. Training Export 与模型供应链
 

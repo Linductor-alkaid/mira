@@ -102,6 +102,9 @@ struct MemoryRecord final {
     // HumanConfirmed verification (design Context/Memory §19).
     std::optional<std::string> source_namespace;
     SchemaVersion schema_version = memory_schema_current();
+    // Store-side optimistic-concurrency version; backends set it on read and
+    // check it on Update/Supersede/Tombstone mutations.
+    std::uint64_t version = 1;
 
     [[nodiscard]] Result<void> validate() const;
 };
@@ -149,6 +152,135 @@ struct MemoryMutationResult final {
 };
 
 // ---------------------------------------------------------------------------
+// Retrieval contracts (M4-10/M4-11)
+// ---------------------------------------------------------------------------
+
+// Which retrieval legs ran and how they degraded. Quality is reported so the
+// Reasoner can continue, ask a human, or fail — never silently.
+struct MemoryQueryQuality final {
+    bool exact_leg_ran = false;
+    bool fts_leg_ran = false;
+    bool vector_leg_ran = false;
+    // Active records without a usable embedding; the vector index may lag the
+    // authoritative records (it is a rebuildable projection).
+    std::size_t index_lag = 0;
+    bool vector_degraded = false;
+    bool deadline_exceeded = false;
+    bool degraded = false;
+    std::string note;
+};
+
+struct MemoryQuery final {
+    // Mandatory ACL allowlist: results never include records outside these
+    // exact scopes, regardless of similarity (design Context/Memory §6.1/§14.1).
+    std::vector<MemoryScope> scopes;
+    std::optional<std::vector<MemoryKind>> kinds;
+    // Free text feeding the FTS5 leg (phrase-quoted) and ranking.
+    std::string text;
+    // Substrings that must appear verbatim in the statement (exact leg).
+    std::vector<std::string> exact_terms;
+    // Optional embedding for the bounded cosine leg; dimension must match the
+    // indexed vectors or the leg degrades to exact/FTS.
+    std::vector<float> query_embedding;
+    std::size_t max_results = 32;
+    // Conservative token packing budget for the selected statements.
+    std::uint64_t token_budget = 4'096;
+    std::optional<Sensitivity> max_sensitivity;
+    // Bitemporal query times; nullopt means "now" (M4-15).
+    std::optional<std::chrono::system_clock::time_point> as_of_recorded;
+    std::optional<std::chrono::system_clock::time_point> as_of_valid;
+    // Soft deadline for the retrieval phases; exceeding it returns partial
+    // results with quality flags instead of blocking the control plane.
+    std::chrono::milliseconds deadline{2'000};
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
+struct MemoryQueryResult final {
+    std::vector<MemoryRecord> records;
+    std::vector<double> scores;
+    MemoryQueryQuality quality;
+    std::uint64_t tokens_estimate = 0;
+};
+
+// ---------------------------------------------------------------------------
+// Erasure and retention contracts (M4-13)
+// ---------------------------------------------------------------------------
+
+enum class ErasureStatus : std::uint8_t {
+    Complete, // payload, FTS, embeddings, versions and artifact refs all gone
+    Pending,  // partial failure; the scope is held out of Context until retry
+};
+
+[[nodiscard]] std::string erasure_status_name(ErasureStatus status);
+
+struct ErasureCounts final {
+    std::size_t records_removed = 0;
+    std::size_t versions_removed = 0;
+    std::size_t fts_entries_removed = 0;
+    std::size_t embeddings_removed = 0;
+    std::size_t artifacts_erased = 0;
+};
+
+struct ErasureRequest final {
+    // Exactly one of scope or record is honored; a scope erasure removes every
+    // record inside it regardless of status.
+    std::optional<MemoryScope> scope;
+    std::optional<MemoryId> record;
+    std::string reason;
+    // Also erase referenced evidence artifacts when an ArtifactStore is bound.
+    bool include_artifacts = true;
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
+struct ErasureResult final {
+    ErasureStatus status = ErasureStatus::Complete;
+    ErasureCounts counts;
+    // Present when Pending: which scope is held out of Context until retry.
+    std::optional<MemoryScope> held_scope;
+    std::string note;
+};
+
+struct MemoryCompactionResult final {
+    // Retention expiry purges (payload/FTS/embeddings/artifacts included).
+    std::size_t expired_records_purged = 0;
+    // Historical versions pruned beyond the per-record keep window.
+    std::size_t versions_pruned = 0;
+    // Tombstones older than the purge horizon.
+    std::size_t tombstones_purged = 0;
+    std::string note;
+};
+
+// ---------------------------------------------------------------------------
+// IMemory (design Context/Memory §8.3)
+// ---------------------------------------------------------------------------
+
+// Durable long-term memory surface. Mirroring ICheckpointStore, operations
+// are synchronous facades; implementations run their work on Executor-managed
+// store workers (M4-16 supervises routing and shutdown).
+class IMemory {
+  public:
+    virtual ~IMemory() = default;
+
+    // Scope-filtered hybrid retrieval; never crosses the query scopes.
+    [[nodiscard]] virtual Result<MemoryQueryResult> query(const MemoryQuery &query) const = 0;
+    [[nodiscard]] virtual Result<std::optional<MemoryRecord>> get(MemoryId record) const = 0;
+    // Idempotent by mutation id; optimistic version conflicts return
+    // VersionConflict instead of silently overwriting.
+    [[nodiscard]] virtual Result<MemoryMutationResult>
+    apply(const MemoryMutation &mutation) = 0;
+    // Retention sweep: purge expired records, prune old versions and stale
+    // tombstones. Artifacts referenced by purged records are erased too.
+    [[nodiscard]] virtual Result<MemoryCompactionResult>
+    compact(const MemoryScope &scope) = 0;
+    // Privacy erasure. Partial failure keeps the request Pending and holds the
+    // scope out of Context (query/apply reject for held scopes) until a retry
+    // completes; the audit trail never records the erased statements.
+    [[nodiscard]] virtual Result<ErasureResult> erase(const ErasureRequest &request) = 0;
+};
+
+// ---------------------------------------------------------------------------
 // Stable error domain (schema "mira.memory.error.v1")
 // ---------------------------------------------------------------------------
 
@@ -158,6 +290,9 @@ enum class MemoryDomainCode : std::int32_t {
     ScopeDenied = 3,
     VersionConflict = 4,
     SchemaUnsupported = 5,
+    IndexDegraded = 6,
+    ErasurePending = 7,
+    StoreUnavailable = 8,
 };
 
 [[nodiscard]] std::string memory_domain_code_name(MemoryDomainCode code);

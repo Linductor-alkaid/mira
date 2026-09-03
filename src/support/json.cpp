@@ -386,13 +386,20 @@ class Parser final {
         const std::string token(text_.substr(begin, position_ - begin));
         if (!is_float) {
             std::size_t index = (token[0] == '-') ? 1 : 0;
-            // 18 digits always accumulate without overflowing int64; longer
-            // integer tokens fall back to the double path.
-            if (token.size() - index < 19) {
-                std::int64_t value = 0;
-                for (; index < token.size(); ++index) {
-                    value = value * 10 + (token[index] - '0');
+            // Accumulate with an explicit int64 bound: nanosecond timestamps
+            // are 19 digits and must stay integers, not fall to the double
+            // path (which loses precision and the Integer kind).
+            std::int64_t value = 0;
+            bool overflow = false;
+            for (; index < token.size(); ++index) {
+                const int digit = token[index] - '0';
+                if (value > (std::numeric_limits<std::int64_t>::max() - digit) / 10) {
+                    overflow = true;
+                    break;
                 }
+                value = value * 10 + digit;
+            }
+            if (!overflow) {
                 if (token[0] == '-') {
                     value = -value;
                 }
