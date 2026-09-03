@@ -5,12 +5,12 @@
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
-#include <stop_token>
 #include <string>
 #include <type_traits>
 #include <utility>
