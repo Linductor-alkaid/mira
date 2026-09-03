@@ -371,34 +371,54 @@ struct Fixture final {
 
 } // namespace
 
-int main(int argc, char **argv) {
+int run_benchmark(int argc, char **argv);
+
+int run_benchmark(int argc, char **argv) {
     std::random_device device;
     const auto root = std::filesystem::temp_directory_path() /
                       ("mira-m4-benchmark-" + std::to_string(device()));
-    Fixture fixture(root);
-    JsonValue::Array failures;
-    const auto scenario_a = scenario_a_long_task_recovery(fixture, failures);
-    const auto scenario_b = scenario_b_memory_retrieval(fixture);
-    const auto scenario_c = scenario_c_compaction_impact();
-    const auto scenario_d = scenario_d_provider_switch();
+    {
+        Fixture fixture(root);
+        JsonValue::Array failures;
+        const auto scenario_a = scenario_a_long_task_recovery(fixture, failures);
+        const auto scenario_b = scenario_b_memory_retrieval(fixture);
+        const auto scenario_c = scenario_c_compaction_impact();
+        const auto scenario_d = scenario_d_provider_switch();
 
-    JsonValue::Object report;
-    report.emplace_back("scenario", "m4-long-task-memory");
-    report.emplace_back("long_task_recovery", scenario_a);
-    report.emplace_back("memory_retrieval", scenario_b);
-    report.emplace_back("compaction_impact", scenario_c);
-    report.emplace_back("provider_switch", scenario_d);
-    report.emplace_back("failures", JsonValue(std::move(failures)));
-    const std::string json = to_json_string(JsonValue(std::move(report)));
-    std::cout << json << std::endl;
-    if (argc > 1) {
-        std::ofstream file(argv[1]);
-        file << json << '\n';
+        JsonValue::Object report;
+        report.emplace_back("scenario", "m4-long-task-memory");
+        report.emplace_back("long_task_recovery", scenario_a);
+        report.emplace_back("memory_retrieval", scenario_b);
+        report.emplace_back("compaction_impact", scenario_c);
+        report.emplace_back("provider_switch", scenario_d);
+        report.emplace_back("failures", JsonValue(std::move(failures)));
+        const std::string json = to_json_string(JsonValue(std::move(report)));
+        std::cout << json << std::endl;
+        if (argc > 1) {
+            std::ofstream file(argv[1]);
+            file << json << '\n';
+        }
+        // The scenarios assert their own invariants; a red benchmark run
+        // means a real fidelity regression, not a soft report.
+        MIRA_CHECK(failures.empty());
     }
-    std::filesystem::remove_all(root);
-
-    // The scenarios assert their own invariants; a red benchmark run means
-    // a real fidelity or latency-budget regression, not a soft report.
-    MIRA_CHECK(failures.empty());
+    // Non-throwing cleanup: WAL side files may still be released by the OS
+    // on Windows, and a locked path must not fail the benchmark.
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
     return 0;
+}
+
+int main(int argc, char **argv) {
+    // Windows fast-fails with 0xC0000409 on uncaught exceptions; surface
+    // them as readable diagnostics instead.
+    try {
+        return run_benchmark(argc, argv);
+    } catch (const std::exception &failure) {
+        std::cerr << "benchmark exception: " << failure.what() << "\n";
+        return 2;
+    } catch (...) {
+        std::cerr << "benchmark unknown exception\n";
+        return 2;
+    }
 }

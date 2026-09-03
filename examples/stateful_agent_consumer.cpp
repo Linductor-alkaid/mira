@@ -156,8 +156,9 @@ int run(const std::filesystem::path &root) {
 
 int main(int argc, char **argv) {
     const auto root = std::filesystem::path{argc > 1 ? argv[1] : "mira-stateful-example"};
-    std::filesystem::create_directories(root);
+    std::error_code ignored;
+    std::filesystem::create_directories(root, ignored);
     const auto code = run(root);
-    std::filesystem::remove_all(root);
+    std::filesystem::remove_all(root, ignored);
     return code;
 }
