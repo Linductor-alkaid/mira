@@ -177,9 +177,6 @@ class SqliteCheckpointStore::Impl final {
         const std::string id = checkpoint.id.to_string();
         const std::string digest = checkpoint.projection_digest().to_string();
         const std::string document = to_json_string(checkpoint_to_json(checkpoint));
-        // The Statement guard owns sqlite3_stmt across translation units;
-        // the analyzer cannot see its destructor and reports a false leak.
-        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
         return channel_->run<void>([&](sqlite3 *db) -> Result<void> {
             storage::Transaction transaction(db);
             if (!transaction.valid()) {

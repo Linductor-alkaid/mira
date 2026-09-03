@@ -190,8 +190,8 @@ class StoreChannel final {
     // Runs `op` on the writer thread and waits for its result. Rejects with
     // Unavailable after close, ResourceExhausted when the bounded queue is
     // full, InvalidState on worker self-call, DeadlineExceeded on timeout.
-    template <typename T>
-    [[nodiscard]] Result<T> run(std::function<Result<T>(sqlite3 *)> op);
+    template <typename T, typename Op>
+    [[nodiscard]] Result<T> run(Op op);
 
     // Maintenance seam: the worker holds queued work until unpaused. Admission
     // keeps working, so pausing is how tests and maintenance observe the
@@ -224,9 +224,8 @@ class StoreChannel final {
 
 // Runs one operation with exception isolation; store failures surface as
 // Result errors, never as unhandled exceptions on the worker thread.
-template <typename T>
-[[nodiscard]] Result<T> invoke_guarded(const std::function<Result<T>(sqlite3 *)> &op,
-                                       sqlite3 *db) noexcept {
+template <typename T, typename Op>
+[[nodiscard]] Result<T> invoke_guarded(Op &op, sqlite3 *db) noexcept {
     try {
         return op(db);
     } catch (const std::bad_alloc &) {
@@ -236,8 +235,11 @@ template <typename T>
     }
 }
 
-template <typename T>
-Result<T> StoreChannel::run(std::function<Result<T>(sqlite3 *)> op) {
+// The operation travels as a template parameter straight into ChannelWork:
+// no std::function hop on this path (avoids its heap-backed storage and the
+// analyzer false positives that come with opaque functor ownership).
+template <typename T, typename Op>
+Result<T> StoreChannel::run(Op op) {
     std::promise<Result<T>> promise;
     auto future = promise.get_future();
     {
@@ -254,7 +256,7 @@ Result<T> StoreChannel::run(std::function<Result<T>(sqlite3 *)> op) {
         }
         shared_->pending.push_back(
             ChannelWork([promise = std::move(promise), op = std::move(op)](sqlite3 *db) mutable {
-                promise.set_value(invoke_guarded(op, db));
+                promise.set_value(invoke_guarded<T>(op, db));
             }));
     }
     shared_->work_cv.notify_one();
