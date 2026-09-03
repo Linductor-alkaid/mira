@@ -122,7 +122,8 @@ class ContextMemorySupervisor::Impl final {
     // caller's promise, so a resolved future implies settled accounting.
     [[nodiscard]] Result<void> dispatch(
         const std::string &label, SupervisedOpClass op_class,
-        std::function<void(SupervisorToken, const std::function<void(bool, bool)> &)> thunk) {
+        std::function<void(SupervisorToken,
+                           const std::function<void(bool, bool, bool)> &)> thunk) {
         {
             std::lock_guard lock(mutex_);
             if (closing_) {
@@ -143,8 +144,14 @@ class ContextMemorySupervisor::Impl final {
             op_class == SupervisedOpClass::Deferrable
                 ? SupervisorToken(deferrable_stop_)
                 : SupervisorToken{};
-        const auto settle = [this, label, op_class](bool failed, bool degraded) {
+        const auto settle = [this, label, op_class](bool failed, bool degraded, bool cancelled) {
             std::lock_guard lock(mutex_);
+            if (cancelled) {
+                ++stats_.cancelled;
+                emit_locked(label, finished_event_for(label, false, true, false), op_class,
+                            "cancelled");
+                return;
+            }
             if (failed) {
                 ++stats_.failed;
             } else {
@@ -154,18 +161,8 @@ class ContextMemorySupervisor::Impl final {
                         failed ? "failed" : "completed");
         };
         try {
-            auto future = executor_.submit_auto([this, label, op_class, thunk = std::move(thunk),
-                                                 token, settle]() mutable {
-                if (token.stop_requested()) {
-                    // Deferrable work cancelled at shutdown: settle as
-                    // cancelled without running the operation.
-                    std::lock_guard lock(mutex_);
-                    --in_flight_;
-                    ++stats_.cancelled;
-                    emit_locked(label, finished_event_for(label, false, true, false), op_class,
-                                "cancelled");
-                    return;
-                }
+            auto future = executor_.submit_auto([this, thunk = std::move(thunk), token,
+                                                 settle]() mutable {
                 thunk(token, settle);
                 std::lock_guard lock(mutex_);
                 --in_flight_;
@@ -302,7 +299,9 @@ ContextMemorySupervisor::~ContextMemorySupervisor() {
 
 Result<void> ContextMemorySupervisor::submit_erased(
     const std::string &label, SupervisedOpClass op_class,
-    std::function<void(SupervisorToken, const std::function<void(bool, bool)> &settle)> op) {
+    std::function<void(SupervisorToken,
+                       const std::function<void(bool failed, bool degraded, bool cancelled)>
+                           &settle)> op) {
     return impl_->dispatch(label, op_class, std::move(op));
 }
 

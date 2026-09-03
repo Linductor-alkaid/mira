@@ -255,6 +255,11 @@ Result<T> StoreChannel::run(Op op) {
             return channel_error("store request queue is full", ErrorCode::ResourceExhausted);
         }
         shared_->pending.push_back(
+            // The promise and the callable live inside the type-erased
+            // ChannelWork; their ownership release is opaque to the
+            // analyzer, which misreads it as a leak (same family as the
+            // std::function suppression precedent in observation.hpp).
+            // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
             ChannelWork([promise = std::move(promise), op = std::move(op)](sqlite3 *db) mutable {
                 promise.set_value(invoke_guarded<T>(op, db));
             }));

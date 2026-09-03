@@ -203,11 +203,12 @@ int deferrable_cancelled_critical_settles_at_shutdown() {
         MIRA_CHECK(erased.has_value());
         MIRA_CHECK(memory.erasures.load() == 1);
 
-        // The in-flight deferrable sweep was either cancelled or completed;
-        // either way its future resolves and never hangs.
+        // The in-flight deferrable sweep resolves: cancelled with an error,
+        // or completed if it already started. It must never hang.
         auto swept = sweep.get();
-        MIRA_CHECK(swept.has_value() || !swept.has_value()); // resolves without blocking
-        (void)swept;
+        if (!swept.has_value()) {
+            MIRA_CHECK(swept.error().code == ErrorCode::Cancelled);
+        }
     }
     MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
     return 0;

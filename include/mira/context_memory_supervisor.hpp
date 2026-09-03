@@ -141,7 +141,9 @@ class ContextMemorySupervisor final {
     // be complete (this ordering is what the shutdown test relies on).
     [[nodiscard]] Result<void> submit_erased(
         const std::string &label, SupervisedOpClass op_class,
-        std::function<void(SupervisorToken, const std::function<void(bool, bool)> &settle)> op);
+        std::function<void(SupervisorToken,
+                           const std::function<void(bool failed, bool degraded, bool cancelled)>
+                               &settle)> op);
 
     std::unique_ptr<Impl> impl_;
 };
@@ -166,7 +168,15 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
         label, op_class,
         [promise, op = std::move(op)](
             SupervisorToken token,
-            const std::function<void(bool, bool)> &settle) mutable {
+            const std::function<void(bool failed, bool degraded, bool cancelled)> &settle) mutable {
+            if (token.stop_requested()) {
+                // Cancelled deferrable work resolves its future instead of
+                // hanging it; nothing runs after the shutdown order begins.
+                settle(false, false, true);
+                promise->set_value(Result<T>(supervisor_detail::make_error(
+                    ErrorCode::Cancelled, "deferrable operation cancelled at shutdown")));
+                return;
+            }
             Result<T> outcome =
                 Result<T>(supervisor_detail::make_error(ErrorCode::Internal,
                                                         "supervised operation produced no outcome"));
@@ -190,7 +200,7 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                     degraded = outcome.value().quality.degraded;
                 }
             }
-            settle(!outcome.has_value(), degraded);
+            settle(!outcome.has_value(), degraded, false);
             promise->set_value(std::move(outcome));
         });
     if (!rejection) {

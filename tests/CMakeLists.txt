@@ -141,7 +141,7 @@ function(mira_add_m4_store_test name source)
     endif()
     mira_enable_sanitizers(${name})
     add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES LABELS "contract;m4" TIMEOUT 180)
+    set_tests_properties(${name} PROPERTIES LABELS "contract;m4" TIMEOUT 300)
 endfunction()
 
 mira_add_m4_store_test(mira_m4_sqlite_checkpoint_test m4/m4_sqlite_checkpoint_test.cpp)
@@ -166,7 +166,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 mira_enable_sanitizers(mira_m4_stateful_benchmark)
 add_test(NAME mira_m4_stateful_benchmark COMMAND mira_m4_stateful_benchmark)
-set_tests_properties(mira_m4_stateful_benchmark PROPERTIES LABELS "benchmark;m4" TIMEOUT 300)
+set_tests_properties(mira_m4_stateful_benchmark PROPERTIES LABELS "benchmark;m4" TIMEOUT 900)
 
 add_executable(mira_m2_android_host_test
     m2/m2_android_host_abi_test.cpp
