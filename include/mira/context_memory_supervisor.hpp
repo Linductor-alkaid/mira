@@ -135,11 +135,13 @@ class ContextMemorySupervisor final {
   private:
     class Impl;
     // Type-erased admission path so the public template never needs the
-    // Impl definition. The thunk resolves the caller's promise itself and
-    // reports {failed, degraded} for accounting and event emission.
-    [[nodiscard]] Result<void>
-    submit_erased(const std::string &label, SupervisedOpClass op_class,
-                  std::function<std::pair<bool, bool>(SupervisorToken)> op);
+    // Impl definition. The thunk must invoke `settle(failed, degraded)`
+    // BEFORE resolving the caller's promise: once the future resolves, the
+    // caller may immediately read stats()/events, so accounting must already
+    // be complete (this ordering is what the shutdown test relies on).
+    [[nodiscard]] Result<void> submit_erased(
+        const std::string &label, SupervisedOpClass op_class,
+        std::function<void(SupervisorToken, const std::function<void(bool, bool)> &settle)> op);
 
     std::unique_ptr<Impl> impl_;
 };
@@ -162,7 +164,9 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
     auto future = promise->get_future();
     const auto rejection = submit_erased(
         label, op_class,
-        [promise, op = std::move(op)](SupervisorToken token) mutable -> std::pair<bool, bool> {
+        [promise, op = std::move(op)](
+            SupervisorToken token,
+            const std::function<void(bool, bool)> &settle) mutable {
             Result<T> outcome =
                 Result<T>(supervisor_detail::make_error(ErrorCode::Internal,
                                                         "supervised operation produced no outcome"));
@@ -186,9 +190,8 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                     degraded = outcome.value().quality.degraded;
                 }
             }
-            const bool failed = !outcome.has_value();
+            settle(!outcome.has_value(), degraded);
             promise->set_value(std::move(outcome));
-            return {failed, degraded};
         });
     if (!rejection) {
         Error error = rejection.error();

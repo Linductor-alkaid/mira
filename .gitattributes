@@ -1,0 +1,3 @@
+
+# Vendored SQLite amalgamation: byte-exact for lock digests.
+third_party/sqlite/** -text

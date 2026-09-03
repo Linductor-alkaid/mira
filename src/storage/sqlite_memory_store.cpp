@@ -1653,11 +1653,12 @@ SqliteMemoryStore::open(executor::Executor &executor, SqliteMemoryStoreOptions o
     channel_config.operation_timeout = options.operation_timeout;
     auto channel = std::make_unique<StoreChannel>(executor, handle.get(), channel_config);
 
+    const bool read_only =
+        options.read_only_diagnostic ||
+        diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic;
     auto impl = std::make_unique<Impl>(std::move(options), diagnostics, std::move(handle),
                                        std::move(channel), artifacts);
-    impl->read_only_.store(
-        options.read_only_diagnostic ||
-        diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic);
+    impl->read_only_.store(read_only);
     return std::unique_ptr<SqliteMemoryStore>(new SqliteMemoryStore(std::move(impl)));
 }
 

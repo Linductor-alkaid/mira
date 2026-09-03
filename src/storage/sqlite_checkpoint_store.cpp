@@ -169,7 +169,7 @@ class SqliteCheckpointStore::Impl final {
         if (!writable) {
             return writable;
         }
-        const auto valid = checkpoint.validate();
+        auto valid = checkpoint.validate();
         if (!valid) {
             return valid;
         }
@@ -177,6 +177,9 @@ class SqliteCheckpointStore::Impl final {
         const std::string id = checkpoint.id.to_string();
         const std::string digest = checkpoint.projection_digest().to_string();
         const std::string document = to_json_string(checkpoint_to_json(checkpoint));
+        // The Statement guard owns sqlite3_stmt across translation units;
+        // the analyzer cannot see its destructor and reports a false leak.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
         return channel_->run<void>([&](sqlite3 *db) -> Result<void> {
             storage::Transaction transaction(db);
             if (!transaction.valid()) {
@@ -399,10 +402,11 @@ SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions opt
     channel_config.operation_timeout = options.operation_timeout;
     auto channel = std::make_unique<StoreChannel>(executor, handle.get(), channel_config);
 
+    const bool read_only = options.read_only_diagnostic ||
+                           diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic;
     auto impl = std::make_unique<Impl>(std::move(options), diagnostics, std::move(handle),
                                        std::move(channel));
-    impl->read_only_.store(options.read_only_diagnostic ||
-                           diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic);
+    impl->read_only_.store(read_only);
     return std::unique_ptr<SqliteCheckpointStore>(new SqliteCheckpointStore(std::move(impl)));
 }
 
