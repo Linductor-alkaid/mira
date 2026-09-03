@@ -50,7 +50,11 @@ namespace {
 }
 
 [[nodiscard]] std::chrono::system_clock::time_point wall_from_nanos(std::int64_t nanos) {
-    return std::chrono::system_clock::time_point{} + std::chrono::nanoseconds(nanos);
+    // system_clock tick periods differ across platforms (msvc 100ns, libc++
+    // micro on some Android builds); round-trip through an explicit cast.
+    return std::chrono::system_clock::time_point(
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            std::chrono::nanoseconds(nanos)));
 }
 
 [[nodiscard]] JsonValue artifact_ref_to_json(const ArtifactRef &reference) {
@@ -422,7 +426,7 @@ Error make_memory_error(MemoryDomainCode code, std::string safe_message, bool re
     error.domain_code = static_cast<std::int32_t>(code);
     error.retryable = retryable;
     error.safe_message = std::move(safe_message);
-    error.operation_id = std::move(operation);
+    error.operation_id = operation;
     switch (code) {
     case MemoryDomainCode::InvalidRecord:
     case MemoryDomainCode::InvalidMutation:

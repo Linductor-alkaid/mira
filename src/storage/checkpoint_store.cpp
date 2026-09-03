@@ -549,7 +549,7 @@ void apply_json_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Confi
             }
         }
         reference.sequence = event.session_sequence;
-        checkpoint.current_observation = std::move(reference);
+        checkpoint.current_observation = reference;
     } else if (type == "ActionDispatched") {
         const auto *action = require_string("action");
         if (action == nullptr) {

@@ -623,7 +623,7 @@ Error make_context_error(ContextDomainCode code, std::string safe_message, bool 
     error.domain_code = static_cast<std::int32_t>(code);
     error.retryable = retryable;
     error.safe_message = std::move(safe_message);
-    error.operation_id = std::move(operation);
+    error.operation_id = operation;
     return error;
 }
 
