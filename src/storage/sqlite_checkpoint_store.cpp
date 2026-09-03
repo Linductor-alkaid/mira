@@ -165,7 +165,7 @@ class SqliteCheckpointStore::Impl final {
     }
 
     [[nodiscard]] Result<void> put(const TaskCheckpoint &checkpoint) {
-        const auto writable = check_writable();
+        auto writable = check_writable();
         if (!writable) {
             return writable;
         }
@@ -449,7 +449,7 @@ Result<std::size_t> SqliteCheckpointStore::count(TaskId task) const {
 }
 
 Result<std::size_t> SqliteCheckpointStore::erase_task(TaskId task, std::string reason) {
-    const auto writable = impl_->check_writable();
+    auto writable = impl_->check_writable();
     if (!writable) {
         return writable.error();
     }

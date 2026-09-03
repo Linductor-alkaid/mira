@@ -113,13 +113,13 @@ int submit_consume_and_exception_isolation() {
         ContextMemorySupervisor supervisor(exec, SupervisorConfig{}, &events, runtime, session);
 
         auto value = supervisor.submit<int>("probe", SupervisedOpClass::Interactive,
-                                            [](std::stop_token) { return Result<int>(42); });
+                                            [](SupervisorToken) { return Result<int>(42); });
         auto outcome = value.get();
         MIRA_CHECK(outcome.has_value() && outcome.value() == 42);
 
         auto failed = supervisor.submit<int>(
             "probe", SupervisedOpClass::Interactive,
-            [](std::stop_token) -> Result<int> { throw std::runtime_error("boom"); });
+            [](SupervisorToken) -> Result<int> { throw std::runtime_error("boom"); });
         auto failure = failed.get();
         MIRA_CHECK(!failure.has_value());
         MIRA_CHECK(failure.error().code == ErrorCode::Internal);
@@ -159,7 +159,7 @@ int rejection_after_close_and_capacity_bound() {
 
         // Capacity-bound rejection surfaces as ResourceExhausted.
         auto rejected = supervisor.submit<int>("probe", SupervisedOpClass::Critical,
-                                               [](std::stop_token) { return Result<int>(1); });
+                                               [](SupervisorToken) { return Result<int>(1); });
         auto bounded = rejected.get();
         MIRA_CHECK(!bounded.has_value());
         MIRA_CHECK(bounded.error().code == ErrorCode::ResourceExhausted);
@@ -170,7 +170,7 @@ int rejection_after_close_and_capacity_bound() {
         (void)supervisor.begin_shutdown();
         MIRA_CHECK(supervisor.closed());
         auto closed_rejection = supervisor.submit<int>(
-            "probe", SupervisedOpClass::Critical, [](std::stop_token) { return Result<int>(2); });
+            "probe", SupervisedOpClass::Critical, [](SupervisorToken) { return Result<int>(2); });
         auto denied = closed_rejection.get();
         MIRA_CHECK(!denied.has_value());
         MIRA_CHECK(denied.error().code == ErrorCode::Unavailable);

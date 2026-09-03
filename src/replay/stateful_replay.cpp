@@ -5,18 +5,6 @@
 
 namespace mira {
 
-namespace {
-
-[[nodiscard]] Error replay_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.replay";
-    error.safe_message = std::move(message);
-    return error;
-}
-
-} // namespace
-
 AnalysisReplay::AnalysisReplay(IEventStore &events, ICheckpointStore *checkpoints,
                                IMemory *memory, IArtifactStore *artifacts)
     : events_(events), checkpoints_(checkpoints), memory_(memory), artifacts_(artifacts) {}
@@ -115,7 +103,6 @@ Result<AnalysisReplayReport> AnalysisReplay::inspect(TaskId task, SessionId sess
                 (report.note.empty() ? std::string{} : "; ") + "referenced artifacts unavailable";
         }
     }
-    (void)replay_error;
     return report;
 }
 

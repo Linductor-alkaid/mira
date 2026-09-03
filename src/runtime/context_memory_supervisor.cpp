@@ -121,7 +121,7 @@ class ContextMemorySupervisor::Impl final {
     // The thunk settles its own promise and reports {failed, degraded}.
     [[nodiscard]] Result<void> dispatch(
         const std::string &label, SupervisedOpClass op_class,
-        std::function<std::pair<bool, bool>(std::stop_token)> thunk) {
+        std::function<std::pair<bool, bool>(SupervisorToken)> thunk) {
         {
             std::lock_guard lock(mutex_);
             if (closing_) {
@@ -138,9 +138,10 @@ class ContextMemorySupervisor::Impl final {
             ++stats_.admitted;
             emit_locked(label, started_event_for(label), op_class, "admitted");
         }
-        const std::stop_token token = op_class == SupervisedOpClass::Deferrable
-                                           ? deferrable_stop_.get_token()
-                                           : std::stop_token{};
+        const SupervisorToken token =
+            op_class == SupervisedOpClass::Deferrable
+                ? SupervisorToken(deferrable_stop_)
+                : SupervisorToken{};
         try {
             auto future = executor_.submit_auto([this, label, op_class, thunk = std::move(thunk),
                                                  token]() mutable {
@@ -184,7 +185,7 @@ class ContextMemorySupervisor::Impl final {
             std::lock_guard lock(mutex_);
             closing_ = true;
         }
-        deferrable_stop_.request_stop();
+        deferrable_stop_->store(true, std::memory_order_release);
         // Wait for admitted work to settle, bounded by the drain timeout.
         const auto deadline = std::chrono::steady_clock::now() + config_.critical_drain_timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -274,7 +275,8 @@ class ContextMemorySupervisor::Impl final {
     mutable std::mutex mutex_;
     std::size_t in_flight_ = 0;
     bool closing_ = false;
-    std::stop_source deferrable_stop_;
+    std::shared_ptr<std::atomic<bool>> deferrable_stop_ =
+        std::make_shared<std::atomic<bool>>(false);
     std::vector<std::future<void>> futures_;
     SupervisorStats stats_;
 };
@@ -296,7 +298,7 @@ ContextMemorySupervisor::~ContextMemorySupervisor() {
 
 Result<void> ContextMemorySupervisor::submit_erased(
     const std::string &label, SupervisedOpClass op_class,
-    std::function<std::pair<bool, bool>(std::stop_token)> op) {
+    std::function<std::pair<bool, bool>(SupervisorToken)> op) {
     return impl_->dispatch(label, op_class, std::move(op));
 }
 
@@ -306,7 +308,7 @@ ContextMemorySupervisor::schedule_checkpoint(CheckpointCoordinator &coordinator,
                                              Timestamp now) {
     return submit<std::optional<TaskCheckpoint>>(
         "checkpoint", SupervisedOpClass::Critical,
-        [&coordinator, task, session, trigger, now](std::stop_token) {
+        [&coordinator, task, session, trigger, now](SupervisorToken) {
             return coordinator.checkpoint(task, session, trigger, now);
         });
 }
@@ -315,14 +317,14 @@ std::future<Result<MemoryQueryResult>>
 ContextMemorySupervisor::schedule_memory_query(IMemory &memory, MemoryQuery query) {
     return submit<MemoryQueryResult>(
         "memory_query", SupervisedOpClass::Interactive,
-        [&memory, query = std::move(query)](std::stop_token) { return memory.query(query); });
+        [&memory, query = std::move(query)](SupervisorToken) { return memory.query(query); });
 }
 
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(
         "mutation", SupervisedOpClass::Critical,
-        [&memory, mutation = std::move(mutation)](std::stop_token) {
+        [&memory, mutation = std::move(mutation)](SupervisorToken) {
             return memory.apply(mutation);
         });
 }
@@ -331,7 +333,7 @@ std::future<Result<ErasureResult>>
 ContextMemorySupervisor::schedule_erasure(IMemory &memory, ErasureRequest request) {
     return submit<ErasureResult>(
         "erasure", SupervisedOpClass::Critical,
-        [&memory, request = std::move(request)](std::stop_token) {
+        [&memory, request = std::move(request)](SupervisorToken) {
             return memory.erase(request);
         });
 }
@@ -340,7 +342,7 @@ std::future<Result<MemoryCompactionResult>>
 ContextMemorySupervisor::schedule_retention_sweep(IMemory &memory, MemoryScope scope) {
     return submit<MemoryCompactionResult>(
         "retention_sweep", SupervisedOpClass::Deferrable,
-        [&memory, scope = std::move(scope)](std::stop_token token) {
+        [&memory, scope = std::move(scope)](SupervisorToken token) {
             if (token.stop_requested()) {
                 return Result<MemoryCompactionResult>(
                     supervisor_error(ErrorCode::Cancelled, "retention sweep cancelled"));

@@ -37,6 +37,26 @@ enum class SupervisedOpClass : std::uint8_t { Critical, Interactive, Deferrable 
 
 [[nodiscard]] std::string supervised_op_class_name(SupervisedOpClass op_class);
 
+// Cooperative cancellation probe handed to supervised operations. A tiny
+// portable stand-in for std::stop_token: the Android NDK (API 24, r26)
+// libc++ does not ship <stop_token>, and Mira's public headers must build
+// on every supported platform. Deferrable operations receive a live probe;
+// critical and interactive operations receive an always-false probe.
+class SupervisorToken final {
+  public:
+    SupervisorToken() noexcept = default;
+    // Constructed by the supervisor with its shared stop flag.
+    explicit SupervisorToken(std::shared_ptr<const std::atomic<bool>> flag) noexcept
+        : flag_(std::move(flag)) {}
+
+    [[nodiscard]] bool stop_requested() const noexcept {
+        return flag_ != nullptr && flag_->load(std::memory_order_acquire);
+    }
+
+  private:
+    std::shared_ptr<const std::atomic<bool>> flag_;
+};
+
 struct SupervisorConfig final {
     // Bounded in-flight operations; submissions beyond it fail with
     // ResourceExhausted instead of unbounded queueing.
@@ -88,7 +108,7 @@ class ContextMemorySupervisor final {
     template <typename T>
     [[nodiscard]] std::future<Result<T>>
     submit(std::string label, SupervisedOpClass op_class,
-           std::function<Result<T>(std::stop_token)> op);
+           std::function<Result<T>(SupervisorToken)> op);
 
     // Convenience wrappers for the common routing decisions (§5 of the M4
     // plan). All of them are synchronous store/component calls wrapped in
@@ -119,7 +139,7 @@ class ContextMemorySupervisor final {
     // reports {failed, degraded} for accounting and event emission.
     [[nodiscard]] Result<void>
     submit_erased(const std::string &label, SupervisedOpClass op_class,
-                  std::function<std::pair<bool, bool>(std::stop_token)> op);
+                  std::function<std::pair<bool, bool>(SupervisorToken)> op);
 
     std::unique_ptr<Impl> impl_;
 };
@@ -137,12 +157,12 @@ namespace supervisor_detail {
 template <typename T>
 std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                                                        SupervisedOpClass op_class,
-                                                       std::function<Result<T>(std::stop_token)> op) {
+                                                       std::function<Result<T>(SupervisorToken)> op) {
     auto promise = std::make_shared<std::promise<Result<T>>>();
     auto future = promise->get_future();
     const auto rejection = submit_erased(
         label, op_class,
-        [promise, op = std::move(op)](std::stop_token token) mutable -> std::pair<bool, bool> {
+        [promise, op = std::move(op)](SupervisorToken token) mutable -> std::pair<bool, bool> {
             Result<T> outcome =
                 Result<T>(supervisor_detail::make_error(ErrorCode::Internal,
                                                         "supervised operation produced no outcome"));

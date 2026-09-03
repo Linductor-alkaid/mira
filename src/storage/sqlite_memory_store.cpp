@@ -33,7 +33,6 @@ using storage::Transaction;
 
 constexpr SchemaVersion kMemoryStoreSchema{1, 0};
 constexpr const char *kStoreKind = "memory";
-constexpr std::size_t kMaxScopesPerQuery = 16;
 
 constexpr const char *kSchemaDdl =
     "BEGIN;"
@@ -1348,7 +1347,7 @@ class SqliteMemoryStore::Impl final {
     }
 
     [[nodiscard]] Result<ErasureResult> erase(sqlite3 *db, const ErasureRequest &request) {
-        const auto writable = check_writable();
+        auto writable = check_writable();
         if (!writable) {
             return writable.error();
         }
