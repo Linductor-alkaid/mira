@@ -237,7 +237,7 @@ int bounded_queue_rejects_and_settles() {
         store.value()->set_worker_paused(true);
         std::vector<std::future<bool>> blocked;
         for (int index = 0; index < 2; ++index) {
-            blocked.push_back(exec.submit_auto([&store, task, session]() {
+            blocked.push_back(exec.submit_auto([&store, task]() {
                 // Resolves successfully (empty) once the worker unpauses.
                 auto outcome = store.value()->latest_at_or_before(task, 5);
                 return outcome.has_value();

@@ -205,7 +205,8 @@ int deleted_artifact_degrades_explicitly() {
 int replay_has_no_capability_side_channels() {
     // The analysis report structurally exposes no Network/Tool/Input
     // capability; this pins the invariant the design demands.
-    MIRA_CHECK(AnalysisReplayReport::capability_mask == 0);
+    static_assert(AnalysisReplayReport::capability_mask == 0,
+                  "analysis replay must never gain side-effect capabilities");
     return 0;
 }
 
