@@ -27,6 +27,17 @@
       "version": "068ff080b369adfac81509f9b57b2afabaf82dc5",
       "licenses": [{ "license": { "id": "Apache-2.0" } }],
       "purl": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/sqlite@3.53.4",
+      "name": "sqlite",
+      "version": "3.53.4",
+      "licenses": [{ "license": { "name": "Public Domain" } }],
+      "hashes": [
+        { "alg": "SHA-256", "content": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d" }
+      ],
+      "purl": "pkg:generic/sqlite@3.53.4"
     }
   ],
   "dependencies": [
@@ -36,6 +47,10 @@
     },
     {
       "ref": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:generic/sqlite@3.53.4",
       "dependsOn": []
     }
   ]

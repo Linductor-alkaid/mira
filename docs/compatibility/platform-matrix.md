@@ -1,8 +1,8 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.4
-> 更新日期：2026-09-02
+> 版本：0.5
+> 更新日期：2026-09-03
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -31,6 +31,19 @@
 | Linux x86_64 | Runtime verified（direct + HTTP proxy + HTTPS CONNECT） | Runtime verified（direct/CONNECT handshake、错误 CA） | Runtime verified | 本地 `mira_m3_transport_test`、`mira_m3_mbedtls_test`、`mira_m3_mbedtls_portable_test`、`mira_m3_tls_test`（2026-09-02）；既有 socket CI run [`33332557571`](https://github.com/Linductor-alkaid/mira/actions/runs/33332557571) |
 | Windows x64 | Runtime verified（Winsock） | Runtime verified（direct/CONNECT handshake、proxy credential、错误 CA） | 不构建 | CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423)：Debug/Release 各 28/28，`mira_m3_mbedtls_portable_test` 通过 |
 | Android arm64-v8a | Build verified | Build verified（NDK 26.3/API 24 arm64） | 不构建 | CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423) 显式构建两个 transport；设备 runtime 由后续平台里程碑验证 |
+
+### M4 Durable State 后端（`mira_state_store`，SQLite 3.53.4 amalgamation）
+
+| 目标 | `mira_state_store`（Checkpoint/Memory/WAL/FTS5） | 证据 |
+| --- | --- | --- |
+| Linux x86_64 | Runtime verified（GCC/Clang Debug；`mira_m4_sqlite_*`、`mira_m4_memory_retrieval`、`mira_m4_stateful_replay`、benchmark 与 example 全绿） | 本地 2026-09-03；CI linux matrix 每次 pipeline 复跑 |
+| Windows x64 | Runtime verified（MSVC Debug/Release；同一测试集） | CI（M4 PR pipeline；见 [M4 计划验证记录](../plans/m4-context-memory-recovery.md)） |
+| Android arm64-v8a | Build verified（NDK 26.3/API 24 arm64；`mira_state_store` 显式构建目标） | CI android job；真机/模拟器 runtime 属 M7 |
+
+SQLite 以 vendored amalgamation 分发（Public Domain），无动态加载
+（`SQLITE_OMIT_LOAD_EXTENSION`），自身不创建线程；全部访问经由单个 Executor
+blocking-I/O worker 的唯一连接（单 writer、有界请求通道、WAL）。依赖锁定与审计见
+[direct-dependencies.md](../supply-chain/direct-dependencies.md)。
 
 跨平台 TLS、proxy、CA bundle 和 fail-closed 语义见
 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。未配置 TLS 工厂时 https 端点在

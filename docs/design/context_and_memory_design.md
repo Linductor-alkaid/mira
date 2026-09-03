@@ -1,9 +1,38 @@
 # Mira Context 与 Memory 架构设计
 
 > 状态：Active  
-> 版本：0.3  
-> 更新日期：2026-08-30  
+> 版本：0.4  
+> 更新日期：2026-09-03  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)
+
+## 0. M4 实现状态注记
+
+本文档 CM0–CM3 所述核心面已于 M4 落地（对照
+[M4 计划](../plans/m4-context-memory-recovery.md)）；以下实现语义是对本文的细化，
+不改变既有约束：
+
+- §8.3 `IMemory` 在 M4 实现中为同步门面（与 `ICheckpointStore` 一致，不带
+  OperationContext 参数）；Executor 路由与关闭由
+  `ContextMemorySupervisor`（§17 的 M4 实现）承载。
+- §13.3 Consolidation：确定性提取器消费 `TaskFactVerified`（User scope 归类为
+  Preference，Application scope 归类为 ApplicationFact）与 `LoopSettled(Completed)`
+  （Episode）；User-scope Preference 默认要求人工审批；模型辅助候选强制
+  `source_namespace` 且不得声明 HumanConfirmed。
+- §13.4 Supersede 语义：后继记录使用新 id 并携带 `supersedes`；前驱记录在原 id 上
+  关闭有效区间（version+1 的 Superseded 历史版本），双时态 as-of 查询按
+  "Superseded 闭合区间链"解析（被替代记录不为其后继时代的查询作答）。
+- §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
+  当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
+  §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
+- §16.2 SQLite 参考后端：单 writer、有界请求通道、WAL、FTS5、有界线性 cosine；
+  schema 版本记录于 `store_meta`，初始化失败不隐式清库，更新版本的文件以只读诊断
+  模式打开。
+- §16/§17 存储 I/O 由专属 Executor blocking-I/O worker 承载
+  （`mira_state_store`），§17.2 关闭顺序由 `ContextMemorySupervisor::begin_shutdown`
+  执行（停止生产者→取消 Deferrable→有界等待 Critical→消费 Executor future）；
+  未发现新的 Executor 能力缺口，无需登记 `EXE-*`。
+- §20 事件面：supervisor 发出的脱敏 Diagnostic 事件与设计命名映射见
+  [Stateful agent beta 发布说明](../releases/stateful-agent-beta.md)。
 
 ## 1. 文档目的
 

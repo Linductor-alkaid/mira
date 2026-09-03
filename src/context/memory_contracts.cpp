@@ -356,6 +356,66 @@ Result<void> MemoryRecord::validate() const {
         return memory_error(MemoryDomainCode::InvalidRecord,
                             "superseded records must reference their replacement");
     }
+    if (version == 0) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "record version starts at one");
+    }
+    return Result<void>{};
+}
+
+Result<void> MemoryQuery::validate() const {
+    if (scopes.empty()) {
+        return memory_error(MemoryDomainCode::ScopeDenied,
+                            "memory queries must state an explicit scope allowlist");
+    }
+    for (const auto &scope : scopes) {
+        if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
+            scope.kind != MemoryScopeKind::Agent) {
+            return memory_error(MemoryDomainCode::ScopeDenied,
+                                "scoped memory queries require a subject id");
+        }
+        if (scope.subject_id.size() > 256) {
+            return memory_error(MemoryDomainCode::ScopeDenied, "scope subject id is too long");
+        }
+        if (scope.tenant_id.has_value() && scope.tenant_id->size() > 256) {
+            return memory_error(MemoryDomainCode::ScopeDenied, "scope tenant id is too long");
+        }
+    }
+    if (kinds.has_value() && kinds->empty()) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "kind filter must not be empty");
+    }
+    if (max_results == 0 || max_results > 512) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "max_results must be within (0, 512]");
+    }
+    if (deadline.count() < 0) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "deadline must not be negative");
+    }
+    if (query_embedding.size() > 4'096) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "query embedding exceeds bounds");
+    }
+    return Result<void>{};
+}
+
+std::string erasure_status_name(ErasureStatus status) {
+    switch (status) {
+    case ErasureStatus::Complete:
+        return "Complete";
+    case ErasureStatus::Pending:
+        return "Pending";
+    }
+    return "Unknown";
+}
+
+Result<void> ErasureRequest::validate() const {
+    const bool scope_set = scope.has_value();
+    const bool record_set = record.has_value() && !record->is_nil();
+    if (scope_set == record_set) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "erasure must target exactly one scope or record");
+    }
+    if (reason.empty()) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "erasure requires a reason");
+    }
     return Result<void>{};
 }
 
@@ -418,6 +478,12 @@ std::string memory_domain_code_name(MemoryDomainCode code) {
         return "VersionConflict";
     case MemoryDomainCode::SchemaUnsupported:
         return "SchemaUnsupported";
+    case MemoryDomainCode::IndexDegraded:
+        return "IndexDegraded";
+    case MemoryDomainCode::ErasurePending:
+        return "ErasurePending";
+    case MemoryDomainCode::StoreUnavailable:
+        return "StoreUnavailable";
     }
     return "Unknown";
 }
@@ -442,7 +508,20 @@ Error make_memory_error(MemoryDomainCode code, std::string safe_message, bool re
     case MemoryDomainCode::VersionConflict:
         error.code = ErrorCode::InvalidState;
         break;
+    case MemoryDomainCode::IndexDegraded:
+        error.code = ErrorCode::Internal;
+        error.retryable = true;
+        break;
+    case MemoryDomainCode::ErasurePending:
+        error.code = ErrorCode::InvalidState;
+        error.retryable = true;
+        break;
+    case MemoryDomainCode::StoreUnavailable:
+        error.code = ErrorCode::Unavailable;
+        error.retryable = true;
+        break;
     }
+    error.retryable = error.retryable || retryable;
     return error;
 }
 
@@ -522,6 +601,7 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     if (record.source_namespace.has_value()) {
         object.emplace_back("source_namespace", *record.source_namespace);
     }
+    object.emplace_back("version", static_cast<std::int64_t>(record.version));
     return JsonValue(std::move(object));
 }
 
@@ -636,6 +716,10 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
     const auto *namespace_field = json.find("source_namespace");
     if (namespace_field != nullptr && namespace_field->is_string()) {
         record.source_namespace = *namespace_field->as_string();
+    }
+    const auto *version = json.find("version");
+    if (version != nullptr && version->is_integer() && version->as_integer().value() > 0) {
+        record.version = static_cast<std::uint64_t>(version->as_integer().value());
     }
     return record;
 }

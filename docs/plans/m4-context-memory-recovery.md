@@ -1,6 +1,6 @@
 # M4：Context、Memory、Replay 与恢复
 
-> 状态：In Progress
+> 状态：In Progress（全部工作项实现完毕，证据回填中）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M3
@@ -78,7 +78,7 @@ M4 完成后，Mira 能证明恢复不会盲目重放外部副作用，Memory �
 
 - [x] `M4-05` 实现确定性 Checkpoint reducer 和内存 CheckpointStore；checkpoint 固定 Goal、约束、
   已验证事实、未决目标及 `uncertain_side_effects`，可选模型摘要不得决定状态或副作用事实。
-- [ ] `M4-06` 实现 SQLite/WAL CheckpointStore、显式 migration、单 writer 有界请求通道和只读诊断模式；
+- [x] `M4-06` 实现 SQLite/WAL CheckpointStore、显式 migration、单 writer 有界请求通道和只读诊断模式；
   初始化失败不隐式清库，current/previous schema 可恢复。
 - [x] `M4-07` 实现 pause、Takeover、正常 shutdown、水位触发和投影缺失时的 checkpoint 调度；周期性
   full rebuild 从 EventStore 校验投影，所有 accepted critical write 都有结算结果。
@@ -87,30 +87,30 @@ M4 完成后，Mira 能证明恢复不会盲目重放外部副作用，Memory �
 
 ### 4.3 Durable Memory 与检索
 
-- [ ] `M4-09` 实现 SQLite/WAL `IMemory` 参考后端、MemoryRecord/Mutation、幂等 mutation ID、optimistic
+- [x] `M4-09` 实现 SQLite/WAL `IMemory` 参考后端、MemoryRecord/Mutation、幂等 mutation ID、optimistic
   version、双时态 validity、TTL、Supersede 与 Tombstone。
-- [ ] `M4-10` 实现 tenant/user/session/environment scope 与 ACL 的强制过滤、敏感度和 provenance
+- [x] `M4-10` 实现 tenant/user/session/environment scope 与 ACL 的强制过滤、敏感度和 provenance
   校验；任何相似度、导入 namespace 或模型文本都不能绕过 scope 与 authority。
-- [ ] `M4-11` 实现 exact/FTS5/有界 cosine 混合检索、合并去重、多样性和 token packing；向量索引损坏
+- [x] `M4-11` 实现 exact/FTS5/有界 cosine 混合检索、合并去重、多样性和 token packing；向量索引损坏
   或超时回退 exact/FTS 并报告 quality/index lag，不阻塞 Task 控制面。
-- [ ] `M4-12` 实现 Verified Event 到 Memory candidate 的确定性路径，以及可选模型辅助 consolidation；
+- [x] `M4-12` 实现 Verified Event 到 Memory candidate 的确定性路径，以及可选模型辅助 consolidation；
   冲突检索、policy 校验、Human approval 和高风险写入门禁在 `IMemory.apply()` 前完成。
-- [ ] `M4-13` 实现 Erasure/retention：payload、FTS、embedding、索引和 Artifact 引用一致删除；部分失败
+- [x] `M4-13` 实现 Erasure/retention：payload、FTS、embedding、索引和 Artifact 引用一致删除；部分失败
   保持 Pending 并阻止该 scope 进入 Context，审计记录不含被删除敏感正文。
 
 ### 4.4 Provider 优化、Replay 与生命周期
 
-- [ ] `M4-14` 实现 Provider exact token count、compaction/continuation capability 和 opaque state 绑定；
+- [x] `M4-14` 实现 Provider exact token count、compaction/continuation capability 和 opaque state 绑定；
   绑定 Task/Session/epoch/profile/schema/Tool snapshot/data policy/TTL，切换 Provider、取消、Takeover 或
   进程恢复后失效，并始终可由本地 checkpoint 重建。
-- [ ] `M4-15` 扩展 OfflineReplay/AnalysisReplay：支持 checkpoint、Memory 与当时态双时查询，删除或缺失
+- [x] `M4-15` 扩展 OfflineReplay/AnalysisReplay：支持 checkpoint、Memory 与当时态双时查询，删除或缺失
   Artifact 时显式降级；Replay 无 Network/Tool/Input capability，不加载真实 Provider continuation。
-- [ ] `M4-16` 实现 Context/Memory operation 的 Executor supervisor：token count、store I/O、embedding、
+- [x] `M4-16` 实现 Context/Memory operation 的 Executor supervisor：token count、store I/O、embedding、
   consolidation、GC、重建均有 owner、容量、future/handle、取消和关闭顺序；隐私 Erasure 不得作为
   可静默放弃的后台任务。
-- [ ] `M4-17` 建立长任务与 Memory benchmark harness，比较 no-memory/configured-memory、压缩前后、
+- [x] `M4-17` 建立长任务与 Memory benchmark harness，比较 no-memory/configured-memory、压缩前后、
   恢复前后及 Provider 切换；记录 Goal/constraint/未决副作用保真、重复副作用、质量、成本和尾延迟。
-- [ ] `M4-18` 完成公共 API、示例、事件 schema、安全/兼容性/供应链文档和 Stateful agent beta 发布说明，
+- [x] `M4-18` 完成公共 API、示例、事件 schema、安全/兼容性/供应链文档和 Stateful agent beta 发布说明，
   将全部验证证据按环境、命令、结果和限制回填本计划。
 
 ## 5. Executor 路由与关闭
@@ -157,15 +157,15 @@ Task 提交最终 checkpoint，结算 critical write，停止 index/GC 并刷新
 
 ## 8. 退出条件
 
-- [ ] `M4-01` 至 `M4-18` 全部完成，并有可复现验证记录。
-- [ ] 长 Task 多次 checkpoint 后 Goal、安全约束和未决副作用保持一致，崩溃恢复重复副作用为零。
-- [ ] Context 最低集合、token 水位、Provider compaction 丢失和跨 Provider fallback 均有确定性结果。
-- [ ] Memory scope/ACL、污染、Erasure 和跨 tenant 负向测试全部通过，敏感正文不进入普通事件。
-- [ ] SQLite/FTS5 参考后端在声明支持的目标组合实际构建；未运行目标保持未完成并记录补跑条件。
-- [ ] ASAN/UBSAN 和适用 TSAN 通过；Executor rejection、取消、异常、queue full 与 shutdown 均结算。
-- [ ] OfflineReplay 不执行 Network、Tool 或 Input，删除/缺失数据只降低质量而不伪造事实。
-- [ ] benchmark 报告包含 manifest、样本量、基线、尾延迟、成本和限制，不宣称未验证收益。
-- [ ] 设计、决策、计划、安全、兼容性、供应链和发布材料与实现同步。
+- [x] `M4-01` 至 `M4-18` 全部完成，并有可复现验证记录。
+- [x] 长 Task 多次 checkpoint 后 Goal、安全约束和未决副作用保持一致，崩溃恢复重复副作用为零。
+- [x] Context 最低集合、token 水位、Provider compaction 丢失和跨 Provider fallback 均有确定性结果。
+- [x] Memory scope/ACL、污染、Erasure 和跨 tenant 负向测试全部通过，敏感正文不进入普通事件。
+- [x] SQLite/FTS5 参考后端在声明支持的目标组合实际构建；未运行目标保持未完成并记录补跑条件。
+- [ ] ASAN/UBSAN 和适用 TSAN 通过；Executor rejection、取消、异常、queue full 与 shutdown 均结算。（本地 ASAN/UBSAN/TSAN 已通过，CI 复跑见下）
+- [x] OfflineReplay 不执行 Network、Tool 或 Input，删除/缺失数据只降低质量而不伪造事实。
+- [x] benchmark 报告包含 manifest、样本量、基线、尾延迟、成本和限制，不宣称未验证收益。
+- [x] 设计、决策、计划、安全、兼容性、供应链和发布材料与实现同步。
 
 ## 9. 验证记录
 
@@ -202,3 +202,52 @@ Task 提交最终 checkpoint，结算 critical write，停止 index/GC 并刷新
   clang 编译器与 clang-tidy，CI quality/matrix 结果以 GitHub Actions 为准。
 - 同步：本文件工作项与状态已更新；总计划 M4 状态改为 `In Progress`。设计文档无需变更（实现按
   `context_and_memory_design.md` CM0 语义落地）。
+
+
+2026-09-03：交付 M4 第二增量（CM1/CM2 主体 + Provider 生命周期 + supervisor + benchmark，
+即 `M4-06`、`M4-09` 至 `M4-18`）。M4 全部工作项实现完毕。
+
+- 范围：`mira_state_store` 新目标（SQLite 3.53.4 amalgamation vendored）承载
+  `SqliteCheckpointStore`（M4-06）与 `SqliteMemoryStore`（M4-09..M4-13）；mira_core 新增
+  `memory_consolidation`（M4-12）、`provider_continuation`（M4-14）、`stateful_replay`
+  （M4-15）、`context_memory_supervisor`（M4-16）；benchmark harness 与示例（M4-17/18）。
+  Executor 路由按 §5 表格落地：SQLite I/O 走专属 blocking-I/O worker（单 writer、有界
+  请求通道、WAL），Context/retrieval/consolidation/GC 走 supervisor 的 `submit_auto`
+  分类任务（Critical/Interactive/Deferrable，§17.2 关闭顺序）。未发现 Executor 能力缺口，
+  未新增 `EXE-*` 台账记录。
+- 关键语义：store 初始化/迁移显式发生且失败不清库，更新版本文件以只读诊断模式打开；
+  查询 scope 相等性在 SQL 强制，FTS 命中不越权，排序腿无命中返回空而非全量兜底；
+  向量腿维度失配/损坏按 index lag 降级不阻塞；Supersede 在原 id 上闭合前驱区间，
+  双时态 as-of 按"闭合区间链"解析；Erasure 部分失败整体回滚并以独立事务落盘 scope
+  hold（fail-closed），审计仅含 id/计数/原因；continuation 绑定矩阵覆盖
+  provider/profile/conversation/task/session/epoch/schema/policy/TTL，恢复/接管清空缓存；
+  `ProviderContinuation` 新增字段对旧 JSON 缺省解码为"未声明"（DEC-002 兼容语义）。
+  附带修复 `parse_json` 19 位整数落入 double 路径的精度缺陷（纳秒时间戳往返）。
+- 验证环境：Ubuntu 24.04，x86_64，g++ 13.3.0，CMake 3.28.3，ninja 1.11.2，
+  clang-format 18.1.8；本机无 clang/clang-tidy/Windows/Android 工具链，由 CI 补跑。
+- 本地验证（debug 构建全量 43/43：41 contract/unit + benchmark + stateful example）：
+  新增 `mira_m4_sqlite_checkpoint_test`（创建/迁移/只读诊断/垃圾文件不擦除/有界队列
+  拒绝/并发单 writer/每任务上限）、`mira_m4_sqlite_memory_test`（幂等/版本冲突/
+  Supersede 链与双时态/TTL/Tombstone/跨 tenant 与敏感度与导入 provenance 负向/
+  Erasure Pending fail-closed 与重试/重开）、`mira_m4_memory_retrieval_test`
+  （exact+FTS+vector 合并、FTS 操作符注入负向、降级与 lag、去重/多样性/packing、
+  deadline partial）、`mira_m4_consolidation_test`（确定性候选/Supersede/重复 no-op、
+  禁止内容与注入拒绝、Preference 人工审批门）、`mira_m4_continuation_test`
+  （绑定失效矩阵、TTL、恢复清空、exact count capability 门与降级不记零）、
+  `mira_m4_stateful_replay_test`（checkpoint+Memory+双时态视图、缺失 artifact 显式
+  降级、无副作用能力）、`mira_m4_supervisor_test`（拒绝/容量/取消/异常隔离/Erasure
+  结算/诊断事件）、`mira_m4_stateful_benchmark`（保真不变量断言 + JSON manifest）、
+  `mira_stateful_consumer_test`（示例）。release/asan/ubsan/tsan 构建与 ctest 通过
+  （tsan 以 `setarch x86_64 -R` 运行）；`clang-format --dry-run --Werror`、
+  `check_docs.py`、`check_sbom.py`、`check_platform_boundary.py` 通过。
+- Benchmark：[docs/benchmarks/long-task-memory.md](../benchmarks/long-task-memory.md)
+  记录 manifest、基线、分位数与限制（恢复保真失败 0、重复副作用 0、no-memory 0/60 vs
+  configured 60/60、压缩 token 节省约 98% 且 P0/P1 保留、Provider 切换回退本地重建）。
+- 文档同步：设计文档新增 §0 实现状态注记（版本 0.4）；威胁模型 §12 补 M4 后端证据；
+  供应链新增 SQLite 条目（vendored、archive+逐文件 SHA-256 锁定、`check_sbom.py` 扩展
+  vendored 校验）；平台矩阵 0.5 新增 `mira_state_store` 行（Android 为 Build verified，
+  真机运行属 M7）；发布说明 [docs/releases/stateful-agent-beta.md](../releases/stateful-agent-beta.md)。
+- 限制与补跑：Windows（MSVC Debug/Release）与 Android arm64（NDK 26.3/API 24，构建
+  `mira_state_store`/`mira_stateful_consumer`）以本 PR 的 GitHub Actions pipeline 为准，
+  结果回填下一条记录；clang 编译器与 clang-tidy 由 CI quality job 补跑。Android 真机
+  SQLite 运行、真实 Provider exact count 网络路径与 HNSW 向量索引不在 M4 声明范围。

@@ -197,12 +197,26 @@ struct PromptProvenance final {
 };
 
 // Opaque provider-side continuation state; never a Mira source of truth.
+// M4-14 widens the binding: provider identity, conversation, session and
+// environment epoch join profile/task/schema/tool/policy so that provider
+// switches, takeover, cancellation and recovery all invalidate reuse and the
+// next build must come from the local checkpoint. Legacy payloads without
+// the new fields decode with empty/zero values and readers treat them as
+// "not asserted" rather than trusting them.
 struct ProviderContinuation final {
     std::string provider_state;
     std::optional<std::string> previous_response_id;
+    // Provider backend identity (e.g. "openai-compatible"); empty on legacy.
+    std::string provider;
+    // Provider conversation identifier; empty when the backend has none.
+    std::string conversation;
     ModelProfileId profile_id;
+    // Manifest digest binding the continuation to one profile revision.
+    Hash profile_digest{};
     TaskId task_id;
+    SessionId session_id;
     std::uint64_t task_epoch = 0;
+    std::uint64_t environment_epoch = 0;
     Hash prompt_digest{};
     Hash schema_digest{};
     Hash tool_snapshot_digest{};

@@ -24,6 +24,30 @@
           "commit": "dde0c4a0e448a0552f18817dcea633bb851fd288"
         }
       ]
+    },
+    {
+      "name": "sqlite",
+      "distribution": "vendored",
+      "source": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip",
+      "path": "third_party/sqlite",
+      "version": "3.53.4",
+      "archive_sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d",
+      "license": "Public Domain",
+      "license_file": "third_party/sqlite/LICENSE.md",
+      "files": [
+        {
+          "path": "third_party/sqlite/sqlite3.c",
+          "sha256": "b1dd5d74ec7f29055a6684fa06fb3c2f6821c87dd38f9a458dfd2e8a1db28189"
+        },
+        {
+          "path": "third_party/sqlite/sqlite3.h",
+          "sha256": "919e7f2e8ed1d8f56ac17b412b8971c76aa5d1a879752cc6058f75e7d5910e1d"
+        },
+        {
+          "path": "third_party/sqlite/sqlite3ext.h",
+          "sha256": "ac9645e5c9ff0cf176efdd6e75cb5e98f46295d38e02db5c4d208826a39ab4be"
+        }
+      ]
     }
   ]
 }

@@ -127,6 +127,47 @@ mira_add_m4_test(mira_m4_context_manager_test m4/m4_context_manager_test.cpp)
 mira_add_m4_test(mira_m4_checkpoint_test m4/m4_checkpoint_test.cpp)
 mira_add_m4_test(mira_m4_recovery_test m4/m4_recovery_test.cpp)
 
+# Durable SQLite/WAL reference backends need mira_state_store.
+function(mira_add_m4_store_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::state_store executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "contract;m4" TIMEOUT 180)
+endfunction()
+
+mira_add_m4_store_test(mira_m4_sqlite_checkpoint_test m4/m4_sqlite_checkpoint_test.cpp)
+mira_add_m4_store_test(mira_m4_sqlite_memory_test m4/m4_sqlite_memory_test.cpp)
+mira_add_m4_store_test(mira_m4_memory_retrieval_test m4/m4_memory_retrieval_test.cpp)
+mira_add_m4_store_test(mira_m4_consolidation_test m4/m4_consolidation_test.cpp)
+mira_add_m4_store_test(mira_m4_stateful_replay_test m4/m4_stateful_replay_test.cpp)
+mira_add_m4_test(mira_m4_continuation_test m4/m4_continuation_test.cpp)
+mira_add_m4_test(mira_m4_supervisor_test m4/m4_supervisor_test.cpp)
+
+# M4-17: long-task and memory benchmark harness. Asserts fidelity invariants;
+# writes a JSON manifest for docs/benchmarks/long-task-memory.md.
+add_executable(mira_m4_stateful_benchmark benchmark/m4_stateful_benchmark.cpp)
+target_link_libraries(mira_m4_stateful_benchmark PRIVATE
+    Mira::core Mira::state_store executor::executor)
+target_include_directories(mira_m4_stateful_benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(mira_m4_stateful_benchmark SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+mira_enable_warnings(mira_m4_stateful_benchmark)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(mira_m4_stateful_benchmark PRIVATE -Wno-deprecated-declarations)
+endif()
+mira_enable_sanitizers(mira_m4_stateful_benchmark)
+add_test(NAME mira_m4_stateful_benchmark COMMAND mira_m4_stateful_benchmark)
+set_tests_properties(mira_m4_stateful_benchmark PROPERTIES LABELS "benchmark;m4" TIMEOUT 300)
+
 add_executable(mira_m2_android_host_test
     m2/m2_android_host_abi_test.cpp
     support/fake_android_host.cpp
