@@ -763,10 +763,13 @@ JsonValue checkpoint_to_json(const TaskCheckpoint &checkpoint) {
     object.emplace_back("through_event_sequence",
                         static_cast<std::int64_t>(checkpoint.through_event_sequence));
     object.emplace_back("created_at", wall_nanos(checkpoint.created_at));
-    object.emplace_back("created_at_monotonic",
-                        std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            checkpoint.created_at.monotonic.time_since_epoch())
-                            .count());
+    // nanoseconds::rep is `long long` on some libc++ targets while JsonValue
+    // pins int64_t; cast explicitly so pair construction stays unambiguous.
+    object.emplace_back(
+        "created_at_monotonic",
+        JsonValue(static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                checkpoint.created_at.monotonic.time_since_epoch())
+                                                .count())));
     object.emplace_back("goal_statement", checkpoint.goal_statement);
     if (checkpoint.success_criterion.has_value()) {
         object.emplace_back("success_criterion", *checkpoint.success_criterion);

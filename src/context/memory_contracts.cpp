@@ -46,7 +46,10 @@ namespace {
 }
 
 [[nodiscard]] std::int64_t wall_nanos(std::chrono::system_clock::time_point stamp) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count();
+    // nanoseconds::rep differs from int64_t on some libc++ targets; pin the
+    // return type explicitly so JsonValue construction stays unambiguous.
+    return static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
 }
 
 [[nodiscard]] std::chrono::system_clock::time_point wall_from_nanos(std::int64_t nanos) {
