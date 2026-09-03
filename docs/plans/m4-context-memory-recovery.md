@@ -1,6 +1,6 @@
 # M4：Context、Memory、Replay 与恢复
 
-> 状态：In Progress（全部工作项实现完毕，证据回填中）
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M3
@@ -162,7 +162,7 @@ Task 提交最终 checkpoint，结算 critical write，停止 index/GC 并刷新
 - [x] Context 最低集合、token 水位、Provider compaction 丢失和跨 Provider fallback 均有确定性结果。
 - [x] Memory scope/ACL、污染、Erasure 和跨 tenant 负向测试全部通过，敏感正文不进入普通事件。
 - [x] SQLite/FTS5 参考后端在声明支持的目标组合实际构建；未运行目标保持未完成并记录补跑条件。
-- [ ] ASAN/UBSAN 和适用 TSAN 通过；Executor rejection、取消、异常、queue full 与 shutdown 均结算。（本地 ASAN/UBSAN/TSAN 已通过，CI 复跑见下）
+- [x] ASAN/UBSAN 和适用 TSAN 通过；Executor rejection、取消、异常、queue full 与 shutdown 均结算。
 - [x] OfflineReplay 不执行 Network、Tool 或 Input，删除/缺失数据只降低质量而不伪造事实。
 - [x] benchmark 报告包含 manifest、样本量、基线、尾延迟、成本和限制，不宣称未验证收益。
 - [x] 设计、决策、计划、安全、兼容性、供应链和发布材料与实现同步。
@@ -251,3 +251,19 @@ Task 提交最终 checkpoint，结算 critical write，停止 index/GC 并刷新
   `mira_state_store`/`mira_stateful_consumer`）以本 PR 的 GitHub Actions pipeline 为准，
   结果回填下一条记录；clang 编译器与 clang-tidy 由 CI quality job 补跑。Android 真机
   SQLite 运行、真实 Provider exact count 网络路径与 HNSW 向量索引不在 M4 声明范围。
+
+2026-09-03：CI 全绿，M4 关闭。PR
+[#4](https://github.com/Linductor-alkaid/mira/pull/4)（分支 `codex/m4-durable-memory-completion`）的
+push pipeline run [`33792131779`](https://github.com/Linductor-alkaid/mira/actions/runs/33792131779)
+全部 job 成功：Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a
+（NDK 26.3.11579264/API 24，含 `mira_state_store` 与 `mira_stateful_consumer` 构建）、ASAN/UBSAN/TSAN
+（41-43 tests 全过，mbedtls portable 按 CI 配置禁用）与 quality（clang-tidy + clang-format 18.1.8 +
+docs/sbom/platform-boundary 检查）。
+
+迭代中修复并回归的跨平台问题（全部有测试或 CI 证据）：Android NDK libc++ 缺 `<stop_token>`（改用
+可移植 `SupervisorToken`）；Windows checkout 换行破坏 vendored 摘要（`.gitattributes -text`）；
+`std::function` 堆分配路径的 clang-analyzer 误报（store 通道改为模板直传 callable）；supervisor
+shutdown 取消路径不 resolve future 的死锁（本地 30 次压测复现、80 次验证修复）；Windows 下清理
+SQLite 侧文件抛 `filesystem_error` 触发 0xC0000409（error_code 清理 + 顶层异常屏障）；以及
+`parse_json` 19 位整数精度缺陷（见上一条记录）。M4 退出条件全部满足，状态改为 `Completed`；
+Stateful agent beta 发布说明见 [docs/releases/stateful-agent-beta.md](../releases/stateful-agent-beta.md)。
