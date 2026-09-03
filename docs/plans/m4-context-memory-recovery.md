@@ -1,11 +1,11 @@
 # M4：Context、Memory、Replay 与恢复
 
-> 状态：Planned
+> 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M3
 > 建议发布点：Stateful agent beta
-> 更新日期：2026-09-01
+> 更新日期：2026-09-03
 
 ## 1. 目标
 
@@ -65,24 +65,24 @@ M4 完成后，Mira 能证明恢复不会盲目重放外部副作用，Memory �
 
 ### 4.1 Context 安全与预算
 
-- [ ] `M4-01` 冻结并实现版本化 Context/Checkpoint/Memory 公共契约、稳定错误和 schema golden；
+- [x] `M4-01` 冻结并实现版本化 Context/Checkpoint/Memory 公共契约、稳定错误和 schema golden；
   current/previous reader 对未知字段安全降级，公共头不暴露 SQLite、tokenizer 或 embedding 类型。
-- [ ] `M4-02` 实现按 ModelProfile 隔离的保守 TokenCounter 与预算报告；所有水位使用 upper bound，
+- [x] `M4-02` 实现按 ModelProfile 隔离的保守 TokenCounter 与预算报告；所有水位使用 upper bound，
   exact count 失败可降级但不得记零，图片、Tool/schema 与方言开销纳入计算。
-- [ ] `M4-03` 实现 P0–P5 ContextManager：固定 Task/environment epoch 和 event sequence，保留最低
+- [x] `M4-03` 实现 P0–P5 ContextManager：固定 Task/environment epoch 和 event sequence，保留最低
   可执行集合，按水位引用/裁剪/压缩，并输出每项选入、排除和替换理由。
-- [ ] `M4-04` 实现多模态与 Tool context 降载：历史大载荷转 ArtifactRef、当前视觉证据保真、
+- [x] `M4-04` 实现多模态与 Tool context 降载：历史大载荷转 ArtifactRef、当前视觉证据保真、
   Tool call/result 配对不破坏；最低 P0/P1/P2 超限时明确拒绝或只路由到已授权大窗口 profile。
 
 ### 4.2 Checkpoint 与恢复
 
-- [ ] `M4-05` 实现确定性 Checkpoint reducer 和内存 CheckpointStore；checkpoint 固定 Goal、约束、
+- [x] `M4-05` 实现确定性 Checkpoint reducer 和内存 CheckpointStore；checkpoint 固定 Goal、约束、
   已验证事实、未决目标及 `uncertain_side_effects`，可选模型摘要不得决定状态或副作用事实。
 - [ ] `M4-06` 实现 SQLite/WAL CheckpointStore、显式 migration、单 writer 有界请求通道和只读诊断模式；
   初始化失败不隐式清库，current/previous schema 可恢复。
-- [ ] `M4-07` 实现 pause、Takeover、正常 shutdown、水位触发和投影缺失时的 checkpoint 调度；周期性
+- [x] `M4-07` 实现 pause、Takeover、正常 shutdown、水位触发和投影缺失时的 checkpoint 调度；周期性
   full rebuild 从 EventStore 校验投影，所有 accepted critical write 都有结算结果。
-- [ ] `M4-08` 实现崩溃恢复：选择不超过 durable sequence 的最新兼容 checkpoint，重放增量事件，
+- [x] `M4-08` 实现崩溃恢复：选择不超过 durable sequence 的最新兼容 checkpoint，重放增量事件，
   校验 Task epoch/终态；非终态只恢复到 Observing/Verifying，未决副作用先 Observe/Verify。
 
 ### 4.3 Durable Memory 与检索
@@ -172,3 +172,33 @@ Task 提交最终 checkpoint，结算 critical write，停止 index/GC 并刷新
 2026-09-01：依据现有总计划和 Context/Memory 设计创建详细计划；状态为 `Planned`，尚未开始实现，
 未执行 M4 构建、测试、平台验证或 benchmark。负责人为 Mira Maintainers；准入条件为 M3 全部开放项
 按原编号完成并留下证据。
+
+2026-09-03：交付 M4 第一增量（Context Safety 与恢复核心，对应设计 CM0 阶段加 `M4-08`）。
+状态改为 `In Progress`。
+
+- 范围：`M4-01` 至 `M4-05`、`M4-07`、`M4-08` 完成；`M4-06` 及 4.3/4.4 节全部工作项未开始。
+  新增公共契约 `include/mira/context_contracts.hpp`、`context_manager.hpp`、`task_checkpoint.hpp`、
+  `task_recovery.hpp`、`memory_contracts.hpp`（冻结 Memory 契约；持久后端属 `M4-09`+），实现位于
+  `src/context/`、`src/storage/checkpoint_store.cpp`、`src/runtime/task_recovery.cpp`。
+- 关键语义：P0/P1/最低 P2 构成不可裁剪最低集合，超限时按 `MinimumSetTooLarge` 拒绝或仅路由到请求中
+  显式授权的大窗口 profile；水位动作与逐项审计（选入/排除/替换/压缩及稳定 reason code）确定性输出，
+  相同请求产生相同 selection digest；Tool call/result 配对原子决策，未消费 result 进入最低集合；
+  item epoch 与请求边界不一致时按 `StaleBuild` 拒绝。Checkpoint reducer 消费 `Task*` JSON 事件与
+  ActionJournal/AgentLoop 既有事件（`ActionDispatchStarted`、`ActionReceipt`、
+  `ActionExecutionUncertain`、`ActionDispatched`、`VerificationResult`、`LoopSettled`），
+  增量与 full rebuild 投影 digest 一致；恢复只选择 `through_event_sequence <= durable sequence`
+  的 checkpoint，终态幂等（`AlreadyTerminal`），非终态仅恢复到 Observing/Verifying，
+  未决副作用保持 pinned 并要求先 Observe/Verify。Executor 承载：本增量组件为同步纯函数，
+  由宿主在 Executor 任务内调用（`m4_recovery_test.cpp` 以 `submit_auto()` + 消费 future 验证）；
+  专项 supervisor 属 `M4-16`。
+- 验证环境：Ubuntu 24.04，x86_64，g++ 13.3.0，CMake 3.28.3，ninja 1.11.2，clang-format 18.1.8；
+  本机无 clang/clang-tidy/Windows/Android 工具链，由 CI 补跑。
+- 本地验证：`cmake --build build/<release|debug|asan|ubsan|tsan>` 全部 0 error；release/debug/asan/ubsan
+  ctest 34/34 通过，tsan（`setarch x86_64 -R`）33/33 通过（mbedtls portable 测试按设计禁用）；
+  `clang-format --dry-run --Werror`、`check_docs.py`、`check_sbom.py`、`check_platform_boundary.py`
+  均通过。
+- 限制：`M4-06` SQLite/WAL 后端、混合检索、consolidation、Erasure、Provider continuation、Replay
+  扩展与 benchmark（`M4-09` 至 `M4-18` 中未勾选项）尚未实现，不因本增量声明任何能力；本机未运行
+  clang 编译器与 clang-tidy，CI quality/matrix 结果以 GitHub Actions 为准。
+- 同步：本文件工作项与状态已更新；总计划 M4 状态改为 `In Progress`。设计文档无需变更（实现按
+  `context_and_memory_design.md` CM0 语义落地）。

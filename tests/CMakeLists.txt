@@ -103,6 +103,30 @@ if(TARGET mira_mbedtls_transport)
     mira_enable_sanitizers(mira_m3_interop_probe)
 endif()
 
+# ---------------------------------------------------------------------------
+# M4: context, memory and recovery foundations
+# ---------------------------------------------------------------------------
+
+function(mira_add_m4_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "contract;m4" TIMEOUT 120)
+endfunction()
+
+mira_add_m4_test(mira_m4_contracts_test m4/m4_contracts_test.cpp)
+mira_add_m4_test(mira_m4_context_manager_test m4/m4_context_manager_test.cpp)
+mira_add_m4_test(mira_m4_checkpoint_test m4/m4_checkpoint_test.cpp)
+mira_add_m4_test(mira_m4_recovery_test m4/m4_recovery_test.cpp)
+
 add_executable(mira_m2_android_host_test
     m2/m2_android_host_abi_test.cpp
     support/fake_android_host.cpp

@@ -77,12 +77,17 @@ endif()
 add_library(mira_core
     src/runtime/runtime_baseline.cpp
     src/runtime/runtime.cpp
+    src/runtime/task_recovery.cpp
+    src/context/context_contracts.cpp
+    src/context/context_manager.cpp
+    src/context/memory_contracts.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp
     src/storage/event_store.cpp
     src/storage/artifact_store.cpp
     src/storage/action_journal.cpp
+    src/storage/checkpoint_store.cpp
     src/security/security.cpp
     src/replay/replay.cpp
     src/support/json.cpp
