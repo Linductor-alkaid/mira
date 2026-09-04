@@ -1,11 +1,11 @@
 # M6：连续控制、实时路径与 Human Takeover
 
-> 状态：Planned
+> 状态：Cancelled（2026-09-05，[DEC-011](../decisions/DEC-011-demo-first-external-validation.md)：原范围终止，不再按本文件交付）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M2、M5
-> 建议发布点：Control beta
-> 更新日期：2026-09-01
+> 建议发布点：无（原定 Control beta 随 DEC-011 取消）
+> 更新日期：2026-09-05
 
 ## 1. 目标
 
@@ -164,3 +164,11 @@ realtime 已停止的证据。
 2026-09-01：依据总计划和实时控制设计创建详细计划；状态为 `Planned`，尚未实现 Controller 或
 Android 连续输入 ABI，未执行 realtime benchmark。负责人为 Mira Maintainers；准入条件为 M5 提供
 可用的本地 feedback 契约并完成 Executor realtime capability 复核。
+
+2026-09-05：按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) 终止 M6 原范围，
+状态改为 `Cancelled`。终止原因：本里程碑假设任务需要 bounded-latency 反馈控制且其前置必须
+先交付 M5 的本地感知，该假设链未经真实任务验证；连续控制的真实需求（频率、反馈可用性、
+延迟预算、是否开环有界手势即可满足）转由独立仓库的 demo 产品量化。M6 未开始实现，无已
+交付内容受影响；工作项 `M6-01` 至 `M6-18` 保持未勾选，退出条件不再适用。本文件与设计文档
+（[实时控制层设计](../design/realtime_control_design.md)）保留为假设记录；如 demo 证据要求
+连续控制能力，以新的或重定义的里程碑重新提案，编号不复用 `M6-*`。

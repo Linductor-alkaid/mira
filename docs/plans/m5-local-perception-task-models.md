@@ -1,11 +1,11 @@
 # M5：本地视觉、任务模型注册与 ONNX 推理
 
-> 状态：Planned
+> 状态：Cancelled（2026-09-05，[DEC-011](../decisions/DEC-011-demo-first-external-validation.md)：原范围终止，不再按本文件交付）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M3
-> 建议发布点：Local perception beta
-> 更新日期：2026-09-01
+> 建议发布点：无（原定 Local perception beta 随 DEC-011 取消）
+> 更新日期：2026-09-05
 
 ## 1. 目标
 
@@ -166,3 +166,11 @@ Runtime shutdown 先停 perception producer 和新 cache acquire，取消 queued
 2026-09-01：依据总计划、DEC-006/DEC-009 和本地感知设计创建详细计划；状态为 `Planned`，尚未
 引入 ONNX Runtime、模型资产或训练数据，未执行 M5 测试和设备 benchmark。负责人为 Mira Maintainers；
 准入条件为 M3 完成以及依赖、模型、数据和许可证审计通过。
+
+2026-09-05：按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) 终止 M5 原范围，
+状态改为 `Cancelled`。终止原因：本里程碑范围（端侧自建 OCR/检测/任务模型及数据治理、蒸馏、
+发布链）建立在未经真实任务验证的假设上，维护者无法在缺少证据时判断方向正确性；能力验证与
+需求发现转由独立仓库的 demo 产品承载。M5 未开始实现，无已交付内容受影响；工作项 `M5-01`
+至 `M5-20` 保持未勾选，退出条件不再适用。本文件与设计文档
+（[本地感知与任务 ONNX 模型设计](../design/local_perception_and_task_models.md)）保留为假设
+记录；如 demo 证据要求本地感知能力，以新的或重定义的里程碑重新提案，编号不复用 `M5-*`。

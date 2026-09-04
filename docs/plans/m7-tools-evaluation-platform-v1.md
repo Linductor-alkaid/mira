@@ -1,11 +1,11 @@
 # M7：Tool 模组、评估、生产加固与跨平台 v1
 
-> 状态：Planned
+> 状态：Blocked（2026-09-05，[DEC-011](../decisions/DEC-011-demo-first-external-validation.md)：前置 M5/M6 已终止，范围与前置待外部 demo 需求证据重定义）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
-> 前置：M4、M5、M6
-> 建议发布点：v1.0
-> 更新日期：2026-09-01
+> 前置：M4、M5、M6（M5/M6 已取消，前置待重定义）
+> 建议发布点：v1.0（待重定义）
+> 更新日期：2026-09-05
 
 ## 1. 目标
 
@@ -194,3 +194,10 @@ M7 不以“能编译”“Simulator 通过”或单次模型成功代替平台�
 2026-09-01：依据总计划、DEC-009、ToolModule/评估/平台设计创建详细计划；状态为 `Planned`，尚未
 实现 ToolModule、真实平台 Host 或 v1 eval harness，未执行发布门禁。负责人为 Mira Maintainers；
 准入条件为 M4、M5、M6 完成以及 v1 profile、设备、账号、签名和测试环境就绪。
+
+2026-09-05：按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) 状态改为
+`Blocked`。阻塞原因：前置 M5/M6 已终止，本文件声明的范围（含"M5 本地模型、M6 控制进入
+统一 eval 报告"等退出条件）失去前提，不能按原文交付。负责人为 Mira Maintainers；解除
+条件为外部 demo 仓库产出需求验证报告，并据此完成 M7 范围、前置与发布点的重定义提案且
+经决策记录批准。重定义前本文件保持冻结，`M7-01` 至 `M7-28` 与退出条件不适用；DEC-009
+的 Tool 模组架构方向保留。

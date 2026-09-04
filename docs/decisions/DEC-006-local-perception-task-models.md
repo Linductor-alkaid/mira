@@ -46,4 +46,6 @@ OOD 拒绝率、VLM 回退率、P50/P95/P99、峰值内存和功耗。
 
 - [本地感知与任务模型设计](../design/local_perception_and_task_models.md)
 - [Mira 实施总计划](../plans/mira-implementation-plan.md)：M5
+- 2026-09-05：落地里程碑 M5 已按 [DEC-011](DEC-011-demo-first-external-validation.md) 终止。
+  本决策保留为方向记录，是否以及以何种范围落地由外部 demo 需求证据重新定义。
 
