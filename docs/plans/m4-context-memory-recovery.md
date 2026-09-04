@@ -283,7 +283,14 @@ Stateful agent beta 发布说明见 [docs/releases/stateful-agent-beta.md](../re
   `find_package(Mira)` -> 链接 `Mira::state_store` -> 打开/关闭双 store -> Executor 干净
   shutdown）；`clang-format --dry-run --Werror`、`check_docs.py`、`check_sbom.py`、
   `check_platform_boundary.py` 通过。
-- 限制：Windows/MSVC 与 Android NDK 的安装消费路径由 CI 补跑（本机无相应工具链）；
-  clang 编译器与 clang-tidy 由 CI quality job 补跑。
+- CI 补跑（PR [#5](https://github.com/Linductor-alkaid/mira/pull/5)，push pipeline runs
+  [`33902440606`](https://github.com/Linductor-alkaid/mira/actions/runs/33902440606) 与
+  [`33902459808`](https://github.com/Linductor-alkaid/mira/actions/runs/33902459808) 全部 job
+  成功）：Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）与 ASAN/UBSAN/TSAN
+  的 `ctest` 通过，含扩展后的 `mira_installed_consumer_test`（安装 → `find_package(Mira)` →
+  链接 `Mira::state_store` → 运行）；Android arm64-v8a（NDK 26.3.11579264/API 24）完成含
+  `mira_state_store` 与 `mira_stateful_consumer` 的目标构建（构建验证；安装消费运行需目标
+  设备，其交付随 M7 重定义处理）；quality job（clang-tidy、clang-format 18.1.8、docs/sbom/
+  platform-boundary 检查）通过。本机未运行的 clang 编译器与 clang-tidy 由此补齐。
 - 同步：DEC-011 新增；总计划 v1 边界、里程碑状态与决策索引更新；M5/M6 置 `Cancelled`、
   M7 置 `Blocked` 并附验证记录。
