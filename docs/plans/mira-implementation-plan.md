@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-03
+> 更新日期：2026-09-05
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)
 
@@ -22,16 +22,21 @@
 - C++20 平台无关 Agent Core 和稳定的宿主集成边界，首期构建组合覆盖 Linux、Windows、Android。
 - `Observe -> Reason -> Plan -> Act -> Verify` 可中断闭环。
 - OpenAI-compatible 外部 LLM/VLM Provider。
-- Screenshot、结构化 UI、本地 OCR/检测/任务 ONNX 组成的 Observation Pipeline。
-- 离散输入、连续轨迹和摇杆控制。
-- Task、Session、事件、Checkpoint、Memory、Replay 和 Human Takeover。
+- Screenshot 与结构化 UI 组成的 Observation Pipeline。
+- 离散输入。
+- Task、Session、事件、Checkpoint、Memory 与 Replay。
 - Simulator 参考环境及至少一个真实平台 Adapter 的契约验证；首个真实目标为 Android Host/NDK。
-- 受治理的任务模型数据导出、蒸馏、ONNX 发布和设备侧评估契约；训练工具链与 Core 解耦。
+
+2026-09-05 起（[DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），依赖
+M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇杆控制、Human Takeover 实现、
+任务模型数据治理与蒸馏链）按原范围终止；这些能力是否以及以何种范围重新进入交付边界，
+由独立 demo 仓库的需求验证证据重新定义。"真实平台 Adapter 契约验证"的里程碑载体随 M7
+重定义确定。
 
 ### 2.2 v1 不包含
 
 - Core 内本地运行通用 LLM/VLM。
-- 具体产品 UI 或完整 Android 应用。
+- 具体产品 UI 或完整 Android 应用；能力验证 demo 由独立仓库承载（DEC-011），不进入本仓库。
 - 未经目标设备实测的硬实时保证。
 - 自动将 Runtime 事件、截图或 Memory 转为训练数据。
 - 任意代码执行、任意 shell 或模型绕过 Policy 直接调用平台。
@@ -63,14 +68,15 @@
 | [M2](m2-observation-simulator-android-host.md) | Observation、坐标、Simulator 与 Android Host ABI | M1 | Environment alpha | Completed |
 | [M3](m3-model-provider-agent-loop.md) | OpenAI-compatible Provider 和视觉离散闭环 | M2 | Agent loop alpha | Completed |
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
-| [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理 | M3 | Local perception beta | Planned |
-| [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover | M2、M5 | Control beta | Planned |
-| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证 | M4、M5、M6 | v1.0 | Planned |
+| [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
+| [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
 
-主干依赖先经过 `M0 -> M1 -> M2 -> M3`，随后分为 `M3 -> M4` 与 `M3 -> M5 -> M6` 两条
-可并行交付链，最终在 M7 汇合；实际关键路径由 M4 与 M5/M6 两条链的完成时间决定。M6 同时复用
-M2 的坐标/宿主契约和 M5 的本地状态识别能力。任何里程碑都不得以“后续再补取消、安全或验证”
-关闭。
+`M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
+[DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
+交付链终止、M7 挂起：后续能力需求由独立仓库 demo 产品的验证证据重新定义，产出新的或
+重定义的里程碑后恢复交付；在此之前不设关键路径。任何里程碑都不得以“后续再补取消、安全
+或验证”关闭。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
@@ -91,9 +97,11 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-008](../decisions/DEC-008-transport-dependency-strategy.md) | 历史 M3 传输基线 | Superseded by DEC-010 | M3 |
 | [DEC-009](../decisions/DEC-009-tool-module-boundary.md) | 工具模组边界与能力协商 | Accepted | M7 |
 | [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) | 锁定 Mbed TLS、受管代理与远端文件生命周期 | Accepted | M3 |
+| [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) | Demo 优先验证、M5/M6 终止与外部消费边界 | Accepted | M4 后 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
-验证记录证明。
+验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
+终止与挂起，落地范围待 demo 证据重定义。
 
 ## 6. 通用质量门禁
 

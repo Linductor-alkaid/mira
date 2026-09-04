@@ -267,3 +267,23 @@ shutdown 取消路径不 resolve future 的死锁（本地 30 次压测复现、
 SQLite 侧文件抛 `filesystem_error` 触发 0xC0000409（error_code 清理 + 顶层异常屏障）；以及
 `parse_json` 19 位整数精度缺陷（见上一条记录）。M4 退出条件全部满足，状态改为 `Completed`；
 Stateful agent beta 发布说明见 [docs/releases/stateful-agent-beta.md](../releases/stateful-agent-beta.md)。
+
+2026-09-05：修复 `BUG-20260905-001`（安装包导出缺口；DEC-011 外部消费验证的首个发现）。
+
+- 范围：`mira_state_store` 与 vendored `sqlite3` 进入 `MiraTargets` 安装导出集，补
+  `EXPORT_NAME state_store` 与 `MiraConfig.cmake.in` 的 `find_dependency(Threads)`；
+  `mira_installed_consumer_test` 扩展为链接 `Mira::state_store` 并实际打开/关闭
+  `SqliteCheckpointStore` 与 `SqliteMemoryStore`。此前安装包随 `include/` 暴露
+  `state_store.hpp`/`sqlite_memory_store.hpp` 头文件，却没有可链接的导出目标，外部消费者
+  无法使用 M4 持久化后端。
+- 依据：[DEC-011](../decisions/DEC-011-demo-first-external-validation.md) 第 3 条（demo 只经
+  `find_package(Mira)` 安装接口消费 mira）。
+- 验证：Ubuntu 24.04.4 LTS，x86_64，g++ 13.3.0，CMake 3.28.3，Ninja 1.13.2，clang-format 18.1.8；
+  debug 与 release `ctest` 43/43 通过（含扩展后的 `mira_installed_consumer_test`：install ->
+  `find_package(Mira)` -> 链接 `Mira::state_store` -> 打开/关闭双 store -> Executor 干净
+  shutdown）；`clang-format --dry-run --Werror`、`check_docs.py`、`check_sbom.py`、
+  `check_platform_boundary.py` 通过。
+- 限制：Windows/MSVC 与 Android NDK 的安装消费路径由 CI 补跑（本机无相应工具链）；
+  clang 编译器与 clang-tidy 由 CI quality job 补跑。
+- 同步：DEC-011 新增；总计划 v1 边界、里程碑状态与决策索引更新；M5/M6 置 `Cancelled`、
+  M7 置 `Blocked` 并附验证记录。
