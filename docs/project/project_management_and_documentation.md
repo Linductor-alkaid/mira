@@ -43,6 +43,7 @@ Executor 使用方式或产品默认值，必须先新增或更新决策记录�
 | 路径 | 内容 | 典型文件 |
 | --- | --- | --- |
 | `docs/design/` | 架构、模块、协议、状态机和跨层契约 | `mira_runtime_design.md` |
+| `docs/api/` | 公共 API 手册：头文件逐模块参考与通用约定 | `index.md` |
 | `docs/decisions/` | 架构决策和产品默认值记录 | `DEC-001-runtime-executor-ownership.md` |
 | `docs/plans/` | 总计划、里程碑计划和交付清单 | `mira-implementation-plan.md`, `m1-core-contracts.md` |
 | `docs/security/` | 威胁模型、安全策略、隐私和凭据处理 | `threat_model_and_confirmation.md` |
