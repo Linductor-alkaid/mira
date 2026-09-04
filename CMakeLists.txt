@@ -146,6 +146,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(mira_state_store PRIVATE -Wno-deprecated-declarations)
 endif()
 mira_enable_sanitizers(mira_state_store)
+set_target_properties(mira_state_store PROPERTIES EXPORT_NAME state_store)
 target_include_directories(mira_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -396,11 +397,19 @@ if(MIRA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mira_core mira_simulator_adapter mira_android_adapter mira_net_transport
+install(TARGETS mira_core mira_state_store mira_simulator_adapter mira_android_adapter mira_net_transport
     EXPORT MiraTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+# The vendored SQLite archive backs Mira::state_store; exporting it keeps the
+# installed package self-contained ($<LINK_ONLY:...> closures resolve within
+# the same export set). Threads::Threads from its PRIVATE deps needs the
+# find_dependency(Threads) entry in MiraConfig.cmake.in.
+install(TARGETS sqlite3
+    EXPORT MiraTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 if(TARGET mira_openssl_transport)
     install(TARGETS mira_openssl_transport
