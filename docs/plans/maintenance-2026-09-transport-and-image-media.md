@@ -13,6 +13,11 @@
 头文件（消除"有库无头"），并以"宿主负责编码"语义修复模型图像 wire 媒体类型链路
 （载荷元数据契约 + fail-closed 方言门 + 工件读取 API）。
 
+追加：#19（MIR-20260906-008，DEC-013 落地后暴露的缺口）——`build_request` 截图
+`ArtifactRef` 漏填 `payload_digest`，内容寻址 store 消费者按 id+digest+byte_size
+重建 descriptor 后完整性校验必然失败（miracle 真机闭环 model call 阶段
+`DataLoss`）。
+
 ## 2. 范围与非目标
 
 ### 2.1 范围
@@ -22,6 +27,8 @@
 - `AgentLoop::build_request` 从工件记录取媒体类型/字节数（#15）。
 - 方言层 `image/*` fail-closed 门（#15）。
 - `AndroidHostAdapter::artifact_store()` 读取句柄（#15）。
+- `build_request` 截图 `ArtifactRef` 补填 `payload_digest`；测试侧
+  `SimulatorArtifactSource` 按发布记录校验 digest/byte_size（#19）。
 - 公共头自包含检查、安装消费者测试覆盖新头与官方传输构造。
 
 ### 2.2 非目标
@@ -51,6 +58,13 @@
   `build_request` 的 `ArtifactRef` 改用工件记录元数据（内联门槛随之按实际载荷字节数
   判定）；方言层两个 ImagePart encode 站点对非 `image/*` 媒体类型在 fetch 前
   fail closed；`AndroidHostAdapter::artifact_store()` 读取句柄。
+- [x] `MNT-202609-10`（#19）`build_request` 截图 `ArtifactRef` 补
+  `reference.digest = screen.payload_digest`；m3 `SimulatorArtifactSource::fetch()`
+  改为内容寻址消费者语义——返回字节经 `digest_bytes()` 复核并比对
+  `reference.digest`/`byte_size`，不匹配返回结构化 `DataLoss`（补齐 issue 指出的
+  测试盲区：原实现只按 id 打开，漏填在上游 CI 不可见）；新增
+  `artifact_reference_digest_is_enforced` 专项测试（零 digest 与错误 byte_size 均
+  fail closed）。
 
 ## 5. 风险与阻塞
 
@@ -70,6 +84,14 @@
   [`34019323160`](https://github.com/Linductor-alkaid/mira/actions/runs/34019323160)
   （commit `0fdf2e5`）24/24 检查通过——Linux GCC/Clang Debug+Release、Windows
   Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality。
+- [x] #19 digest 回归测试：本地双向验证——移除修复行后
+  `mira_m3_agent_loop_test` 以 `artifact reference digest or size mismatch` 失败
+  （复现 issue 故障模式），恢复后通过；全量 `ctest` 43/43（详见 §7）。
+- [x] #19 CI 全平台矩阵全绿：PR #20 push run
+  [`34024119533`](https://github.com/Linductor-alkaid/mira/actions/runs/34024119533)
+  与 pull_request run
+  [`34024129126`](https://github.com/Linductor-alkaid/mira/actions/runs/34024129126)
+  （commit `a839565`）24/24 检查通过。
 - [ ] miracle 按 (a) 语义注入转码 store 并回传真机端到端证据（外部依赖）。
 
 ## 7. 验证记录
@@ -94,3 +116,23 @@
   与 pull_request run [`34019325664`](https://github.com/Linductor-alkaid/mira/actions/runs/34019325664)
   （commit `0fdf2e5`）全部 24 项检查通过，含 Windows Debug/Release 的
   `mira_installed_consumer_test`（官方传输栈构造 + mbedtls DLL 部署）。
+
+2026-09-06：#19 digest 回归修复本地验证（Ubuntu 24.04 x86_64，GCC 13.3.0，
+`debug` preset，分支 `fix/agentloop-artifact-ref-digest`）。
+
+- 构建：全目标通过。
+- 测试：`ctest` 43/43 通过，含新增 `artifact_reference_digest_is_enforced`。
+- 回归防护双向验证：临时移除 `reference.digest = screen.payload_digest` 重建后，
+  `mira_m3_agent_loop_test` 失败于 `model call failed: artifact reference digest or
+  size mismatch`（loop outcome=Failed, steps=0）——与 issue 报告的真机故障模式
+  （descriptor 完整性不匹配致闭环阻断）同源，证明测试盲区已闭合；恢复修复后通过。
+- 本机限制同前（无 clang/clang-tidy/sudo、无 Android NDK）；CI 已覆盖补跑（下条）。
+
+2026-09-06：#19 CI 验证（PR #20，commit `a839565`）。
+
+- push run [`34024119533`](https://github.com/Linductor-alkaid/mira/actions/runs/34024119533)
+  与 pull_request run
+  [`34024129126`](https://github.com/Linductor-alkaid/mira/actions/runs/34024129126)
+  全部 24 项检查通过：Linux GCC/Clang Debug+Release、Windows Debug+Release、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（含 docs-check、
+  platform-boundary-check、公共头自包含）。

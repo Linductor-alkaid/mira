@@ -5,6 +5,7 @@
 
 #include <mira/agent_loop.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
 
 #include <atomic>
@@ -47,7 +48,10 @@ class LoopFixture final {
     [[nodiscard]] AgentLoopSpec &spec() { return spec_; }
 
     // Serves the simulator's published screenshot artifacts to the wire
-    // mapper, exactly as a production host bridges its ArtifactStore.
+    // mapper, exactly as a production host bridges its ArtifactStore. Like a
+    // content-addressed consumer it verifies the reference digest and size
+    // against the published payload, so a loop that drops or corrupts either
+    // field fails here instead of at the endpoint (issue #19).
     class SimulatorArtifactSource final : public IArtifactSource {
       public:
         explicit SimulatorArtifactSource(SimulatorEnvironment &environment)
@@ -57,6 +61,14 @@ class LoopFixture final {
             auto opened = environment_.open_artifact(reference.id, bytes);
             if (!opened) {
                 return opened.error();
+            }
+            if (digest_bytes(bytes) != reference.digest ||
+                static_cast<std::uint64_t>(bytes.size()) != reference.byte_size) {
+                Error error;
+                error.code = ErrorCode::DataLoss;
+                error.domain = "mira.test";
+                error.safe_message = "artifact reference digest or size mismatch";
+                return error;
             }
             return bytes;
         }
@@ -230,6 +242,46 @@ int malformed_decision_triggers_bounded_repair() {
     return 0;
 }
 
+// The loop-built screenshot reference must satisfy a content-addressed
+// consumer: every existing loop test exercises the enforced fetch, this
+// focused check pins the semantics of the enforcement itself (issue #19).
+int artifact_reference_digest_is_enforced() {
+    LoopFixture fixture;
+    ObservationRequest request;
+    request.required.screen = true;
+    auto observed = fixture.environment_->observe(request, loop_context());
+    MIRA_CHECK(observed.has_value());
+    MIRA_CHECK(observed.value().screen.has_value());
+    const auto &screen = observed.value().screen->value;
+
+    ArtifactRef reference;
+    reference.id = screen.payload_artifact;
+    reference.media_type = screen.payload_media_type;
+    reference.sensitivity = Sensitivity::Internal;
+    reference.byte_size = screen.payload_byte_size;
+    reference.digest = screen.payload_digest;
+    const auto fetched = fixture.artifact_source()->fetch(reference);
+    MIRA_CHECK(fetched.has_value());
+    MIRA_CHECK(fetched.has_value() &&
+               fetched.value().size() == screen.payload_byte_size);
+
+    // The pre-fix loop behavior: digest left zeroed while the store holds a
+    // real one. The fetch must fail closed instead of serving the payload.
+    ArtifactRef undigested = reference;
+    undigested.digest = Sha256Digest{};
+    const auto mismatch = fixture.artifact_source()->fetch(undigested);
+    MIRA_CHECK(!mismatch.has_value());
+    MIRA_CHECK(!mismatch.has_value() && mismatch.error().code == ErrorCode::DataLoss);
+
+    // A wrong declared size is rejected the same way.
+    ArtifactRef resized = reference;
+    resized.byte_size += 1;
+    const auto wrong_size = fixture.artifact_source()->fetch(resized);
+    MIRA_CHECK(!wrong_size.has_value());
+    MIRA_CHECK(!wrong_size.has_value() && wrong_size.error().code == ErrorCode::DataLoss);
+    return 0;
+}
+
 int max_steps_and_verification_disagreement() {
     {
         LoopFixture fixture;
@@ -360,6 +412,9 @@ int main() {
         return status;
     }
     if (const int status = malformed_decision_triggers_bounded_repair(); status != 0) {
+        return status;
+    }
+    if (const int status = artifact_reference_digest_is_enforced(); status != 0) {
         return status;
     }
     if (const int status = max_steps_and_verification_disagreement(); status != 0) {
