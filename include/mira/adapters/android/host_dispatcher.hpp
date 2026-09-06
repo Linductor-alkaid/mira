@@ -30,6 +30,12 @@ struct HostBridgeStats final {
     std::uint64_t late_callbacks_after_detach = 0;
     std::uint64_t wrong_generation_results = 0;
     std::uint64_t executor_submission_rejections = 0;
+    // Counts every lease release executed against the host, whether the
+    // bridge performs it internally (error settlement, tree payload copy)
+    // or a consumer releases a successfully delivered HostLeaseGuard later
+    // (e.g. the adapter's observe tail). Abandoned guards releasing after
+    // bridge destruction keep counting through the shared counter, so this
+    // number never under-reports host-side releases.
     std::uint64_t leases_released = 0;
     std::uint64_t contract_violations = 0;
 };
@@ -38,6 +44,11 @@ struct HostBridgeStats final {
 // idempotent and runs from the destructor if it was not requested earlier.
 class HostLeaseGuard final {
   public:
+    // Invoked exactly once, right after the real host release call; used to
+    // keep bridge lease accounting accurate for consumer-side releases. Must
+    // not throw; exceptions are swallowed to preserve release() noexcept.
+    using ReleaseObserver = std::function<void()>;
+
     HostLeaseGuard() = default;
     explicit HostLeaseGuard(MiraHostBufferLeaseV1 lease);
     ~HostLeaseGuard();
@@ -48,6 +59,7 @@ class HostLeaseGuard final {
     HostLeaseGuard &operator=(HostLeaseGuard &&other) noexcept;
 
     void release() noexcept;
+    void set_release_observer(ReleaseObserver observer);
     [[nodiscard]] bool valid() const noexcept { return valid_; }
     [[nodiscard]] const MiraHostBufferLeaseV1 &lease() const noexcept { return lease_; }
 
@@ -55,6 +67,7 @@ class HostLeaseGuard final {
     MiraHostBufferLeaseV1 lease_{};
     std::atomic<bool> released_{false};
     bool valid_ = false;
+    ReleaseObserver release_observer_;
 };
 
 struct HostFrameOutcome final {
@@ -128,6 +141,9 @@ class HostDispatcherBridge final {
     void handle_capabilities_changed(const MiraHostCapabilitiesV1 &capabilities);
     void record_violation();
     void settle_rejected(std::uint64_t correlation, std::uint32_t kind, MiraHostStatus status);
+    // Notifier handed to delivered lease guards; shares ownership of the
+    // release counter so it stays valid even after the bridge is gone.
+    [[nodiscard]] HostLeaseGuard::ReleaseObserver lease_release_observer();
 
     executor::Executor &executor_;
     mutable std::mutex mutex_;
@@ -136,6 +152,10 @@ class HostDispatcherBridge final {
     std::deque<std::future<void>> completion_futures_;
     MiraHostCallbacksV1 callbacks_table_{};
     HostBridgeStats stats_;
+    // Shared with delivered guards: a guard released after bridge
+    // destruction (abandoned future shared state) must not touch the bridge.
+    std::shared_ptr<std::atomic<std::uint64_t>> lease_releases_{
+        std::make_shared<std::atomic<std::uint64_t>>(0)};
     std::optional<MiraHostCapabilitiesV1> latest_capabilities_;
     std::optional<std::uint64_t> expected_generation_;
     bool detached_ = false;
