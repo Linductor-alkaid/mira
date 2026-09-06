@@ -87,6 +87,11 @@
 - [x] #19 digest 回归测试：本地双向验证——移除修复行后
   `mira_m3_agent_loop_test` 以 `artifact reference digest or size mismatch` 失败
   （复现 issue 故障模式），恢复后通过；全量 `ctest` 43/43（详见 §7）。
+- [x] #19 CI 全平台矩阵全绿：PR #20 push run
+  [`34024119533`](https://github.com/Linductor-alkaid/mira/actions/runs/34024119533)
+  与 pull_request run
+  [`34024129126`](https://github.com/Linductor-alkaid/mira/actions/runs/34024129126)
+  （commit `a839565`）24/24 检查通过。
 - [ ] miracle 按 (a) 语义注入转码 store 并回传真机端到端证据（外部依赖）。
 
 ## 7. 验证记录
@@ -121,5 +126,13 @@
   `mira_m3_agent_loop_test` 失败于 `model call failed: artifact reference digest or
   size mismatch`（loop outcome=Failed, steps=0）——与 issue 报告的真机故障模式
   （descriptor 完整性不匹配致闭环阻断）同源，证明测试盲区已闭合；恢复修复后通过。
-- 本机限制同前（无 clang/clang-tidy/sudo、无 Android NDK）；CI 证据待 PR 合并前
-  回填。
+- 本机限制同前（无 clang/clang-tidy/sudo、无 Android NDK）；CI 已覆盖补跑（下条）。
+
+2026-09-06：#19 CI 验证（PR #20，commit `a839565`）。
+
+- push run [`34024119533`](https://github.com/Linductor-alkaid/mira/actions/runs/34024119533)
+  与 pull_request run
+  [`34024129126`](https://github.com/Linductor-alkaid/mira/actions/runs/34024129126)
+  全部 24 项检查通过：Linux GCC/Clang Debug+Release、Windows Debug+Release、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（含 docs-check、
+  platform-boundary-check、公共头自包含）。
