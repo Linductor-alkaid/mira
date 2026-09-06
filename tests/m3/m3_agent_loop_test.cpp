@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace {
@@ -136,6 +137,57 @@ class InputCountVerifier final : public ILoopVerifier {
     std::size_t required_;
 };
 
+// Reproduces the Android host adapter's observe contract: fail closed when a
+// request declares neither screen nor structure. The simulator tolerates
+// zero-component requests, so without this wrapper a component-less
+// verification request stays green in loop tests and only fails on the
+// real-device host (issue #23).
+class AndroidLikeEnvironment final : public IEnvironment {
+  public:
+    explicit AndroidLikeEnvironment(std::shared_ptr<IEnvironment> inner)
+        : inner_(std::move(inner)) {}
+
+    EnvironmentCapabilities capabilities() const override { return inner_->capabilities(); }
+
+    Result<Observation> observe(const ObservationRequest &request,
+                                const OperationContext &context) override {
+        {
+            std::lock_guard lock(mutex_);
+            requests_.push_back(request);
+        }
+        const bool screen_requested = request.required.screen || request.optional.screen;
+        const bool structure_requested = request.required.structure || request.optional.structure;
+        if (!screen_requested && !structure_requested) {
+            Error error;
+            error.code = ErrorCode::UnsupportedCapability;
+            error.domain = "mira.test.android-like";
+            error.safe_message =
+                "the host adapter only captures screen and structure components";
+            return error;
+        }
+        return inner_->observe(request, context);
+    }
+
+    Result<ExecutionReceipt> execute(const InputSequence &input,
+                                     const OperationContext &context) override {
+        return inner_->execute(input, context);
+    }
+
+    Result<void> interrupt(const OperationContext &context) override {
+        return inner_->interrupt(context);
+    }
+
+    [[nodiscard]] std::vector<ObservationRequest> requests() const {
+        std::lock_guard lock(mutex_);
+        return requests_;
+    }
+
+  private:
+    std::shared_ptr<IEnvironment> inner_;
+    mutable std::mutex mutex_;
+    std::vector<ObservationRequest> requests_;
+};
+
 int successful_two_step_loop() {
     LoopFixture fixture;
     fixture.activate();
@@ -172,6 +224,52 @@ int successful_two_step_loop() {
         MIRA_CHECK(recorded.body.find("\"store\":false") != std::string::npos);
         MIRA_CHECK(recorded.body.find("json_schema") != std::string::npos);
     }
+    return 0;
+}
+
+// Both verification sites — after an action and for a done claim — must reach
+// a fail-closed host: every Verification request declares a best-effort
+// screen instead of the zero-component request that failed every real-device
+// step (issue #23). Pre-fix, this loop settles Failed at the first
+// post-action verification.
+int verification_observation_declares_components() {
+    LoopFixture fixture;
+    fixture.activate();
+    fixture.spec().profile_id = fixture.profile_->id;
+    // Step 1: tap (post-action verification); step 2: done (claim
+    // verification).
+    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
+    fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
+
+    const auto android_like = std::make_shared<AndroidLikeEnvironment>(fixture.environment_);
+    AgentLoop loop(android_like, *fixture.gateway_, AgentLoopConfig{8, 1});
+    InputCountVerifier verifier(*fixture.environment_, 1);
+    auto result = loop.run(fixture.spec(), loop_context(), verifier);
+    if (!result.has_value() || result.value().outcome != LoopOutcome::Completed) {
+        std::cerr << "loop outcome="
+                  << (result.has_value() ? loop_outcome_name(result.value().outcome)
+                                         : std::string("<error>") + result.error().safe_message)
+                  << " summary=" << (result.has_value() ? result.value().safe_summary : "-")
+                  << "\n";
+    }
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == LoopOutcome::Completed);
+
+    std::size_t verification_requests = 0;
+    for (const auto &request : android_like->requests()) {
+        if (request.mode == ObservationMode::Full) {
+            MIRA_CHECK(request.required.screen);
+            continue;
+        }
+        MIRA_CHECK(request.mode == ObservationMode::Verification);
+        ++verification_requests;
+        // The screen is declared optional: capture failures must degrade
+        // through observation quality, not fail the verification step.
+        MIRA_CHECK(!request.required.screen);
+        MIRA_CHECK(request.optional.screen);
+    }
+    MIRA_CHECK(verification_requests == 2);
+    MIRA_CHECK(fixture.environment_->executed_inputs().size() == 1);
     return 0;
 }
 
@@ -481,6 +579,9 @@ int rate_limit_recovery_inside_the_loop() {
 
 int main() {
     if (const int status = successful_two_step_loop(); status != 0) {
+        return status;
+    }
+    if (const int status = verification_observation_declares_components(); status != 0) {
         return status;
     }
     if (const int status = refused_and_failed_paths(); status != 0) {
