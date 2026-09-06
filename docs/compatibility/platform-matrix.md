@@ -23,7 +23,7 @@
 | Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Build verified`（CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423)，Debug/Release） | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
 | Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 于 CI run
 [`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter，fake host 契约验证；screen 真机路径由 miracle P1 外部证据验证，见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
-| Android x86_64 | NDK 26.3.11579264，API 24；`android-x86_64-release`（2026-09-06 新增，DEC-012/GitHub #9） | `Configured`（工具链/预设/CI matrix 已入库，构建证据待 PR pipeline 回填） | `Planned`（模拟器 instrumented 冒烟依赖 miracle `POST-02`） | Android NDK configure/build CI |
+| Android x86_64 | NDK 26.3.11579264，API 24；`android-x86_64-release`（2026-09-06 新增，DEC-012/GitHub #9） | `Build verified`（CI run [`34014586674`](https://github.com/Linductor-alkaid/mira/actions/runs/34014586674)：core/simulator/android_adapter/两个 transport/state_store/stateful_consumer） | `Planned`（模拟器 instrumented 冒烟依赖 miracle `POST-02`） | Android NDK configure/build CI |
 
 ### M3 传输 Adapter
 

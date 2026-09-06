@@ -65,29 +65,42 @@
 
 - 真机 UI 树互操作（miracle 侧序列化未实现）与 x86_64 模拟器 instrumented 冒烟未执行；
   属补跑项，见 §6 与 android-host-abi.md §3。
-- CI 证据（含 x86_64 android job、clang-tidy、format/docs 检查）需在 PR pipeline 产生后
-  回填本文件。
+- CI 证据已回填（§6、§7）；x86_64 构建证据等级见
+  [platform-matrix.md](../compatibility/platform-matrix.md)。
 
 ## 6. 测试与退出条件
 
 - [x] 新增/更新的 fake host 契约测试全部通过（本地 Linux x86_64, GCC 13, Debug）。
-- [x] 既有 m2/contract/m3/m4 测试回归通过（本地全量 ctest）。
+- [x] 既有 m2/contract/m3/m4 测试回归通过（本地全量 ctest，43/43）。
 - [x] `platform-boundary-check`、公共头独立包含测试通过（ABI 头仅注释变更）。
-- [ ] CI 全绿（含 android arm64 + x86_64 matrix、quality 目标）；补跑条件：PR pipeline
-  运行后回填 run 链接。负责人：Mira Maintainers。
+- [x] CI 全绿（含 android arm64 + x86_64 matrix、sanitizers、quality）：PR #16 push run
+  [`34014586674`](https://github.com/Linductor-alkaid/mira/actions/runs/34014586674)
+  （commit `6d49cc7`）24/24 检查通过——Linux GCC/Clang Debug+Release、Windows Debug+Release、
+  Android arm64+x86_64（NDK 26.3，API 24）、ASAN/UBSAN/TSAN、quality（clang-tidy、
+  clang-format 18.1.8、docs、SBOM、平台边界）。期间修复根 `CMakeLists.txt` 的 Android ABI
+  守卫（原仅允许 arm64-v8a，首次 run `34014171269` 的 x86_64 configure 失败）。
 - [ ] miracle 侧按 `mira.host.tree.v1` 消费并回传真机 structure 证据（外部依赖，
   登记于 android-host-abi.md §3）。
 
 ## 7. 验证记录
 
 2026-09-06：本地验证（Ubuntu 24.04 x86_64，GCC 13.3.0，CMake 3.28.3，`debug` preset，
-commit 见 PR）。
+commit 见 PR #16）。
 
 - 构建：`cmake --preset debug && cmake --build --preset debug -j 4` 全目标通过。
-- 测试：`ctest --test-dir build/debug --output-on-failure` 全部通过（含新增
+- 测试：`ctest --test-dir build/debug --output-on-failure` 43/43 通过（含新增
   `check_leases_released_counts_every_release_path`、`check_structure_observation_aggregation`、
   `check_structure_epoch_and_capability_degradation`、
   `check_artifact_store_capacity_and_injection`、`check_input_duration_semantics`）。
-- 本机限制：无 clang/clang-tidy/sudo（历史环境记录），静态检查与 sanitizers 依赖 CI
-  pipeline 补跑；Android NDK 交叉构建不在本机执行，由 CI android matrix（arm64+x86_64）
-  验证。补跑条件：PR pipeline 全绿后回填 run 链接并勾选 §6 对应项。
+- `docs-check`、`platform-boundary-check`、`format-check` 目标通过。
+
+2026-09-06：CI 验证（PR #16，commit `6d49cc7`）。
+
+- push run [`34014586674`](https://github.com/Linductor-alkaid/mira/actions/runs/34014586674)
+  与 pull_request run [`34014588478`](https://github.com/Linductor-alkaid/mira/actions/runs/34014588478)
+  全部 24 项检查通过；Android x86_64 构建证据已回填
+  [platform-matrix.md](../compatibility/platform-matrix.md)（`Build verified`）。
+- 首次 run [`34014171269`](https://github.com/Linductor-alkaid/mira/actions/runs/34014171269)
+  的 `android (android-x86_64-release)` configure 失败：根 `CMakeLists.txt` 的 ANDROID 守卫
+  硬编码 arm64-v8a。修复为 `^(arm64-v8a|x86_64)$` 后复验通过；失败与修复记录保留于此。
+- 本机限制（无 clang/clang-tidy/sudo、无 Android NDK）已由上述 CI run 覆盖补跑。
