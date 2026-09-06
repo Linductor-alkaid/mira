@@ -3,7 +3,7 @@
 #include "support/test.hpp"
 #include <executor/executor.hpp>
 
-#include "socket_transport.hpp"
+#include <mira/adapters/net/socket_transport.hpp>
 #include <mira/model_contracts.hpp>
 
 #include <atomic>

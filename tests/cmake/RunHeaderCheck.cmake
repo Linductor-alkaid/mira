@@ -3,6 +3,7 @@ execute_process(
     COMMAND "${CMAKE_COMMAND}" -S "${SOURCE_DIR}/tests/headers" -B "${BINARY_DIR}"
             -G "${GENERATOR}" -DCMAKE_CXX_COMPILER=${CXX_COMPILER}
             -DMIRA_INCLUDE_DIR=${SOURCE_DIR}/include
+            -DEXECUTOR_INCLUDE_DIR=${SOURCE_DIR}/third_party/executor/include
     RESULT_VARIABLE CONFIGURE_RESULT
 )
 if(NOT CONFIGURE_RESULT EQUAL 0)

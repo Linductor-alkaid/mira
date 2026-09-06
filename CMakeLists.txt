@@ -231,8 +231,6 @@ target_include_directories(mira_net_transport
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
 )
 target_link_libraries(mira_net_transport
     PUBLIC Mira::core
@@ -271,8 +269,6 @@ if(MIRA_WITH_OPENSSL AND UNIX AND NOT ANDROID)
             PUBLIC
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-            PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
         )
         target_link_libraries(mira_openssl_transport
             PUBLIC Mira::core
@@ -311,8 +307,6 @@ if(MIRA_WITH_MBEDTLS)
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/adapters/net
     )
     # Mbed TLS exposes C-style compatibility macros in public headers. Treat
     # the pinned dependency as a system include so Mira's C++ warning policy
