@@ -204,6 +204,13 @@ Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
     request.mode = mode;
     if (mode == ObservationMode::Full) {
         request.required.screen = true;
+    } else if (mode == ObservationMode::Verification) {
+        // Verification evidence must be declared, not implied: fail-closed
+        // hosts (e.g. the Android adapter) reject component-less requests,
+        // and a zero-component observe would fail every post-action and
+        // done-claim check. The screen is best effort — capture failures
+        // degrade through observation quality instead of failing the step.
+        request.optional.screen = true;
     }
     request.max_age = config_.observation_max_age;
     OperationContext observe_context = context;
