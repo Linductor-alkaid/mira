@@ -1,7 +1,7 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.6
+> 版本：0.7
 > 更新日期：2026-09-06
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
@@ -45,6 +45,11 @@ SQLite 以 vendored amalgamation 分发（Public Domain），无动态加载
 （`SQLITE_OMIT_LOAD_EXTENSION`），自身不创建线程；全部访问经由单个 Executor
 blocking-I/O worker 的唯一连接（单 writer、有界请求通道、WAL）。依赖锁定与审计见
 [direct-dependencies.md](../supply-chain/direct-dependencies.md)。
+
+网络传输头文件（`mira/adapters/net/{socket_transport,mbedtls_tls,openssl_tls}.hpp`）
+自 2026-09-06（DEC-013/GitHub #14）随 `include/` 安装导出；安装消费者测试
+（`mira_installed_consumer_test`）以 `find_package(Mira)` 构造 `SocketHttpTransport`
+（start/shutdown）与 `MbedTlsChannelFactory`（缺 CA fail closed）验证包外可用性。
 
 跨平台 TLS、proxy、CA bundle 和 fail-closed 语义见
 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)。未配置 TLS 工厂时 https 端点在

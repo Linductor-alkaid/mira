@@ -5,7 +5,7 @@
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)  
 > 前置：M2  
 > 建议发布点：Agent loop alpha（[发布说明](../releases/agent-loop-alpha.md)）  
-> 更新日期：2026-09-02
+> 更新日期：2026-09-06
 
 ## 1. 目标
 
@@ -436,3 +436,13 @@ input 达到 `InteropVerified` 的 profile，为 Mira 视觉闭环提供可用 V
   已在该条降级标注，MiniMax 归因结论依赖的有效 1×1 基线与公网 URL 证据不受影响。
 - 后续：有效 fixture 的 MiniMax image-red 重跑（1 请求）待执行；SiliconFlow 正式接入需独立
   profile 固化（含 SSE、Tool、upload 等 `Unknown` 项的补测），可作为视觉闭环短期通道。
+
+2026-09-06：M3 交付物维护记录（非里程碑重开，M3 保持 Completed）。miracle 第二轮反馈
+（GitHub #14、#15）落地到 M3 交付物：官方传输头文件（`adapters/net/*.hpp`）迁移至
+`include/mira/adapters/net/` 随安装包导出，消费者经 `find_package(Mira)` 即可构造
+`SocketHttpTransport` + TLS 工厂；`AgentLoop::build_request` 的截图 wire 媒体类型/字节数
+改由工件发布记录（`ScreenFrameDescriptor.payload_*`）驱动，方言层对非 `image/*` 媒体
+类型在 fetch 前 fail closed。依据 [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md)；
+实现、测试与验收见
+[维护计划 maintenance-2026-09-transport-and-image-media.md](maintenance-2026-09-transport-and-image-media.md)。
+本里程碑既有验证记录（含 MiniMax/SiliconFlow 互操作分级声明）保留不变。
