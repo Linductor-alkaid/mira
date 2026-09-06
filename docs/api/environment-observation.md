@@ -55,7 +55,9 @@ class IEnvironment {
 - `screen`（`ScreenFrameDescriptor`）、`structure`（`UiTreeSnapshot`）、
   `perception`（若干 `PerceptionEvidence`）、`foreground`（`AppContext`）、`device`
   （`DeviceState`），每个组件是 `ObservationComponent<T>`，独立携带 provenance、捕获
-  时间窗与质量。
+  时间窗与质量。`ScreenFrameDescriptor.payload_artifact/payload_media_type/
+  payload_byte_size/payload_digest` 是已发布载荷的完整 store 记录引用（DEC-013）：
+  模型层 wire 图像元数据取自这里，而不是假设原始帧布局。
 - `topology`（display 拓扑）、`atomicity`（组件是否单事务捕获）、`aggregate_span`、
   `quality`（`ClockSyncQuality`、`ComponentQuality` 分项）。
 - `environment_epoch`：快照对应的坐标纪元。
@@ -98,7 +100,9 @@ class IEnvironment {
   观察与输入。`create(executor, options)` 接受 `AndroidHostAdapterOptions`：可注入
   `IArtifactStore`（含落盘后端）或声明内存容量（默认 64 MiB，DEC-012）；能力快照如实
   映射宿主 `accessibility_completeness`（>= 1 声明 `ui_tree` 并聚合 structure 组件，
-  0 fail closed）。
+  0 fail closed）。`artifact_store()` 暴露载荷 store 读写句柄：使用 adapter 自有 store
+  的宿主可凭 `ScreenFrameDescriptor.payload_*` 元数据重开工件（如转码 RGBA 截图为
+  PNG/JPEG 供模型 wire 使用，DEC-013）。
 - `host_dispatcher.hpp`：`HostDispatcherBridge`、`HostLeaseGuard` 与 `HostFrameOutcome`/
   `HostTreeOutcome`/`HostInputOutcome`——有界等待、租约与取消语义的宿主侧结算
   （`Mira::android_adapter`）。`HostBridgeStats.leases_released` 统计对宿主执行的全部

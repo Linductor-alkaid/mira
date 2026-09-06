@@ -33,7 +33,7 @@ function(mira_add_m3_test name source)
     target_link_libraries(${name} PRIVATE
         Mira::core Mira::simulator_adapter Mira::net_transport executor::executor)
     target_include_directories(${name} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/adapters/net")
+        "${CMAKE_CURRENT_SOURCE_DIR}")
     target_include_directories(${name} SYSTEM PRIVATE
         "${PROJECT_SOURCE_DIR}/third_party/executor/include")
     mira_enable_warnings(${name})
@@ -93,7 +93,7 @@ if(TARGET mira_mbedtls_transport)
     target_link_libraries(mira_m3_interop_probe PRIVATE
         Mira::core Mira::net_transport Mira::mbedtls_transport executor::executor)
     target_include_directories(mira_m3_interop_probe PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/adapters/net")
+        "${CMAKE_CURRENT_SOURCE_DIR}")
     target_include_directories(mira_m3_interop_probe SYSTEM PRIVATE
         "${PROJECT_SOURCE_DIR}/third_party/executor/include")
     mira_enable_warnings(mira_m3_interop_probe)

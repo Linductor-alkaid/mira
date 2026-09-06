@@ -1,10 +1,12 @@
 #include "support/test.hpp"
 
 #include <mira/coordinates.hpp>
+#include <mira/event_store.hpp>
 #include <mira/observation.hpp>
 
 #include <cmath>
 #include <cstdint>
+#include <span>
 
 namespace {
 
@@ -271,9 +273,25 @@ int check_frame_descriptor_validation() {
         descriptor.pixel_space = space_id(40);
         descriptor.capture = span_at(0, 5);
         descriptor.payload_artifact = mira::ArtifactId::generate();
+        descriptor.payload_media_type = "image/x-rgba8888";
+        descriptor.payload_byte_size = 64;
+        descriptor.payload_digest = mira::digest_bytes(
+            std::as_bytes(std::span(reinterpret_cast<const std::byte *>("digest-fixture"), 13)));
         return descriptor;
     }();
     MIRA_CHECK(mira::validate_frame_descriptor(valid_descriptor).has_value());
+
+    // Published payload metadata is mandatory: model layers source wire
+    // image metadata from the store record (DEC-013).
+    auto no_media_type = valid_descriptor;
+    no_media_type.payload_media_type.clear();
+    MIRA_CHECK(!mira::validate_frame_descriptor(no_media_type).has_value());
+    auto no_byte_size = valid_descriptor;
+    no_byte_size.payload_byte_size = 0;
+    MIRA_CHECK(!mira::validate_frame_descriptor(no_byte_size).has_value());
+    auto no_digest = valid_descriptor;
+    no_digest.payload_digest = mira::Sha256Digest{};
+    MIRA_CHECK(!mira::validate_frame_descriptor(no_digest).has_value());
 
     auto wrong_planes = valid_descriptor;
     wrong_planes.planes.push_back(mira::PlaneLayout{64, 16, 4, 4, 4});

@@ -375,6 +375,9 @@ Result<Observation> SimulatorEnvironment::observe(const ObservationRequest &requ
                 artifact_ok = committed.has_value();
                 if (artifact_ok) {
                     descriptor.payload_artifact = committed.value().id;
+                    descriptor.payload_media_type = committed.value().media_type;
+                    descriptor.payload_byte_size = committed.value().byte_size;
+                    descriptor.payload_digest = committed.value().digest;
                     impl_->published.emplace(committed.value().id, committed.value());
                 }
             }

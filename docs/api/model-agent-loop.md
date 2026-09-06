@@ -41,8 +41,15 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 - `OpenAiCompatibleProvider`：两个固定方言（Responses / Chat Completions）的具体实现；
   一个实例服务一个 profile，方言回退从不发生在单次操作内。
 - `IHttpTransport` + `HttpRequest`/`TransportLimits`/`TransportTrace`/`TlsOptions`：
-  传输抽象。实现由 `mira_net_transport` + OpenSSL（`Mira::openssl_transport`）或
-  pinned Mbed TLS（`Mira::mbedtls_transport`）提供（[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)）。
+  传输抽象。官方实现由 `Mira::net_transport`（`mira/adapters/net/socket_transport.hpp`，
+  `SocketHttpTransport`，POSIX/Winsock，Executor blocking-I/O worker 承载）配合
+  OpenSSL（`Mira::openssl_transport`，`mira/adapters/net/openssl_tls.hpp`）或 pinned
+  Mbed TLS（`Mira::mbedtls_transport`，`mira/adapters/net/mbedtls_tls.hpp`）提供
+  （[DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md)）。三个头文件随
+  安装包导出；消费者 `find_package(Mira)`（mbedtls 目标按构建条件存在）即可构造官方
+  生产传输栈，无需自建（[DEC-013](../decisions/DEC-013-transport-export-and-image-media.md)）。
+  `socket_transport.hpp` 的公共接口引用 Executor 类型，消费者需同时
+  `find_package(executor)`。
 - `ISecretResolver`：凭据解析边界。
 - `model_replay.hpp` 的 `ReplayModelProvider` 回放录制的规范响应，供离线 Replay。
 
@@ -104,6 +111,12 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
 - `compile_discrete_action(decision)`：把已验证决策编译为 `InputSequence`；坐标必须
   是规范 `[0, 1]`，越界 fail closed。`agent_decision_schema()` 是闭环标准决策 schema，
   其 digest 随每个请求记录。
+- 图像 wire 媒体类型（[DEC-013](../decisions/DEC-013-transport-export-and-image-media.md)）：
+  `build_request` 的截图 `ArtifactRef`（media type / byte size）来自
+  `ScreenFrameDescriptor.payload_*`（工件发布时的 store 记录），不假设原始帧布局——
+  宿主在注入的 store 内转码（RGBA→PNG/JPEG）即可控制 wire 格式，内联 8 MiB 门槛按
+  实际编码字节数判定。方言层对非 `image/*` 媒体类型（如未编码原始帧的
+  `application/octet-stream`）在 fetch 前 fail closed（`UnsupportedCapability`）。
 
 ## 相关文档
 

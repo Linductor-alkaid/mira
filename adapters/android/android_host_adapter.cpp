@@ -579,6 +579,12 @@ AndroidHostAdapter::capture_screen_component(const MiraHostTopologyV1 &topology,
         return committed.error();
     }
     descriptor.payload_artifact = committed.value().id;
+    // Wire metadata comes from the store record: hosts that transcode the
+    // payload (e.g. raw frame -> PNG in an injected store) control the
+    // media type and size model layers put on the wire (DEC-013).
+    descriptor.payload_media_type = committed.value().media_type;
+    descriptor.payload_byte_size = committed.value().byte_size;
+    descriptor.payload_digest = committed.value().digest;
     if (const auto validated = validate_frame_descriptor(descriptor); !validated) {
         return validated.error();
     }

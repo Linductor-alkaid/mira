@@ -393,6 +393,46 @@ int image_transport_uses_artifact_bytes() {
     return 0;
 }
 
+int non_image_media_type_fails_closed() {
+    // Raw unencoded payloads (e.g. application/octet-stream frames) must
+    // fail with a diagnosable CapabilityMismatch before the wire instead of
+    // an opaque endpoint rejection (DEC-013).
+    ImagePart image;
+    image.source.id = ArtifactId::generate();
+    image.source.digest = digest_string("pixels");
+    image.source.byte_size = 4;
+    image.source.media_type = "application/octet-stream";
+    image.media_type = image.source.media_type;
+
+    {
+        ResponsesV1Mapper mapper;
+        const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
+        auto request = base_request();
+        request.input[1].content.emplace_back(image);
+        std::size_t fetches = 0;
+        auto source = image_source(fetches);
+        const auto wire = mapper.encode_request(request, profile, false, *source);
+        MIRA_CHECK(!wire.has_value());
+        MIRA_CHECK(wire.error().code == ErrorCode::UnsupportedCapability);
+        // Refused before any payload fetch.
+        MIRA_CHECK(fetches == 0);
+    }
+    {
+        ChatCompletionsV1Mapper mapper;
+        const auto profile = make_profile(ProtocolDialect::OpenAIChatCompletionsV1,
+                                          "https://api.test");
+        auto request = base_request();
+        request.input[1].content.emplace_back(image);
+        std::size_t fetches = 0;
+        auto source = image_source(fetches);
+        const auto wire = mapper.encode_request(request, profile, false, *source);
+        MIRA_CHECK(!wire.has_value());
+        MIRA_CHECK(wire.error().code == ErrorCode::UnsupportedCapability);
+        MIRA_CHECK(fetches == 0);
+    }
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -409,6 +449,9 @@ int main() {
         return status;
     }
     if (const int status = image_transport_uses_artifact_bytes(); status != 0) {
+        return status;
+    }
+    if (const int status = non_image_media_type_fails_closed(); status != 0) {
         return status;
     }
     return 0;
