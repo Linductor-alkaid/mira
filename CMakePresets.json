@@ -83,6 +83,26 @@
       "name": "android-arm64-release",
       "inherits": "android-arm64-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "android-x86_64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/android-x86_64.cmake",
+      "cacheVariables": {
+        "MIRA_BUILD_TESTS": "OFF",
+        "MIRA_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_SYSTEM_VERSION": "24",
+        "CMAKE_ANDROID_API": "24",
+        "CMAKE_ANDROID_ARCH_ABI": "x86_64",
+        "CMAKE_ANDROID_STL_TYPE": "c++_static"
+      }
+    },
+    {
+      "name": "android-x86_64-release",
+      "inherits": "android-x86_64-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
@@ -107,6 +127,11 @@
     {
       "name": "android-arm64-release",
       "configurePreset": "android-arm64-release",
+      "jobs": 2
+    },
+    {
+      "name": "android-x86_64-release",
+      "configurePreset": "android-x86_64-release",
       "jobs": 2
     }
   ],
