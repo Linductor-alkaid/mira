@@ -5,7 +5,7 @@
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M1
 > 建议发布点：Environment alpha
-> 更新日期：2026-08-30
+> 更新日期：2026-09-06
 
 ## 1. 目标
 
@@ -212,3 +212,12 @@ switch 补 default）后 run
 个 job 通过：Linux GCC/Clang Debug+Release、Windows Debug/Release、Android arm64（含
 `mira_android_adapter`）、ASAN/UBSAN/TSAN 与 quality（clang-tidy、clang-format 18.1.8、
 docs、SBOM、平台边界）。中间两次失败均由逐层暴露的静态检查驱动修复，无行为变更。
+
+2026-09-06：M2 交付物维护记录（非里程碑重开，M2 保持 Completed）。miracle 第一轮真机反馈
+（GitHub #7、#10、#11、#12、#13）落地到 M2-08/M2-09 交付物：`AndroidHostAdapter` 支持
+artifact store 注入与容量配置（默认 8→64 MiB）、`InputEvent.duration_ms` 映射、
+`accessibility_completeness >= 1` 时的 UI 树聚合（新线格式 `mira.host.tree.v1`），
+`HostDispatcherBridge.leases_released` 统计口径修复（BUG-20260906-001）。依据
+[DEC-012](../decisions/DEC-012-host-adapter-feedback-round1.md)；实现、测试与验收证据见
+[维护计划 maintenance-2026-09-host-abi-feedback.md](maintenance-2026-09-host-abi-feedback.md)
+与 [android-host-abi.md](../compatibility/android-host-abi.md)。本里程碑既有验证记录保留不变。

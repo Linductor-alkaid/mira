@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(Mira VERSION 0.1.0 LANGUAGES CXX)
 
 if(ANDROID)
-    if(NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    if(NOT CMAKE_ANDROID_ARCH_ABI MATCHES "^(arm64-v8a|x86_64)$")
         message(FATAL_ERROR
             "Mira Android preset resolved unexpected ABI: ${CMAKE_ANDROID_ARCH_ABI}")
     endif()

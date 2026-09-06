@@ -201,3 +201,11 @@ M7 不以“能编译”“Simulator 通过”或单次模型成功代替平台�
 条件为外部 demo 仓库产出需求验证报告，并据此完成 M7 范围、前置与发布点的重定义提案且
 经决策记录批准。重定义前本文件保持冻结，`M7-01` 至 `M7-28` 与退出条件不适用；DEC-009
 的 Tool 模组架构方向保留。
+
+2026-09-06：登记方向性缺口 GitHub
+[#8](https://github.com/Linductor-alkaid/mira/issues/8)（MIR-20260905-002，AgentLoop 内
+ToolProposals 不可执行，`src/model/agent_loop.cpp` 对 ToolProposals 解析结果显式失败）。
+该缺口属本里程碑范围（Tool 执行闭环），随 M7 重定义一并处理；触发条件为 miracle
+`POST-01` 的证据到位，届时按证据重定义验收（见
+[维护计划 maintenance-2026-09-host-abi-feedback.md](maintenance-2026-09-host-abi-feedback.md)
+`MNT-202609-06`）。在此之前不实现、不排期，本文件状态不变。

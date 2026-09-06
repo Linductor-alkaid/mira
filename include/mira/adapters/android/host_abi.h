@@ -172,7 +172,9 @@ typedef struct MiraHostOperationResultV1 {
     uint64_t capture_end_ns;
     uint64_t environment_epoch;
     /* UI tree payload for MIRA_HOST_OP_GET_UI_TREE, delivered as a frame
-       lease the native side copies from and releases. */
+       lease the native side copies from and releases. The payload is a
+       UTF-8 JSON document of schema "mira.host.tree.v1"; the format is
+       specified in docs/compatibility/android-host-abi.md. */
     uint32_t input_receipt;  /* MiraHostInputReceipt for input operations. */
     uint32_t side_effect_may_have_occurred;
 } MiraHostOperationResultV1;
@@ -227,14 +229,18 @@ typedef struct MiraHostFrameRequestV1 {
     uint64_t struct_size;
     uint64_t correlation;
     uint64_t display_id;
-    uint64_t deadline_ns; /* Monotonic deadline; 0 means no host deadline. */
+    /* Absolute point on the monotonic clock, in ns; 0 means no deadline.
+       The host converts it to a remaining duration itself. */
+    uint64_t deadline_ns;
 } MiraHostFrameRequestV1;
 
 typedef struct MiraHostTreeRequestV1 {
     uint64_t struct_size;
     uint64_t correlation;
     uint64_t display_id;
+    /* Upper bound for the serialized tree document the host may deliver. */
     uint64_t max_bytes;
+    /* Absolute point on the monotonic clock, in ns; 0 means no deadline. */
     uint64_t deadline_ns;
 } MiraHostTreeRequestV1;
 
@@ -244,6 +250,9 @@ typedef struct MiraHostInputEventV1 {
     double y;
     double x2;
     double y2;
+    /* Requested gesture duration for LONG_PRESS/SWIPE in milliseconds;
+       0 lets the host apply its own default duration. Native validates
+       nonzero values against max_gesture_duration_ms before submitting. */
     uint32_t duration_ms;
     const char* text;
     uint32_t text_length;
@@ -255,6 +264,7 @@ typedef struct MiraHostInputRequestV1 {
     uint64_t display_id;
     uint32_t event_count;
     MiraHostInputEventV1 events[MIRA_MAX_INPUT_EVENTS];
+    /* Absolute point on the monotonic clock, in ns; 0 means no deadline. */
     uint64_t deadline_ns;
 } MiraHostInputRequestV1;
 
@@ -287,6 +297,12 @@ typedef struct MiraAndroidHostV1 MiraAndroidHostV1;
  * MIRA_HOST_ERR_EXECUTION_UNCERTAIN when leases remain. `destroy` fails
  * with MIRA_HOST_ERR_INVALID_STATE while leases or callbacks are
  * outstanding and is otherwise idempotent.
+ *
+ * Out-parameter convention: callers may pass a zero-initialized out struct
+ * (struct_size == 0); hosts must treat that as "fill the full v1 struct",
+ * write the result including struct_size, and never read pre-existing
+ * contents. This is distinct from input structs, where a struct_size below
+ * the versioned prefix is rejected.
  */
 MiraHostStatus mira_android_host_create_v1(const MiraAndroidHostConfigV1* config,
                                            const MiraHostCallbacksV1* callbacks,
@@ -306,6 +322,14 @@ MiraHostStatus mira_android_host_get_topology_v1(MiraAndroidHostV1* host,
  * same correlation follows. Requests with a wrong struct_size or unknown
  * abi_version fail fast with MIRA_HOST_ERR_INVALID_ARGUMENT and never
  * call back.
+ *
+ * `out_operation` may be NULL: the native bridge matches results purely by
+ * the request's `correlation`, so hosts must accept a NULL out handle and
+ * must not require it for cancellation either (cancel takes the correlation
+ * value). `deadline_ns` in requests is an ABSOLUTE point on the host's
+ * monotonic clock (CLOCK_MONOTONIC / steady clock epoch, in nanoseconds);
+ * hosts convert it to a remaining duration themselves, and 0 means no host
+ * deadline.
  */
 MiraHostStatus mira_android_host_capture_frame_v1(MiraAndroidHostV1* host,
                                                   const MiraHostFrameRequestV1* request,

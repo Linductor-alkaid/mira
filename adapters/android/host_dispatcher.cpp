@@ -90,10 +90,12 @@ HostLeaseGuard::HostLeaseGuard(MiraHostBufferLeaseV1 lease) : lease_(lease), val
 HostLeaseGuard::~HostLeaseGuard() { release(); }
 
 HostLeaseGuard::HostLeaseGuard(HostLeaseGuard &&other) noexcept
-    : lease_(other.lease_), released_(other.released_.load()), valid_(other.valid_) {
+    : lease_(other.lease_), released_(other.released_.load()), valid_(other.valid_),
+      release_observer_(std::move(other.release_observer_)) {
     other.lease_ = MiraHostBufferLeaseV1{};
     other.released_.store(false);
     other.valid_ = false;
+    other.release_observer_ = nullptr;
 }
 
 HostLeaseGuard &HostLeaseGuard::operator=(HostLeaseGuard &&other) noexcept {
@@ -102,9 +104,11 @@ HostLeaseGuard &HostLeaseGuard::operator=(HostLeaseGuard &&other) noexcept {
         lease_ = other.lease_;
         released_.store(other.released_.load());
         valid_ = other.valid_;
+        release_observer_ = std::move(other.release_observer_);
         other.lease_ = MiraHostBufferLeaseV1{};
         other.released_.store(false);
         other.valid_ = false;
+        other.release_observer_ = nullptr;
     }
     return *this;
 }
@@ -116,6 +120,16 @@ void HostLeaseGuard::release() noexcept {
     if (lease_.release != nullptr) {
         lease_.release(lease_.lease_id, lease_.user_data);
     }
+    if (release_observer_) {
+        try {
+            release_observer_();
+        } catch (...) {
+        }
+    }
+}
+
+void HostLeaseGuard::set_release_observer(ReleaseObserver observer) {
+    release_observer_ = std::move(observer);
 }
 
 HostDispatcherBridge::HostDispatcherBridge(executor::Executor &executor) : executor_(executor) {
@@ -180,7 +194,9 @@ const MiraHostCallbacksV1 *HostDispatcherBridge::host_callbacks() { return &call
 
 HostBridgeStats HostDispatcherBridge::stats() const {
     std::lock_guard lock(mutex_);
-    return stats_;
+    HostBridgeStats snapshot = stats_;
+    snapshot.leases_released = lease_releases_->load(std::memory_order_relaxed);
+    return snapshot;
 }
 
 std::optional<MiraHostCapabilitiesV1> HostDispatcherBridge::latest_capabilities() const {
@@ -206,6 +222,12 @@ void HostDispatcherBridge::note_capabilities(const MiraHostCapabilitiesV1 &capab
 void HostDispatcherBridge::record_violation() {
     std::lock_guard lock(mutex_);
     ++stats_.contract_violations;
+}
+
+HostLeaseGuard::ReleaseObserver HostDispatcherBridge::lease_release_observer() {
+    return [counter = lease_releases_]() {
+        counter->fetch_add(1, std::memory_order_relaxed);
+    };
 }
 
 void HostDispatcherBridge::handle_capabilities_changed(const MiraHostCapabilitiesV1 &capabilities) {
@@ -309,8 +331,7 @@ HostDispatcherBridge::capture_frame(MiraAndroidHostV1 *host,
                         // once before settling the error.
                         if (result.lease != nullptr && result.lease->release != nullptr) {
                             result.lease->release(result.lease->lease_id, result.lease->user_data);
-                            std::lock_guard stats_lock(mutex_);
-                            ++stats_.leases_released;
+                            lease_releases_->fetch_add(1, std::memory_order_relaxed);
                         }
                         promise->set_value(host_status_error(result.status));
                         return;
@@ -326,6 +347,10 @@ HostDispatcherBridge::capture_frame(MiraAndroidHostV1 *host,
                     outcome.environment_epoch = result.environment_epoch;
                     if (result.lease != nullptr) {
                         outcome.lease = HostLeaseGuard(*result.lease);
+                        // The consumer releases this guard at its observe
+                        // tail (or an abandoned future destroys it); both
+                        // paths must count as host lease releases.
+                        outcome.lease.set_release_observer(lease_release_observer());
                     }
                     if (!outcome.lease.valid()) {
                         std::lock_guard stats_lock(mutex_);
@@ -364,8 +389,7 @@ HostDispatcherBridge::get_ui_tree(MiraAndroidHostV1 *host, const MiraHostTreeReq
                     if (result.status != MIRA_HOST_OK) {
                         if (result.lease != nullptr && result.lease->release != nullptr) {
                             result.lease->release(result.lease->lease_id, result.lease->user_data);
-                            std::lock_guard stats_lock(mutex_);
-                            ++stats_.leases_released;
+                            lease_releases_->fetch_add(1, std::memory_order_relaxed);
                         }
                         promise->set_value(host_status_error(result.status));
                         return;
@@ -389,10 +413,7 @@ HostDispatcherBridge::get_ui_tree(MiraAndroidHostV1 *host, const MiraHostTreeReq
                     const auto *payload = reinterpret_cast<const std::byte *>(guard.lease().data);
                     outcome.bytes.assign(payload, payload + guard.lease().size);
                     outcome.environment_epoch = result.environment_epoch;
-                    {
-                        std::lock_guard stats_lock(mutex_);
-                        ++stats_.leases_released;
-                    }
+                    lease_releases_->fetch_add(1, std::memory_order_relaxed);
                     guard.release();
                     promise->set_value(std::move(outcome));
                 }});
