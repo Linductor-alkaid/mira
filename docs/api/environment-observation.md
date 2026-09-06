@@ -21,9 +21,11 @@ class IEnvironment {
 
 ### 输入契约
 
-- `InputEvent{kind, payload}`：一个离散平台输入事件（`"tap"`、`"long_press"`、
+- `InputEvent{kind, payload, duration_ms}`：一个离散平台输入事件（`"tap"`、`"long_press"`、
   `"swipe"`、`"type"`、`"back"` 等）；payload 是已脱敏的规范坐标/文本，环境将其视为
-  不可信文本，不得原样入日志。
+  不可信文本，不得原样入日志。`duration_ms`（默认 0）为 `long_press`/`swipe` 等定时手势
+  的可选时长（毫秒）：0 保持宿主默认时长；Android Adapter 将非零值映射到 ABI
+  `duration_ms` 并对照宿主声明的 `max_gesture_duration_ms` fail closed（DEC-012）。
 - `InputSequence`：面向单 display 的已编译序列；nil display 选择主 display，动作不假设
   全局共享坐标空间。
 - `ExecutionStatus`：`Dispatched`（平台已接受，完成未知）/ `Completed` / `Rejected`
@@ -90,13 +92,18 @@ class IEnvironment {
 ### Android Host（`mira/adapters/android/`）
 
 - `host_abi.h`：稳定 C ABI，Android 宿主进程（APK/JNI 侧）以此桥接截屏、结构、输入
-  与生命周期回调；追加字段/新版本演进，旧宿主 fail closed
-  （[Android Host ABI](../compatibility/android-host-abi.md)）。
+  与生命周期回调；追加字段/新版本演进，旧宿主 fail closed。UI 树负载为 JSON schema
+  `mira.host.tree.v1`（[Android Host ABI](../compatibility/android-host-abi.md) §1.2）。
 - `android_host_adapter.hpp`：`AndroidHostAdapter`（`IEnvironment` 实现），经桥接转发
-  观察与输入。
+  观察与输入。`create(executor, options)` 接受 `AndroidHostAdapterOptions`：可注入
+  `IArtifactStore`（含落盘后端）或声明内存容量（默认 64 MiB，DEC-012）；能力快照如实
+  映射宿主 `accessibility_completeness`（>= 1 声明 `ui_tree` 并聚合 structure 组件，
+  0 fail closed）。
 - `host_dispatcher.hpp`：`HostDispatcherBridge`、`HostLeaseGuard` 与 `HostFrameOutcome`/
   `HostTreeOutcome`/`HostInputOutcome`——有界等待、租约与取消语义的宿主侧结算
-  （`Mira::android_adapter`）。真机运行证据不在当前声明范围（见平台矩阵）。
+  （`Mira::android_adapter`）。`HostBridgeStats.leases_released` 统计对宿主执行的全部
+  lease 释放（bridge 内部与消费方 guard 释放路径）。真机 screen 路径互操作证据见
+  平台矩阵与 [android-host-abi.md](../compatibility/android-host-abi.md)。
 
 ### Replay（`mira/replay.hpp`）
 

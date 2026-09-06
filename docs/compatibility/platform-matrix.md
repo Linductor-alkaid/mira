@@ -1,8 +1,8 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.5
-> 更新日期：2026-09-03
+> 版本：0.6
+> 更新日期：2026-09-06
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -22,7 +22,8 @@
 | Linux x86_64 | GCC 13、Clang 18；`debug`/`release`/sanitizer | `Build verified`（M0，Ubuntu 24.04） | `Planned`（`adapters/linux`，M7） | Linux GCC/Clang CI |
 | Windows x64 | MSVC、Visual Studio 17 2022；`windows-debug`/`windows-release` | `Build verified`（CI run [`33578613423`](https://github.com/Linductor-alkaid/mira/actions/runs/33578613423)，Debug/Release） | `Planned`（`adapters/windows`，M7） | Windows configure/build/test CI |
 | Android arm64-v8a | NDK 26.3.11579264，API 24；`android-arm64-release` | `Build verified`（CI run 33303882772，`mira_core` 与 `mira_simulator_adapter`；`mira_android_adapter` 于 CI run
-[`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter 骨架，fake host 契约验证；见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
+[`33322113637`](https://github.com/Linductor-alkaid/mira/actions/runs/33322113637) 复验） | `Boundary checked`（M2 冻结 Host ABI 与 Adapter，fake host 契约验证；screen 真机路径由 miracle P1 外部证据验证，见 [android-host-abi.md](android-host-abi.md)） | Android NDK configure/build CI；真机/模拟器由 M7 |
+| Android x86_64 | NDK 26.3.11579264，API 24；`android-x86_64-release`（2026-09-06 新增，DEC-012/GitHub #9） | `Configured`（工具链/预设/CI matrix 已入库，构建证据待 PR pipeline 回填） | `Planned`（模拟器 instrumented 冒烟依赖 miracle `POST-02`） | Android NDK configure/build CI |
 
 ### M3 传输 Adapter
 
@@ -78,6 +79,10 @@ Android（设置 `ANDROID_NDK_HOME` 或 `ANDROID_NDK_ROOT`）：
 ```sh
 cmake --preset android-arm64-release
 cmake --build --preset android-arm64-release --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport
+
+# x86_64（模拟器回归路径，2026-09-06 新增）
+cmake --preset android-x86_64-release
+cmake --build --preset android-x86_64-release --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport
 ```
 
 Android toolchain 不把 SDK/NDK 路径写入仓库；CI 使用 `ANDROID_NDK_VERSION=26.3.11579264`，
@@ -88,8 +93,8 @@ Android toolchain 不把 SDK/NDK 路径写入仓库；CI 使用 `ANDROID_NDK_VER
 - `platform-boundary-check` 扫描 `include/mira` 和 `src`，拒绝 Android、Windows、Linux 平台
   SDK 头文件及平台宏。
 - `mira_platform_boundary_test` 在测试构建中执行同一检查。
-- `.github/workflows/ci.yml` 的 `linux`、`windows` 和 `android` job 分别负责目标组合；未运行或
-  失败的目标必须保留其状态和补跑条件。
+- `.github/workflows/ci.yml` 的 `linux`、`windows` 和 `android` job 分别负责目标组合；android job
+  自 2026-09-06 起为 arm64+x86_64 matrix；未运行或失败的目标必须保留其状态和补跑条件。
 - Android CI run 33303882772 的 Android、Windows、Linux、sanitizer 和 quality jobs 全部成功；该
   run 验证 Android arm64-v8a Core/Simulator 构建。此前 runs 33301936164、33303233207、33303509993
   的兼容性失败及修复记录保留在 M0 验证记录中。
