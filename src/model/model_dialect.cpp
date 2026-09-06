@@ -118,6 +118,24 @@ find_header(const std::vector<std::pair<std::string, std::string>> &headers,
     return result;
 }
 
+[[nodiscard]] bool is_image_media_type(const std::string &media_type) {
+    return media_type.rfind("image/", 0) == 0;
+}
+
+// Real OpenAI-compatible endpoints only accept image media types in
+// image_url parts. A non-image payload (e.g. a raw unencoded frame shipped
+// as application/octet-stream) fails here with a diagnosable error instead
+// of as an opaque endpoint rejection (DEC-013).
+[[nodiscard]] Result<void> require_image_media_type(const ArtifactRef &reference) {
+    if (!is_image_media_type(reference.media_type)) {
+        return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                "image artifact media type is not an image/* type: '" +
+                                    reference.media_type +
+                                    "'; transcode the capture before model input");
+    }
+    return Result<void>{};
+}
+
 [[nodiscard]] Result<std::string> fetch_image_data_url(const ArtifactRef &reference,
                                                        IArtifactSource &artifacts) {
     if (reference.byte_size > kMaxInlineImageBytes) {
@@ -359,6 +377,9 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
                 if (!profile.capabilities.image_input.supported) {
                     return make_model_error(ModelDomainCode::CapabilityMismatch,
                                             "profile does not accept image input");
+                }
+                if (const auto gate = require_image_media_type(image->source); !gate) {
+                    return gate.error();
                 }
                 JsonValue::Object part_json;
                 part_json.emplace_back("type", "input_image");
@@ -766,6 +787,9 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
                     part_json.emplace_back("text", text_part->text);
                     parts.emplace_back(std::move(part_json));
                 } else if (const auto *image = std::get_if<ImagePart>(&part)) {
+                    if (const auto gate = require_image_media_type(image->source); !gate) {
+                        return gate.error();
+                    }
                     auto data_url = fetch_image_data_url(image->source, artifacts);
                     if (!data_url) {
                         return data_url.error();

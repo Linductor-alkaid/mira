@@ -3,6 +3,8 @@
 
 #include <mira/adapters/android/android_host_adapter.hpp>
 #include <mira/adapters/android/host_dispatcher.hpp>
+#include <mira/artifact_store.hpp>
+#include <mira/event_store.hpp>
 
 #include <executor/executor.hpp>
 
@@ -488,6 +490,39 @@ int check_artifact_store_capacity_and_injection() {
     return 0;
 }
 
+int check_frame_payload_metadata_and_store_access() {
+    ExecutorFixture fixture;
+    auto created = AndroidHostAdapter::create(fixture.executor);
+    MIRA_CHECK(created.has_value());
+    auto adapter = std::move(created).value();
+
+    ObservationRequest request;
+    request.required.screen = true;
+    const auto observation = adapter->observe(request, context(std::chrono::seconds(2)));
+    MIRA_CHECK(observation.has_value());
+    const auto &screen = observation.value().screen->value;
+
+    // The frame descriptor publishes the store record's media type, size
+    // and digest; the raw host frame is honestly labeled as such (DEC-013).
+    MIRA_CHECK(screen.payload_media_type == "image/x-host-frame");
+    MIRA_CHECK(screen.payload_byte_size ==
+               4ULL * 4ULL * 4ULL); // 4x4 RGBA frame from the fake host
+    MIRA_CHECK(screen.payload_digest != mira::Sha256Digest{});
+
+    // Hosts without an injected store reopen the payload through the
+    // adapter's store handle using only published frame metadata.
+    mira::ArtifactDescriptor descriptor;
+    descriptor.id = screen.payload_artifact;
+    descriptor.media_type = screen.payload_media_type;
+    descriptor.byte_size = screen.payload_byte_size;
+    descriptor.digest = screen.payload_digest;
+    auto reader = adapter->artifact_store().open(descriptor);
+    MIRA_CHECK(reader.has_value());
+    MIRA_CHECK(reader.value().size() == screen.payload_byte_size);
+    MIRA_CHECK(mira::digest_bytes(reader.value().bytes()) == screen.payload_digest);
+    return 0;
+}
+
 int check_input_duration_semantics() {
     ExecutorFixture fixture;
     auto created = AndroidHostAdapter::create(fixture.executor);
@@ -552,6 +587,8 @@ int main() {
     if (const int code = check_structure_epoch_and_capability_degradation(); code != 0)
         return code;
     if (const int code = check_artifact_store_capacity_and_injection(); code != 0)
+        return code;
+    if (const int code = check_frame_payload_metadata_and_store_access(); code != 0)
         return code;
     return 0;
 }

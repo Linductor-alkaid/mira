@@ -133,6 +133,13 @@ Result<void> validate_frame_descriptor(const ScreenFrameDescriptor &descriptor) 
         return observation_error(ErrorCode::InvalidArgument,
                                  "frame ids, pixel space and payload artifact are required");
     }
+    if (descriptor.payload_media_type.empty() || descriptor.payload_byte_size == 0U) {
+        return observation_error(ErrorCode::InvalidArgument,
+                                 "frame payload media type and byte size are required");
+    }
+    if (descriptor.payload_digest == Sha256Digest{}) {
+        return observation_error(ErrorCode::InvalidArgument, "frame payload digest is required");
+    }
     if (!span_is_ordered(descriptor.capture)) {
         return observation_error(ErrorCode::InvalidArgument, "capture span must be ordered");
     }

@@ -249,10 +249,13 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
         const auto &screen = observation.screen->value;
         ArtifactRef reference;
         reference.id = screen.payload_artifact;
-        reference.media_type = "application/octet-stream";
+        // Wire metadata comes from the published artifact record, never from
+        // an assumed raw-frame layout: hosts that transcode captures to
+        // PNG/JPEG keep control of the wire media type and size, and the
+        // inline-size gate sees the real payload size (DEC-013).
+        reference.media_type = screen.payload_media_type;
         reference.sensitivity = Sensitivity::Internal;
-        reference.byte_size = static_cast<std::uint64_t>(screen.width_pixels) *
-                              static_cast<std::uint64_t>(screen.height_pixels) * 4ULL;
+        reference.byte_size = screen.payload_byte_size;
         ImagePart image;
         image.source = reference;
         image.detail = ImageDetail::Low;
