@@ -7,11 +7,25 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace mira::test {
 
 class FakeAndroidHost;
+
+// What dispatch_input recorded for one event; lets contract tests assert
+// kind, canonical coordinates, text and gesture duration as mapped by the
+// adapter.
+struct FakeDispatchedInput final {
+    std::uint32_t kind = 0;
+    double x = 0.0;
+    double y = 0.0;
+    double x2 = 0.0;
+    double y2 = 0.0;
+    std::uint32_t duration_ms = 0;
+    std::string text;
+};
 
 // Owning wrapper behind the opaque MiraAndroidHostV1 handle; defined here
 // so from_abi_host() can recover the instance tests control. The instance
@@ -37,6 +51,8 @@ class FakeAndroidHost final {
         bool oversize_next_lease = false;
         // Complete the next input operation with an uncertain receipt.
         bool uncertain_next_input = false;
+        // Deliver a non-JSON payload for the next ui tree operation.
+        bool invalid_next_tree = false;
     };
 
     FakeAndroidHost();
@@ -75,6 +91,10 @@ class FakeAndroidHost final {
     void revoke_projection();      // capability change: no screenshot formats
     void release_pending();        // delivers deferred terminal callbacks
     void force_capability_event(); // delivers the current snapshot again
+    // Sets accessibility_completeness (0 = none, 1 = partial, 2 = full) and
+    // publishes the capability change; mirrors host-side accessibility
+    // lifecycle changes such as service enablement or revocation.
+    void set_accessibility_completeness(std::uint32_t level);
     // Delivers a fabricated late callback through the stored table; used to
     // prove the bridge isolates callbacks for unknown operations.
     void deliver_raw_result(const MiraHostOperationResultV1 &result);
@@ -85,7 +105,7 @@ class FakeAndroidHost final {
     [[nodiscard]] std::size_t stopped_count() const noexcept;
     [[nodiscard]] std::size_t destroyed_count() const noexcept;
     [[nodiscard]] bool started() const noexcept;
-    [[nodiscard]] std::vector<std::vector<double>> dispatched_inputs() const;
+    [[nodiscard]] std::vector<FakeDispatchedInput> dispatched_inputs() const;
 
   private:
     struct Operation final {
@@ -121,9 +141,13 @@ class FakeAndroidHost final {
     std::uint64_t host_generation_ = 1;
     std::uint64_t next_lease_id_ = 1;
     std::atomic<std::uint64_t> live_leases_{0};
+    std::uint64_t frame_counter_ = 0;
     std::vector<Operation> pending_operations_;
-    std::vector<std::vector<double>> dispatched_inputs_;
-    std::vector<std::uint8_t> tree_payload_{'t', 'r', 'e', 'e', '-', 'v', '1'};
+    std::vector<FakeDispatchedInput> dispatched_inputs_;
+    std::uint32_t accessibility_completeness_ = 1;
+    // A minimal mira.host.tree.v1 document (see
+    // docs/compatibility/android-host-abi.md): root + button + text node.
+    std::vector<std::uint8_t> tree_payload_;
 };
 
 } // namespace mira::test

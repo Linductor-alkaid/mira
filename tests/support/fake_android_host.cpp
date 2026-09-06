@@ -10,7 +10,7 @@ namespace {
 constexpr std::uint32_t kFakeWidth = 4;
 constexpr std::uint32_t kFakeHeight = 4;
 
-std::vector<std::uint8_t> synthetic_frame() {
+std::vector<std::uint8_t> synthetic_frame(std::uint64_t salt) {
     std::vector<std::uint8_t> payload;
     payload.resize(static_cast<std::size_t>(kFakeWidth) * kFakeHeight * 4U);
     for (std::uint32_t y = 0; y < kFakeHeight; ++y) {
@@ -21,6 +21,12 @@ std::vector<std::uint8_t> synthetic_frame() {
             payload[offset + 2] = static_cast<std::uint8_t>(0x80U);
             payload[offset + 3] = 0xFFU;
         }
+    }
+    // Distinct content per capture: content-addressed artifact stores then
+    // keep every frame instead of deduplicating identical synthetic frames.
+    for (std::size_t index = 0; index < sizeof(salt); ++index) {
+        payload[index] = static_cast<std::uint8_t>(payload[index] ^
+                                                   ((salt >> (index * 8U)) & 0xFFU));
     }
     return payload;
 }
@@ -33,7 +39,23 @@ struct FakeLeaseRecord final {
     std::atomic<std::uint64_t> *live_counter = nullptr;
 };
 
-FakeAndroidHost::FakeAndroidHost() = default;
+FakeAndroidHost::FakeAndroidHost() {
+    // A minimal mira.host.tree.v1 document: root + button + text node.
+    const std::string_view document =
+        R"({"schema":"mira.host.tree.v1","complete":true,"capture_begin_ns":100,)"
+        R"("capture_end_ns":200,"nodes":[)"
+        R"({"id":"00000000000000000000000000000001","role":"root",)"
+        R"("state":["visible","enabled"],)"
+        R"("bounds":{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0}},)"
+        R"({"id":"00000000000000000000000000000002",)"
+        R"("parent":"00000000000000000000000000000001","role":"button","text":"OK",)"
+        R"("hint":"com.example/ok","actions":["click"],)"
+        R"("bounds":{"left":0.1,"top":0.8,"right":0.4,"bottom":0.9}},)"
+        R"({"id":"00000000000000000000000000000003",)"
+        R"("parent":"00000000000000000000000000000001","role":"text","text":"Title",)"
+        R"("bounds":{"left":0.0,"top":0.0,"right":1.0,"bottom":0.1}}]})";
+    tree_payload_.assign(document.begin(), document.end());
+}
 
 FakeAndroidHost::~FakeAndroidHost() = default;
 
@@ -131,7 +153,7 @@ MiraHostCapabilitiesV1 FakeAndroidHost::capabilities_locked() const {
     capabilities.screenshot_backends = revoked_ ? 0U : 1U;
     capabilities.max_frame_width = 4096;
     capabilities.max_frame_height = 4096;
-    capabilities.accessibility_completeness = 1;
+    capabilities.accessibility_completeness = accessibility_completeness_;
     capabilities.supported_node_actions_mask = 0;
     capabilities.input_capabilities_mask =
         (1U << MIRA_HOST_INPUT_TAP) | (1U << MIRA_HOST_INPUT_LONG_PRESS) |
@@ -251,7 +273,8 @@ MiraHostStatus FakeAndroidHost::capture_frame(const MiraHostFrameRequestV1 &requ
         behaviour_.wrong_generation_next_callback ? host_generation_ + 999 : host_generation_;
     operation.result.status = MIRA_HOST_OK;
     operation.result.kind = MIRA_HOST_OP_CAPTURE_FRAME;
-    operation.lease_storage = make_lease(synthetic_frame(), behaviour_.oversize_next_lease);
+    operation.lease_storage =
+        make_lease(synthetic_frame(frame_counter_++), behaviour_.oversize_next_lease);
     operation.result.frame_id = request.correlation + 100;
     operation.result.display_id = 1;
     operation.result.width = kFakeWidth;
@@ -285,6 +308,9 @@ MiraHostStatus FakeAndroidHost::get_ui_tree(const MiraHostTreeRequestV1 &request
     if (!created_ || destroyed_ || !started_ || stopped_) {
         return MIRA_HOST_ERR_INVALID_STATE;
     }
+    if (accessibility_completeness_ == 0) {
+        return MIRA_HOST_ERR_UNAVAILABLE;
+    }
     Operation operation;
     operation.correlation = request.correlation;
     operation.kind = MIRA_HOST_OP_GET_UI_TREE;
@@ -293,7 +319,14 @@ MiraHostStatus FakeAndroidHost::get_ui_tree(const MiraHostTreeRequestV1 &request
     operation.result.host_generation = host_generation_;
     operation.result.status = MIRA_HOST_OK;
     operation.result.kind = MIRA_HOST_OP_GET_UI_TREE;
-    operation.lease_storage = make_lease(tree_payload_, false);
+    if (behaviour_.invalid_next_tree) {
+        const std::string_view garbage = "not-a-json-tree{";
+        operation.lease_storage =
+            make_lease(std::vector<std::uint8_t>(garbage.begin(), garbage.end()), false);
+        behaviour_.invalid_next_tree = false;
+    } else {
+        operation.lease_storage = make_lease(tree_payload_, false);
+    }
     operation.result.environment_epoch = environment_epoch_;
     if (out_operation != nullptr) {
         *out_operation = request.correlation;
@@ -317,8 +350,17 @@ MiraHostStatus FakeAndroidHost::dispatch_input(const MiraHostInputRequestV1 &req
         return MIRA_HOST_ERR_INVALID_STATE;
     }
     for (std::uint32_t index = 0; index < request.event_count; ++index) {
-        dispatched_inputs_.push_back({request.events[index].x, request.events[index].y,
-                                      request.events[index].x2, request.events[index].y2});
+        FakeDispatchedInput recorded;
+        recorded.kind = request.events[index].kind;
+        recorded.x = request.events[index].x;
+        recorded.y = request.events[index].y;
+        recorded.x2 = request.events[index].x2;
+        recorded.y2 = request.events[index].y2;
+        recorded.duration_ms = request.events[index].duration_ms;
+        if (request.events[index].text != nullptr) {
+            recorded.text.assign(request.events[index].text, request.events[index].text_length);
+        }
+        dispatched_inputs_.push_back(std::move(recorded));
     }
     Operation operation;
     operation.correlation = request.correlation;
@@ -399,6 +441,13 @@ void FakeAndroidHost::force_capability_event() {
     publish_capabilities_locked();
 }
 
+void FakeAndroidHost::set_accessibility_completeness(std::uint32_t level) {
+    std::lock_guard lock(mutex_);
+    ++host_sequence_;
+    accessibility_completeness_ = level;
+    publish_capabilities_locked();
+}
+
 void FakeAndroidHost::release_pending() {
     std::vector<Operation> operations;
     {
@@ -447,7 +496,7 @@ bool FakeAndroidHost::started() const noexcept {
     return started_;
 }
 
-std::vector<std::vector<double>> FakeAndroidHost::dispatched_inputs() const {
+std::vector<FakeDispatchedInput> FakeAndroidHost::dispatched_inputs() const {
     std::lock_guard lock(mutex_);
     return dispatched_inputs_;
 }

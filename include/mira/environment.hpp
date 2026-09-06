@@ -22,6 +22,11 @@ namespace mira {
 struct InputEvent final {
     std::string kind;    // e.g. "tap", "long_press", "swipe", "type", "back".
     std::string payload; // canonical coordinates or text, redacted upstream.
+    // Optional duration for timed gestures (long_press, swipe) in
+    // milliseconds. Zero keeps the host default duration; the Android
+    // adapter maps nonzero values onto MiraHostInputEventV1.duration_ms and
+    // rejects values beyond the host's declared max_gesture_duration_ms.
+    std::uint32_t duration_ms = 0;
 };
 
 // A compiled input sequence targeted at one display. A nil display selects
