@@ -83,7 +83,13 @@ compile 契约 + 反馈重试表达，schema 保持线格式兼容。
   （复现 issue 一步终态 Failed 故障模式），恢复修复后通过。
 - [x] 本地全量 `ctest` 43/43 通过（Ubuntu 24.04 x86_64，GCC 13.3.0，CMake 3.28.3，
   `debug` preset）。
-- [ ] CI 全平台矩阵全绿（PR 创建后回填 run 链接）。
+- [x] CI 全平台矩阵全绿：PR #22 push run
+  [`34034403106`](https://github.com/Linductor-alkaid/mira/actions/runs/34034403106)
+  与 pull_request run
+  [`34034417279`](https://github.com/Linductor-alkaid/mira/actions/runs/34034417279)
+  （commit `9a1dd28`）各 12 项检查全部通过——Linux GCC/Clang Debug+Release、Windows
+  Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（含 format-check、
+  docs-check、platform-boundary-check、公共头自包含）。
 - [ ] miracle 真机同任务复验通过（外部依赖，issue #21 验收条件）。
 
 ## 8. 验证记录
@@ -98,4 +104,17 @@ preset，分支 `fix/agentloop-decision-compile-recovery`，基于 master `635e1
   `tests/m3/m3_agent_loop_test.cpp:264: check failed: outcome == LoopOutcome::Completed`
   ——即 issue 报告的"合法决策一步终态 Failed"；恢复修复后通过。
 - 本机限制同前两轮记录（无 clang/clang-tidy/sudo、无 Android NDK）；CI 覆盖补跑
-  （待 PR 创建后回填）。
+  （下条）。
+
+2026-09-06：CI 验证（PR #22，commit `9a1dd28`）。
+
+- push run [`34034403106`](https://github.com/Linductor-alkaid/mira/actions/runs/34034403106)
+  与 pull_request run
+  [`34034417279`](https://github.com/Linductor-alkaid/mira/actions/runs/34034417279)
+  全部 12 项检查通过：Linux GCC/Clang Debug+Release、Windows Debug+Release、Android
+  arm64+x86_64、ASAN/UBSAN/TSAN、quality（含 format-check、docs-check、
+  platform-boundary-check 与公共头自包含）。
+- 说明：本机 conda 前缀的 pip clang-format 18.1.8 对未改动的 master 文件也报格式
+  违例（与 CI runner 同版本号但行为不同，对 `src/model/model_schema.cpp` 首行即要求
+  include 重排），本地 format-check 不可作为门禁；CI quality job 的 format-check
+  通过即格式门禁结论。
