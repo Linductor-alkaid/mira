@@ -1,3 +1,4 @@
+#include <mira/adapters/net/socket_transport.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/runtime_baseline.hpp>
 #include <mira/sqlite_memory_store.hpp>
@@ -5,9 +6,14 @@
 
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <system_error>
 
 #include <executor/executor.hpp>
+
+#ifdef MIRA_CONSUMER_HAS_MBEDTLS
+#include <mira/adapters/net/mbedtls_tls.hpp>
+#endif
 
 int main() {
     mira::adapters::simulator::SimulatorEnvironment environment{
@@ -71,6 +77,40 @@ int main() {
     }
     if (store_exec.shutdown(true) != executor::ShutdownResult::Completed) {
         return 9;
+    }
+
+    // Network transports: the installed package must export the adapter
+    // headers and libraries so a package-only consumer can construct the
+    // official production transport stack (GitHub #14). A PEM CA bundle is
+    // the caller's responsibility; a missing file must fail closed at
+    // initialize() rather than at first use.
+    {
+        executor::Executor net_exec;
+        if (!net_exec.initialize(executor::ExecutorConfig{})) {
+            return 10;
+        }
+        auto secrets = std::make_shared<mira::NullSecretResolver>();
+        mira::adapters::net::SocketHttpTransport transport{net_exec, secrets};
+        if (!transport.start()) {
+            return 11;
+        }
+        if (!transport.running()) {
+            return 12;
+        }
+        transport.shutdown();
+        if (transport.running()) {
+            return 13;
+        }
+#ifdef MIRA_CONSUMER_HAS_MBEDTLS
+        mira::adapters::net::MbedTlsChannelFactory tls{
+            "/nonexistent/mira-consumer-ca.pem"};
+        if (tls.initialize()) {
+            return 14; // A missing CA bundle must not initialize.
+        }
+#endif
+        if (net_exec.shutdown(true) != executor::ShutdownResult::Completed) {
+            return 15;
+        }
     }
     return 0;
 }

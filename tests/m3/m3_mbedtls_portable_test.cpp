@@ -2,8 +2,8 @@
 // dependency too, so Windows can execute the client contract without an
 // OpenSSL development package.
 
-#include "mbedtls_tls.hpp"
-#include "socket_transport.hpp"
+#include <mira/adapters/net/mbedtls_tls.hpp>
+#include <mira/adapters/net/socket_transport.hpp>
 #include "support/m3_support.hpp"
 #include "support/test.hpp"
 

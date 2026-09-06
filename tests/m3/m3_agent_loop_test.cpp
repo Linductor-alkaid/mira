@@ -149,8 +149,12 @@ int successful_two_step_loop() {
     MIRA_CHECK(fixture.environment_->executed_inputs().size() == 1);
     MIRA_CHECK(fixture.environment_->executed_inputs()[0].events[0].kind == "tap");
     MIRA_CHECK(fixture.transport_->recorded().size() == 2);
-    // The wire request carried the screenshot artifact reference.
+    // The wire request carried the screenshot artifact with the media type
+    // recorded at publish time (the simulator labels raw RGBA honestly),
+    // not a fabricated octet-stream reference (DEC-013).
     MIRA_CHECK(fixture.transport_->recorded()[0].body.find("input_image") != std::string::npos);
+    MIRA_CHECK(fixture.transport_->recorded()[0].body.find("data:image/x-rgba8888;base64,") !=
+               std::string::npos);
     // Every request carries the strict decision schema and explicit store.
     for (const auto &recorded : fixture.transport_->recorded()) {
         MIRA_CHECK(recorded.body.find("\"store\":false") != std::string::npos);

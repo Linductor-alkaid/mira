@@ -80,6 +80,10 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 [维护计划 maintenance-2026-09-host-abi-feedback.md](maintenance-2026-09-host-abi-feedback.md)
 与 [DEC-012](../decisions/DEC-012-host-adapter-feedback-round1.md) 落地（GitHub #7–#13）；
 其中 #8（AgentLoop ToolProposals）为方向登记，维持 M7 Blocked，待 POST-01 证据重定义。
+同日第二轮反馈（GitHub #14、#15）经
+[维护计划 maintenance-2026-09-transport-and-image-media.md](maintenance-2026-09-transport-and-image-media.md)
+与 [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md) 落地：官方网络
+传输头随安装包导出，模型图像 wire 媒体类型改为工件记录驱动并由宿主负责编码。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
@@ -102,6 +106,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) | 锁定 Mbed TLS、受管代理与远端文件生命周期 | Accepted | M3 |
 | [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) | Demo 优先验证、M5/M6 终止与外部消费边界 | Accepted | M4 后 |
 | [DEC-012](../decisions/DEC-012-host-adapter-feedback-round1.md) | Host Adapter 第一轮反馈契约修订（artifact 注入、输入时长、UI 树线格式、lease 统计） | Accepted | M4 后维护轮 |
+| [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md) | 传输头文件导出与模型图像 wire 媒体类型（宿主负责编码） | Accepted | M4 后维护轮 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

@@ -1,5 +1,5 @@
-#include "mbedtls_tls.hpp"
-#include "socket_transport.hpp"
+#include <mira/adapters/net/mbedtls_tls.hpp>
+#include <mira/adapters/net/socket_transport.hpp>
 
 #include <mira/model_digest.hpp>
 #include <mira/model_provider.hpp>

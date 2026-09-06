@@ -55,6 +55,11 @@ class AndroidHostAdapter final : public IEnvironment {
     [[nodiscard]] HostBridgeStats bridge_stats() const;
     [[nodiscard]] EnvironmentEpoch environment_epoch() const;
     [[nodiscard]] HostDispatcherBridge &bridge();
+    // Read/write access to the observation payload store. Hosts using the
+    // adapter-owned default store read frame payloads (e.g. to transcode
+    // RGBA captures into image/* wire formats) through this handle; hosts
+    // that injected their own store already hold it (DEC-013).
+    [[nodiscard]] IArtifactStore &artifact_store() const { return *artifacts_; }
     [[nodiscard]] MiraAndroidHostV1 *host() const noexcept { return host_; }
 
   private:

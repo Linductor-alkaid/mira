@@ -175,6 +175,17 @@ struct ScreenFrameDescriptor final {
     CaptureSpan capture;
     // Published, immutable payload in the ArtifactStore.
     ArtifactId payload_artifact;
+    // Media type, byte size and digest of the published payload as recorded
+    // by the store at commit time. Model layers must source wire image
+    // metadata from these fields instead of assuming the raw frame layout,
+    // so hosts that transcode captures (e.g. RGBA -> PNG) keep control of
+    // the wire format (DEC-013). Together with the artifact id they also
+    // let hosts reopen the payload through the adapter's store handle. An
+    // empty media type or zero size means the publishing adapter did not
+    // record the metadata and validation rejects the descriptor.
+    std::string payload_media_type;
+    std::uint64_t payload_byte_size = 0;
+    Sha256Digest payload_digest;
     FrameCoverage coverage;
 };
 

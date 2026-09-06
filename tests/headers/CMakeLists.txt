@@ -21,11 +21,21 @@ foreach(HEADER IN ITEMS
         mira/runtime.hpp
         mira/adapters/simulator/simulator_environment.hpp
         mira/adapters/android/host_dispatcher.hpp
-        mira/adapters/android/android_host_adapter.hpp)
+        mira/adapters/android/android_host_adapter.hpp
+        mira/adapters/net/mbedtls_tls.hpp
+        mira/adapters/net/openssl_tls.hpp
+        mira/adapters/net/socket_transport.hpp)
     string(REPLACE "/" "_" TARGET_NAME "${HEADER}")
     string(REPLACE "." "_" TARGET_NAME "${TARGET_NAME}")
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.cpp")
     file(WRITE "${SOURCE_FILE}" "#include <${HEADER}>\nint main() { return 0; }\n")
     add_executable("header_${TARGET_NAME}" "${SOURCE_FILE}")
     target_include_directories("header_${TARGET_NAME}" PRIVATE "${MIRA_INCLUDE_DIR}")
+    # The net transport headers reference Executor worker types in their
+    # public surface, so their minimal consumer needs the Executor headers
+    # exactly like an installed Mira::net_transport consumer does.
+    if(HEADER MATCHES "adapters/net/" AND EXECUTOR_INCLUDE_DIR)
+        target_include_directories("header_${TARGET_NAME}" SYSTEM PRIVATE
+            "${EXECUTOR_INCLUDE_DIR}")
+    endif()
 endforeach()
