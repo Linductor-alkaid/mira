@@ -57,7 +57,7 @@
 - 未转码的 android 原始帧（`image/x-host-frame`）通过 `image/*` 门但真实端点可能仍拒：
   (a) 语义既定边界，宿主转码后消除；已在 DEC-013 与 API 手册写明。
 - 真实端点端到端（PNG wire + 200 + decision）与 miracle P3 三类任务取证为外部补跑项。
-- CI 证据待 PR pipeline 回填本文件。
+- CI 证据已回填（§6、§7）。
 
 ## 6. 测试与退出条件
 
@@ -66,7 +66,10 @@
   `data:image/x-rgba8888;base64,`（m3）、帧描述符元数据负向校验（m2 观察契约）、
   公共头自包含（含三个 net 头）、安装消费者构造官方传输栈。
 - [x] 本地全量 `ctest` 43/43 通过（Ubuntu 24.04 x86_64，GCC 13.3，debug preset）。
-- [ ] CI 全平台矩阵全绿；回填 run 链接。
+- [x] CI 全平台矩阵全绿：PR #17 push run
+  [`34019323160`](https://github.com/Linductor-alkaid/mira/actions/runs/34019323160)
+  （commit `0fdf2e5`）24/24 检查通过——Linux GCC/Clang Debug+Release、Windows
+  Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality。
 - [ ] miracle 按 (a) 语义注入转码 store 并回传真机端到端证据（外部依赖）。
 
 ## 7. 验证记录
@@ -78,5 +81,16 @@
   位于 `include/mira`，经边界扫描确认无平台 SDK 头）。
 - 测试：`ctest` 43/43 通过，含上述新增检查；安装消费者测试经
   `mira_installed_consumer_test` 验证 `find_package(Mira)` 构造官方传输栈。
-- 本机限制（无 clang/clang-tidy/sudo、无 Android NDK）同第一轮记录；由 PR pipeline
-  补跑后回填。
+- 本机限制（无 clang/clang-tidy/sudo、无 Android NDK）同第一轮记录；已由下述 CI run
+  覆盖补跑。
+
+2026-09-06：CI 验证（PR #17）。
+
+- 首轮 run `34018366726` 的 `windows (windows-debug)` 失败：安装消费者以 0xc0000135
+  （STATUS_DLL_NOT_FOUND）退出——`Mira::mbedtls_transport` 为 SHARED 库，Windows 消费者
+  可执行文件运行时缺 DLL。修复：消费者构建后把 DLL 拷贝到可执行文件目录
+  （commit `0fdf2e5`），失败与修复记录保留于此。
+- push run [`34019323160`](https://github.com/Linductor-alkaid/mira/actions/runs/34019323160)
+  与 pull_request run [`34019325664`](https://github.com/Linductor-alkaid/mira/actions/runs/34019325664)
+  （commit `0fdf2e5`）全部 24 项检查通过，含 Windows Debug/Release 的
+  `mira_installed_consumer_test`（官方传输栈构造 + mbedtls DLL 部署）。
