@@ -242,6 +242,81 @@ int malformed_decision_triggers_bounded_repair() {
     return 0;
 }
 
+// A decision that passes the schema but omits action parameters (the
+// small-model failure mode from issue #21) must recover with feedback
+// instead of settling the loop as Failed on the first step.
+int param_missing_decision_recovers_with_feedback() {
+    {
+        LoopFixture fixture;
+        fixture.activate();
+        fixture.spec().profile_id = fixture.profile_->id;
+        // Step 1: the exact real-device payload from the issue -- swipe
+        // without any coordinates passes the schema but cannot compile.
+        fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"I should open the Settings application.\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        // Step 2: the retried decision carries the required coordinates.
+        fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"swipe\",\"x\":0.1,\"y\":0.1,\"end_x\":0.2,\"end_y\":0.2,\"reason\":\"swipe up\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        fixture.transport_->enqueue_json(200, R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
+
+        AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{6, 1});
+        InputCountVerifier verifier(*fixture.environment_, 1);
+        auto result = loop.run(fixture.spec(), loop_context(), verifier);
+        MIRA_CHECK(result.has_value());
+        MIRA_CHECK(result.value().outcome == LoopOutcome::Completed);
+        MIRA_CHECK(result.value().recoveries == 1);
+        // Only the corrected swipe reached the environment.
+        MIRA_CHECK(fixture.environment_->executed_inputs().size() == 1);
+        MIRA_CHECK(fixture.environment_->executed_inputs()[0].events[0].kind == "swipe");
+        MIRA_CHECK(fixture.transport_->recorded().size() == 3);
+        // The retry request quotes the compile diagnosis as feedback; the
+        // diagnosis is a static string, never the raw model output.
+        MIRA_CHECK(fixture.transport_->recorded()[1].body.find(
+                      "did not compile to an action") != std::string::npos);
+        MIRA_CHECK(fixture.transport_->recorded()[1].body.find(
+                      "swipe requires four canonical coordinates") != std::string::npos);
+        MIRA_CHECK(!result.value().steps.empty() &&
+                   result.value().steps.front().phase == StepPhase::Recovering);
+        MIRA_CHECK(!result.value().steps.empty() &&
+                   result.value().steps.front().note.find(
+                       "swipe requires four canonical coordinates") != std::string::npos);
+    }
+    {
+        // No recovery budget: the compile failure stays a terminal Failed
+        // and nothing is dispatched.
+        LoopFixture fixture;
+        fixture.activate();
+        fixture.spec().profile_id = fixture.profile_->id;
+        fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 0});
+        ModelDoneVerifier verifier;
+        auto result = loop.run(fixture.spec(), loop_context(), verifier);
+        MIRA_CHECK(result.has_value());
+        MIRA_CHECK(result.value().outcome == LoopOutcome::Failed);
+        MIRA_CHECK(result.value().safe_summary.find("did not compile") !=
+                   std::string::npos);
+        MIRA_CHECK(fixture.environment_->executed_inputs().empty());
+        MIRA_CHECK(fixture.transport_->recorded().size() == 1);
+    }
+    {
+        // Persistently missing parameters exhaust the recovery budget and
+        // settle as Failed after exactly one feedback retry.
+        LoopFixture fixture;
+        fixture.activate();
+        fixture.spec().profile_id = fixture.profile_->id;
+        for (int index = 0; index < 2; ++index) {
+            fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"still no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        }
+        AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+        ModelDoneVerifier verifier;
+        auto result = loop.run(fixture.spec(), loop_context(), verifier);
+        MIRA_CHECK(result.has_value());
+        MIRA_CHECK(result.value().outcome == LoopOutcome::Failed);
+        MIRA_CHECK(result.value().recoveries == 1);
+        MIRA_CHECK(fixture.environment_->executed_inputs().empty());
+        MIRA_CHECK(fixture.transport_->recorded().size() == 2);
+    }
+    return 0;
+}
+
 // The loop-built screenshot reference must satisfy a content-addressed
 // consumer: every existing loop test exercises the enforced fetch, this
 // focused check pins the semantics of the enforcement itself (issue #19).
@@ -412,6 +487,9 @@ int main() {
         return status;
     }
     if (const int status = malformed_decision_triggers_bounded_repair(); status != 0) {
+        return status;
+    }
+    if (const int status = param_missing_decision_recovers_with_feedback(); status != 0) {
         return status;
     }
     if (const int status = artifact_reference_digest_is_enforced(); status != 0) {

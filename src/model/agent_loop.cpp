@@ -511,8 +511,26 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
 
         auto sequence = compile_discrete_action(decision.value);
         if (!sequence) {
+            // A decision that passes the schema but misses action parameters
+            // is semantically repairable: the compile error is a static,
+            // safe-to-quote diagnosis, so the next request carries it as
+            // feedback instead of settling the whole loop (issue #21).
+            if (result.recoveries < config_.max_recoveries_per_step) {
+                ++result.recoveries;
+                record.phase = StepPhase::Recovering;
+                record.note = "decision compile failed; recovering: " +
+                              sequence.error().safe_message;
+                result.steps.push_back(std::move(record));
+                feedback = "The previous decision did not compile to an action: " +
+                           sequence.error().safe_message +
+                           ". Resubmit the decision with every required parameter "
+                           "for the chosen action (coordinates in [0,1], type text).";
+                continue;
+            }
             result.outcome = LoopOutcome::Failed;
-            result.safe_summary = "decision did not compile to a discrete action";
+            result.safe_summary =
+                "decision did not compile to a discrete action: " +
+                sequence.error().safe_message;
             result.steps.push_back(std::move(record));
             break;
         }

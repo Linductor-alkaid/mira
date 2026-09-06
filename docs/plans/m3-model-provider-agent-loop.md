@@ -446,3 +446,12 @@ input 达到 `InteropVerified` 的 profile，为 Mira 视觉闭环提供可用 V
 实现、测试与验收见
 [维护计划 maintenance-2026-09-transport-and-image-media.md](maintenance-2026-09-transport-and-image-media.md)。
 本里程碑既有验证记录（含 MiniMax/SiliconFlow 互操作分级声明）保留不变。
+
+2026-09-06：M3 交付物维护记录（非里程碑重开，M3 保持 Completed）。miracle 第三轮反馈
+GitHub #21（`MIR-20260906-009`，P1）：决策 schema 不约束动作参数，参数缺失决策在
+compile 阶段 fail-closed 且无 repair 重试。修复采用可恢复语义——`compile_discrete_action`
+失败在 `max_recoveries_per_step` 预算内以编译诊断作为下一轮 feedback 重试，预算耗尽
+才终态 `Failed`；schema 条件必填（`allOf`/`if-then`）因 guided-decoding 端点关键字
+支持度风险暂缓。实现、测试与验收见
+[维护计划 maintenance-2026-09-decision-compile-repair.md](maintenance-2026-09-decision-compile-repair.md)。
+本里程碑既有验证记录保留不变。
