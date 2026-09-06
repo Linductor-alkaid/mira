@@ -110,7 +110,10 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
   `LoopStepRecord`（观察、请求、决策 digest、动作摘要、验证结果）。
 - `compile_discrete_action(decision)`：把已验证决策编译为 `InputSequence`；坐标必须
   是规范 `[0, 1]`，越界 fail closed。`agent_decision_schema()` 是闭环标准决策 schema，
-  其 digest 随每个请求记录。
+  其 digest 随每个请求记录。schema 不做动作参数条件必填（wire 关键字兼容边界，见
+  [维护计划](../plans/maintenance-2026-09-decision-compile-repair.md)）：通过 schema 但
+  缺参数的决策在 compile 失败，循环在 `max_recoveries_per_step` 预算内把编译诊断
+  （静态安全字符串）作为下一轮请求 feedback 重试，预算耗尽才终态 `Failed`。
 - 图像 wire 媒体类型（[DEC-013](../decisions/DEC-013-transport-export-and-image-media.md)）：
   `build_request` 的截图 `ArtifactRef`（media type / byte size）来自
   `ScreenFrameDescriptor.payload_*`（工件发布时的 store 记录），不假设原始帧布局——
