@@ -36,8 +36,10 @@ miracle 第二轮真机反馈（GitHub #14、#15）暴露两个系统性缺口�
      `payload_digest`，由 adapter 在工件 commit 时从 store 记录填充（android 原始帧
      如实标 `image/x-host-frame`，simulator 标 `image/x-rgba8888`），校验强制三者
      齐备。这三个字段与 `payload_artifact` 一起构成"已发布载荷的完整 store 记录引用"。
-   - `build_request` 的截图 `ArtifactRef`（media type + byte size）取自上述字段，
-     不再假设原始帧布局；内联门槛按实际载荷字节数判定。
+   - `build_request` 的截图 `ArtifactRef`（media type + byte size + digest）取自上述
+     字段，不再假设原始帧布局；内联门槛按实际载荷字节数判定。digest 必须随引用
+     传递：内容寻址消费者以 id+digest+byte_size 重建 descriptor 后 `open()`，
+     缺失即完整性校验失败（#19 回归，测试侧 `SimulatorArtifactSource` 同步校验）。
    - 宿主转码路径：注入自有 `IArtifactStore`（DEC-012）在 commit 时转码 RGBA→
      PNG/JPEG，返回的描述符即决定 wire 媒体类型与大小；或经
      `AndroidHostAdapter::artifact_store()` 读取句柄转码后另存。

@@ -252,10 +252,13 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
         // Wire metadata comes from the published artifact record, never from
         // an assumed raw-frame layout: hosts that transcode captures to
         // PNG/JPEG keep control of the wire media type and size, and the
-        // inline-size gate sees the real payload size (DEC-013).
+        // inline-size gate sees the real payload size (DEC-013). The digest
+        // travels with the reference because content-addressed consumers
+        // rebuild their descriptor from it and fail closed on any mismatch.
         reference.media_type = screen.payload_media_type;
         reference.sensitivity = Sensitivity::Internal;
         reference.byte_size = screen.payload_byte_size;
+        reference.digest = screen.payload_digest;
         ImagePart image;
         image.source = reference;
         image.detail = ImageDetail::Low;
