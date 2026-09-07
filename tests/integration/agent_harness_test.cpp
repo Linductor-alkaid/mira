@@ -1,9 +1,10 @@
-// Single-system harness integration (MNT-202609-16): one MiraRuntime session
-// hosts an AgentLoop that runs as an Executor-managed task, executes a BuiltIn
-// tool, injects a mid-session user message and settles into a terminal task
-// state, with every conversation turn reconstructable from the event store.
-// Before the 2026-09 harness closure round the loop was only ever driven by
-// standalone m3 tests; this test composes the whole control plane.
+// Single-system harness integration: one MiraRuntime session hosts an
+// AgentLoop that runs as an Executor-managed task, executes a BuiltIn tool,
+// injects a mid-session user message and settles into a terminal task state,
+// with every conversation turn reconstructable from the event store
+// (MNT-202609-16). A second scenario pins the user-withdrawal semantics
+// (MNT-202609-19, DEC-018): takeover releases platform input and paused or
+// taken-over tasks admit no new operations.
 
 #include "support/harness_support.hpp"
 
@@ -76,7 +77,7 @@ using namespace mira::testing;
 
 } // namespace
 
-int main() {
+int full_harness_session() {
     // The host owns one Executor for loop work; the runtime owns its own
     // serial control plane (DEC-001).
     executor::Executor executor;
@@ -221,4 +222,93 @@ int main() {
     MIRA_CHECK(runtime.finish_shutdown().clean);
     MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
     return 0;
+}
+
+// Counts best-effort platform releases so the scenario can assert that
+// takeover converges in-flight input without trusting the simulator.
+class InterruptCountingEnvironment final : public IEnvironment {
+  public:
+    explicit InterruptCountingEnvironment(std::shared_ptr<IEnvironment> inner)
+        : inner_(std::move(inner)) {}
+
+    EnvironmentCapabilities capabilities() const override { return inner_->capabilities(); }
+    Result<Observation> observe(const ObservationRequest &request,
+                                const OperationContext &context) override {
+        return inner_->observe(request, context);
+    }
+    Result<ExecutionReceipt> execute(const InputSequence &input,
+                                     const OperationContext &context) override {
+        return inner_->execute(input, context);
+    }
+    Result<void> interrupt(const OperationContext &context) override {
+        ++releases_;
+        return inner_->interrupt(context);
+    }
+    [[nodiscard]] int releases() const { return releases_.load(); }
+
+  private:
+    std::shared_ptr<IEnvironment> inner_;
+    std::atomic<int> releases_{0};
+};
+
+int takeover_releases_input_and_blocks_operations() {
+    const auto environment = std::make_shared<InterruptCountingEnvironment>(
+        std::make_shared<SimulatorEnvironment>(SimulatorSetup::single_display()));
+    MiraRuntime runtime({2, 16, 64});
+    MIRA_CHECK(runtime.initialize());
+    const auto session = runtime.open_session(environment);
+    MIRA_CHECK(session);
+    MIRA_CHECK(session.value().command.receipt(std::chrono::seconds(2)));
+    MIRA_CHECK(session.value().command.outcome(std::chrono::seconds(2)));
+
+    const auto task = runtime.submit_task(session.value().id, TaskSpec{"hold the device"});
+    MIRA_CHECK(task);
+    MIRA_CHECK(task.value().command.outcome(std::chrono::seconds(2)));
+    const auto task_id = task.value().id;
+
+    // Active tasks admit operations.
+    const auto admitted = runtime.begin_operation(task_id, StepId::generate());
+    MIRA_CHECK(admitted);
+
+    // Paused tasks admit none: the user withdrew the environment.
+    const auto paused = runtime.pause_task(task_id);
+    MIRA_CHECK(paused && paused.value().outcome(std::chrono::seconds(2)));
+    MIRA_CHECK(runtime.task_snapshot(task_id).value().state == TaskState::Paused);
+    MIRA_CHECK(!runtime.begin_operation(task_id, StepId::generate()));
+    // The operation opened before the pause settles stale (epoch advanced).
+    const auto late = runtime.admit_operation_completion(admitted.value());
+    MIRA_CHECK(late && late.value().outcome(std::chrono::seconds(2)).value().status ==
+                           SettlementStatus::NoOp);
+
+    const auto resumed = runtime.resume_task(task_id);
+    MIRA_CHECK(resumed && resumed.value().outcome(std::chrono::seconds(2)));
+    MIRA_CHECK(runtime.task_snapshot(task_id).value().state == TaskState::Observing);
+    MIRA_CHECK(runtime.begin_operation(task_id, StepId::generate()));
+
+    // Takeover converges autonomous activity: platform input is released and
+    // the taken-over task admits no new operations (DEC-018).
+    const auto before_takeover = environment->releases();
+    const auto takeover = runtime.request_human_takeover(session.value().id);
+    MIRA_CHECK(takeover && takeover.value().outcome(std::chrono::seconds(2)));
+    MIRA_CHECK(environment->releases() == before_takeover + 1);
+    MIRA_CHECK(runtime.task_snapshot(task_id).value().state == TaskState::SuspendedForTakeover);
+    MIRA_CHECK(!runtime.begin_operation(task_id, StepId::generate()));
+
+    // Release re-opens the environment for autonomous work: the task re-observes.
+    const auto release = runtime.release_human_takeover(session.value().id);
+    MIRA_CHECK(release && release.value().outcome(std::chrono::seconds(2)));
+    MIRA_CHECK(runtime.task_snapshot(task_id).value().state == TaskState::Observing);
+    MIRA_CHECK(runtime.begin_operation(task_id, StepId::generate()));
+
+    const auto shutdown = runtime.request_shutdown();
+    MIRA_CHECK(shutdown && shutdown.value().outcome(std::chrono::seconds(2)));
+    MIRA_CHECK(runtime.finish_shutdown().clean);
+    return 0;
+}
+
+int main() {
+    if (const int code = full_harness_session(); code != 0) {
+        return code;
+    }
+    return takeover_releases_input_and_blocks_operations();
 }

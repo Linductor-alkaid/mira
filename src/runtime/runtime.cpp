@@ -508,6 +508,12 @@ Result<CommandHandle> MiraRuntime::request_human_takeover(SessionId session_id) 
             }
         }
         session.state = SessionState::HumanControlled;
+        // Takeover must converge autonomous activity, not just block new
+        // actions: the best-effort platform release drops in-flight input and
+        // unblocks environment waits (AGENTS.md Human Takeover contract).
+        // Idempotent by the IEnvironment::interrupt contract, so a NoOp
+        // environment is unaffected.
+        static_cast<void>(session.environment->interrupt(make_control_context()));
         Impl::set_receipt(handle, CommandKind::RequestTakeover, ReceiptStatus::Accepted, sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied);
     });
@@ -651,6 +657,14 @@ Result<OperationKey> MiraRuntime::begin_operation(TaskId task_id, StepId step_id
         return make_error(ErrorCode::NotFound, "task was not found");
     if (is_terminal(found->second.snapshot.state))
         return make_error(ErrorCode::InvalidState, "task is terminal");
+    const auto state = found->second.snapshot.state;
+    if (state == TaskState::Paused || state == TaskState::SuspendedForTakeover) {
+        // Paused and taken-over tasks admit no new autonomous work: the user
+        // has withdrawn the environment from the agent, so an accepted
+        // operation here would dispatch new actions behind their back.
+        return make_error(ErrorCode::InvalidState,
+                          "task is paused or under human takeover; no new operations are admitted");
+    }
     OperationKey key{task_id, found->second.snapshot.epoch, step_id, OperationId::generate()};
     impl_->operations.emplace(key.operation_id,
                               Impl::OperationRecord{key, OperationState::Submitted});

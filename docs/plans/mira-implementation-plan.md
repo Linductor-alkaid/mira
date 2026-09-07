@@ -127,6 +127,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md) | BuiltIn 工具执行边界与 AgentLoop 工具闭环（GitHub #8） | Accepted | M4 后维护轮 |
 | [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) | 对话事件、会话投影与步边界用户消息 | Accepted | M4 后维护轮 |
 | [DEC-017](../decisions/DEC-017-complete-task-command.md) | 任务终态完成命令 `complete_task` | Accepted | M4 后维护轮 |
+| [DEC-018](../decisions/DEC-018-takeover-input-release-and-operation-admission.md) | Takeover 平台输入释放与暂停态操作准入 | Accepted | M4 后维护轮 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

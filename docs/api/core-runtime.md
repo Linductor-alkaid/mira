@@ -73,7 +73,18 @@ auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pendi
 
 - `open_session` 注入 `std::shared_ptr<IEnvironment>`；Runtime 不拥有平台资源。
 - `begin_operation` / `admit_operation_completion` 是协调者接入点：外部驱动循环（如
-  `AgentLoop`）用它声明操作边界并提交完成。
+  `AgentLoop`）用它声明操作边界并提交完成。`Paused` 与 `SuspendedForTakeover` 状态的
+  任务不接受新操作（`InvalidState`，[DEC-018](../decisions/DEC-018-takeover-input-release-and-operation-admission.md)）；
+  暂停/接管前已登记的操作按 epoch 语义结算为 stale。
+- 暂停与恢复的语义：`pause_task` 递增 epoch，在途操作的迟到完成作废；`resume_task`
+  把任务带回 `Observing` 并再次递增 epoch，宿主重新驱动其循环。循环上下文每轮从目标与
+  常驻指令重建，重新驱动不丢失用户意图，但**不支持从暂停点的执行级续跑**——执行点
+  continuation 由 WorkflowRun 恢复语义承载（M8-05，[架构设计 §7.6](../design/agent_harness_and_workflow_architecture.md)）。
+- `request_human_takeover` 生效时任务转入 `SuspendedForTakeover` 并 best-effort 调用
+  `IEnvironment::interrupt()` 释放在途平台输入与环境等待（DEC-018）；`release_human_takeover`
+  后任务回到 `Observing`（恢复前重新观察）。单任务 `cancel_task` 不调用环境级
+  `interrupt`——同会话多任务共享环境，取消单个任务不得打断其他任务的在途操作；会话级
+  收敛（takeover/close/shutdown）才触发放释。
 - `complete_task`（[DEC-017](../decisions/DEC-017-complete-task-command.md)）：以
   `Completed`/`Failed` 收尾任务。终态幂等按状态区分——重复同终态 `NoOp`、冲突终态拒绝；
   仅当 M1 转换表存在合法路径时接受（`Cancelling` 中的任务只能 `Cancelled` 收尾）；
