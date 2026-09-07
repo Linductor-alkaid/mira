@@ -64,21 +64,21 @@ DEC-009 模组体系、ToolProposals 的模组化执行仍随 M7 重定义处理
 
 ## 4. 工作项
 
-- [ ] `MNT-202609-12` 实现 `BuiltinToolRegistry`（注册校验、暴露快照、fail-closed 执行、
+- [x] `MNT-202609-12` 实现 `BuiltinToolRegistry`（注册校验、暴露快照、fail-closed 执行、
   至多一次派发、`make_wait_tool`）并有单测覆盖全部拒绝路径（DEC-015）。
-- [ ] `MNT-202609-13` AgentLoop 工具分支：ToolProposals 执行、结果以
+- [x] `MNT-202609-13` AgentLoop 工具分支：ToolProposals 执行、结果以
   `mira.agent-loop.tool-result.v1` 输入项回填、`ToolExecuted` 事件、执行预算；无注册表
   保留终态失败（GitHub #8 验收）。
-- [ ] `MNT-202609-14` AgentLoop 用户消息：有界队列、步边界注入、`UserMessageInjected`
+- [x] `MNT-202609-14` AgentLoop 用户消息：有界队列、步边界注入、`UserMessageInjected`
   事件、常驻指令语义（DEC-016）。
-- [ ] `MNT-202609-15` `build_conversation_view` 会话投影与单测（UserMessage/LoopOutcome
+- [x] `MNT-202609-15` `build_conversation_view` 会话投影与单测（UserMessage/LoopOutcome
   两类条目、空会话、可重建性）。
-- [ ] `MNT-202609-16` 集成测试：MiraRuntime 会话（Simulator 环境）内经 Executor 托管
+- [x] `MNT-202609-16` 集成测试：MiraRuntime 会话（Simulator 环境）内经 Executor 托管
   AgentLoop，覆盖工具调用、运行中介入、任务终态与事件/投影一致性；本地全量门禁与 CI
   取证。
-- [ ] `MNT-202609-17` 文档同步：API 手册（新契约与脱敏责任）、架构设计 §2.4/§6.1/§6.6
+- [x] `MNT-202609-17` 文档同步：API 手册（新契约与脱敏责任）、架构设计 §2.4/§6.1/§6.6
   事实修正、M7 验证记录（#8 提前落地说明）、总计划决策索引、GitHub #8 关闭。
-- [ ] `MNT-202609-18` 新增 `complete_task` 命令（DEC-017）：`CommandKind::CompleteTask`、
+- [x] `MNT-202609-18` 新增 `complete_task` 命令（DEC-017）：`CommandKind::CompleteTask`、
   终态幂等（同终态 `NoOp`、冲突终态拒绝）、按 M1 转换表的合法路径判定、完成时递增
   epoch；集成测试覆盖 Completed 结算、重复与冲突路径。
 
@@ -99,7 +99,7 @@ DEC-009 模组体系、ToolProposals 的模组化执行仍随 M7 重定义处理
 
 ## 7. 测试与退出条件
 
-- [ ] `MNT-202609-12` 至 `MNT-202609-17` 全部完成并有可复现验证记录。
+- [x] `MNT-202609-12` 至 `MNT-202609-17` 全部完成并有可复现验证记录。
 - [ ] 脚本化 Provider 的循环工具闭环用例通过：工具调用 -> 执行 -> 结果回填 -> 终态决策。
 - [ ] 注册表全部 fail-closed 路径（未知工具、身份不一致、重复派发、参数不合规、超预算、
   满队列）有负向测试。
@@ -138,3 +138,14 @@ DEC-009 模组体系、ToolProposals 的模组化执行仍随 M7 重定义处理
   真机/真供应商验证随 miracle 消费侧进行；`mbedtls portable` 等平台矩阵由 CI 覆盖。
 - 同步：DEC-015/016/017、API 手册（index/model-agent-loop/core-runtime）、架构设计
   §2.4/§6.1/§6.6、M7 验证记录、总计划 §5 决策索引、参考研究 §9。
+
+2026-09-07：PR [#27](https://github.com/Linductor-alkaid/mira/pull/27) CI 全绿（head
+`0469022`，push pipeline runs
+[`34144350732`](https://github.com/Linductor-alkaid/mira/actions/runs/34144350732)、
+[`34144353867`](https://github.com/Linductor-alkaid/mira/actions/runs/34144353867)）：Linux
+GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64
+（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format 18.1.8 + docs/sbom/
+platform-boundary 检查）全部通过，补齐本机缺失的 clang/clang-tidy 验证。首轮 quality 在
+`agent_loop.cpp` 工具分支报 `bugprone-use-after-move`（move 位于条件 break 内的流分析误报
+路径），以单一 move 点重构修复后复验通过。`MNT-202609-12` 至 `MNT-202609-18` 全部完成；
+GitHub #8 随 PR 合入关闭。
