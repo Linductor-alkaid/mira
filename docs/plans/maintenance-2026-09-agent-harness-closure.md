@@ -1,6 +1,6 @@
 # 维护计划：Agent Harness 闭合（2026-09 第四轮）
 
-> 状态：In Progress
+> 状态：Completed（2026-09-08 关闭）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M4 后维护轮，依据
 > [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)、
@@ -99,15 +99,15 @@ DEC-009 模组体系、ToolProposals 的模组化执行仍随 M7 重定义处理
 
 ## 7. 测试与退出条件
 
-- [ ] `MNT-202609-12` 至 `MNT-202609-20` 全部完成并有可复现验证记录。
-- [ ] 脚本化 Provider 的循环工具闭环用例通过：工具调用 -> 执行 -> 结果回填 -> 终态决策。
-- [ ] 注册表全部 fail-closed 路径（未知工具、身份不一致、重复派发、参数不合规、超预算、
+- [x] `MNT-202609-12` 至 `MNT-202609-20` 全部完成并有可复现验证记录。
+- [x] 脚本化 Provider 的循环工具闭环用例通过：工具调用 -> 执行 -> 结果回填 -> 终态决策。
+- [x] 注册表全部 fail-closed 路径（未知工具、身份不一致、重复派发、参数不合规、超预算、
   满队列）有负向测试。
-- [ ] 集成测试在 Linux 基准环境通过（含 takeover 放释与暂停态准入场景）；Windows/Android
+- [x] 集成测试在 Linux 基准环境通过（含 takeover 放释与暂停态准入场景）；Windows/Android
   构建组合与 sanitizer 由 CI 取证；未运行项保持未勾选并记录补跑条件。
-- [ ] 本地与 CI 的 `check_docs.py`、`check_sbom.py`、`check_platform_boundary.py`、
+- [x] 本地与 CI 的 `check_docs.py`、`check_sbom.py`、`check_platform_boundary.py`、
   clang-format/clang-tidy 通过。
-- [ ] 文档同步完成（含 DEC-018、pause 语义、ActionLease 修正），GitHub #8 关闭并引用
+- [x] 文档同步完成（含 DEC-018、pause 语义、ActionLease 修正），GitHub #8 关闭并引用
   本轮验证记录。
 
 ## 8. 验证记录
@@ -159,3 +159,10 @@ GitHub #8 随 PR 合入关闭。
 `interrupt` 恰好一次、暂停/接管态操作准入拒绝、暂停前操作结算 `NoOp`（stale）、release
 后回 `Observing` 并重新接受操作。m1 既有流程回归通过。本轮不实现执行级续跑（M8-05
 范围），以 API 手册与架构设计文档固化现状语义。CI 证据见下方回填记录。
+
+2026-09-08：PR [#28](https://github.com/Linductor-alkaid/mira/pull/28) CI 全绿（head
+`147072c`，push pipeline runs
+[`34148922136`](https://github.com/Linductor-alkaid/mira/actions/runs/34148922136)、
+[`34148905087`](https://github.com/Linductor-alkaid/mira/actions/runs/34148905087)）：全部
+24 项检查通过，含 quality（clang-tidy 18，补齐本机缺口）与三平台/sanitizer 矩阵。
+`MNT-202609-19`、`MNT-202609-20` 完成，全部退出条件满足，本维护计划关闭（Completed）。
