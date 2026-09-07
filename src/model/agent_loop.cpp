@@ -577,23 +577,23 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 break;
             }
             std::uint32_t failures = 0;
+            std::optional<LoopOutcome> abort;
+            std::string abort_summary;
             for (const auto &proposal : outcome.tool_proposals->proposals) {
                 if (context.cancelled()) {
-                    result.outcome = LoopOutcome::Cancelled;
-                    result.safe_summary = "cancellation requested during tool execution";
-                    result.steps.push_back(std::move(record));
+                    abort = LoopOutcome::Cancelled;
+                    abort_summary = "cancellation requested during tool execution";
                     break;
                 }
                 auto executed = tools_->execute(proposal, context);
                 if (!executed) {
-                    result.outcome = executed.error().code == ErrorCode::Cancelled
-                                         ? LoopOutcome::Cancelled
-                                         : LoopOutcome::Failed;
-                    result.safe_summary =
+                    abort = executed.error().code == ErrorCode::Cancelled
+                                ? LoopOutcome::Cancelled
+                                : LoopOutcome::Failed;
+                    abort_summary =
                         executed.error().code == ErrorCode::Cancelled
                             ? "tool execution was cancelled"
                             : "tool execution rejected: " + executed.error().safe_message;
-                    result.steps.push_back(std::move(record));
                     break;
                 }
                 ++tool_executions;
@@ -613,8 +613,10 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 record.action_summary += "tool:" + proposal.wire_name;
                 tool_results.push_back(std::move(executed).value());
             }
-            if (result.outcome == LoopOutcome::Cancelled ||
-                result.outcome == LoopOutcome::Failed) {
+            if (abort.has_value()) {
+                result.outcome = *abort;
+                result.safe_summary = std::move(abort_summary);
+                result.steps.push_back(std::move(record));
                 break;
             }
             record.note = "executed " + std::to_string(tool_results.size()) + " tool call(s)" +
