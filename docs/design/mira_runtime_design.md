@@ -1,14 +1,20 @@
 # Mira Runtime 设计文档
 
 > 状态：Active  
-> 版本：0.6  
-> 更新日期：2026-08-31  
+> 版本：0.7  
+> 更新日期：2026-09-07  
 > 适用范围：Mira Core、Provider、Controller、Platform Adapter 及其宿主集成
 
 ## 1. 文档目的
 
 本文给出 Mira 第一阶段可实施的整体设计。它定义模块边界、核心数据结构、Runtime 状态机、
 Executor 生命周期、模型与环境接口、离散和连续动作、事件日志、回放、安全策略与测试方案。
+
+2026-09-07 起（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)），
+Mira 的长期目标架构扩展为 Agent Harness 控制平面 + Workflow 数据平面的双路径模型，目标
+分解见[Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)。
+本文仍是 Agent-native 路径与已实现部分的现行规范；Workflow 路径的契约以对应专项设计和
+决策为准，在其冻结前不得引用本文为 Workflow 行为背书。
 
 本文中的“必须”“不得”是实现约束；C++ 代码片段用于表达接口语义，首个可编译版本可以调整
 命名和字段布局，但不能在没有设计评审的情况下改变所有权、取消、错误和线程语义。
@@ -1305,6 +1311,8 @@ Executor。Fake Provider 可以使用屏障和可控结果，但其异步生命�
 ## 26. 参考资料
 
 - 项目约束：[`AGENTS.md`](../../AGENTS.md)
+- 长期架构：[Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)
+  （[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)）
 - Executor API：[`third_party/executor/docs/API.md`](../../third_party/executor/docs/API.md)
 - Executor 集成指南：
   [`third_party/executor/docs/skill/executor-integration/SKILL.md`](../../third_party/executor/docs/skill/executor-integration/SKILL.md)
