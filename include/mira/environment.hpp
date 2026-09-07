@@ -111,7 +111,10 @@ unsupported_required_components(const EnvironmentCapabilities &capabilities,
 
 // Carries the identity, deadline and cooperative cancellation state of one
 // bounded environment operation. Contexts are copied per component capture;
-// long-running captures must poll cancelled() between blocking steps.
+// long-running captures must poll cancelled() between blocking steps. The
+// cancellation probe must stay cheap and must not call back into the runtime
+// or an environment: it runs while environment locks are held, so a probe
+// that takes runtime locks inverts the control plane's own lock order.
 struct OperationContext final {
     SessionId session;
     TaskId task;

@@ -78,6 +78,12 @@ class MiraRuntime final {
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
     Result<CommandHandle> cancel_task(TaskId task_id);
+    // Settles one task as Completed or Failed. Terminal states are idempotent
+    // per state and never revive; the epoch advances so late completions of
+    // in-flight operations settle as stale. Completion is only admitted when
+    // the frozen transition table has a legal path from the current state
+    // (e.g. a cancelling task can only end Cancelled).
+    Result<CommandHandle> complete_task(TaskId task_id, TaskOutcome outcome);
     Result<CommandHandle> request_human_takeover(SessionId session_id);
     Result<CommandHandle> release_human_takeover(SessionId session_id);
     Result<CommandHandle> close_session(SessionId session_id);

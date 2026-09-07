@@ -178,6 +178,39 @@ void AgentLoop::set_event_store(std::shared_ptr<IEventStore> events, RuntimeId r
     session_ = session;
 }
 
+void AgentLoop::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools) {
+    tools_ = std::move(tools);
+}
+
+Result<void> AgentLoop::enqueue_user_message(std::string message) {
+    if (message.empty()) {
+        return loop_error(ErrorCode::InvalidArgument, "user message must not be empty");
+    }
+    std::lock_guard lock(pending_mutex_);
+    if (pending_user_messages_.size() >= config_.max_pending_user_messages) {
+        return loop_error(ErrorCode::ResourceExhausted, "user message queue is full");
+    }
+    pending_user_messages_.push_back(std::move(message));
+    return Result<void>{};
+}
+
+void AgentLoop::drain_user_messages(const AgentLoopSpec &spec,
+                                    std::vector<std::string> &user_instructions) {
+    std::deque<std::string> drained;
+    {
+        std::lock_guard lock(pending_mutex_);
+        drained.swap(pending_user_messages_);
+    }
+    for (auto &message : drained) {
+        emit(spec, "UserMessageInjected",
+             JsonValue::Object{{"text", message},
+                               {"bytes", static_cast<std::int64_t>(message.size())},
+                               {"digest", digest_string(message).to_string()}},
+             EventClass::State);
+        user_instructions.push_back(std::move(message));
+    }
+}
+
 void AgentLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                      EventClass classification) const {
     if (events_ == nullptr) {
@@ -220,7 +253,9 @@ Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
 
 Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
                                               const Observation &observation,
-                                              const std::string &extra_instruction) {
+                                              const std::string &extra_instruction,
+                                              const std::vector<std::string> &user_instructions,
+                                              const std::vector<ToolExecutionRecord> &tool_results) {
     const auto schema = agent_decision_schema();
     ModelRequest request;
     request.contract_version = SchemaVersion{1, 0};
@@ -229,6 +264,12 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
     request.task_id = spec.task_id;
     request.task_epoch = spec.task_epoch;
     request.profile_id = spec.profile_id;
+
+    // Tools are exposed as a deterministic registry snapshot so proposal
+    // resolution can fail closed against exactly what the model saw (DEC-015).
+    if (tools_ != nullptr) {
+        request.tools = tools_->exposed_tools();
+    }
 
     ModelInputItem system_item;
     system_item.role = ModelRole::System;
@@ -240,6 +281,12 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
         "turn as JSON matching the decision schema. Use canonical coordinates in "
         "[0,1]. Return action \"done\" only when the goal is achieved or \"fail\" "
         "when it cannot be achieved.";
+    if (!request.tools.empty()) {
+        system_text.text +=
+            " You may also call the exposed tools when a whole bounded operation "
+            "fits a tool better than a single input event; tool results arrive "
+            "on your next turn.";
+    }
     system_text.sensitivity = Sensitivity::Internal;
     system_item.content.emplace_back(std::move(system_text));
 
@@ -251,6 +298,54 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
     goal_text.text = "Goal: " + spec.goal;
     goal_text.sensitivity = Sensitivity::Internal;
     user_item.content.emplace_back(std::move(goal_text));
+
+    // User follow-ups are standing instructions: once injected they stay in
+    // context for the rest of the run so an adjustment cannot vanish after a
+    // single turn (DEC-016).
+    for (const auto &message : user_instructions) {
+        TextPart follow_up;
+        follow_up.text = "User follow-up: " + message;
+        follow_up.sensitivity = Sensitivity::Internal;
+        user_item.content.emplace_back(std::move(follow_up));
+    }
+
+    // Tool results are untrusted external data: labeled by provenance source,
+    // never promoted to system authority (RULE-09). Bounded per record and in
+    // total so a chatty tool cannot crowd out the observation.
+    std::optional<ModelInputItem> tool_item;
+    if (!tool_results.empty()) {
+        std::string joined;
+        for (const auto &record : tool_results) {
+            std::string line = "tool '" + record.tool_id.to_string() + "' (call " +
+                               record.provider_call_id.value + ")";
+            if (record.failed) {
+                line += " failed: " + record.safe_error_summary;
+            } else {
+                auto serialized = to_json_string(record.result);
+                if (serialized.size() > 2048) {
+                    serialized.resize(2048);
+                    serialized += " [truncated]";
+                }
+                line += " returned: " + serialized;
+            }
+            if (joined.size() + line.size() > 8192) {
+                joined += " [further tool results truncated]";
+                break;
+            }
+            if (!joined.empty()) {
+                joined += "\n";
+            }
+            joined += line;
+        }
+        tool_item.emplace();
+        tool_item->role = ModelRole::User;
+        tool_item->provenance.source = "mira.agent-loop.tool-result.v1";
+        tool_item->authority = Sensitivity::Internal;
+        TextPart tool_text;
+        tool_text.text = "Tool results from the previous turn:\n" + joined;
+        tool_text.sensitivity = Sensitivity::Internal;
+        tool_item->content.emplace_back(std::move(tool_text));
+    }
 
     if (observation.screen.has_value()) {
         const auto &screen = observation.screen->value;
@@ -305,6 +400,9 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
     }
 
     request.input = {std::move(system_item), std::move(user_item)};
+    if (tool_item.has_value()) {
+        request.input.push_back(std::move(*tool_item));
+    }
     request.output_contract.mode = OutputMode::StrictJsonSchema;
     request.output_contract.schema_id =
         SchemaId::parse("6d6972612d6465636973696f6e2d7631").value_or(SchemaId{});
@@ -340,6 +438,11 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
 
     RepairBudget repair_budget{};
     std::string feedback;
+    // Standing user follow-ups (drained at step boundaries) and the tool
+    // results of the previous round, both carried into the next request.
+    std::vector<std::string> user_instructions;
+    std::vector<ToolExecutionRecord> tool_results;
+    std::uint32_t tool_executions = 0;
 
     for (std::uint32_t step = 1; step <= config_.max_steps; ++step) {
         if (context.cancelled()) {
@@ -350,6 +453,8 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                  EventClass::State);
             return result;
         }
+
+        drain_user_messages(spec, user_instructions);
 
         LoopStepRecord record;
         record.step = step;
@@ -372,13 +477,15 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
         record.observation = observation.value().id;
 
         // --- Reason / Plan -----------------------------------------------
-        auto request = build_request(spec, observation.value(), feedback);
+        auto request =
+            build_request(spec, observation.value(), feedback, user_instructions, tool_results);
         if (!request) {
             result.outcome = LoopOutcome::Failed;
             result.safe_summary = "request assembly failed";
             break;
         }
         feedback.clear();
+        tool_results.clear();
         record.model_request = request.value().request_id;
 
         OperationContext model_context = context;
@@ -443,14 +550,82 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             result.steps.push_back(std::move(record));
             break;
         }
+        if (parse_outcome == DecisionParseOutcome::ToolProposals) {
+            // Tool round (DEC-015): execute the resolved proposals through the
+            // BuiltIn boundary, then feed the results back on the next turn.
+            // Registry-level rejections fail closed; model-attributable tool
+            // failures ride back as failed records for the model to repair.
+            if (tools_ == nullptr) {
+                result.outcome = LoopOutcome::Failed;
+                result.safe_summary = "tool proposals require a tool registry; none is attached";
+                result.steps.push_back(std::move(record));
+                break;
+            }
+            if (!outcome.tool_proposals.has_value() ||
+                outcome.tool_proposals->proposals.empty()) {
+                result.outcome = LoopOutcome::Failed;
+                result.safe_summary = "tool proposal batch carried no executable proposal";
+                result.steps.push_back(std::move(record));
+                break;
+            }
+            if (tool_executions + static_cast<std::uint32_t>(
+                                        outcome.tool_proposals->proposals.size()) >
+                config_.max_tool_executions) {
+                result.outcome = LoopOutcome::Failed;
+                result.safe_summary = "tool execution budget exhausted";
+                result.steps.push_back(std::move(record));
+                break;
+            }
+            std::uint32_t failures = 0;
+            for (const auto &proposal : outcome.tool_proposals->proposals) {
+                if (context.cancelled()) {
+                    result.outcome = LoopOutcome::Cancelled;
+                    result.safe_summary = "cancellation requested during tool execution";
+                    result.steps.push_back(std::move(record));
+                    break;
+                }
+                auto executed = tools_->execute(proposal, context);
+                if (!executed) {
+                    result.outcome = executed.error().code == ErrorCode::Cancelled
+                                         ? LoopOutcome::Cancelled
+                                         : LoopOutcome::Failed;
+                    result.safe_summary =
+                        executed.error().code == ErrorCode::Cancelled
+                            ? "tool execution was cancelled"
+                            : "tool execution rejected: " + executed.error().safe_message;
+                    result.steps.push_back(std::move(record));
+                    break;
+                }
+                ++tool_executions;
+                if (executed.value().failed) {
+                    ++failures;
+                }
+                emit(spec, "ToolExecuted",
+                     JsonValue::Object{{"wire_name", proposal.wire_name},
+                                       {"operation_id", proposal.operation_id.to_string()},
+                                       {"failed", executed.value().failed},
+                                       {"arguments_digest",
+                                        proposal.arguments_digest.to_string()}},
+                     EventClass::State);
+                if (!record.action_summary.empty()) {
+                    record.action_summary += ";";
+                }
+                record.action_summary += "tool:" + proposal.wire_name;
+                tool_results.push_back(std::move(executed).value());
+            }
+            if (result.outcome == LoopOutcome::Cancelled ||
+                result.outcome == LoopOutcome::Failed) {
+                break;
+            }
+            record.note = "executed " + std::to_string(tool_results.size()) + " tool call(s)" +
+                          (failures > 0 ? ", " + std::to_string(failures) + " failed" : "");
+            result.steps.push_back(std::move(record));
+            continue;
+        }
         if (parse_outcome == DecisionParseOutcome::Ambiguous ||
-            parse_outcome == DecisionParseOutcome::NoExecutableOutput ||
-            parse_outcome == DecisionParseOutcome::ToolProposals) {
+            parse_outcome == DecisionParseOutcome::NoExecutableOutput) {
             result.outcome = LoopOutcome::Failed;
-            result.safe_summary =
-                parse_outcome == DecisionParseOutcome::ToolProposals
-                    ? "tool proposals are not executable in the M3 loop"
-                    : "model output carried no usable decision";
+            result.safe_summary = "model output carried no usable decision";
             result.steps.push_back(std::move(record));
             break;
         }

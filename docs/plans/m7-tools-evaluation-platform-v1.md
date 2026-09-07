@@ -209,3 +209,12 @@ ToolProposals 不可执行，`src/model/agent_loop.cpp` 对 ToolProposals 解析
 `POST-01` 的证据到位，届时按证据重定义验收（见
 [维护计划 maintenance-2026-09-host-abi-feedback.md](maintenance-2026-09-host-abi-feedback.md)
 `MNT-202609-06`）。在此之前不实现、不排期，本文件状态不变。
+
+2026-09-07：GitHub #8 的**最小闭环**由维护者指令提前落地（依据
+[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 的 Harness 审计结论，
+用户指令优先级高于本文件的触发条件约定）：`BuiltinToolRegistry` 最小执行边界 +
+AgentLoop 工具分支见
+[DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md) 与
+[维护计划 maintenance-2026-09-agent-harness-closure.md](maintenance-2026-09-agent-harness-closure.md)。
+#8 随该轮关闭。本文件状态与范围**不变**：DEC-009 模组体系（manifest/签名/隔离/协商）、
+ToolProposals 的模组化执行与评估体系仍属 M7 重定义范围，原触发条件继续适用。

@@ -71,6 +71,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
+| [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Proposed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -91,6 +92,14 @@ Mira 的长期架构方向确立为 Agent Harness 控制平面 + Workflow 数据
 该决策不改变既有里程碑状态、不解冻 M7、不自动恢复 M5/M6，也不改变 v1 交付边界现状；
 其落地以 M7 重定义或新增里程碑承载，工作项、Executor 路由、测试矩阵与退出条件在对应
 阶段文档定义，阶段划分以设计文档第 16 节为输入。
+
+2026-09-07 起，Workflow 方向的阶段 A 由新增里程碑
+[M8](m8-workflow-contracts.md)（`Proposed`）承载；选择新增里程碑而非重定义 M7 的理由见
+该文件第 1 节。后续阶段 B–F（Runtime 最小闭环、介入与策略、编译与抽象、App Model 与
+导航、Memory 与学习闭环）依次由新增里程碑承载：每个阶段进入 `Planned` 前，先依据
+前一阶段冻结的契约完成对应专项设计与决策，再创建里程碑文件；不对未创建的里程碑预分配
+编号。M7 状态不因该方向改变，GitHub
+[#8](https://github.com/Linductor-alkaid/mira/issues/8) 的处理仍随 M7 重定义。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
@@ -115,6 +124,9 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-012](../decisions/DEC-012-host-adapter-feedback-round1.md) | Host Adapter 第一轮反馈契约修订（artifact 注入、输入时长、UI 树线格式、lease 统计） | Accepted | M4 后维护轮 |
 | [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md) | 传输头文件导出与模型图像 wire 媒体类型（宿主负责编码） | Accepted | M4 后维护轮 |
 | [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) | Agent Harness 控制平面与 Workflow 数据平面双路径架构 | Accepted | M7 重定义（暂定） |
+| [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md) | BuiltIn 工具执行边界与 AgentLoop 工具闭环（GitHub #8） | Accepted | M4 后维护轮 |
+| [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) | 对话事件、会话投影与步边界用户消息 | Accepted | M4 后维护轮 |
+| [DEC-017](../decisions/DEC-017-complete-task-command.md) | 任务终态完成命令 `complete_task` | Accepted | M4 后维护轮 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
