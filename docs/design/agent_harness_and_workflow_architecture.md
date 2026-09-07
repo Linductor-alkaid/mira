@@ -382,8 +382,10 @@ WorkflowRun              （一次执行实例）
 └── result
 ```
 
-WorkflowRun 由现有 Task 生命周期承载：复用 Task 的取消上下文、单写者状态机、
-ActionLease 与事件序列，不引入平行的任务管理设施（`W-01`/`W-07`）。
+WorkflowRun 由现有 Task 生命周期承载：复用 Task 的取消上下文、单写者控制面与
+epoch/`OperationState` 结算和事件序列，不引入平行的任务管理设施（`W-01`/`W-07`）。
+`W-07` 的"动作租约持有者"当前由单写者控制面 + epoch 结算等价强制；Mira 代码中不存在名为
+ActionLease 的构造，若 M8 专项设计需要显式租约对象，其命名与契约在 M8 冻结。
 
 ### 7.3 WorkflowRun 生命周期与人工介入
 
