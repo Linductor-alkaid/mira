@@ -2,9 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-05
+> 更新日期：2026-09-07
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
-> [LLM API 协议设计](../design/llm-api-protocol-design.md)
+> [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
 ## 1. 计划目的
 
@@ -85,6 +85,13 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 与 [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md) 落地：官方网络
 传输头随安装包导出，模型图像 wire 媒体类型改为工件记录驱动并由宿主负责编码。
 
+2026-09-07 起（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)），
+Mira 的长期架构方向确立为 Agent Harness 控制平面 + Workflow 数据平面双路径
+（[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)）。
+该决策不改变既有里程碑状态、不解冻 M7、不自动恢复 M5/M6，也不改变 v1 交付边界现状；
+其落地以 M7 重定义或新增里程碑承载，工作项、Executor 路由、测试矩阵与退出条件在对应
+阶段文档定义，阶段划分以设计文档第 16 节为输入。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -107,6 +114,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-011](../decisions/DEC-011-demo-first-external-validation.md) | Demo 优先验证、M5/M6 终止与外部消费边界 | Accepted | M4 后 |
 | [DEC-012](../decisions/DEC-012-host-adapter-feedback-round1.md) | Host Adapter 第一轮反馈契约修订（artifact 注入、输入时长、UI 树线格式、lease 统计） | Accepted | M4 后维护轮 |
 | [DEC-013](../decisions/DEC-013-transport-export-and-image-media.md) | 传输头文件导出与模型图像 wire 媒体类型（宿主负责编码） | Accepted | M4 后维护轮 |
+| [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) | Agent Harness 控制平面与 Workflow 数据平面双路径架构 | Accepted | M7 重定义（暂定） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
