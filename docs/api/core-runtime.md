@@ -40,8 +40,8 @@
 ### 命令与操作生命周期
 
 - `CommandKind`：串行控制面命令（`OpenSession`、`SubmitTask`、`PauseTask`、
-  `ResumeTask`、`CancelTask`、`RequestTakeover`、`ReleaseTakeover`、`OperationCompletion`、
-  `ShutdownRuntime` 等）。
+  `ResumeTask`、`CancelTask`、`CompleteTask`、`RequestTakeover`、`ReleaseTakeover`、
+  `OperationCompletion`、`ShutdownRuntime` 等）。
 - `CommandReceipt`（`Accepted/Rejected` + `control_sequence`）与 `CommandOutcome`
   （`SettlementStatus`：`Applied/NoOp/Failed/Superseded`）分离"收到"与"生效"。
 - `OperationKey{task, epoch, step, operation}` 标识一次有界环境操作；
@@ -64,6 +64,8 @@ auto paused = runtime.pause_task(task.value().id);   // resume/cancel 同形
 auto takeover = runtime.request_human_takeover(session.value().id);
 auto op = runtime.begin_operation(task.value().id, step_id);
 runtime.admit_operation_completion(op.value());
+auto done = runtime.complete_task(task.value().id,
+                                  TaskOutcome{TaskState::Completed, std::nullopt});
 auto snapshot = runtime.task_snapshot(task.value().id);
 runtime.request_shutdown();
 auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pending_commands}
@@ -72,6 +74,10 @@ auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pendi
 - `open_session` 注入 `std::shared_ptr<IEnvironment>`；Runtime 不拥有平台资源。
 - `begin_operation` / `admit_operation_completion` 是协调者接入点：外部驱动循环（如
   `AgentLoop`）用它声明操作边界并提交完成。
+- `complete_task`（[DEC-017](../decisions/DEC-017-complete-task-command.md)）：以
+  `Completed`/`Failed` 收尾任务。终态幂等按状态区分——重复同终态 `NoOp`、冲突终态拒绝；
+  仅当 M1 转换表存在合法路径时接受（`Cancelling` 中的任务只能 `Cancelled` 收尾）；
+  完成递增 epoch，使在途操作的迟到完成按 stale 语义丢弃。
 - `request_shutdown()` 停止接受新命令；`finish_shutdown()` 返回 `ShutdownReport`，
   未决命令数量与 `clean` 标志必须被检查。
 

@@ -79,12 +79,13 @@ Workflow Run
 
 | 目标能力 | 现状 | 关系 |
 | --- | --- | --- |
-| Agent Harness 运行时（Session、Task、Agent Loop、状态机、事件、恢复、Takeover） | M0–M4 已交付核心 | 复用，不重写；Workflow 路径在其之上扩展 |
+| Agent Harness 运行时（Session、Task、Agent Loop、状态机、事件、恢复、Takeover） | M0–M4 已交付核心；2026-09 维护轮补齐工具执行闭环（[DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md)）、对话消息与投影（[DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md)）、任务完成命令（[DEC-017](../decisions/DEC-017-complete-task-command.md)）与 Loop-Runtime 集成验证 | 复用，不重写；Workflow 路径在其之上扩展 |
 | OpenAI-compatible Model Provider、Decision 解析校验 | M3 已交付 | 复用；Decision/Tool 通道按第 6.5 节扩展 |
 | Observation Pipeline、截图与结构化 UI、坐标与 Android Host ABI | M2 已交付 | 复用；为 App Model 与感知层级提供输入 |
 | Context/Memory、EventStore 事实源、Checkpoint、Replay | M1/M4 已交付 | 复用；Memory 按第 10 节演进，EventStore 保持事实源 |
+| Tool Registry / 模组体系（ITool/ToolModule，[DEC-009](../decisions/DEC-009-tool-module-boundary.md)） | **未实现**；现有的是 DEC-015 的最小 BuiltIn 执行边界（无 manifest/签名/隔离） | 模组体系随 M7 重定义落地，届时吸纳 BuiltIn 边界 |
 | 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义 |
-| Workflow Compiler/Runtime、App Model、Navigation Planner、对话介入 | 未实现 | 本方向新增，按第 16 节分阶段落地 |
+| Workflow Compiler/Runtime、App Model、Navigation Planner、对话介入的完整语义（patch/三类目标区分） | 未实现（对话事件与步边界消息已按 DEC-016 交付最小机制） | 本方向新增，按第 16 节分阶段落地 |
 
 ## 3. 核心设计原则
 
@@ -212,12 +213,13 @@ flowchart TD
 ```text
 Agent Harness
 ├── Session                    已有（扩展，见 6.2）
-├── Agent Loop                 已有（扩展，见 6.5）
+├── Agent Loop                 已有（2026-09 起含工具执行闭环，见 6.5）
 ├── Model Provider             已有（IModelProvider）
-├── Tool Registry              已有（ITool / ToolModule）
+├── Tool Registry              最小 BuiltIn 执行边界已交付（DEC-015）；
+│                              ITool/ToolModule 模组体系未实现，属 M7（DEC-009）
 ├── Context Manager            已有（扩展，见 6.4）
-├── Agent State                已有（Task 状态机）
-├── Event Bus / EventStore     已有
+├── Agent State                已有（Task 状态机；2026-09 起含 complete_task，DEC-017）
+├── Event Bus / EventStore     已有（2026-09 起含对话事件，DEC-016）
 ├── Interrupt Manager          已有（Pause/Cancel/Takeover）
 ├── Permission Manager         已有（SafetyPolicy / DEC-004）
 ├── Recovery Manager           已有（RecoveryPolicy）
@@ -337,7 +339,10 @@ Skill（search_contact、open_chat、send_message、attach_file、select_photo�
 Workflow（send_daily_report、submit_expense、backup_photos）
 ```
 
-- Primitive Tool 对应现有 `ITool`/ToolModule 体系，边界不变（DEC-009）。
+- Primitive Tool 的现有载体是 [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md)
+  的最小 BuiltIn 执行边界（`BuiltinToolRegistry`，进程内、无模组生命周期）；完整
+  `ITool`/ToolModule 模组体系（DEC-009）未实现，随 M7 重定义落地并吸纳 BuiltIn 边界，
+  边界方向不变。
 - Skill 是参数化、可复用的动作组合，作为 Workflow 的构件；其注册与暴露沿用 Tool 通道。
 - Workflow 是受版本管理的执行程序（第 7 节），不是普通工具的简单堆叠。
 
@@ -806,6 +811,9 @@ Environment Model、Recovery Pattern 与执行经验的持续积累，而不是�
   execution——学习如何表达可恢复、可中断、有状态的任务。
 - **OpenAI Agents SDK 等**：run lifecycle、tool、handoff、trace、guardrail、agent
   state——学习 Harness API 的抽象边界。
+
+对 Pi 与 LangGraph 的首轮机制研究（含映射到 Mira 缺口与有意分歧清单）见
+[Agent Harness 参考研究](harness_reference_study.md)（2026-09-07，研究输入）。
 
 ## 19. 测试策略（方向级）
 

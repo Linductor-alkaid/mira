@@ -54,8 +54,11 @@ mira_add_m3_test(mira_m3_supervisor_budget_test m3/m3_supervisor_budget_test.cpp
 mira_add_m3_test(mira_m3_transport_test m3/m3_transport_test.cpp)
 mira_add_m3_test(mira_m3_gateway_test m3/m3_gateway_test.cpp)
 mira_add_m3_test(mira_m3_agent_loop_test m3/m3_agent_loop_test.cpp)
+mira_add_m3_test(mira_m3_tool_executor_test m3/m3_tool_executor_test.cpp)
+mira_add_m3_test(mira_m3_tool_loop_test m3/m3_tool_loop_test.cpp)
 mira_add_m3_test(mira_m3_replay_test m3/m3_replay_test.cpp)
 mira_add_m3_test(mira_m3_upload_test m3/m3_upload_test.cpp)
+mira_add_test(mira_agent_harness_test integration/agent_harness_test.cpp integration)
 
 if(TARGET mira_openssl_transport)
     mira_add_m3_test(mira_m3_tls_test m3/m3_tls_test.cpp)

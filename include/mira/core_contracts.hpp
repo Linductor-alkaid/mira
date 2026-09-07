@@ -409,6 +409,7 @@ enum class CommandKind : std::uint8_t {
     PauseTask,
     ResumeTask,
     CancelTask,
+    CompleteTask,
     RequestTakeover,
     ReleaseTakeover,
     OperationCompletion,

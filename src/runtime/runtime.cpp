@@ -3,12 +3,14 @@
 #include <executor/executor.hpp>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <future>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace mira {
 namespace {
@@ -30,6 +32,46 @@ Result<T> wait_result(const std::shared_future<T> &future, std::chrono::millisec
         return make_error(ErrorCode::DeadlineExceeded, "command handle wait timed out", true);
     }
     return future.get();
+}
+
+// Reachability over the frozen task transition table. Completion is admitted
+// only when a legal path exists; the intermediate phases are traversed
+// atomically inside one control-plane command, so no observer ever sees them
+// as distinct states (e.g. a cancelling task has no path except Cancelled).
+[[nodiscard]] bool task_state_path_exists(TaskState from, TaskState to) {
+    if (from == to) {
+        return true;
+    }
+    const std::array<TaskState, 15> kStates{
+        TaskState::Idle,      TaskState::Observing,       TaskState::Reasoning,
+        TaskState::Planning,  TaskState::Acting,          TaskState::Verifying,
+        TaskState::Recovering, TaskState::Pausing,        TaskState::Paused,
+        TaskState::TakeoverSettling, TaskState::SuspendedForTakeover,
+        TaskState::Cancelling, TaskState::Completed,      TaskState::Failed,
+        TaskState::Cancelled,
+    };
+    std::array<bool, 15> visited{};
+    std::vector<TaskState> frontier{from};
+    const auto index_of = [](TaskState state) {
+        return static_cast<std::size_t>(state);
+    };
+    visited[index_of(from)] = true;
+    while (!frontier.empty()) {
+        const auto current = frontier.back();
+        frontier.pop_back();
+        for (const auto candidate : kStates) {
+            const auto index = index_of(candidate);
+            if (visited[index] || !valid_task_transition(current, candidate)) {
+                continue;
+            }
+            if (candidate == to) {
+                return true;
+            }
+            visited[index] = true;
+            frontier.push_back(candidate);
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -245,6 +287,69 @@ class MiraRuntime::Impl final {
             set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
         });
     }
+
+    Result<CommandHandle> complete_task(TaskId task_id, TaskOutcome outcome) {
+        return enqueue(CommandKind::CompleteTask,
+                       [this, task_id, outcome](std::uint64_t sequence,
+                                                CommandHandle::State &state) {
+            std::lock_guard lock(records_mutex);
+            const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
+            const auto found = tasks.find(task_id);
+            if (found == tasks.end()) {
+                const auto reason = make_error(ErrorCode::NotFound, "task was not found");
+                set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Rejected, sequence,
+                            reason);
+                set_outcome(handle, SettlementStatus::Failed, reason);
+                return;
+            }
+            auto &snapshot = found->second.snapshot;
+            if (outcome.terminal_state != TaskState::Completed &&
+                outcome.terminal_state != TaskState::Failed) {
+                const auto reason =
+                    make_error(ErrorCode::InvalidArgument,
+                               "task completion requires the Completed or Failed terminal state");
+                set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Rejected, sequence,
+                            reason);
+                set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
+                return;
+            }
+            if (is_terminal(snapshot.state)) {
+                // Terminal states are idempotent per state and never revive:
+                // repeating the same settlement is a NoOp, a conflicting one
+                // is rejected (RULE-03).
+                const auto reason = make_error(
+                    ErrorCode::InvalidState,
+                    snapshot.state == outcome.terminal_state
+                        ? "task already settled in the requested terminal state"
+                        : "task already settled in a different terminal state");
+                set_receipt(handle, CommandKind::CompleteTask,
+                            snapshot.state == outcome.terminal_state ? ReceiptStatus::Accepted
+                                                                     : ReceiptStatus::Rejected,
+                            sequence, reason);
+                set_outcome(handle,
+                            snapshot.state == outcome.terminal_state ? SettlementStatus::NoOp
+                                                                     : SettlementStatus::Failed,
+                            reason, snapshot);
+                return;
+            }
+            if (!task_state_path_exists(snapshot.state, outcome.terminal_state)) {
+                const auto reason = make_error(
+                    ErrorCode::InvalidState,
+                    "no legal task transition path to the requested terminal state");
+                set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Rejected, sequence,
+                            reason);
+                set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
+                return;
+            }
+            snapshot.state = outcome.terminal_state;
+            ++snapshot.epoch;
+            snapshot.terminal_outcome = outcome;
+            snapshot.control_sequence = sequence;
+            snapshot.updated_at = Timestamp::now();
+            set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Accepted, sequence);
+            set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
+        });
+    }
 };
 
 MiraRuntime::MiraRuntime(RuntimeConfig config) : impl_(std::make_unique<Impl>(config)) {}
@@ -354,6 +459,10 @@ Result<CommandHandle> MiraRuntime::resume_task(TaskId task_id) {
 
 Result<CommandHandle> MiraRuntime::cancel_task(TaskId task_id) {
     return impl_->simple_task_command(CommandKind::CancelTask, task_id, TaskState::Cancelled);
+}
+
+Result<CommandHandle> MiraRuntime::complete_task(TaskId task_id, TaskOutcome outcome) {
+    return impl_->complete_task(task_id, outcome);
 }
 
 Result<CommandHandle> MiraRuntime::request_human_takeover(SessionId session_id) {

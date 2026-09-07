@@ -111,6 +111,8 @@ add_library(mira_core
     src/model/model_upload.cpp
     src/model/model_gateway.cpp
     src/model/model_replay.cpp
+    src/model/tool_executor.cpp
+    src/model/conversation_log.cpp
     src/model/agent_loop.cpp
 )
 add_library(Mira::core ALIAS mira_core)

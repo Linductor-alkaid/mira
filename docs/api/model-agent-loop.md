@@ -102,7 +102,9 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
                        context, verifier);
 ```
 
-- `AgentLoopConfig`：`max_steps`、每步恢复上限、模型调用 deadline、观察新鲜度期望。
+- `AgentLoopConfig`：`max_steps`、每步恢复上限、模型调用 deadline、观察新鲜度期望、
+  单次运行工具执行预算 `max_tool_executions`、用户消息队列上限
+  `max_pending_user_messages`。
 - 每次迭代是有界工作单元；取消、准入拒绝和终态在任何新动作派发前停止循环。
 - `ILoopVerifier::verify(fresh_observation, decision)`：完成后必须对新观察验证，
   模型自称"done"永远不够（`Verdict::Satisfied/NotSatisfied/Invalid`）。
@@ -120,6 +122,55 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
   宿主在注入的 store 内转码（RGBA→PNG/JPEG）即可控制 wire 格式，内联 8 MiB 门槛按
   实际编码字节数判定。方言层对非 `image/*` 媒体类型（如未编码原始帧的
   `application/octet-stream`）在 fetch 前 fail closed（`UnsupportedCapability`）。
+
+## tool_executor.hpp：BuiltIn 工具执行边界
+
+[DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md) 定义的最小 BuiltIn 工具
+边界（模组体系仍属 M7/[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）：
+
+```cpp
+auto registry = std::make_shared<mira::BuiltinToolRegistry>();
+auto wait = mira::make_wait_tool();
+registry->register_tool(wait.spec, wait.handler);
+loop.set_tool_registry(registry);
+```
+
+- `BuiltinToolSpec`：ToolId、版本、wire_name（不得与宿主供应商工具名冲突）、描述、
+  参数 JSON Schema（须过 `gate_schema_subset`）、副作用声明。注册表按 wire_name 排序
+  生成确定性 `ExposedToolSpec` 快照进入 `ModelRequest.tools`。
+- 执行 fail closed：未注册工具、与暴露快照不一致的身份（运行中被篡改）、重复
+  `OperationId`（至多一次派发）拒绝；参数经本地 schema 校验。模型可修复的失败
+  （参数不合规、处理函数错误）以 `failed` 的 `ToolExecutionRecord` 回填下一轮请求；
+  取消传播为 `Cancelled` 错误。
+- 处理函数在循环占用的 Executor 任务内联执行：必须有界、轮询取消、不得抛出。
+  `wait` 工具硬上限 10 秒，切片睡眠轮询取消。
+- 事件：每次执行发 `ToolExecuted`（wire_name、operation_id、failed、参数摘要 digest），
+  不携带原始参数或结果载荷。
+
+## agent_loop.hpp：工具分支与用户消息
+
+- 挂接注册表后，模型 ToolProposals 逐个执行、结果以
+  `mira.agent-loop.tool-result.v1` 来源的输入项回填下一轮（每条 2 KiB、总量 8 KiB
+  截断）；未挂接注册表时工具提案 fail closed，循环终态 `Failed`。单次运行执行数超过
+  `max_tool_executions` 终态 `Failed`（RULE-08）。
+- `enqueue_user_message(text)`（[DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md)）：
+  线程安全、有界队列；消息在步边界取出、发 `UserMessageInjected` 事件（文本、字节数、
+  digest），并作为常驻指令进入本轮及后续每轮请求（provenance
+  `mira.agent-loop.user-message.v1`）。**脱敏责任在宿主**：入队文本原样进入事件存储
+  与模型请求，凭据、输入法敏感内容必须在入队前移除。
+
+## conversation_log.hpp：会话对话投影
+
+[DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) 的投影 API：
+
+```cpp
+auto view = mira::build_conversation_view(event_store, session_id);
+// std::vector<ConversationEntry{kind: UserMessage|LoopOutcome, recorded_at, text, origin}>
+```
+
+EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与 `LoopSettled` 事件
+按会话顺序重建，不可读载荷 fail closed。完整对话 patch、暂停/恢复语义由 M8-04 冻结，
+本投影不承载它们。
 
 ## 相关文档
 

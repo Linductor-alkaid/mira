@@ -5,9 +5,12 @@
 #include <mira/model_gateway.hpp>
 #include <mira/model_schema.hpp>
 #include <mira/observation.hpp>
+#include <mira/tool_executor.hpp>
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -62,6 +65,11 @@ struct AgentLoopConfig final {
     std::chrono::milliseconds model_call_deadline{30'000};
     // Observation freshness expectations for verification captures.
     std::chrono::milliseconds observation_max_age{2'000};
+    // Whole-run budget for tool executions (RULE-08); exhausting it settles
+    // the loop as Failed instead of queuing unbounded work.
+    std::uint32_t max_tool_executions = 32;
+    // Bounded user-message queue; overflow rejects the enqueue.
+    std::size_t max_pending_user_messages = 16;
 };
 
 // Verifies progress against a fresh observation after each action. Returning
@@ -95,6 +103,12 @@ struct AgentLoopSpec final {
 // the model gateway. Each iteration is a bounded work unit; cancellation,
 // admission rejection and terminal states stop the loop before any new
 // action is dispatched.
+//
+// With a tool registry attached (DEC-015), tool proposals execute through the
+// BuiltIn boundary and their results feed the next request. Without one, tool
+// proposals settle the loop as Failed. User messages (DEC-016) can be enqueued
+// from any thread while run() executes; they are drained at step boundaries
+// and stay in context for the rest of the run.
 class AgentLoop final {
   public:
     AgentLoop(std::shared_ptr<IEnvironment> environment, ModelGateway &gateway,
@@ -102,6 +116,13 @@ class AgentLoop final {
 
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime,
                          SessionId session);
+    void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
+
+    // Queues one user message for injection at the next step boundary.
+    // Rejects when the bounded queue is full or the message is empty. Text is
+    // stored and replayed into model requests verbatim: hosts must apply
+    // their own redaction policy before enqueueing (DEC-016).
+    [[nodiscard]] Result<void> enqueue_user_message(std::string message);
 
     [[nodiscard]] Result<AgentLoopResult> run(const AgentLoopSpec &spec,
                                               const OperationContext &context,
@@ -113,9 +134,15 @@ class AgentLoop final {
                                                    ObservationMode mode);
     [[nodiscard]] Result<ModelRequest>
     build_request(const AgentLoopSpec &spec, const Observation &observation,
-                  const std::string &extra_instruction);
+                  const std::string &extra_instruction,
+                  const std::vector<std::string> &user_instructions,
+                  const std::vector<ToolExecutionRecord> &tool_results);
     void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
               EventClass classification) const;
+    // Pops every pending message, records UserMessageInjected events and
+    // appends the texts to the standing instructions for this run.
+    void drain_user_messages(const AgentLoopSpec &spec,
+                             std::vector<std::string> &user_instructions);
 
     std::shared_ptr<IEnvironment> environment_;
     ModelGateway &gateway_;
@@ -123,6 +150,9 @@ class AgentLoop final {
     std::shared_ptr<IEventStore> events_;
     RuntimeId runtime_;
     SessionId session_;
+    std::shared_ptr<BuiltinToolRegistry> tools_;
+    std::mutex pending_mutex_;
+    std::deque<std::string> pending_user_messages_;
 };
 
 // Compiles one validated decision into the platform-neutral input sequence.
