@@ -90,8 +90,9 @@ epoch/`OperationState` 结算等价强制（M8 不引入名为 ActionLease 的�
 - 策略影响面：介入准入（哪些 Run 操作被接受）、恢复链上限、DryRun 的副作用门禁。
   策略不改变安全底线：全局 SafetyPolicy 与权限确认（DEC-004）在任何策略下不被降低
   （`W-05`）。
-- **暂定默认值**：IR 未声明 `default_policy` 时为 `Strict`（暂定默认值，负责人 Mira
-  Maintainers，最迟冻结里程碑：阶段 B 里程碑）。Run 启动时可从 `allowed_policies` 中
+- **默认值**：IR 未声明 `default_policy` 时为 `Strict`。该值在 M8 为暂定默认值，已于
+  2026-09-08 随 [M9](../plans/m9-workflow-runtime-minimal-loop.md)（`M9-01`）冻结为正式
+  默认。Run 启动时可从 `allowed_policies` 中
   选定策略；运行中切换只能切到 `allowed_policies` 内的目标，切换经控制面提交并发出
   `WorkflowPolicySwitched` 事件（M8-10）。`DryRun` 验证通过是 Workflow 新版本入库的前置
   （`W-04`，与 [DEC-022](DEC-022-conversation-patch-semantics.md) 的版本化联动）。

@@ -1,7 +1,7 @@
 # Workflow Runtime 设计
 
-> 状态：Active（阶段 B 起的实施规范；本文接口为草案级别）
-> 版本：0.1
+> 状态：Active（阶段 B 实施规范；Runtime 层已随 M9 交付，接口以代码与 API 手册为准）
+> 版本：0.2
 > 更新日期：2026-09-08
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
@@ -15,15 +15,19 @@
 
 本文是 Workflow 方向的专项设计，分解 IR / WorkflowRun / Workflow Runtime 三层，定义验证
 谓词与恢复钩子语义、事件 schema、错误分类、Executor 路由、取消与 shutdown 顺序和测试
-策略。M8 交付的契约（`Mira::workflow` 模块）以本文为规范；阶段 B 的执行闭环实现以本文
-为入口规范，实施里程碑将按 `W-01` 细化 Executor 路由与关闭表。
+策略。M8 交付的契约（`Mira::workflow` 模块）以本文为规范；阶段 B 的执行闭环已随
+[M9](../plans/m9-workflow-runtime-minimal-loop.md) 交付（`WorkflowRuntime`，Strict/DryRun），
+第 7 节路由表按 M9 定稿。
 
 效力约定：
 
-- 标注「**草案**」的接口尚未实现或不随 M8 交付；已实现部分以
+- 标注「**草案**」的接口尚未实现；已实现部分以
   [API 手册](../api/workflow-contracts.md)与代码为准。
-- 本文不改变既有里程碑状态；阶段 B 里程碑进入 `Planned` 前可依据本文修订，修订需同步
-  本文档版本。
+- M9 交付后的契约补全（`M9-01`）：ToolCall 步骤的 `arguments` 必须为对象且携带保留成员
+  `"tool"`（字符串 wire 名，与 Navigate 的 `arguments["target"]` 同属按步骤种类的实参
+  约定），其余成员构成工具输入并经注册表 schema 校验；dispatching 策略下 Navigate 步骤
+  于创建 Run 时 fail closed（`navigate-unresolvable`），DryRun 按形状规划结算；
+  `validate_workflow_definition` 对结构体定义执行与 JSON 解码同源的结构校验。
 
 ## 2. 三层分解
 
@@ -131,20 +135,25 @@ Workflow 域错误沿用 `Error{domain="mira.workflow", domain_code}`，`ErrorCo
 
 错误对模型可见时一律经 `safe_message` 脱敏信封（DEC-021 §2）。
 
-## 7. Executor 路由（按 `W-01` 预定义；阶段 B 里程碑细化为与 M7 同构的路由与关闭表）
+## 7. Executor 路由（M9 定稿；M9 里程碑第 5 节为验收载体）
 
-M8 契约层全部为同步纯函数，无异步路径。阶段 B 的路由预定（草案）：
+M8 契约层全部为同步纯函数，无异步路径。M9 交付的路由表：
 
 | 工作 | Executor 能力 | 句柄所有者 | 结算要求 |
 | --- | --- | --- | --- |
-| 步骤执行（离散动作派发） | `submit_auto` 普通有限任务 | Workflow Runtime（Run 表内句柄） | future 必须被消费；异常转 `Failed` 事件 |
-| 每步验证观察 | `submit_auto` 普通有限任务 | 同上 | 不可丢弃 |
+| 步骤执行（离散工具派发） | `submit_auto` 普通有限任务 | 驱动任务（逐个消费 future） | 提交拒绝与任务异常转步骤失败（可经恢复钩子） |
+| 每步副作用后验证观察 | `submit_auto` 普通有限任务 | 驱动任务 | 不可丢弃；失败即步骤失败 |
+| Run 驱动（宿主同步路径 `execute_run`） | 宿主调用线程 | 调用方 | 结果同步返回 |
+| Run 驱动（异步路径 `start_run`、`run_workflow` 工具、`resume_run` 续跑） | `submit_auto` 普通有限任务，并发上限默认 1 且必须小于 worker 数 | Workflow Runtime（Run 表内 future） | future 由 `wait_run`/shutdown 消费；异常转 `Failed` 结算与诊断 |
+| 驱动监控（撤回旗标） | `submit_auto` 有限任务，轮询承载 Task 快照 | 驱动任务 | 驱动结束时置停并消费 future |
 | DryRun 谓词求值 | 调用线程同步（纯函数） | 无 | 无 |
+| 控制面命令（pause/resume/cancel/complete） | 既有 `MiraRuntime` 串行控制面 | Workflow Runtime（CommandHandle） | 有界等待回执；失败对调用方可见 |
 | 周期性健康检查（阶段 C 起） | timer 能力 | Runtime 生命周期所有者 | 停止时取消 |
 | 实时连续控制（若 Workflow 含连续步骤） | realtime/low-latency 能力 | Runtime，watchdog 约束 | `Up/Cancel` 安全收敛（`RULE-06`） |
 
 取消是协作式的：步执行轮询 `OperationContext` 取消与 deadline；连续控制经环境
-`interrupt()` 收敛（DEC-018 同模式）。
+`interrupt()` 收敛（DEC-018 同模式）。步骤取消探针只读原子旗标（由监控任务发布），
+不在持有环境锁的上下文内回调 Runtime，锁序以 WorkflowRuntime 内部互斥为叶子。
 
 ## 8. 取消、暂停与 shutdown 顺序
 
@@ -156,6 +165,11 @@ Run 级操作（阶段 B 实现于 Runtime 控制面）：
    从游标继续。
 3. `cancel`：提交取消意图 → 在执行动作安全收敛 → 终态 `Cancelled`（幂等）；迟到完成按
    Stale 结算。
+
+M9 实现补注：被暂停截断的步骤按 `Stale` 结算且游标不推进；`resume` 先重新观察、先提交
+`Paused -> Running`（冻结转换表没有 `Paused -> Failed` 边），再处理中断步骤——无副作用
+工具或 DryRun 直接重执行；副作用工具复评验证谓词，满足则按已完成恢复，否则仅
+`FallbackStep` 可救，缺钩子以 `ExecutionUncertain` 失败（`RULE-05` 禁止盲目重发）。
 
 Runtime shutdown（融入既有 Runtime 关闭顺序，DEC-001/AGENTS.md 第 6 条）：
 
@@ -173,11 +187,12 @@ Workflow Runtime 不得自行 `shutdown` Executor；它不是 Executor owner。
 
 ```text
 mira-workflow (Mira::workflow)
-├── workflow_ir.hpp           IR 结构、序列化、校验、参数绑定（M8-06/07）
+├── workflow_ir.hpp           IR 结构、序列化、校验、参数绑定（M8-06/07；M9 补 validate）
 ├── workflow_run.hpp          Run 视图、转换表、Task 映射（M8-08）
 ├── workflow_versioning.hpp   版本记录、不可变历史、digest 钉住（M8-09）
 ├── workflow_events.hpp       事件载荷构建/解析（M8-10）
-└── workflow_tools.hpp        五操作 schema 与本地校验（M8-11）
+├── workflow_tools.hpp        五操作 schema 与本地校验（M8-11）
+└── workflow_runtime.hpp      执行闭环：Run 表、驱动、控制与四操作 handler（M9）
 ```
 
 依赖方向：`Mira::workflow` → `Mira::core`（契约、JSON）only。禁止依赖 Agent 决策层
@@ -188,10 +203,10 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
 
 - **契约层（M8 已交付）**：见 DEC-019/020/021/022 的验证方式；矩阵含正负路径、fail
   closed、幂等、迟到隔离、digest 稳定性、脱敏断言、离线回放无副作用。
-- **阶段 B 增量**（进入实施里程碑时冻结为测试矩阵）：执行闭环（Strict/DryRun 全路径）、
+- **阶段 B 增量**（已随 M9 冻结为测试矩阵并交付）：执行闭环（Strict/DryRun 全路径）、
   取消竞态（步执行中取消/暂停/接管）、shutdown 顺序、验证不可求值路径、恢复钩子全模式、
-  终态幂等 + 迟到完成隔离的运行时级测试、三个 Workflow 工具经 BuiltIn 闭环的执行与
-  权限挂钩。
+  终态幂等 + 迟到完成隔离的运行时级测试、启动与控制类 Workflow 操作（run/pause/resume/
+  cancel 四操作；`patch_workflow` 的执行属阶段 C）经 BuiltIn 闭环的执行与权限挂钩。
 - 门禁：既有 ASAN/UBSAN/TSAN 矩阵与 installed-consumer 覆盖 `Mira::workflow`。
 
 ## 11. 关联文档

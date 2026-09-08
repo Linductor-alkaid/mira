@@ -117,15 +117,18 @@ add_library(mira_core
 )
 add_library(Mira::core ALIAS mira_core)
 
-# Workflow dual-path contract layer (M8, DEC-019..DEC-022): IR, run state
-# view, versioning, event payloads and operation tool schemas. Synchronous
-# pure contracts only: no Executor routing, no runtime execution (phase B).
+# Workflow dual-path contract layer (M8, DEC-019..DEC-022) plus the stage-B
+# execution runtime (M9): IR, run state view, versioning, event payloads,
+# operation tool schemas and the WorkflowRuntime drive loop. Step dispatch and
+# verification observations route through the Executor (M9 §5); the executor
+# stays a PRIVATE dependency so the installed contract surface is unchanged.
 add_library(mira_workflow
     src/workflow/workflow_ir.cpp
     src/workflow/workflow_run.cpp
     src/workflow/workflow_versioning.cpp
     src/workflow/workflow_events.cpp
     src/workflow/workflow_tools.cpp
+    src/workflow/workflow_runtime.cpp
 )
 add_library(Mira::workflow ALIAS mira_workflow)
 target_include_directories(mira_workflow
@@ -133,7 +136,10 @@ target_include_directories(mira_workflow
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(mira_workflow PUBLIC Mira::core)
+target_link_libraries(mira_workflow PUBLIC Mira::core PRIVATE executor::executor)
+target_include_directories(mira_workflow SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+)
 target_compile_features(mira_workflow PUBLIC cxx_std_20)
 mira_enable_warnings(mira_workflow)
 if(MIRA_ENABLE_CLANG_TIDY)

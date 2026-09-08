@@ -29,7 +29,8 @@ foreach(HEADER IN ITEMS
         mira/workflow_run.hpp
         mira/workflow_versioning.hpp
         mira/workflow_events.hpp
-        mira/workflow_tools.hpp)
+        mira/workflow_tools.hpp
+        mira/workflow_runtime.hpp)
     string(REPLACE "/" "_" TARGET_NAME "${HEADER}")
     string(REPLACE "." "_" TARGET_NAME "${TARGET_NAME}")
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.cpp")

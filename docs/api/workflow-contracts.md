@@ -1,18 +1,18 @@
 # Workflow 契约
 
 > 适用头文件：`workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、
-> `workflow_events.hpp`、`workflow_tools.hpp`（CMake 目标 `Mira::workflow`）
-> 状态：Active（M8 契约层；执行闭环属阶段 B）
+> `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_runtime.hpp`（CMake 目标 `Mira::workflow`）
+> 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`）
 > 依据：[DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
 > [DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)、
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
 > [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)、
 > [Workflow Runtime 设计](../design/workflow_runtime_design.md)
 
-`Mira::workflow` 是 Workflow 双路径的契约层：Workflow IR、WorkflowRun 状态视图、
-资产版本化、事件载荷与 Workflow 操作的 Tool 规格。本层全部为**同步纯函数**：没有
-Executor 路由、没有执行、没有 I/O；执行闭环（阶段 B）以
-[workflow_runtime_design](../design/workflow_runtime_design.md) 为规范实现。
+`Mira::workflow` 是 Workflow 双路径的契约层与（M9 起）执行层：Workflow IR、WorkflowRun
+状态视图、资产版本化、事件载荷、Workflow 操作的 Tool 规格与 `WorkflowRuntime` 执行闭环。
+契约函数全部为**同步纯函数**；`WorkflowRuntime` 的 Executor 路由与关闭顺序见
+[workflow_runtime_design](../design/workflow_runtime_design.md) 第 7/8 节。
 
 ## Workflow IR（`workflow_ir.hpp`）
 
@@ -38,6 +38,11 @@ Executor 路由、没有执行、没有 I/O；执行闭环（阶段 B）以
   （fail closed），`Exists` 直接回答存在性。
 - 内容寻址：`workflow_definition_digest` 返回 canonical JSON digest；版本记录与 Run
   引用 digest，不内联定义。
+- `validate_workflow_definition`（M9）：对结构体定义执行与 JSON 解码同源的结构校验
+  （经规范化往返实现）；宿主手工构建的定义与解码产物流经同一 fail-closed 检查。
+- ToolCall 工具绑定（M9 冻结）：`arguments` 必须为对象且携带保留成员 `"tool"`
+  （字符串，BuiltIn wire 名），其余成员构成工具输入并经注册表 schema 校验；与 Navigate
+  的 `arguments["target"]` 同属按步骤种类的实参约定。
 
 ## WorkflowRun 视图与转换（`workflow_run.hpp`）
 
@@ -92,11 +97,39 @@ Executor 路由、没有执行、没有 I/O；执行闭环（阶段 B）以
 - `workflow_operation_error_envelope`：统一错误信封 `{code, domain, domain_code,
   retryable, safe_message, operation_id}`；`safe_message` 必须已脱敏。
 
+## WorkflowRuntime 执行闭环（`workflow_runtime.hpp`，M9）
+
+- 构造绑定一个宿主 Executor、一个 `MiraRuntime` 会话与 `IEnvironment`；每个 Run 由一个
+  承载 Task（经控制面创建）支撑，Run 视图变更全部经冻结转换表提交。Run 表容量、整 Run
+  步执行预算与并发异步驱动上限由 `WorkflowRuntimeConfig` 约束（`RULE-08`）。
+- `create_run`（宿主直达，宿主是信任边界）与 `create_run(workflow_id, ir_digest, ...)`
+  （库路径，仅 `DryRunPassed`/`Validated` 版本可运行，`W-03`/`W-04`）。准入 fail closed：
+  M9 仅承载 `Strict`/`DryRun`（其余策略 `UnsupportedCapability`，阶段 C）、
+  `AgentEscalation` 钩子拒绝、dispatching 策略下 Navigate 步骤与缺失验证声明的副作用
+  步骤拒绝、参数绑定确定性错误码透传。
+- `execute_run`（调用线程同步驱动）与 `start_run`（异步驱动，受并发上限约束）；
+  `wait_run` 有界等待当前驱动的结果。DryRun 不派发任何工具或环境动作，不可求值验证按
+  「已规划、未宣称验证」结算并在结果中计数披露（`RULE-10`）。
+- `pause_run` 在步边界安全点收敛：被截断步骤按 `Stale` 结算且游标不推进；
+  `resume_run` 重新观察后从游标继续（无副作用工具或 DryRun 重执行；副作用工具复评验证
+  谓词，不可恢复时按 `ExecutionUncertain` 失败，禁止盲目重发）；`cancel_run` 幂等，
+  迟到完成隔离为 `Stale`。Run/Task 终态保持一致（`run_task_state_compatible`）。
+- `operation_tool_registrations()` 返回 run/pause/resume/cancel 四个 BuiltIn handler
+  （`patch_workflow` 执行属阶段 C）；handler 捕获 `this`，Runtime 必须覆盖注册条目
+  生命周期。
+- `shutdown()`：停止生产者 → 经控制面取消活动 Run → 有界清算驱动 future → 返回
+  `WorkflowShutdownReport`（含事件发射/任务结算失败计数）。不自行关闭 Executor；
+  宿主关闭顺序：`WorkflowRuntime::shutdown` → `MiraRuntime` 停止 → Executor
+  `shutdown(true)`。
+
 ## 兼容性与限制
 
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
   更强的承诺。
-- `Navigate` 目标与 `screen_state` 谓词在阶段 E 之前只做形状校验，不可求值；不得据此
+- `Navigate` 目标与 `screen_state` 谓词在阶段 E 之前只做形状校验，不可求值；dispatching
+  策略在创建 Run 时即拒绝含 Navigate 步骤的定义（`navigate-unresolvable`）；不得据此
   宣称导航或验证能力已实现（`RULE-10`）。
-- `Strict` 为 IR 未声明默认策略时的暂定默认值（DEC-019/020，最迟阶段 B 冻结）。
-- 执行闭环、五个操作的 BuiltIn 注册、SQLite Workflow Library 存储均属阶段 B。
+- `Strict` 为 IR 未声明默认策略时的默认值（DEC-019/020，暂定状态已于 M9 冻结）。
+- Workflow 库与 Run 表为进程内投影（EventStore 仍是权威记录）；SQLite Workflow Library
+  存储与跨进程续跑未交付（`RISK-2026-038`）。`DryRunPassed` 证据入库链属阶段 D。
+- 异步驱动上限必须小于 Executor worker 数（一个驱动占用一个 worker 等待步 future）。
