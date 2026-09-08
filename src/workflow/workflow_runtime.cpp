@@ -1876,22 +1876,27 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
             }
         }
         if (!edge.has_value()) {
-            return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed,
-                                      "planned edge '" + edge_id +
-                                          "' is no longer present in the app model");
+            std::string detail = "planned edge '";
+            detail += edge_id;
+            detail += "' is no longer present in the app model";
+            return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed, detail);
         }
         const auto *tool_member = edge->action.find("tool");
         if (tool_member == nullptr || !tool_member->is_string()) {
-            return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid,
-                                      "edge '" + edge_id + "' action misses the \"tool\" member");
+            std::string detail = "edge '";
+            detail += edge_id;
+            detail += "' action misses the \"tool\" member";
+            return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid, detail);
         }
         const std::string wire_name = *tool_member->as_string();
         const auto tool = std::find_if(
             exposed.begin(), exposed.end(),
             [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
         if (tool == exposed.end()) {
-            return workflow_error(ErrorCode::NotFound,
-                                  "navigation edge tool '" + wire_name + "' is not registered");
+            std::string detail = "navigation edge tool '";
+            detail += wire_name;
+            detail += "' is not registered";
+            return workflow_error(ErrorCode::NotFound, detail);
         }
         JsonValue input(JsonValue::Object{});
         if (const auto *object = edge->action.as_object()) {
@@ -1931,9 +1936,12 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
                              arrival.value().state_id == edge->to_state;
         note_navigation_outcome(run, step, *edge, arrived, now_millis());
         if (!arrived) {
-            return make_runtime_error(
-                WorkflowRuntimeError::NavigateArrivalUnverified,
-                "edge '" + edge_id + "' did not arrive at '" + edge->to_state + "'");
+            std::string detail = "edge '";
+            detail += edge_id;
+            detail += "' did not arrive at '";
+            detail += edge->to_state;
+            detail += "'";
+            return make_runtime_error(WorkflowRuntimeError::NavigateArrivalUnverified, detail);
         }
     }
     {

@@ -528,8 +528,6 @@ Error make_app_model_error(AppModelError code, std::string detail) {
     error.safe_message = "app model: " + std::move(detail);
     switch (code) {
     case AppModelError::UnknownField:
-        error.code = ErrorCode::UnsupportedVersion;
-        break;
     case AppModelError::VersionMismatch:
         error.code = ErrorCode::UnsupportedVersion;
         break;
