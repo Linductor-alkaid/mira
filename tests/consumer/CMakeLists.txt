@@ -6,7 +6,7 @@ find_package(executor 0.4 CONFIG REQUIRED)
 
 add_executable(mira_installed_consumer main.cpp)
 target_link_libraries(mira_installed_consumer PRIVATE
-    Mira::core Mira::simulator_adapter Mira::state_store Mira::net_transport
+    Mira::core Mira::workflow Mira::simulator_adapter Mira::state_store Mira::net_transport
     executor::executor)
 if(TARGET Mira::mbedtls_transport)
     target_link_libraries(mira_installed_consumer PRIVATE Mira::mbedtls_transport)

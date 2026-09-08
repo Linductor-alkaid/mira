@@ -155,6 +155,26 @@ mira_add_m4_store_test(mira_m4_stateful_replay_test m4/m4_stateful_replay_test.c
 mira_add_m4_test(mira_m4_continuation_test m4/m4_continuation_test.cpp)
 mira_add_m4_test(mira_m4_supervisor_test m4/m4_supervisor_test.cpp)
 
+# ---------------------------------------------------------------------------
+# M8: workflow dual-path contracts (pure functions; no Executor routing)
+# ---------------------------------------------------------------------------
+
+function(mira_add_m8_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    mira_enable_warnings(${name})
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "contract;m8" TIMEOUT 90)
+endfunction()
+
+mira_add_m8_test(mira_m8_ir_test m8/m8_ir_test.cpp)
+mira_add_m8_test(mira_m8_run_test m8/m8_run_test.cpp)
+mira_add_m8_test(mira_m8_versioning_test m8/m8_versioning_test.cpp)
+mira_add_m8_test(mira_m8_events_test m8/m8_events_test.cpp)
+mira_add_m8_test(mira_m8_tools_test m8/m8_tools_test.cpp)
+
 # M4-17: long-task and memory benchmark harness. Asserts fidelity invariants;
 # writes a JSON manifest for docs/benchmarks/long-task-memory.md.
 add_executable(mira_m4_stateful_benchmark benchmark/m4_stateful_benchmark.cpp)

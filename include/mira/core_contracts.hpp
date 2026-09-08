@@ -141,6 +141,10 @@ MIRA_DEFINE_ID(DisplayId);
 MIRA_DEFINE_ID(UiNodeId);
 MIRA_DEFINE_ID(ClockDomainId);
 MIRA_DEFINE_ID(RegionId);
+MIRA_DEFINE_ID(WorkflowId);
+MIRA_DEFINE_ID(WorkflowRunId);
+MIRA_DEFINE_ID(WorkflowPatchId);
+MIRA_DEFINE_ID(WorkflowDecisionId);
 
 #undef MIRA_DEFINE_ID
 

@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.1.0（对应 `Mira 0.1` 安装包）
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 > 适用范围：`include/mira/` 全部公共头文件与随包安装的 CMake 目标
 
 本手册按模块描述 Mira 的公共 API。实现细节、设计动机和状态机推导见
@@ -16,6 +16,7 @@
 | [核心契约与 Runtime](core-runtime.md) | `core_contracts.hpp`、`runtime.hpp`、`runtime_baseline.hpp`、`action_journal.hpp` | ID、时间戳、错误模型、三层状态机、命令/操作生命周期、动作日志 |
 | [环境与 Observation](environment-observation.md) | `environment.hpp`、`observation.hpp`、`coordinates.hpp`、`observation_pipeline.hpp`、`adapters/` | `IEnvironment` 契约、Observation 快照、坐标变换、Simulator/Android/Replay 适配器 |
 | [模型层与 Agent Loop](model-agent-loop.md) | `model_*.hpp`、`agent_loop.hpp`、`tool_executor.hpp`、`conversation_log.hpp` | OpenAI-compatible Provider、路由/重试/熔断/预算网关、决策解析、离散闭环、BuiltIn 工具边界、会话对话投影 |
+| [Workflow 契约](workflow-contracts.md) | `workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、`workflow_events.hpp`、`workflow_tools.hpp` | Workflow IR 序列化与校验、参数绑定、WorkflowRun 状态视图与转换表、资产版本化、事件载荷、Workflow 操作 Tool 规格（M8，纯契约层） |
 | [事件、Checkpoint 与恢复](events-recovery.md) | `event_store.hpp`、`artifact_store.hpp`、`json.hpp`、`replay.hpp`、`task_checkpoint.hpp`、`task_recovery.hpp`、`state_store.hpp` | EventStore 事实源、Artifact 存储、崩溃恢复规划、SQLite 参考后端 |
 | [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp` | 上下文预算与装配、长期记忆、consolidation、Provider continuation、supervisor 与分析回放 |
 | [安全与权限](security.md) | `security.hpp` | Principal、能力授权、风险分级、PolicyEngine、Human Confirmation、脱敏 |
