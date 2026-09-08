@@ -289,7 +289,19 @@ Result<Sha256Digest> WorkflowRuntime::publish_workflow(const WorkflowDefinition 
     if (auto valid = validate_workflow_definition(definition); !valid.has_value()) {
         return valid.error();
     }
-    const auto digest = workflow_definition_digest(definition);
+    auto appended = append_version_record(definition, workflow_definition_digest(definition),
+                                          actor, reason, validation, evidence, false);
+    if (!appended.has_value()) {
+        return appended.error();
+    }
+    return appended.value().digest;
+}
+
+Result<WorkflowRuntime::VersionAppendResult>
+WorkflowRuntime::append_version_record(const WorkflowDefinition &definition, const Sha256Digest &digest,
+                                       const std::string &actor, const std::string &reason,
+                                       WorkflowValidationResult validation,
+                                       std::optional<Sha256Digest> evidence, bool dedupe) {
     std::lock_guard lock(mutex_);
     const bool fresh_history = library_.find(definition.workflow_id) == library_.end();
     if (fresh_history) {
@@ -298,6 +310,13 @@ Result<Sha256Digest> WorkflowRuntime::publish_workflow(const WorkflowDefinition 
         library_.emplace(definition.workflow_id, std::move(history));
     }
     auto &history = library_[definition.workflow_id];
+    if (dedupe && !history.records.empty()) {
+        const WorkflowVersionRecord &head = history.records.back();
+        if (head.content_digest == digest && head.validation == validation &&
+            head.validation_evidence == evidence) {
+            return VersionAppendResult{digest, true};
+        }
+    }
     WorkflowVersionRecord record;
     record.version =
         SemanticVersion{1, 0, static_cast<std::uint16_t>(history.records.size() + 1)};
@@ -316,7 +335,7 @@ Result<Sha256Digest> WorkflowRuntime::publish_workflow(const WorkflowDefinition 
         return appended.error();
     }
     definitions_[digest] = definition;
-    return digest;
+    return VersionAppendResult{digest, false};
 }
 
 Result<WorkflowRunView> WorkflowRuntime::create_run(const WorkflowDefinition &definition,
@@ -873,6 +892,67 @@ void WorkflowRuntime::emit_decision_resolved(const RunRecord &run,
     append.runtime_id = runtime_id_;
     append.session_id = session_;
     append.task_id = run.task;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::emit_publish_proposed(const WorkflowId &workflow_id,
+                                            const Sha256Digest &ir_digest,
+                                            const std::optional<WorkflowRunId> &source_run_id) {
+    if (!events_) {
+        return;
+    }
+    WorkflowPublishProposedEvent event;
+    event.workflow_id = workflow_id;
+    event.ir_digest = ir_digest;
+    event.source_run_id = source_run_id;
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::emit_publish_applied(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
+                                           const Sha256Digest &evidence,
+                                           const WorkflowRunId &dry_run_id) {
+    if (!events_) {
+        return;
+    }
+    WorkflowPublishAppliedEvent event;
+    event.workflow_id = workflow_id;
+    event.ir_digest = ir_digest;
+    event.evidence = evidence;
+    event.dry_run_id = dry_run_id;
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::emit_publish_rejected(const WorkflowId &workflow_id,
+                                            const Sha256Digest &ir_digest,
+                                            const std::string &reason_code) {
+    if (!events_) {
+        return;
+    }
+    WorkflowPublishRejectedEvent event;
+    event.workflow_id = workflow_id;
+    event.ir_digest = ir_digest;
+    event.reason_code = reason_code;
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
     append.payload = to_event_payload(event);
     if (!events_->append(append).has_value()) {
         ++event_emit_failures_;
@@ -2479,6 +2559,135 @@ Result<WorkflowAgentContinuation> WorkflowRuntime::agent_continuation(
         continuation.current_step_attempts = run.attempts[run.cursor];
     }
     return continuation;
+}
+
+Result<WorkflowTrajectory> WorkflowRuntime::capture_trajectory(const WorkflowRunId &run_id) const {
+    std::lock_guard lock(mutex_);
+    if (!accepting_ || shut_down_) {
+        return workflow_error(ErrorCode::Unavailable, "workflow runtime is shutting down");
+    }
+    const auto found = runs_.find(run_id);
+    if (found == runs_.end()) {
+        return workflow_error(ErrorCode::NotFound, "workflow run was not found");
+    }
+    const RunRecord &run = *found->second;
+    if (run.view.state != WorkflowRunState::Completed) {
+        return make_workflow_compile_error(WorkflowCompileError::CaptureNotCompleted,
+                                           "trajectory capture requires a completed run");
+    }
+    if (!workflow_policy_dispatches_side_effects(run.view.policy)) {
+        return make_workflow_compile_error(
+            WorkflowCompileError::CaptureNotExecuted,
+            "trajectory capture requires a run that dispatched side effects");
+    }
+
+    WorkflowTrajectory trajectory;
+    trajectory.workflow_id = run.view.workflow_id;
+    trajectory.source_digest = run.view.ir_digest;
+    trajectory.source_run_id = run.view.run_id;
+    trajectory.effective_parameters = run.effective_parameters;
+    trajectory.effective_policy = run.view.policy;
+    trajectory.source_parameters = run.definition.parameters;
+    trajectory.allowed_policies = run.definition.allowed_policies;
+    trajectory.source_default_policy = run.definition.default_policy;
+    trajectory.steps.reserve(run.definition.steps.size());
+    for (std::size_t index = 0; index < run.definition.steps.size(); ++index) {
+        const WorkflowStep &step = run.definition.steps[index];
+        if (contains_string(run.skipped_steps, step.id.to_string())) {
+            continue;
+        }
+        WorkflowTrajectoryStep captured;
+        captured.source_step_id = step.id;
+        captured.name = step.name;
+        captured.kind = step.kind;
+        captured.loop_head = step.loop_head;
+        captured.arguments = run.resolved_arguments[index];
+        captured.raw_arguments = step.arguments;
+        captured.precondition = step.precondition;
+        captured.verification = step.verification;
+        captured.recovery = step.recovery;
+        captured.max_attempts = step.max_attempts;
+        captured.jump_to = step.jump_to;
+        captured.max_iterations = step.max_iterations;
+        trajectory.steps.push_back(std::move(captured));
+    }
+    return trajectory;
+}
+
+Result<WorkflowPublishOutcome>
+WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const std::string &actor,
+                                   const std::string &reason,
+                                   std::optional<WorkflowRunId> source_run_id) {
+    {
+        std::lock_guard lock(mutex_);
+        if (!accepting_ || shut_down_) {
+            return workflow_error(ErrorCode::Unavailable, "workflow runtime is shutting down");
+        }
+    }
+    const auto digest = workflow_definition_digest(definition);
+    if (auto valid = validate_workflow_definition(definition); !valid.has_value()) {
+        emit_publish_rejected(definition.workflow_id, digest, "validation-failed");
+        return valid.error();
+    }
+    emit_publish_proposed(definition.workflow_id, digest, source_run_id);
+
+    // Gate drive (DEC-025 §3): a DryRun run over the draft with empty
+    // parameters. Drafts entering the gate must therefore be default-complete;
+    // binding failures reject the publish without touching the library.
+    auto gate_run = create_run(definition, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
+    if (!gate_run.has_value()) {
+        emit_publish_rejected(definition.workflow_id, digest, "gate-run-failed");
+        return gate_run.error();
+    }
+    OperationContext context;
+    context.started_at = Timestamp::now();
+    auto driven = execute_run(gate_run.value().run_id, context);
+    if (!driven.has_value()) {
+        emit_publish_rejected(definition.workflow_id, digest, "publish-dryrun-failed");
+        return driven.error();
+    }
+    if (driven.value().state != WorkflowRunState::Completed) {
+        emit_publish_rejected(definition.workflow_id, digest, "publish-dryrun-failed");
+        return make_workflow_compile_error(
+            WorkflowCompileError::PublishDryRunFailed,
+            "gate drive settled as " + workflow_run_state_name(driven.value().state));
+    }
+
+    // Content-derived evidence (DEC-025 §3): same definition plus same DryRun
+    // settlement sequence yields the same digest, which the idempotent NoOp
+    // below relies on. The source and gate runs are bound through the audit
+    // events instead.
+    JsonValue::Array step_items;
+    step_items.reserve(driven.value().steps.size());
+    for (const auto &record : driven.value().steps) {
+        JsonValue::Object item;
+        item.emplace_back("step_id", record.step_id.to_string());
+        item.emplace_back("disposition", workflow_step_disposition_name(record.disposition));
+        step_items.push_back(JsonValue{std::move(item)});
+    }
+    JsonValue::Object evidence_object;
+    evidence_object.emplace_back("workflow_id", definition.workflow_id.to_string());
+    evidence_object.emplace_back("ir_digest", digest.to_string());
+    evidence_object.emplace_back("steps", JsonValue{std::move(step_items)});
+    evidence_object.emplace_back("unevaluable_verifications",
+                                 static_cast<std::int64_t>(driven.value().unevaluable_verifications));
+    const Sha256Digest evidence = canonical_json_digest(JsonValue{std::move(evidence_object)});
+
+    auto appended = append_version_record(definition, digest, actor, reason,
+                                          WorkflowValidationResult::DryRunPassed, evidence, true);
+    if (!appended.has_value()) {
+        emit_publish_rejected(definition.workflow_id, digest, "append-failed");
+        return appended.error();
+    }
+    if (!appended.value().idempotent) {
+        emit_publish_applied(definition.workflow_id, digest, evidence, gate_run.value().run_id);
+    }
+    WorkflowPublishOutcome outcome;
+    outcome.ir_digest = digest;
+    outcome.idempotent = appended.value().idempotent;
+    outcome.dry_run_id = gate_run.value().run_id;
+    outcome.evidence = evidence;
+    return outcome;
 }
 
 std::vector<BuiltinToolRegistration>

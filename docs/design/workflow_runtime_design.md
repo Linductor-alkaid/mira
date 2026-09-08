@@ -1,8 +1,8 @@
 # Workflow Runtime 设计
 
-> 状态：Active（阶段 C 实施规范；契约层随 M8、执行层随 M9 交付，接口以代码与 API 手册为准）
-> 版本：0.3
-> 更新日期：2026-09-08
+> 状态：Active（阶段 D 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10 交付，接口以代码与 API 手册为准）
+> 版本：0.4
+> 更新日期：2026-09-09
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
 > [DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
@@ -10,8 +10,10 @@
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
 > [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)、
 > [DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md)、
-> [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)
-> 适用范围：Workflow 双路径的契约层（M8 已交付部分）与执行层（阶段 B/C）
+> [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)、
+> [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)、
+> [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)
+> 适用范围：Workflow 双路径的契约层（M8 已交付部分）、执行层（阶段 B/C）与编译层（阶段 D）
 
 ## 1. 文档目的与效力
 
@@ -19,8 +21,10 @@
 谓词与恢复钩子语义、事件 schema、错误分类、Executor 路由、取消与 shutdown 顺序和测试
 策略。M8 交付的契约（`Mira::workflow` 模块）以本文为规范；阶段 B 的执行闭环已随
 [M9](../plans/m9-workflow-runtime-minimal-loop.md) 交付（`WorkflowRuntime`，Strict/DryRun），
-第 7 节路由表按 M9 定稿；阶段 C（策略全集、对话 patch 与决策点）的实施规范见第 12 节，
-由 [M10](../plans/m10-workflow-intervention-and-policy-set.md) 承载。
+第 7 节路由表按 M9 定稿；阶段 C（策略全集、对话 patch 与决策点）的实施规范见第 11 节，
+由 [M10](../plans/m10-workflow-intervention-and-policy-set.md) 承载；阶段 D（成功轨迹
+编译与任务归纳）的实施规范见第 12 节，由 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
+承载。
 
 效力约定：
 
@@ -122,6 +126,7 @@ RecoveryHook
 | `WorkflowPatchProposed/Applied/Rejected` | State | patch_id、patch_digest、target、原因码 |
 | `WorkflowPolicySwitched` | State | run_id、from、to |
 | `WorkflowDecisionRaised/Resolved` | State | decision_id、payload_digest、resolution（accept/reject/cancel_run） |
+| `WorkflowPublishProposed/Applied/Rejected`（阶段 D） | State | workflow_id、ir_digest、source_run_id、evidence、原因码 |
 
 OfflineReplay 语义（`W-08`）：以上事件在回放中被识别并重建投影（对话视图、Run 视图），
 不派发输入、不调用工具、不发网络请求；已记录的 patch/决策结果显示为已发生事实。
@@ -156,6 +161,9 @@ M8 契约层全部为同步纯函数，无异步路径。M9 交付的路由表�
 | 控制面命令（pause/resume/cancel/complete） | 既有 `MiraRuntime` 串行控制面 | Workflow Runtime（CommandHandle） | 有界等待回执；失败对调用方可见 |
 | 升级进入 `WaitingAgent`（`begin_task_recovery`） | 既有 `MiraRuntime` 串行控制面 | Workflow Runtime（CommandHandle） | 有界等待回执；失败转诊断并保持 Run 视图一致 |
 | 决议续跑（`resolve_decision` accept/reject 后的驱动） | `submit_auto` 普通有限任务，与 resume 共用并发上限 | Workflow Runtime（Run 表内 future） | future 由 `wait_run`/shutdown 消费 |
+| 轨迹捕获（`capture_trajectory`，阶段 D） | 调用线程（互斥下快照拷贝） | 无 | 生效态一致性由互斥保证 |
+| 编译与归纳（`compile_workflow`/`induce_parameters`，阶段 D） | 调用线程同步（纯函数） | 无 | 无 |
+| 门禁驱动（`publish_validated` 内的 DryRun `execute_run`，阶段 D） | 宿主调用线程（复用 `execute_run` 同步路径） | 调用方 | 门禁 Run 占用 Run 表容量；失败即拒绝发布 |
 | patch 应用（步边界排水 / 等待态直达） | 调用线程（控制面提交）或驱动任务（排水） | 无新任务 | 校验失败确定性拒绝；事件在锁外发射 |
 | 周期性健康检查 | timer 能力（随首个需要它的阶段立项，M10 非目标） | Runtime 生命周期所有者 | 停止时取消 |
 | 实时连续控制（若 Workflow 含连续步骤） | realtime/low-latency 能力 | Runtime，watchdog 约束 | `Up/Cancel` 安全收敛（`RULE-06`） |
@@ -199,8 +207,9 @@ mira-workflow (Mira::workflow)
 ├── workflow_ir.hpp           IR 结构、序列化、校验、参数绑定（M8-06/07；M9 补 validate）
 ├── workflow_run.hpp          Run 视图、转换表、Task 映射（M8-08）
 ├── workflow_versioning.hpp   版本记录、不可变历史、digest 钉住（M8-09）
-├── workflow_events.hpp       事件载荷构建/解析（M8-10）
+├── workflow_events.hpp       事件载荷构建/解析（M8-10；阶段 D 增 publish 三员）
 ├── workflow_tools.hpp        五操作 schema 与本地校验（M8-11）
+├── workflow_compiler.hpp     轨迹契约、编译与归纳纯函数（阶段 D，DEC-025/026）
 └── workflow_runtime.hpp      执行闭环：Run 表、驱动、控制与四操作 handler（M9）
 ```
 
@@ -220,6 +229,12 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
   检查点到访计数、跨等待周期计数器累计）、`WaitingUser`/`WaitingAgent` 的载体一致性与
   出口、patch 幂等/审计/原子性/边界生效/参数重建/回退、决策点两类来源与决议全路径、
   `patch_workflow` 与 `request_user_input` 的工具闭环（含模型端到端）、M9 全路径回归。
+- **阶段 D 增量**（DEC-025/026 验证方式的里程碑化）：捕获矩阵（生效态快照、DryRun/
+  非终态/失败 Run 拒绝）、编译矩阵（默认值固化、跳过剔除、`jump_to` 负向、确定性
+  digest）、门禁矩阵（DryRunPassed 入库与可 Run、失败库零变更、幂等 NoOp、版本链与
+  不可变回归）、归纳矩阵（结构 diff 命名与常量保持、显式候选校验、参数化重写与
+  绑定解析、类型不一致负向）、publish 三事件序列与离线回放无副作用、端到端
+  （Run -> 捕获 -> 归纳 -> 编译 -> 入库 -> 新版本运行）。
 - 门禁：既有 ASAN/UBSAN/TSAN 矩阵与 installed-consumer 覆盖 `Mira::workflow`。
 
 ## 11. 阶段 C 实施规范（策略全集、对话 patch 与决策点）
@@ -271,15 +286,72 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
 - Verify 步骤更高级证据声明（screen diff / 本地感知 / VLM 层）：依赖阶段 E 感知落地，
   M10 维持谓词/receipt 两层（§4.1 的「阶段 C 细化」以此显式收敛为推迟）。
 - 自然语言 → patch 条目的解释编排与 Workflow 定义/偏好两类目标：Agent 侧与阶段 D。
+  （阶段 D 注记：定义级「本次 -> 默认」目标经轨迹编译与门禁入库落地（DEC-025 §2）；
+  偏好目标走 `update_memory` 既有规则；两者的对话解释编排仍属 Agent 侧，推迟不变。）
 
 
+## 12. 阶段 D 实施规范（成功轨迹编译、任务归纳与入库门禁）
 
-## 12. 关联文档
+规范来源：[DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)
+（轨迹契约、编译与入库门禁）、[DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)
+（任务归纳与参数化）。本节为里程碑 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
+的入口摘要；语义细节以决策为准。
 
-- 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024（及
-  DEC-015/016/017/018 既有边界）
+### 12.1 轨迹与编译
+
+- 轨迹（`WorkflowTrajectory`）是一次真实成功执行的结构化快照：溯源三元组
+  （workflow、钉住版本 digest、来源 Run）、有效参数表、有效策略与生效步骤序列
+  （字面量生效实参 + 含 `$param` 的原始实参作为 provenance）。
+- 采集（`WorkflowRuntime::capture_trajectory`）只对 `Completed` 且实际派发副作用的
+  Run 开放（DryRun 完成与非终态 fail closed，`RULE-10`）；跳过步剔除，patch 覆盖
+  后的生效态入快照。宿主可直接构造轨迹（Agent 工具调用路径）。
+- 编译（`compile_workflow` 纯函数）产出草稿：生效实参字面量化、参数默认值固化
+  （required -> 可选 + 观测默认）、跳过步剔除（`jump_to` 指向剔除步 fail closed）、
+  策略沿用来源允许集、产物过 `validate_workflow_definition` 同源校验、同输入同
+  digest。
+
+### 12.2 任务归纳
+
+- 候选（`WorkflowParameterCandidate`）= 提议：`name` + `step_index` + RFC 6901
+  `pointer` + provenance（provenance/structural/explicit）+ 逐轨迹观测值。
+- 结构 diff（`induce_parameters`，2..16 条同骨架轨迹）：类型同、值不同的标量叶成
+  候选；常量叶保持字面量；provenance 命名优先，auto 命名按稳定路径序。
+- 参数化编译：候选叶重写为 `{"$param": name}`（复用 DEC-019 绑定纯函数），规格按
+  观测类型推断、`required=false`、默认值取 anchor；名字冲突、保留成员 `"tool"`、
+  非标量叶、类型不一致 fail closed。
+- 归纳回退：草稿唯一入库路径是门禁（下节），失败库零变更；候选与观测值是宿主侧
+  草稿数据，不入 IR、版本记录与事件。
+
+### 12.3 入库门禁
+
+- `WorkflowRuntime::publish_validated(definition, actor, reason, source_run_id?)`：
+  结构校验 → DryRun Run（空参数、调用线程同步驱动）→ 要求 `Completed` → 证据摘要
+  （workflow/ir digest、逐步结算、unevaluable 计数；内容派生，源 Run 与门禁 Run 绑定
+  经事件审计）→ 幂等（head 同容同证 NoOp）→ 追加 `DryRunPassed` + 证据 digest 的
+  版本记录。
+- 回退不变量：门禁失败不触碰库（无 Rejected 记录、head 不变）；审计走三员新事件
+  `WorkflowPublishProposed/Applied/Rejected`（§5 表）。模型不可直达该 API（`W-04`）；
+  `publish_workflow` 维持宿主信任边界原始路径（无事件）。
+- Executor 路由（§7 表新增三行）：捕获 = 调用线程互斥下快照；编译/归纳 = 调用线程
+  纯函数；门禁驱动 = 复用 `execute_run` 宿主同步路径。
+
+### 12.4 显式非目标（阶段 D 内）
+
+- Agent 工具调用轨迹的事件流自动抽取与编排（宿主构造入口已留，编排属 Agent
+  Harness 后续里程碑）。
+- 自然语言 -> 候选提议/patch 条目的解释编排（M10 §2.2 既定推迟不变）。
+- 对象/数组叶参数化、跨 Workflow 聚类、统计型参数发现（DEC-026 §4）。
+- SQLite Workflow Library 持久化（`RISK-2026-038` 沿袭推迟；publish 事件为重建留了
+  事件基础）。
+- 阶段 E 能力（App Model、导航解析、`screen_state` 谓词求值）。
+
+## 13. 关联文档
+
+- 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024、DEC-025、
+  DEC-026（及 DEC-015/016/017/018 既有边界）
 - 计划：[M8](../plans/m8-workflow-contracts.md)、
   [M9](../plans/m9-workflow-runtime-minimal-loop.md)、
-  [M10](../plans/m10-workflow-intervention-and-policy-set.md)
+  [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
+  [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
 - 参考研究：[Agent Harness 参考研究](harness_reference_study.md) §5.3/§6
 - API：[workflow-contracts](../api/workflow-contracts.md)

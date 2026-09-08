@@ -134,6 +134,30 @@ struct WorkflowDecisionResolvedEvent final {
     WorkflowDecisionResolution resolution = WorkflowDecisionResolution::Accept;
 };
 
+// --- Workflow publish gate lifecycle (State, DEC-025 §3, stage D) -----------
+
+// Session-scoped (no run yet): the audit trail of the stage-D publish gate.
+struct WorkflowPublishProposedEvent final {
+    WorkflowId workflow_id;
+    Sha256Digest ir_digest{};
+    std::optional<WorkflowRunId> source_run_id;
+};
+
+struct WorkflowPublishAppliedEvent final {
+    WorkflowId workflow_id;
+    Sha256Digest ir_digest{};
+    Sha256Digest evidence{};
+    WorkflowRunId dry_run_id;
+};
+
+struct WorkflowPublishRejectedEvent final {
+    WorkflowId workflow_id;
+    Sha256Digest ir_digest{};
+    // Machine-readable gate rejection code (e.g. "validation-failed",
+    // "gate-run-failed", "publish-dryrun-failed", "append-failed").
+    std::string reason_code;
+};
+
 // --- Payload builders and parsers -------------------------------------------
 
 // Builders return ready-to-append payloads with the event type and schema
@@ -148,6 +172,9 @@ struct WorkflowDecisionResolvedEvent final {
 [[nodiscard]] EventPayload to_event_payload(const WorkflowPolicySwitchedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowDecisionRaisedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowDecisionResolvedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowPublishProposedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowPublishAppliedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event);
 
 // Parsers fail closed on schema mismatch, unknown fields and malformed ids.
 // The payload data is JSON text (EventPayload::data).
@@ -171,5 +198,11 @@ parse_workflow_policy_switched(const EventPayload &payload);
 parse_workflow_decision_raised(const EventPayload &payload);
 [[nodiscard]] Result<WorkflowDecisionResolvedEvent>
 parse_workflow_decision_resolved(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowPublishProposedEvent>
+parse_workflow_publish_proposed(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowPublishAppliedEvent>
+parse_workflow_publish_applied(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowPublishRejectedEvent>
+parse_workflow_publish_rejected(const EventPayload &payload);
 
 } // namespace mira

@@ -105,6 +105,25 @@ constexpr std::string_view kDecisionResolvedKeys[] = {
         "decision_id",
         "resolution",
 };
+constexpr std::string_view kPublishProposedKeys[] = {
+        "schema",
+        "workflow_id",
+        "ir_digest",
+        "source_run_id",
+};
+constexpr std::string_view kPublishAppliedKeys[] = {
+        "schema",
+        "workflow_id",
+        "ir_digest",
+        "evidence",
+        "dry_run_id",
+};
+constexpr std::string_view kPublishRejectedKeys[] = {
+        "schema",
+        "workflow_id",
+        "ir_digest",
+        "reason_code",
+};
 
 [[nodiscard]] Result<JsonValue> parse_payload_data(const EventPayload &payload) {
     auto json = parse_json(payload.data);
@@ -185,7 +204,8 @@ bool is_workflow_event_type(std::string_view type) {
         "WorkflowRunStarted",   "WorkflowStepStarted",   "WorkflowStepSettled",
         "WorkflowRunSettled",   "WorkflowPatchProposed", "WorkflowPatchApplied",
         "WorkflowPatchRejected", "WorkflowPolicySwitched", "WorkflowDecisionRaised",
-        "WorkflowDecisionResolved",
+        "WorkflowDecisionResolved", "WorkflowPublishProposed", "WorkflowPublishApplied",
+        "WorkflowPublishRejected",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -775,6 +795,149 @@ parse_workflow_decision_resolved(const EventPayload &payload) {
         return parsed.error();
     }
     event.resolution = parsed.value();
+    return event;
+}
+
+// --- Workflow publish gate (stage D, DEC-025 §3) ----------------------------
+
+EventPayload to_event_payload(const WorkflowPublishProposedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.publish-proposed.v1");
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("ir_digest", digest_text(event.ir_digest));
+    object.emplace_back("source_run_id", event.source_run_id.has_value()
+                                             ? JsonValue{event.source_run_id->to_string()}
+                                             : JsonValue{nullptr});
+    EventPayload payload;
+    payload.type = "WorkflowPublishProposed";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+EventPayload to_event_payload(const WorkflowPublishAppliedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.publish-applied.v1");
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("ir_digest", digest_text(event.ir_digest));
+    object.emplace_back("evidence", digest_text(event.evidence));
+    object.emplace_back("dry_run_id", event.dry_run_id.to_string());
+    EventPayload payload;
+    payload.type = "WorkflowPublishApplied";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.publish-rejected.v1");
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("ir_digest", digest_text(event.ir_digest));
+    object.emplace_back("reason_code", event.reason_code);
+    EventPayload payload;
+    payload.type = "WorkflowPublishRejected";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowPublishProposedEvent> parse_workflow_publish_proposed(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowPublishProposed",
+                              "mira.workflow.publish-proposed.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kPublishProposedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowPublishProposedEvent event;
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "ir_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.ir_digest = digest.value();
+    const auto *source = json.value().find("source_run_id");
+    if (source != nullptr && source->is_string()) {
+        auto run_id = WorkflowRunId::parse(*source->as_string());
+        if (!run_id || run_id->is_nil()) {
+            return event_error(ErrorCode::InvalidArgument,
+                               "payload member 'source_run_id' is not a valid id");
+        }
+        event.source_run_id = *run_id;
+    }
+    return event;
+}
+
+Result<WorkflowPublishAppliedEvent> parse_workflow_publish_applied(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowPublishApplied",
+                              "mira.workflow.publish-applied.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kPublishAppliedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowPublishAppliedEvent event;
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "ir_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.ir_digest = digest.value();
+    auto evidence = parse_member_digest(json.value(), "evidence");
+    if (!evidence.has_value()) {
+        return evidence.error();
+    }
+    event.evidence = evidence.value();
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "dry_run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.dry_run_id = run_id.value();
+    return event;
+}
+
+Result<WorkflowPublishRejectedEvent> parse_workflow_publish_rejected(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowPublishRejected",
+                              "mira.workflow.publish-rejected.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kPublishRejectedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowPublishRejectedEvent event;
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "ir_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.ir_digest = digest.value();
+    auto reason = parse_member_name(json.value(), "reason_code");
+    if (!reason.has_value()) {
+        return reason.error();
+    }
+    if (reason.value().empty() || reason.value().size() > kMaxReasonCodeBytes) {
+        return event_error(ErrorCode::InvalidArgument, "reason_code is not bounded");
+    }
+    event.reason_code = reason.value();
     return event;
 }
 

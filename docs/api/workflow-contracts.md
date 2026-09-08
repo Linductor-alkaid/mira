@@ -1,16 +1,22 @@
 # Workflow 契约
 
 > 适用头文件：`workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、
-> `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_runtime.hpp`（CMake 目标 `Mira::workflow`）
-> 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`）
+> `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、
+> `workflow_runtime.hpp`（CMake 目标 `Mira::workflow`）
+> 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`；M11 起含编译层）
 > 依据：[DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
 > [DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)、
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
 > [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)、
+> [DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md)、
+> [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)、
+> [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)、
+> [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)、
 > [Workflow Runtime 设计](../design/workflow_runtime_design.md)
 
-`Mira::workflow` 是 Workflow 双路径的契约层与（M9 起）执行层：Workflow IR、WorkflowRun
-状态视图、资产版本化、事件载荷、Workflow 操作的 Tool 规格与 `WorkflowRuntime` 执行闭环。
+`Mira::workflow` 是 Workflow 双路径的契约层、（M9 起）执行层与（M11 起）编译层：Workflow
+IR、WorkflowRun 状态视图、资产版本化、事件载荷、Workflow 操作的 Tool 规格、
+`WorkflowRuntime` 执行闭环与成功轨迹编译/任务归纳。
 契约函数全部为**同步纯函数**；`WorkflowRuntime` 的 Executor 路由与关闭顺序见
 [workflow_runtime_design](../design/workflow_runtime_design.md) 第 7/8 节。
 
@@ -73,8 +79,9 @@
 
 ## 事件载荷（`workflow_events.hpp`）
 
-- 十类 `mira.workflow.*.v1` 载荷（`to_event_payload`/`parse_*`）：RunStarted/StepStarted/
-  StepSettled/RunSettled（Critical），patch 三事件、PolicySwitched、决策点两事件（State）。
+- 十三类 `mira.workflow.*.v1` 载荷（`to_event_payload`/`parse_*`）：RunStarted/StepStarted/
+  StepSettled/RunSettled（Critical），patch 三事件、PolicySwitched、决策点两事件与
+  publish 门禁三事件（State）。
 - 解析 fail closed：schema 字符串不匹配、未知字段、非法 ID/digest/枚举、非终态的
   RunSettled 全部拒绝；摘要字段受 2 KiB 上限。
 - 脱敏（DEC-022 §5）：载荷只含 ID、digest、枚举、原因码与受限摘要；参数明文与用户文本
@@ -168,6 +175,47 @@
   （捕获 `this`，生命周期约束同五操作 handler）；`operation_tool_registrations()`
   自 M10 起返回全部五个操作（含 `patch_workflow`）。
 
+## 轨迹编译与任务归纳（`workflow_compiler.hpp`，M11，DEC-025/026）
+
+- `WorkflowTrajectory`：一次**真实成功执行**的结构化快照——溯源三元组（workflow、
+  钉住版本 digest、来源 Run）、有效参数表、有效策略、生效步骤序列（字面量生效实参 +
+  含 `$param` 的原始实参作为归纳 provenance）。宿主可直接构造（Agent 工具调用路径）。
+- `WorkflowRuntime::capture_trajectory(run_id)`：仅对 `Completed` 且实际派发副作用的 Run
+  开放（DryRun 完成的 Run 从未真实执行，`RULE-10` 诚实声明下 fail closed）；
+  跳过步剔除、patch 覆盖后的生效态入快照。确定性错误码
+  `WorkflowCompileError::CaptureNotCompleted/CaptureNotExecuted`。
+- `compile_workflow(trajectory, options)`：字面量编译纯函数——生效实参原样落步、
+  参数默认值固化为观测值（`required` 转可选）、谓词/钩子/循环结构保留、
+  `allowed_policies` 沿用来源集合、跳过步的 `jump_to` fail closed
+  （`CompileJumpTargetSkipped`）、产物过 `validate_workflow_definition` 同源校验；
+  同输入同 digest（确定性）。产物是**宿主可编辑草稿**。
+- `WorkflowParameterCandidate` / `induce_parameters(trajectories)`：任务归纳提议。
+  结构 diff 要求 2..16 条同骨架轨迹（步数/种类/名称/实参树同形，递归校验）；类型相同、
+  值不同的标量叶成候选，常量叶保持字面量；命名优先取 `$param` provenance（多步引用
+  同名合并），否则按稳定路径序生成 `param_N`（避开已用名）。类型不一致
+  （`InductTypeMismatch`）与骨架不同形（`InductSkeletonMismatch`）fail closed。
+- `compile_workflow(trajectory, options, candidates)`：参数化编译——候选叶重写为
+  `{"$param": name}`（复用既有绑定纯函数），新增参数规格按观测类型推断
+  （`required=false`，默认值取 anchor 观测值）；provenance 候选复用来源参数规格，
+  名字冲突（`InductNameConflict`）、保留成员 `"tool"`（`InductReservedMember`）、
+  非标量叶（`InductLeafNotScalar`）与超上限（`InductLimitExceeded`）fail closed。
+  候选与观测值是宿主侧草稿数据，不入 IR、版本记录与事件（归纳是提议而非事实）。
+- `WorkflowRuntime::publish_validated(definition, actor, reason, source_run_id?)`：
+  入库门禁——结构校验 → 空参数 DryRun Run（调用线程同步驱动，草稿必须默认值完备）→
+  要求 `Completed` → **内容派生**证据摘要（ir digest、逐步结算、unevaluable 计数；同
+  定义 + 同 DryRun 结算序列 ⇒ 同证据）→ 幂等（head 同容同证 NoOp 返回
+  `WorkflowPublishOutcome{idempotent=true}`）→ 追加 `DryRunPassed` + 证据的版本记录。
+  门禁失败**不触碰库**（head 不变、无 Rejected 记录），仅以事件与错误可见；该 API 是
+  宿主 API，模型不可直达（`W-04`）。`publish_workflow` 维持宿主信任边界原始路径
+  （`NotValidated` 缺省、无事件）。
+- Publish 审计事件：`WorkflowPublishProposed`（workflow_id、ir_digest、source_run_id）/
+  `WorkflowPublishApplied`（含 evidence 与 dry_run_id）/`WorkflowPublishRejected`
+  （机器可读原因码 `validation-failed|gate-run-failed|publish-dryrun-failed|
+  append-failed`）；会话级（无 Run 上下文）。源 Run 绑定与门禁 Run 绑定经事件审计
+  承载，证据摘要保持内容派生。
+- Executor 路由（设计 §7）：捕获 = 调用线程互斥下快照；编译/归纳 = 调用线程纯函数；
+  门禁驱动 = 复用 `execute_run` 宿主同步路径（不得在持有宿主关键锁的上下文调用）。
+
 ## 兼容性与限制
 
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
@@ -177,7 +225,12 @@
   到 dispatching 策略同样拒绝；不得据此宣称导航或验证能力已实现（`RULE-10`）。
 - `Strict` 为 IR 未声明默认策略时的默认值（DEC-019/020，暂定状态已于 M9 冻结）。
 - Workflow 库与 Run 表为进程内投影（EventStore 仍是权威记录）；SQLite Workflow Library
-  存储与跨进程续跑未交付（`RISK-2026-038`）。`DryRunPassed` 证据入库链属阶段 D。
+  存储与跨进程续跑未交付（`RISK-2026-038`）。publish 门禁三事件自 M11 起为库变更提供了
+  可审计事件流，持久化载体仍推迟。
 - 自然语言 → patch 条目的解释编排（含三类目标判定）与 Workflow 定义/偏好两类目标属
-  Agent 侧与后续阶段（DEC-024 §7）；M10 交付的是解释结果的机器侧闭环。
+  Agent 侧与后续阶段（DEC-024 §7）；M10 交付的是解释结果的机器侧闭环。定义级「本次 ->
+  默认」的机器侧路径自 M11 起经轨迹编译与门禁入库承载（DEC-025 §2），其对话解释编排
+  仍属 Agent 侧。
+- Agent 工具调用轨迹的事件流自动抽取与「何时编译」的 harness 编排不在 M11（宿主构造
+  入口与门禁已交付，编排属后续里程碑）。
 - 异步驱动上限必须小于 Executor worker 数（一个驱动占用一个 worker 等待步 future）。
