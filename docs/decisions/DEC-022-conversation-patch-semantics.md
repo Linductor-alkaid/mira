@@ -51,7 +51,10 @@
   码）。事件属 `EventClass::State`，随 EventStore 持久化（DEC-003）。
 - **版本边界回退**：Run 参数 patch 形成可回退边界（`run_patch_epoch` 单调递增）；回退
   = 显式提交一条回退 patch（指向前一边界的 digest），而不是隐式恢复快照。Workflow 定义
-  patch 永不修改历史：回退是创建一个内容等于旧版本的新版本（`W-03`）。
+  patch 永不修改历史：回退是创建一个内容等于旧版本的新版本（`W-03`）。（阶段 D 注记，
+  M11：定义级「本次 -> 默认」目标的机器侧落地是轨迹编译——成功 Run 的有效态（含已应用
+  patch）经 [DEC-025](DEC-025-success-trajectory-compilation-and-publish-gate.md) 编译
+  为携带固化默认值的新版本草案，再经门禁入库；其对话解释编排仍属 Agent 侧。）
 - **生效点**：patch 在步边界生效（复用 DEC-016 的步边界 drain 机制：排队消息在步边界
   被消费并解释）；当前正在执行的步骤不受影响，完成后按新参数继续。跳过/替换步骤的
   patch 不得打断已派发动作的验证（`RULE-05`：已派发动作必须重新观察验证）。
@@ -87,7 +90,10 @@
   字段与授权范围）；EventStore 事实记录按 DEC-003 保留，投影可按策略重建或截断。训练
   导出默认关闭且与对话工件无关（`RULE-12`）。
 - **回放**：OfflineReplay 重建对话视图与 Run 视图时不产生任何副作用（`W-08`）；patch
-  事件重放为「已记录结果」，不重新应用。
+  事件重放为「已记录结果」，不重新应用。（阶段 D 注记，M11：v1 事件闭集扩展三员
+  publish 门禁事件 `WorkflowPublishProposed/Applied/Rejected`——载荷只含 ID、digest
+  与原因码，遵循本节脱敏规则；语义冻结于
+  [DEC-025](DEC-025-success-trajectory-compilation-and-publish-gate.md) §3。）
 
 ### 6. 开放问题（显式列出，不用含糊措辞掩盖）
 

@@ -5,6 +5,7 @@
 #include <mira/event_store.hpp>
 #include <mira/runtime.hpp>
 #include <mira/tool_executor.hpp>
+#include <mira/workflow_compiler.hpp>
 #include <mira/workflow_events.hpp>
 #include <mira/workflow_ir.hpp>
 #include <mira/workflow_run.hpp>
@@ -136,6 +137,17 @@ struct WorkflowShutdownReport final {
     std::string diagnostic;
 };
 
+// The reply of one gated publish (DEC-025 §3): the content digest of the
+// appended (or already-present) version, the gate drive identity and the
+// content-derived evidence digest. `idempotent` marks the NoOp replay of a
+// head record with the same content and evidence.
+struct WorkflowPublishOutcome final {
+    Sha256Digest ir_digest{};
+    bool idempotent = false;
+    WorkflowRunId dry_run_id;
+    Sha256Digest evidence{};
+};
+
 // FNV-1a over the digest bytes; lets digests key the runtime's library maps.
 struct Sha256DigestHash final {
     std::size_t operator()(const Sha256Digest &digest) const noexcept {
@@ -257,6 +269,25 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<WorkflowAgentContinuation>
     agent_continuation(const WorkflowRunId &run_id) const;
 
+    // Trajectory capture (DEC-025 §1, stage D): one structured snapshot of a
+    // Completed run that actually dispatched side effects. DryRun-planned
+    // completions, non-terminal, failed, cancelled and unknown runs fail
+    // closed; a compile-ready draft never comes from a run that did not
+    // execute (RULE-10).
+    [[nodiscard]] Result<WorkflowTrajectory>
+    capture_trajectory(const WorkflowRunId &run_id) const;
+
+    // The stage-D publish gate (DEC-025 §3): structural validation, a DryRun
+    // drive on the calling thread (empty parameters, defaults apply) and a
+    // DryRunPassed version record with content-derived evidence. Gate
+    // failures leave the library untouched and are audited through the
+    // WorkflowPublishProposed/Applied/Rejected events; a head record with
+    // the same content and evidence settles as an idempotent NoOp.
+    [[nodiscard]] Result<WorkflowPublishOutcome>
+    publish_validated(const WorkflowDefinition &definition, const std::string &actor,
+                      const std::string &reason,
+                      std::optional<WorkflowRunId> source_run_id = std::nullopt);
+
     [[nodiscard]] Result<WorkflowRunView> run_snapshot(const WorkflowRunId &run_id) const;
 
     // The five stage-C operation handlers (run/patch/pause/resume/cancel)
@@ -281,8 +312,21 @@ class WorkflowRuntime final {
     struct DriveFlags;
     struct AppliedPatch;
     struct PendingPatch;
+    struct VersionAppendResult final {
+        Sha256Digest digest{};
+        bool idempotent = false;
+    };
 
     [[nodiscard]] Result<RunRecord *> find_run(const WorkflowRunId &run_id, Error &error);
+    // Shared library append (M8-09 semantics): creates the history on first
+    // publish, chains the parent digest to the current head and stores the
+    // definition content. `dedupe` short-circuits a head record with the same
+    // content, validation and evidence into an idempotent NoOp (stage D).
+    [[nodiscard]] Result<VersionAppendResult>
+    append_version_record(const WorkflowDefinition &definition, const Sha256Digest &digest,
+                          const std::string &actor, const std::string &reason,
+                          WorkflowValidationResult validation,
+                          std::optional<Sha256Digest> evidence, bool dedupe);
     [[nodiscard]] Result<WorkflowRunView> create_run_locked(const WorkflowDefinition &definition,
                                                             JsonValue parameters,
                                                             std::optional<WorkflowPolicy> policy);
@@ -316,6 +360,14 @@ class WorkflowRuntime final {
     void emit_decision_raised(const RunRecord &run, const WorkflowDecisionRequest &decision);
     void emit_decision_resolved(const RunRecord &run, const WorkflowDecisionId &decision_id,
                                 WorkflowDecisionResolution resolution);
+    // Session-scoped publish-gate audit events (DEC-025 §3): no run record
+    // exists while the gate runs, so these carry the workflow identity.
+    void emit_publish_proposed(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
+                              const std::optional<WorkflowRunId> &source_run_id);
+    void emit_publish_applied(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
+                              const Sha256Digest &evidence, const WorkflowRunId &dry_run_id);
+    void emit_publish_rejected(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
+                               const std::string &reason_code);
 
     [[nodiscard]] WorkflowRunResult drive(RunRecord &run, const OperationContext &context);
     void assemble_result(const RunRecord &run, WorkflowRunResult &result) const;

@@ -117,11 +117,13 @@ add_library(mira_core
 )
 add_library(Mira::core ALIAS mira_core)
 
-# Workflow dual-path contract layer (M8, DEC-019..DEC-022) plus the stage-B
-# execution runtime (M9): IR, run state view, versioning, event payloads,
-# operation tool schemas and the WorkflowRuntime drive loop. Step dispatch and
-# verification observations route through the Executor (M9 §5); the executor
-# stays a PRIVATE dependency so the installed contract surface is unchanged.
+# Workflow dual-path contract layer (M8, DEC-019..DEC-022), the stage-B
+# execution runtime (M9) and the stage-D compiler plane (M11, DEC-025/026):
+# IR, run state view, versioning, event payloads, operation tool schemas,
+# the WorkflowRuntime drive loop and the trajectory compiler with task
+# induction. Step dispatch and verification observations route through the
+# Executor (M9 §5); the executor stays a PRIVATE dependency so the installed
+# contract surface is unchanged.
 add_library(mira_workflow
     src/workflow/workflow_ir.cpp
     src/workflow/workflow_run.cpp
@@ -129,6 +131,7 @@ add_library(mira_workflow
     src/workflow/workflow_events.cpp
     src/workflow/workflow_tools.cpp
     src/workflow/workflow_runtime.cpp
+    src/workflow/workflow_compiler.cpp
 )
 add_library(Mira::workflow ALIAS mira_workflow)
 target_include_directories(mira_workflow

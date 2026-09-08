@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-08（M9 关闭）
+> 更新日期：2026-09-09（M10 关闭；M11 创建）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -74,6 +74,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
+| [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | In Progress |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -129,7 +130,13 @@ patch 执行闭环（准入矩阵、幂等双检、步边界生效、审计、�
 [#31](https://github.com/Linductor-alkaid/mira/pull/31) CI 全绿（三平台 + sanitizer +
 quality 矩阵 24 项；首轮 quality 1 处 clang-tidy `performance-move-const-arg` 修复后
 复验），M10 关闭（`Completed`）；阶段 D（成功轨迹编译与任务归纳）里程碑可依据该设计
-创建。
+创建。同日，阶段 D 专项决策
+[DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)
+（成功轨迹契约、编译与入库门禁）与 [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)
+（任务归纳与参数化提议）冻结，`workflow_runtime_design` 升至 v0.4（§12 阶段 D 实施
+规范）；里程碑 [M11](m11-trajectory-compilation-and-task-induction.md) 依据其创建，经
+维护者评审（用户指示依设计与计划推进下一步开发，与 M8/M9/M10 同一授权模式）转
+`Planned` 并进入实施（`In Progress`）。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
@@ -164,6 +171,8 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md) | 对话 patch 语义与 Conversation 工件 | Accepted | M8 |
 | [DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md) | 执行策略全集运行时语义与检查点（阶段 C） | Accepted | M10 |
 | [DEC-024](../decisions/DEC-024-conversation-patch-execution.md) | 对话 patch 执行语义与决策点交互（阶段 C） | Accepted | M10 |
+| [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md) | 成功轨迹契约、Workflow 编译与入库门禁（阶段 D） | Accepted | M11 |
+| [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md) | 任务归纳与参数化提议（阶段 D） | Accepted | M11 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

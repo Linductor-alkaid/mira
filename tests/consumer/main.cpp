@@ -3,6 +3,7 @@
 #include <mira/runtime_baseline.hpp>
 #include <mira/sqlite_memory_store.hpp>
 #include <mira/state_store.hpp>
+#include <mira/workflow_compiler.hpp>
 #include <mira/workflow_ir.hpp>
 #include <mira/workflow_runtime.hpp>
 #include <mira/workflow_tools.hpp>
@@ -279,6 +280,107 @@ int main() {
         if (!settled.has_value() ||
             settled.value().state != mira::WorkflowRunState::Completed) {
             return 36;
+        }
+
+        // Workflow compilation (M11): a successful side-effecting run is
+        // captured, compiled with the observed value baked as the default,
+        // published through the DryRun gate and re-run from the library;
+        // induction across two runs then reopens the parameter.
+        auto tools = std::make_shared<mira::BuiltinToolRegistry>();
+        if (!tools->register_tool(mira::make_wait_tool().spec,
+                                  mira::make_wait_tool().handler)) {
+            return 37;
+        }
+        workflows.set_tool_registry(tools);
+        const char *compilable_ir = R"({
+            "schema_version": {"major": 1, "minor": 0},
+            "workflow_id": "ffffffffffffffffffffffffffffffff",
+            "name": "consumer-compilable",
+            "parameters": [
+                {"name": "delay", "type": "integer", "required": false, "default": 1}
+            ],
+            "steps": [
+                {"step_id": "abababababababababababababababab", "kind": "tool_call",
+                 "arguments": {"tool": "wait", "duration_ms": {"$param": "delay"}}}
+            ],
+            "default_policy": "strict",
+            "allowed_policies": ["strict", "dry_run"]
+        })";
+        auto compilable = mira::parse_workflow_definition(compilable_ir);
+        if (!compilable.has_value()) {
+            return 38;
+        }
+        mira::JsonValue fast{mira::JsonValue::Object{}};
+        fast.set("delay", mira::JsonValue{std::int64_t{5}});
+        const auto first = workflows.create_run(compilable.value(), fast,
+                                                mira::WorkflowPolicy::Strict);
+        if (!first.has_value() ||
+            !workflows.execute_run(first.value().run_id, context).has_value()) {
+            return 39;
+        }
+        const auto trajectory = workflows.capture_trajectory(first.value().run_id);
+        if (!trajectory.has_value()) {
+            return 40;
+        }
+        mira::WorkflowCompileOptions options;
+        options.workflow_id = compilable.value().workflow_id;
+        options.name = "consumer-compiled";
+        const auto compiled = mira::compile_workflow(trajectory.value(), options);
+        if (!compiled.has_value()) {
+            return 41;
+        }
+        const auto published = workflows.publish_validated(compiled.value(), "consumer",
+                                                           "bake observed delay",
+                                                           first.value().run_id);
+        if (!published.has_value() || published.value().idempotent) {
+            return 42;
+        }
+        const auto rerun = workflows.create_run(
+            compilable.value().workflow_id, published.value().ir_digest,
+            mira::JsonValue{mira::JsonValue::Object{}}, mira::WorkflowPolicy::Strict);
+        if (!rerun.has_value() ||
+            !workflows.execute_run(rerun.value().run_id, context).has_value()) {
+            return 43;
+        }
+        mira::JsonValue slow{mira::JsonValue::Object{}};
+        slow.set("delay", mira::JsonValue{std::int64_t{7}});
+        const auto second = workflows.create_run(compilable.value(), slow,
+                                                 mira::WorkflowPolicy::Strict);
+        if (!second.has_value() ||
+            !workflows.execute_run(second.value().run_id, context).has_value()) {
+            return 44;
+        }
+        const auto second_trajectory = workflows.capture_trajectory(second.value().run_id);
+        if (!second_trajectory.has_value()) {
+            return 45;
+        }
+        const auto candidates = mira::induce_parameters(
+            {trajectory.value(), second_trajectory.value()});
+        if (!candidates.has_value() || candidates.value().size() != 1 ||
+            candidates.value().front().name != "delay") {
+            return 46;
+        }
+        mira::WorkflowCompileOptions derived;
+        derived.workflow_id = mira::WorkflowId::generate();
+        derived.name = "consumer-induced";
+        const auto induced = mira::compile_workflow(trajectory.value(), derived,
+                                                    candidates.value());
+        if (!induced.has_value()) {
+            return 47;
+        }
+        const auto induced_publish = workflows.publish_validated(
+            induced.value(), "consumer", "induced parameterization", std::nullopt);
+        if (!induced_publish.has_value()) {
+            return 48;
+        }
+        mira::JsonValue override_parameters{mira::JsonValue::Object{}};
+        override_parameters.set("delay", mira::JsonValue{std::int64_t{9}});
+        const auto induced_run = workflows.create_run(
+            induced.value().workflow_id, induced_publish.value().ir_digest,
+            override_parameters, mira::WorkflowPolicy::Strict);
+        if (!induced_run.has_value() ||
+            !workflows.execute_run(induced_run.value().run_id, context).has_value()) {
+            return 49;
         }
 
         const auto report = workflows.shutdown();

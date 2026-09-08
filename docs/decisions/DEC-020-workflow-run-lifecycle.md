@@ -114,7 +114,10 @@ epoch/`OperationState` 结算等价强制（M8 不引入名为 ActionLease 的�
   Rejected` + 证据 digest）、`created_at`。历史不可修改；「最新版本」「按名字索引」是
   可重建投影。
 - 归纳/修改产生新版本是提议而非事实：未通过验证（至少 DryRun）的版本不得成为任何 Run
-  的创建时版本（`W-04`）。
+  的创建时版本（`W-04`）。（阶段 D 注记，M11：`DryRunPassed` 证据的生成管线随
+  [DEC-025](DEC-025-success-trajectory-compilation-and-publish-gate.md) §3 的
+  `publish_validated` 门禁交付——结构校验 + DryRun 驱动 + 内容派生证据摘要 + 幂等
+  NoOp；`NotValidated` 原始入库路径仍保留为宿主信任边界。）
 
 ## 备选方案
 

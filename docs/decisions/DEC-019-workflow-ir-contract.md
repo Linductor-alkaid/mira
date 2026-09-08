@@ -154,5 +154,9 @@ WorkflowStep
 - [DEC-014](DEC-014-agent-harness-workflow-dual-plane.md)、
   [DEC-002](DEC-002-public-contract-versioning.md)、
   [DEC-003](DEC-003-event-sourced-persistence.md)
+- [DEC-025](DEC-025-success-trajectory-compilation-and-publish-gate.md)、
+  [DEC-026](DEC-026-task-induction-and-parameterization.md)（阶段 D 注记：轨迹编译与
+  任务归纳**复用**本决策的参数绑定与 `{"$param": name}` 唯一封闭引用形式做参数化重写，
+  不引入第二套替换机制）
 - [workflow_runtime_design](../design/workflow_runtime_design.md)
 - [Agent Harness 参考研究](../design/harness_reference_study.md) §7（图即代码不采纳）
