@@ -1,6 +1,6 @@
 # M9：Workflow Runtime 最小闭环（阶段 B）
 
-> 状态：Planned
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M8](m8-workflow-contracts.md)（已完成）
@@ -158,7 +158,7 @@
   `patch_workflow` 不注册（阶段 C）。
 - [x] `M9-12` 端到端取证：AgentLoop 经模型响应发起 `run_workflow` 工具调用 →
   Run 创建并驱动至终态 → 工具结果回流模型（`RISK-2026-035` 的阶段 B 部分）。
-- [ ] `M9-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M9-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer 覆盖 `workflow_runtime.hpp`；
   总计划、设计文档、API 手册与 DEC 同步后关闭里程碑。
 
@@ -213,10 +213,10 @@
 - [x] 工具闭环：四操作经 `BuiltinToolRegistry` 执行与错误信封；库版本门禁
   （`NotValidated` 不可运行、`DryRunPassed` 可运行）；模型发起 `run_workflow`
   端到端（`M9-12`）。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M8 模式取证或记录补跑条件；
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M8 模式取证（53/53）；
   quality（clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建
-  组合由 PR CI 补验并回填；installed-consumer 覆盖新公共头。
-- [ ] 总计划第 4 节、`workflow_runtime_design`（路由与限制章节）、API 手册、
+  组合与 clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共头。
+- [x] 总计划第 4 节、`workflow_runtime_design`（路由与限制章节）、API 手册、
   DEC-019/020（暂定值冻结注记）与本文件同步。
 
 ## 8. 验证记录
@@ -256,7 +256,20 @@ miniconda 发行版）。
   `workflow_definition_to_json` 曾对空 `summary` 输出被解码端拒绝的空串，导致无
   summary 定义无法通过 `validate_workflow_definition` 往返（修复为按可选键省略，
   已含 summary 的定义 digest 不变）。
-- 限制：Windows/Android 构建组合与 clang-tidy 由 PR CI 补验后随 `M9-13` 回填；阶段 C–F
-  不在本轮（范围外）。
+- 限制：Windows/Android 构建组合与 clang-tidy 由 PR CI 补验后随 `M9-13` 回填（见下条）；
+  阶段 C–F 不在本轮（范围外）。
 - 同步：DEC-019/020（默认策略冻结注记）、`workflow_runtime_design`（v0.2：路由定稿、
   M9 契约补全、实现补注）、API 手册（workflow-contracts 增 M9 节）、总计划（§4）。
+
+2026-09-08：PR [#30](https://github.com/Linductor-alkaid/mira/pull/30) CI 全绿（head
+`8febcf2`，push pipeline runs
+[`34192800547`](https://github.com/Linductor-alkaid/mira/actions/runs/34192800547)、
+[`34192803826`](https://github.com/Linductor-alkaid/mira/actions/runs/34192803826)）：Linux
+GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64
+（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy 与跨平台验证。首轮
+quality 在 `workflow_runtime.cpp` 报 1 处 `performance-noautomatic-move`（const 返回值阻止
+自动移动），去除 const 后复验通过；语义不变（控制与执行测试全绿）。PR 已合并
+（merge `9d80524`）。`M9-01` 至 `M9-13` 全部完成，退出条件逐项满足，本里程碑关闭
+（`Completed`）。阶段 C（对话驱动 patch 与执行策略全集）里程碑可依据
+[workflow_runtime_design](../design/workflow_runtime_design.md) 创建并进入 `Planned`。

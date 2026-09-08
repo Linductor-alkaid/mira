@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-08（M9 进入实施）
+> 更新日期：2026-09-08（M9 关闭）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -72,7 +72,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
-| [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | In Progress |
+| [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -111,7 +111,11 @@ quality 矩阵），M8 关闭（`Completed`）。同日，阶段 B（Runtime 最
 [M9](m9-workflow-runtime-minimal-loop.md) 依据 `M8-05` 设计创建：经维护者评审（用户指示
 依设计与计划推进下一步开发，与 M8 同一授权模式）转 `Planned` 并进入实施（`In Progress`）；
 其范围、契约补全（`M9-01` 冻结 M8 暂定默认值与 ToolCall 工具绑定约定）、Executor 路由
-定稿与测试矩阵见该文件。
+定稿与测试矩阵见该文件。同日交付 `WorkflowRuntime`（Strict/DryRun 执行闭环、暂停/恢复/
+取消、恢复钩子、shutdown、run/pause/resume/cancel 四操作 BuiltIn 闭环与模型发起
+`run_workflow` 端到端），PR [#30](https://github.com/Linductor-alkaid/mira/pull/30) CI
+全绿（三平台 + sanitizer + quality 矩阵 24 项），M9 关闭（`Completed`）；阶段 C（对话
+驱动 patch 与执行策略全集）里程碑可依据该设计进入 `Planned`。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
