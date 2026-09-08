@@ -810,7 +810,11 @@ JsonValue workflow_definition_to_json(const WorkflowDefinition &definition) {
     root.emplace_back("schema_version", JsonValue{std::move(version)});
     root.emplace_back("workflow_id", definition.workflow_id.to_string());
     root.emplace_back("name", definition.name);
-    root.emplace_back("summary", definition.summary);
+    // Summary is optional on the wire and rejected when present-but-empty;
+    // the canonical form omits it so definitions without one round trip.
+    if (!definition.summary.empty()) {
+        root.emplace_back("summary", definition.summary);
+    }
     JsonValue::Array parameters;
     for (const auto &parameter : definition.parameters) {
         parameters.push_back(parameter_to_json(parameter));
@@ -828,6 +832,23 @@ JsonValue workflow_definition_to_json(const WorkflowDefinition &definition) {
     }
     root.emplace_back("allowed_policies", JsonValue{std::move(allowed)});
     return JsonValue{std::move(root)};
+}
+
+Result<void> validate_workflow_definition(const WorkflowDefinition &definition,
+                                          const WorkflowLimits &limits) {
+    // Single source of validation semantics: canonicalize then re-decode. A
+    // definition that cannot survive its own round trip (control jumps,
+    // fallback targets, policy sets, predicate shapes, limits) is rejected
+    // with the decoder's error; struct-built definitions get the identical
+    // fail-closed treatment as JSON-decoded ones.
+    auto decoded = workflow_definition_from_json(workflow_definition_to_json(definition),
+                                                 limits);
+    if (!decoded.has_value()) {
+        return decoded.error();
+    }
+    // A successful re-decode of the canonical form is the validation; a
+    // struct that does not survive its own round trip is rejected above.
+    return Result<void>{};
 }
 
 Result<WorkflowDefinition>

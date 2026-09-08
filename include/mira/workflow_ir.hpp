@@ -145,6 +145,14 @@ struct WorkflowDefinition final {
 // Serialization and strict decoding. Unknown fields, unsupported versions and
 // limit violations fail closed (DEC-019 §4/§5); round trips are lossless.
 [[nodiscard]] JsonValue workflow_definition_to_json(const WorkflowDefinition &definition);
+
+// Structural validation of an in-memory definition with the same semantics as
+// decoding: the definition is canonicalized and re-decoded, so struct-built
+// definitions (never parsed from JSON) face the identical fail-closed checks
+// (control jumps, fallback targets, policy sets, predicate shapes, limits).
+[[nodiscard]] Result<void>
+validate_workflow_definition(const WorkflowDefinition &definition,
+                             const WorkflowLimits &limits = kDefaultWorkflowLimits);
 [[nodiscard]] Result<WorkflowDefinition>
 workflow_definition_from_json(const JsonValue &json,
                               const WorkflowLimits &limits = kDefaultWorkflowLimits);

@@ -175,6 +175,30 @@ mira_add_m8_test(mira_m8_versioning_test m8/m8_versioning_test.cpp)
 mira_add_m8_test(mira_m8_events_test m8/m8_events_test.cpp)
 mira_add_m8_test(mira_m8_tools_test m8/m8_tools_test.cpp)
 
+# ---------------------------------------------------------------------------
+# M9: workflow runtime minimal loop (stage B; Executor-routed execution)
+# ---------------------------------------------------------------------------
+
+function(mira_add_m9_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m9" TIMEOUT 120)
+endfunction()
+
+mira_add_m9_test(mira_m9_execution_test m9/m9_execution_test.cpp)
+mira_add_m9_test(mira_m9_control_test m9/m9_control_test.cpp)
+mira_add_m9_test(mira_m9_tools_test m9/m9_tools_test.cpp)
+
 # M4-17: long-task and memory benchmark harness. Asserts fidelity invariants;
 # writes a JSON manifest for docs/benchmarks/long-task-memory.md.
 add_executable(mira_m4_stateful_benchmark benchmark/m4_stateful_benchmark.cpp)

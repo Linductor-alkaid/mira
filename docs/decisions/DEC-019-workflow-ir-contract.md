@@ -137,8 +137,9 @@ WorkflowStep
   这是显式承诺，写入 API 手册与兼容性说明。
 - `Navigate` 目标在 v1 是不透明标记：阶段 E 之前它只能被 DryRun 校验为「形状合法」，
   不能被解析。不得据此宣称导航能力已实现（`RULE-10`）。
-- 暂定默认值：`default_policy` 缺省时为 `Strict`（暂定默认值，负责人 Mira Maintainers，
-  最迟冻结里程碑：阶段 B 里程碑）。
+- 默认值：`default_policy` 缺省时为 `Strict`。该值在 M8 为暂定默认值，已于
+  2026-09-08 随 [M9](../plans/m9-workflow-runtime-minimal-loop.md)（`M9-01`）冻结为正式
+  默认：保守缺省与安全底线一致（策略只能收紧不能放宽）。
 
 ## 验证方式
 
