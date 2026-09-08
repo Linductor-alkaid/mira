@@ -1307,7 +1307,7 @@ Result<void> WorkflowRuntime::resolve_interrupted_step(RunRecord &run) {
         return Result<void>{};
     }
     run.interrupted = false;
-    const auto failure =
+    auto failure =
         make_runtime_error(WorkflowRuntimeError::ResumeUncertainSideEffect,
                            "interrupted side-effecting step cannot be verified or recovered");
     static_cast<void>(settle_terminal(run, WorkflowRunState::Failed, failure.safe_message));
