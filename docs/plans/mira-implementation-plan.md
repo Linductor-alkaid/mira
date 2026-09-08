@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-09（M10 关闭；M11 创建）
+> 更新日期：2026-09-09（M11 关闭）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -74,7 +74,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
-| [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | In Progress |
+| [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -136,7 +136,15 @@ quality 矩阵 24 项；首轮 quality 1 处 clang-tidy `performance-move-const-
 （任务归纳与参数化提议）冻结，`workflow_runtime_design` 升至 v0.4（§12 阶段 D 实施
 规范）；里程碑 [M11](m11-trajectory-compilation-and-task-induction.md) 依据其创建，经
 维护者评审（用户指示依设计与计划推进下一步开发，与 M8/M9/M10 同一授权模式）转
-`Planned` 并进入实施（`In Progress`）。
+`Planned` 并进入实施（`In Progress`）。同日交付轨迹契约与采集（`capture_trajectory`）、
+字面量编译与默认值固化、结构 diff 任务归纳与参数化重写（`workflow_compiler` 模块）、
+DryRun 入库门禁（`publish_validated`：内容派生证据、幂等 NoOp、失败库零变更）与
+publish 三员审计事件；本机全矩阵（Debug/Release/ASAN/UBSAN 60/60、TSAN 59/59、
+quality）通过，PR
+[#32](https://github.com/Linductor-alkaid/mira/pull/32) CI 全绿（三平台 + sanitizer +
+quality 24 项；首轮 quality 1 处 clang-tidy `performance-move-const-arg` 修复后复验），
+M11 关闭（`Completed`）；阶段 E（App Model 与导航）里程碑可依据该设计创建（前置为
+阶段 B；感知能力按 DEC-011 重定义）。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02

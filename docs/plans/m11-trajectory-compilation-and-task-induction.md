@@ -1,6 +1,6 @@
 # M11：成功轨迹编译与任务归纳（阶段 D）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M9](m9-workflow-runtime-minimal-loop.md)（已完成；阶段 D 的直接前置是阶段 B，
@@ -111,7 +111,7 @@
 - [x] `M11-07` 端到端取证：含 patch 修复的成功 Run -> 捕获 ->（多轨迹）归纳 ->
   编译 -> 门禁入库 -> 新版本运行（固化默认与参数复用两条路径）；installed-consumer
   用例。
-- [ ] `M11-08` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M11-08` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer；总计划、设计文档（v0.4）、
   API 手册与 DEC-019/020/022 注记同步后关闭里程碑。
 
@@ -158,10 +158,10 @@
   传参）与 `bind-*` 错误码透出。
 - [x] 事件：publish 三事件序列与载荷、未知字段 fail closed、闭集扩展回归；门禁
   Run 自身的 `WorkflowRunStarted/Settled` 事件如实记录。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9/M10 模式取证；quality
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9/M10 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
-- [ ] 总计划第 4/5 节、`workflow_runtime_design` v0.4、API 手册、DEC-019/020/022
+- [x] 总计划第 4/5 节、`workflow_runtime_design` v0.4、API 手册、DEC-019/020/022
   （阶段 D 注记）与本文件同步。
 
 ## 8. 验证记录
@@ -205,3 +205,18 @@ miniconda 发行版）。
 - 同步：DEC-025/026（本轮冻结）、DEC-019/020/022（阶段 D 注记）、
   `workflow_runtime_design`（v0.4 §12 与路由/事件/模块/测试表）、API 手册
   （workflow-contracts 增 M11 节）、总计划（§4/§5）、本文件。
+
+2026-09-09：PR [#32](https://github.com/Linductor-alkaid/mira/pull/32) CI 全绿（head
+`5594f83`，push pipeline run
+[`34262665602`](https://github.com/Linductor-alkaid/mira/actions/runs/34262665602)、
+pull_request pipeline run
+[`34262669837`](https://github.com/Linductor-alkaid/mira/actions/runs/34262669837)）：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与
+x86_64（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy 与跨平台验证。首轮
+quality 在 `workflow_runtime.cpp` 报 1 处 `performance-move-const-arg`（对
+trivially-copyable 的 `std::optional<Sha256Digest>` 使用无效 `std::move`），去除后复验
+通过；语义不变（本地 m8–m11 套件复跑 14/14 通过）。PR 已合并（merge `06330a3`）。
+`M11-01` 至 `M11-08` 全部完成，退出条件逐项满足，本里程碑关闭（`Completed`）。阶段 E
+（App Model 与导航）里程碑可依据 `workflow_runtime_design` 与 DEC-014 创建并进入
+`Planned`（前置为阶段 B，已满足；感知能力边界按 DEC-011）。
