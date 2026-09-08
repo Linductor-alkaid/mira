@@ -1,11 +1,11 @@
 # M8：Workflow 双路径契约冻结
 
-> 状态：Proposed（待维护者评审，评审通过后转 `Planned`）
+> 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；方向依据 [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)
 > 建议发布点：Workflow contract alpha
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 
 ## 1. 目标
 
@@ -78,48 +78,48 @@ DEC-014 明确不解冻 M7。将 Workflow 方向并入 M7 会加重 `RISK-2026-0
 
 ### 4.1 决策与设计冻结
 
-- [ ] `M8-01` 新增决策记录：Workflow IR 公共契约与版本化。冻结 IR 表达范围（参数 Schema、
+- [x] `M8-01` 新增决策记录：Workflow IR 公共契约与版本化。冻结 IR 表达范围（参数 Schema、
   步骤图、每步前置条件与验证谓词、导航目标、恢复钩子、执行策略声明）、序列化格式与
   digest、兼容性承诺、Workflow 版本历史不可变及索引为可重建投影的存储边界（对齐
   DEC-002、DEC-003、`W-03`）。
-- [ ] `M8-02` 新增决策记录：WorkflowRun 生命周期与 Task 状态机映射。冻结
+- [x] `M8-02` 新增决策记录：WorkflowRun 生命周期与 Task 状态机映射。冻结
   `Created/Running/Paused/WaitingUser/WaitingAgent/Completed/Failed/Cancelled` 与既有
   `TaskState` 族（`Pausing`/`Paused`/`Recovering`/`SuspendedForTakeover` 等）的精确映射、
   单写者与终态幂等规则、迟到完成隔离（`W-01`/`W-07`）；冻结执行策略
   `Strict/Recoverable/AgentAssisted/Interactive/DryRun` 的语义表、策略影响面与暂定默认值。
-- [ ] `M8-03` 新增决策记录：Workflow 操作的 Tool 通道表达。冻结
+- [x] `M8-03` 新增决策记录：Workflow 操作的 Tool 通道表达。冻结
   `run_workflow/patch_workflow/pause_workflow/resume_workflow/cancel_workflow` 经
   ToolIntent/ToolProposal 桥的 wire schema、参数校验、错误语义与权限挂钩点；明确宿主与
   用户命令不经模型即可触发运行控制；明确与 DEC-009 模组边界及 GitHub #8 的关系
   （`update_memory` 沿用既有规则、`request_user_input` 的表达席位预留，均不在本决策核心
   范围）。
-- [ ] `M8-04` 新增决策记录：对话 patch 语义与 Conversation 工件。冻结「本次运行修改 /
+- [x] `M8-04` 新增决策记录：对话 patch 语义与 Conversation 工件。冻结「本次运行修改 /
   Workflow 定义修改 / 用户偏好记忆」三类目标的判定与歧义确认规则、patch 幂等/审计/版本
   边界回退、Conversation History 与 Execution Trace 的分离、Conversation 工件的脱敏与
   保留策略（`W-04`/`W-05`、DEC-004、`RULE-07`）。
-- [ ] `M8-05` 新增专项设计文档 `workflow_runtime_design`：IR/Run/Runtime 分解、验证谓词与
+- [x] `M8-05` 新增专项设计文档 `workflow_runtime_design`：IR/Run/Runtime 分解、验证谓词与
   恢复钩子语义、事件 schema、错误分类、Executor 路由、取消与 shutdown 顺序、测试策略，
   作为阶段 B 起的实施规范；文中接口标注为草案级别。
 
 ### 4.2 契约实现与测试
 
-- [ ] `M8-06` 建立 `mira-workflow` 模块并实现 Workflow IR 结构、JSON 序列化与 schema
+- [x] `M8-06` 建立 `mira-workflow` 模块并实现 Workflow IR 结构、JSON 序列化与 schema
   校验：未知字段与版本不匹配 fail closed、嵌套深度与字节数上限（`RULE-08`）、往返保真。
-- [ ] `M8-07` 实现参数 Schema 契约与绑定校验：类型、默认值、约束，缺失与越界参数的
+- [x] `M8-07` 实现参数 Schema 契约与绑定校验：类型、默认值、约束，缺失与越界参数的
   确定性错误码；参数绑定为纯函数。
-- [ ] `M8-08` 实现 WorkflowRun 状态视图与转换表：按 `M8-02` 冻结的映射提供全部合法与
+- [x] `M8-08` 实现 WorkflowRun 状态视图与转换表：按 `M8-02` 冻结的映射提供全部合法与
   非法转换的纯函数判定，表驱动覆盖终态幂等与迟到完成隔离语义。
-- [ ] `M8-09` 实现 Workflow 资产版本化契约：版本记录（Who/Why/What Changed/Validation
+- [x] `M8-09` 实现 Workflow 资产版本化契约：版本记录（Who/Why/What Changed/Validation
   Result/Timestamp）、不可变历史、内容 digest、旧版本 Run 回放引用创建时版本
   （`W-03`，设计第 7.7 节）。
-- [ ] `M8-10` 扩展 EventStore 事件 schema：WorkflowRun/Step/Patch/策略切换等版本化载荷
+- [x] `M8-10` 扩展 EventStore 事件 schema：WorkflowRun/Step/Patch/策略切换等版本化载荷
   与脱敏规则；OfflineReplay 识别 workflow 事件且不重放副作用（`W-08`，契约级断言）。
-- [ ] `M8-11` 实现 Workflow 操作 Tool 规格 schema：五个操作的参数、结果与错误 schema 及
+- [x] `M8-11` 实现 Workflow 操作 Tool 规格 schema：五个操作的参数、结果与错误 schema 及
   本地校验，fail closed 语义与 `resolve_tool_calls` 同源；只校验，不执行。
 
 ### 4.3 工程与公共包门禁
 
-- [ ] `M8-12` `Mira::workflow` 进入安装包，最小 consumer 独立包含、链接与运行通过（对齐
+- [x] `M8-12` `Mira::workflow` 进入安装包，最小 consumer 独立包含、链接与运行通过（对齐
   DEC-011 的公共 API 检验边界与既有 installed-consumer 测试模式）。
 - [ ] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
   补跑条件）、负向与边界测试全绿；总计划、决策索引、设计与 API 手册同步后关闭本里程碑。
@@ -166,3 +166,38 @@ Runtime 关闭顺序。Workflow Runtime 的 Executor 路由表（步骤执行、
 2026-09-07：依据 DEC-014 与架构设计第 16 节阶段 A 创建本里程碑，状态 `Proposed`，尚无
 实现。负责人为 Mira Maintainers；新增里程碑而非重定义 M7 的理由见第 1 节。转为 `Planned`
 前不排期任何实现工作。
+
+2026-09-08：维护者评审通过（用户指示依设计与计划推进下一步开发），M8 由 `Proposed` 转
+`Planned` 并进入实施（`In Progress`）：准入条件第 3 条满足。同日冻结 `M8-01`–`M8-05`
+依赖的决策与设计输入：[DEC-019](../decisions/DEC-019-workflow-ir-contract.md)（IR 契约，
+`M8-01`）、[DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)（Run 生命周期/映射/
+策略，`M8-02`）、[DEC-021](../decisions/DEC-021-workflow-tool-channel.md)（操作 Tool 通道，
+`M8-03`）、[DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)（对话 patch 语义，
+`M8-04`）与 [Workflow Runtime 设计](../design/workflow_runtime_design.md)（`M8-05`）。
+暂定默认值均已注明负责人与最迟冻结里程碑（阶段 B 里程碑）。
+2026-09-08：契约实现与本地验证（Ubuntu 24.04，x86_64，g++ 13.3.0，CMake 3.28.3，Unix
+Makefiles；本机无 clang/clang-tidy，由 PR CI quality job 补验；`clang-format` 使用
+miniconda 发行版）。
+
+- 实现：`include/mira/workflow_{ir,run,versioning,events,tools}.hpp` 与
+  `src/workflow/*.cpp`（CMake 目标 `Mira::workflow`，仅依赖 `Mira::core`）；
+  `core_contracts.hpp` 新增 `WorkflowId/WorkflowRunId/WorkflowPatchId/
+  WorkflowDecisionId`。
+- 新增测试：`mira_m8_ir_test`（往返保真、未知字段/版本不匹配/深度与容量 fail closed、
+  绑定确定性错误码、参数引用、谓词求值、控制流与恢复钩子结构校验、digest 内容寻址）、
+  `mira_m8_run_test`（转换表全枚举、终态幂等、迟到完成 Stale、Run↔Task 映射、策略门禁）、
+  `mira_m8_versioning_test`（只追加与链式校验、digest 钉住创建时版本、仅验证版本可运行）、
+  `mira_m8_events_test`（十类载荷往返、fail closed、脱敏断言、OfflineReplay 重建无副作用）、
+  `mira_m8_tools_test`（五操作 schema 子集与保留名检查、正负校验、patch 封闭语义、幂等键、
+  错误信封）。
+- 安装包：`Mira::workflow` 进入 `install(TARGETS ... EXPORT MiraTargets)`；
+  `mira_installed_consumer` 扩展 Workflow 契约用例（独立包含、链接、解析、绑定、校验）；
+  `mira_public_headers_test` 覆盖五个新头。
+- 结果：Release/Debug/ASAN/UBSAN 各 51/51 通过；TSAN（`setarch x86_64 -R`，mbedtls
+  portable 按配置禁用）50/50 通过；`format-check`、`docs-check`、`sbom-check`、
+  `platform-boundary-check` 通过。
+- 限制：Windows/Android 构建组合与 clang-tidy 由 PR CI 补验后随 `M8-13` 回填；阶段 B
+  执行闭环不在本轮（本里程碑范围外）。
+- 同步：DEC-019..022、`workflow_runtime_design`、API 手册（index/workflow-contracts）、
+  总计划（§4 状态、§5 决策索引）。
+

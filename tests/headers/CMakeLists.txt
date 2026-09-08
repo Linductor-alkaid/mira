@@ -24,7 +24,12 @@ foreach(HEADER IN ITEMS
         mira/adapters/android/android_host_adapter.hpp
         mira/adapters/net/mbedtls_tls.hpp
         mira/adapters/net/openssl_tls.hpp
-        mira/adapters/net/socket_transport.hpp)
+        mira/adapters/net/socket_transport.hpp
+        mira/workflow_ir.hpp
+        mira/workflow_run.hpp
+        mira/workflow_versioning.hpp
+        mira/workflow_events.hpp
+        mira/workflow_tools.hpp)
     string(REPLACE "/" "_" TARGET_NAME "${HEADER}")
     string(REPLACE "." "_" TARGET_NAME "${TARGET_NAME}")
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.cpp")

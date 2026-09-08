@@ -117,6 +117,37 @@ add_library(mira_core
 )
 add_library(Mira::core ALIAS mira_core)
 
+# Workflow dual-path contract layer (M8, DEC-019..DEC-022): IR, run state
+# view, versioning, event payloads and operation tool schemas. Synchronous
+# pure contracts only: no Executor routing, no runtime execution (phase B).
+add_library(mira_workflow
+    src/workflow/workflow_ir.cpp
+    src/workflow/workflow_run.cpp
+    src/workflow/workflow_versioning.cpp
+    src/workflow/workflow_events.cpp
+    src/workflow/workflow_tools.cpp
+)
+add_library(Mira::workflow ALIAS mira_workflow)
+target_include_directories(mira_workflow
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(mira_workflow PUBLIC Mira::core)
+target_compile_features(mira_workflow PUBLIC cxx_std_20)
+mira_enable_warnings(mira_workflow)
+if(MIRA_ENABLE_CLANG_TIDY)
+    set_property(TARGET mira_workflow PROPERTY CXX_CLANG_TIDY
+        "${MIRA_CLANG_TIDY_EXECUTABLE};--warnings-as-errors=*")
+endif()
+mira_enable_sanitizers(mira_workflow)
+set_target_properties(mira_workflow PROPERTIES
+    EXPORT_NAME workflow
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+
 # Durable SQLite/WAL reference stores for checkpoints and long-term memory.
 # Kept outside mira_core so the installed Core contract stays SQLite-free;
 # public headers in include/mira never expose sqlite3 types.
@@ -393,7 +424,7 @@ if(MIRA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mira_core mira_state_store mira_simulator_adapter mira_android_adapter mira_net_transport
+install(TARGETS mira_core mira_state_store mira_workflow mira_simulator_adapter mira_android_adapter mira_net_transport
     EXPORT MiraTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
