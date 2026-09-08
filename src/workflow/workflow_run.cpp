@@ -51,8 +51,9 @@ bool valid_workflow_run_transition(WorkflowRunState from, WorkflowRunState to) n
                to == WorkflowRunState::WaitingAgent || to == WorkflowRunState::Completed ||
                to == WorkflowRunState::Failed || to == WorkflowRunState::Cancelled;
     case WorkflowRunState::Paused:
-        return to == WorkflowRunState::Running || to == WorkflowRunState::Cancelled;
     case WorkflowRunState::WaitingUser:
+        // Both wait states share the resume/cancel edges; WaitingUser is
+        // distinguished by its pending decision point, not by transitions.
         return to == WorkflowRunState::Running || to == WorkflowRunState::Cancelled;
     case WorkflowRunState::WaitingAgent:
         return to == WorkflowRunState::Running || to == WorkflowRunState::WaitingUser ||
@@ -108,7 +109,6 @@ TaskState task_state_for_run_state(WorkflowRunState state) noexcept {
     case WorkflowRunState::Running:
         return TaskState::Acting;
     case WorkflowRunState::Paused:
-        return TaskState::Paused;
     case WorkflowRunState::WaitingUser:
         // Waiting on a user decision point carries the pause-family safety
         // semantics: no autonomous actions, platform input released
@@ -151,11 +151,9 @@ bool run_task_state_compatible(WorkflowRunState run, TaskState task) noexcept {
             return false;
         }
     case WorkflowRunState::Paused:
+    case WorkflowRunState::WaitingUser:
         // SuspendedForTakeover is the takeover-specific carrier of the pause
         // semantics (platform input released, no autonomous actions).
-        return task == TaskState::Paused || task == TaskState::SuspendedForTakeover ||
-               task == TaskState::Cancelling;
-    case WorkflowRunState::WaitingUser:
         return task == TaskState::Paused || task == TaskState::SuspendedForTakeover ||
                task == TaskState::Cancelling;
     case WorkflowRunState::WaitingAgent:
