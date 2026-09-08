@@ -1,6 +1,6 @@
 # M8：Workflow 双路径契约冻结
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；方向依据 [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)
@@ -121,7 +121,7 @@ DEC-014 明确不解冻 M7。将 Workflow 方向并入 M7 会加重 `RISK-2026-0
 
 - [x] `M8-12` `Mira::workflow` 进入安装包，最小 consumer 独立包含、链接与运行通过（对齐
   DEC-011 的公共 API 检验边界与既有 installed-consumer 测试模式）。
-- [ ] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
+- [x] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
   补跑条件）、负向与边界测试全绿；总计划、决策索引、设计与 API 手册同步后关闭本里程碑。
 
 ## 5. Executor 路由与关闭
@@ -150,15 +150,15 @@ Runtime 关闭顺序。Workflow Runtime 的 Executor 路由表（步骤执行、
 
 ## 7. 测试与退出条件
 
-- [ ] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
-- [ ] 四份决策记录 `Accepted`、专项设计文档 `Active`；其中暂定默认值均注明负责人与最迟
+- [x] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
+- [x] 四份决策记录 `Accepted`、专项设计文档 `Active`；其中暂定默认值均注明负责人与最迟
   冻结里程碑。
-- [ ] IR 序列化与校验、参数绑定、状态转换表、版本化、事件 schema、Tool 规格 schema 均有
+- [x] IR 序列化与校验、参数绑定、状态转换表、版本化、事件 schema、Tool 规格 schema 均有
   正向与负向测试；未知字段、版本不匹配、超限、非法转换与终态复活尝试全部 fail closed。
-- [ ] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
+- [x] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
   M0 基线执行并记录；未运行项保持未勾选并记录补跑条件。
-- [ ] OfflineReplay 对 workflow 事件不产生副作用的契约断言通过。
-- [ ] 总计划第 4 节、决策索引、API 手册与本文件同步；阶段 B 里程碑文档可依据 `M8-05`
+- [x] OfflineReplay 对 workflow 事件不产生副作用的契约断言通过。
+- [x] 总计划第 4 节、决策索引、API 手册与本文件同步；阶段 B 里程碑文档可依据 `M8-05`
   进入 `Planned`。
 
 ## 8. 验证记录
@@ -201,3 +201,14 @@ miniconda 发行版）。
 - 同步：DEC-019..022、`workflow_runtime_design`、API 手册（index/workflow-contracts）、
   总计划（§4 状态、§5 决策索引）。
 
+2026-09-08：PR [#29](https://github.com/Linductor-alkaid/mira/pull/29) CI 全绿（head
+`2f7a095`，push pipeline runs
+[`34179512874`](https://github.com/Linductor-alkaid/mira/actions/runs/34179512874)、
+[`34179515463`](https://github.com/Linductor-alkaid/mira/actions/runs/34179515463)）：Linux
+GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64
+（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy 与跨平台验证。首轮
+quality 在 `workflow_run.cpp` 报 3 处 `bugprone-branch-clone`（Paused/WaitingUser 同型
+分支），合并 case 标签后复验通过；语义不变（转换表、映射与终态幂等测试全绿）。`M8-01`
+至 `M8-13` 全部完成，退出条件逐项满足，本里程碑关闭（Completed）。阶段 B 里程碑可依据
+[workflow_runtime_design](../design/workflow_runtime_design.md) 创建并进入 `Planned`。

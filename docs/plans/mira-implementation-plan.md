@@ -71,7 +71,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
-| [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | In Progress |
+| [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -104,6 +104,10 @@ Mira 的长期架构方向确立为 Agent Harness 控制平面 + Workflow 数据
 （[DEC-019](../decisions/DEC-019-workflow-ir-contract.md) 至
 [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)）与专项设计
 （[Workflow Runtime 设计](../design/workflow_runtime_design.md)）已冻结。
+2026-09-08，`Mira::workflow` 契约模块与五组契约测试随同交付，PR
+[#29](https://github.com/Linductor-alkaid/mira/pull/29) CI 全绿（三平台 + sanitizer +
+quality 矩阵），M8 关闭（`Completed`）；阶段 B（Runtime 最小闭环）里程碑可依据该设计进入
+`Planned`。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
