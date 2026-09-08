@@ -103,4 +103,38 @@ struct WorkflowPatchEntry final {
 // message must already be sanitized; it is embedded verbatim.
 [[nodiscard]] JsonValue workflow_operation_error_envelope(const Error &error);
 
+// ---------------------------------------------------------------------------
+// request_user_input tool spec (DEC-024 §4, stage C)
+// ---------------------------------------------------------------------------
+
+// The agent-side seat for raising a WaitingUser decision point on one
+// Interactive run. The tool call returns once the decision point is raised;
+// resolution is asynchronous through WorkflowRuntime::resolve_decision and
+// flows back via events and the conversation projection.
+struct WorkflowUserInputToolSpec final {
+    std::string description;
+    JsonSchema parameters_schema;
+    JsonSchema result_schema;
+    JsonSchema error_schema;
+};
+
+[[nodiscard]] const WorkflowUserInputToolSpec &workflow_request_user_input_spec();
+
+// Fail-closed local validation of one request_user_input call: schema subset
+// validation plus prompt bounds and the same patch-entry rules as
+// patch_workflow for the optional proposal. Run admission (policy, state,
+// single pending decision) is a runtime check and stays out of this layer.
+[[nodiscard]] Result<void> validate_request_user_input_arguments(const JsonValue &arguments);
+
+// Decodes and validates a raw array of patch entries (the shared shape of
+// patch_workflow's patch_entries and request_user_input's proposal).
+// Unknown targets, ops and shapes fail closed.
+[[nodiscard]] Result<std::vector<WorkflowPatchEntry>>
+parse_workflow_patch_entries(const JsonValue &items);
+
+// Decodes the proposal entries of a validated request_user_input call.
+// Mirrors the patch_workflow entry parsing; unknown shapes fail closed.
+[[nodiscard]] Result<std::vector<WorkflowPatchEntry>>
+request_user_input_proposal(const JsonValue &arguments);
+
 } // namespace mira

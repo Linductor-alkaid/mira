@@ -97,6 +97,12 @@ epoch/`OperationState` 结算等价强制（M8 不引入名为 ActionLease 的�
   `WorkflowPolicySwitched` 事件（M8-10）。`DryRun` 验证通过是 Workflow 新版本入库的前置
   （`W-04`，与 [DEC-022](DEC-022-conversation-patch-semantics.md) 的版本化联动）。
 - 「策略影响导航代价权重」（架构 §7.5/§9.4）属阶段 E，本决策不冻结任何权重。
+- 2026-09-08 补注：三种策略的运行时行为（升级路径、检查点、等待态出口与切换确认
+  级别）已由
+  [DEC-023](DEC-023-workflow-policy-set-runtime-semantics.md) 随
+  [M10](../plans/m10-workflow-intervention-and-policy-set.md) 冻结并交付；`WaitingAgent`
+  的载体进入路径为 `MiraRuntime::begin_task_recovery`（`Recovering` 的唯一控制面
+  入口）。
 
 ### 4. 版本化契约（`M8-09` 的语义输入）
 

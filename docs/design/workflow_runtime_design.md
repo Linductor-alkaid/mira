@@ -1,15 +1,17 @@
 # Workflow Runtime 设计
 
-> 状态：Active（阶段 B 实施规范；Runtime 层已随 M9 交付，接口以代码与 API 手册为准）
-> 版本：0.2
+> 状态：Active（阶段 C 实施规范；契约层随 M8、执行层随 M9 交付，接口以代码与 API 手册为准）
+> 版本：0.3
 > 更新日期：2026-09-08
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
 > [DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
 > [DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)、
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
-> [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)
-> 适用范围：Workflow 双路径的契约层（M8 已交付部分）与执行层（阶段 B 起）
+> [DEC-022](../decisions/DEC-022-conversation-patch-semantics.md)、
+> [DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md)、
+> [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)
+> 适用范围：Workflow 双路径的契约层（M8 已交付部分）与执行层（阶段 B/C）
 
 ## 1. 文档目的与效力
 
@@ -17,7 +19,8 @@
 谓词与恢复钩子语义、事件 schema、错误分类、Executor 路由、取消与 shutdown 顺序和测试
 策略。M8 交付的契约（`Mira::workflow` 模块）以本文为规范；阶段 B 的执行闭环已随
 [M9](../plans/m9-workflow-runtime-minimal-loop.md) 交付（`WorkflowRuntime`，Strict/DryRun），
-第 7 节路由表按 M9 定稿。
+第 7 节路由表按 M9 定稿；阶段 C（策略全集、对话 patch 与决策点）的实施规范见第 12 节，
+由 [M10](../plans/m10-workflow-intervention-and-policy-set.md) 承载。
 
 效力约定：
 
@@ -99,8 +102,11 @@ RecoveryHook
 - `FallbackStep`：跳到声明的前进目标（必须晚于当前步，禁止后向逃逸出循环结构）。
 - `AgentEscalation`：Run → `WaitingAgent`，Agent 获得 DEC-020 §7.6 定义的续跑上下文。
   IR 声明 `allow_agent=false` 或策略为 `Strict`/`DryRun` 时，该钩子在 IR 校验阶段被
-  拒绝（策略与 IR 的一致性在创建 Run 时复核）。
-- 恢复链消耗完仍失败 → `Failed`（或按策略 `WaitingAgent`）。
+  拒绝（策略与 IR 的一致性在创建 Run 时复核）。阶段 C 补全触发时机（DEC-023 §2）：
+  失败驱动（`Recoverable`/`Interactive`）与到达驱动（`AgentAssisted` 主动检查点），
+  两种时机按策略互斥。
+- 恢复链消耗完仍失败 → `Failed`（或按策略升级：agent-capable 策略 → `WaitingAgent`，
+  `Interactive` → `WaitingUser` 决策点；DEC-023 §1）。
 
 ## 5. 事件 schema（M8-10 已交付契约层）
 
@@ -148,7 +154,10 @@ M8 契约层全部为同步纯函数，无异步路径。M9 交付的路由表�
 | 驱动监控（撤回旗标） | `submit_auto` 有限任务，轮询承载 Task 快照 | 驱动任务 | 驱动结束时置停并消费 future |
 | DryRun 谓词求值 | 调用线程同步（纯函数） | 无 | 无 |
 | 控制面命令（pause/resume/cancel/complete） | 既有 `MiraRuntime` 串行控制面 | Workflow Runtime（CommandHandle） | 有界等待回执；失败对调用方可见 |
-| 周期性健康检查（阶段 C 起） | timer 能力 | Runtime 生命周期所有者 | 停止时取消 |
+| 升级进入 `WaitingAgent`（`begin_task_recovery`） | 既有 `MiraRuntime` 串行控制面 | Workflow Runtime（CommandHandle） | 有界等待回执；失败转诊断并保持 Run 视图一致 |
+| 决议续跑（`resolve_decision` accept/reject 后的驱动） | `submit_auto` 普通有限任务，与 resume 共用并发上限 | Workflow Runtime（Run 表内 future） | future 由 `wait_run`/shutdown 消费 |
+| patch 应用（步边界排水 / 等待态直达） | 调用线程（控制面提交）或驱动任务（排水） | 无新任务 | 校验失败确定性拒绝；事件在锁外发射 |
+| 周期性健康检查 | timer 能力（随首个需要它的阶段立项，M10 非目标） | Runtime 生命周期所有者 | 停止时取消 |
 | 实时连续控制（若 Workflow 含连续步骤） | realtime/low-latency 能力 | Runtime，watchdog 约束 | `Up/Cancel` 安全收敛（`RULE-06`） |
 
 取消是协作式的：步执行轮询 `OperationContext` 取消与 deadline；连续控制经环境
@@ -207,11 +216,70 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
   取消竞态（步执行中取消/暂停/接管）、shutdown 顺序、验证不可求值路径、恢复钩子全模式、
   终态幂等 + 迟到完成隔离的运行时级测试、启动与控制类 Workflow 操作（run/pause/resume/
   cancel 四操作；`patch_workflow` 的执行属阶段 C）经 BuiltIn 闭环的执行与权限挂钩。
+- **阶段 C 增量**（DEC-023/024 验证方式的里程碑化）：策略矩阵（失败分流、钩子两时机、
+  检查点到访计数、跨等待周期计数器累计）、`WaitingUser`/`WaitingAgent` 的载体一致性与
+  出口、patch 幂等/审计/原子性/边界生效/参数重建/回退、决策点两类来源与决议全路径、
+  `patch_workflow` 与 `request_user_input` 的工具闭环（含模型端到端）、M9 全路径回归。
 - 门禁：既有 ASAN/UBSAN/TSAN 矩阵与 installed-consumer 覆盖 `Mira::workflow`。
 
-## 11. 关联文档
+## 11. 阶段 C 实施规范（策略全集、对话 patch 与决策点）
 
-- 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022（及 DEC-015/016/017/018 既有边界）
-- 计划：[M8](../plans/m8-workflow-contracts.md)；阶段 B 里程碑（依据本文进入 `Planned`）
+规范来源：[DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md)（策略
+运行时语义与检查点）、[DEC-024](../decisions/DEC-024-conversation-patch-execution.md)
+（patch 执行与决策点交互）。本节为里程碑 [M10](../plans/m10-workflow-intervention-and-policy-set.md)
+的入口摘要；语义细节以决策为准。
+
+### 11.1 策略全集与升级路径
+
+- 准入：五种策略全部可执行；`AgentEscalation` 钩子要求 agent-capable 策略（既有契约
+  校验，M9 的两策略限制门移除）。
+- 失败分流（恢复链耗尽点，步边界）：`Strict`/`DryRun` → `Failed`（M9 不变）；
+  `Recoverable`/`AgentAssisted` → `WaitingAgent`（载体任务经 `begin_task_recovery` 进入
+  `Recovering`）；`Interactive` → `WaitingUser` 决策点（载体任务走 pause 族）。
+- 检查点（`AgentAssisted`）：`AgentEscalation` 钩子声明的步骤即检查点；到达驱动，
+  每次到达至多交出一次，循环回归再交出，受 loop/步预算约束。
+- 有界性：跨 `WaitingAgent` 周期不重置任何计数器（`RULE-08`）；出口 =
+  `resume_run`（重新观察 + 有界重试）/ `cancel_run` / 修复期 patch。
+- Agent 续跑上下文：`agent_continuation(run_id)` 仅 `WaitingAgent`；有效参数只在宿主
+  边界出现，进模型上下文走既有脱敏。
+
+### 11.2 Patch 平面
+
+- 入口：`patch_workflow` 工具（模型）与 `patch_run`（宿主直达），同一管线；准入矩阵、
+  幂等键（`patch_id`+`patch_digest`）、三事件审计、整 patch 原子性、每 Run 排队上限
+  16（DEC-024 §1–§3）。
+- 生效点：步边界排水（Running）或等待态直达；参数条目以绑定纯函数整体重建有效状态，
+  未执行步骤重解析、已结算不回溯；Skip 进跳过集按 `Skipped` 结算；policy 条目经
+  `allowed_policies` 门禁 + Navigate 剩余步骤门禁 + `WorkflowPolicySwitched`。
+- 回退：`rollback_run_patch` 从应用前快照构造显式回退 patch，新生成 `patch_id` 走同一
+  管线；无隐式快照恢复。
+
+### 11.3 决策点
+
+- 两类来源（`StepFailure`：Runtime 在 Interactive 失败时提出；`AgentPrompt`：模型经
+  `request_user_input` 提出），共用 `pending_decision`（ID+digest）、决议 API 与两事件。
+- `resolve_decision(run_id, decision_id, payload_digest, resolution)`：accept 应用提议并
+  异步续跑；reject 按类别终态化或直接续跑；cancel_run 取消。`WaitingUser` 唯一出口是
+  决议（`resume_run` 拒绝并指引）。
+- 超时默认：不自动超时（等待是安全状态；宿主可取消）。
+- 并发上限：每 Run 至多一个 `pending_decision`。
+
+### 11.4 显式非目标（阶段 C 内）
+
+- timer 周期健康检查：无已验证消费者，不随 M10 引入（本设计 §7 的标注改为「随首个
+  需要它的阶段立项」，与 `RISK-2026-038` 持久化推迟同一模式）。
+- Verify 步骤更高级证据声明（screen diff / 本地感知 / VLM 层）：依赖阶段 E 感知落地，
+  M10 维持谓词/receipt 两层（§4.1 的「阶段 C 细化」以此显式收敛为推迟）。
+- 自然语言 → patch 条目的解释编排与 Workflow 定义/偏好两类目标：Agent 侧与阶段 D。
+
+
+
+## 12. 关联文档
+
+- 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024（及
+  DEC-015/016/017/018 既有边界）
+- 计划：[M8](../plans/m8-workflow-contracts.md)、
+  [M9](../plans/m9-workflow-runtime-minimal-loop.md)、
+  [M10](../plans/m10-workflow-intervention-and-policy-set.md)
 - 参考研究：[Agent Harness 参考研究](harness_reference_study.md) §5.3/§6
 - API：[workflow-contracts](../api/workflow-contracts.md)

@@ -72,7 +72,7 @@ int four_operations_round_trip_through_the_registry() {
                                                      registration.handler));
     }
     // patch_workflow stays schema-only until stage C.
-    MIRA_CHECK(workflow->operation_tool_registrations().size() == 4);
+    MIRA_CHECK(workflow->operation_tool_registrations().size() == 5);
 
     // A runnable library version: DryRunPassed with evidence (W-04).
     auto definition = base_definition("tool-channel");

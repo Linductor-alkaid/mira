@@ -78,6 +78,12 @@ class MiraRuntime final {
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
     Result<CommandHandle> cancel_task(TaskId task_id);
+    // Moves one active task into Recovering (DEC-023): the carrier state for a
+    // WorkflowRun escalated to WaitingAgent. Entering Recovering withdraws the
+    // task from autonomous action like the pause family; resuming from it
+    // returns to Observing with an epoch advance (late operation completions
+    // settle as stale). No path out of a terminal state exists, as everywhere.
+    Result<CommandHandle> begin_task_recovery(TaskId task_id);
     // Settles one task as Completed or Failed. Terminal states are idempotent
     // per state and never revive; the epoch advances so late completions of
     // in-flight operations settle as stale. Completion is only admitted when

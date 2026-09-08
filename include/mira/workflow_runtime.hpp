@@ -47,6 +47,14 @@ struct WorkflowRuntimeConfig final {
     std::chrono::milliseconds step_deadline{10'000};
     // Bounded wait for control-plane command outcomes and pause convergence.
     std::chrono::milliseconds command_timeout{5'000};
+    // Patches queued for the next step boundary of one running run (RULE-08).
+    std::size_t max_pending_patches_per_run = 16;
+    // Applied patch records retained per run for idempotency and rollback.
+    std::size_t max_applied_patches_per_run = 64;
+    // Failure escalations (WaitingAgent / WaitingUser) per run (RULE-08,
+    // DEC-023 §1); exhausting it settles the run Failed. Checkpoint handoffs
+    // are bounded by the loop and step budgets instead.
+    std::uint32_t max_escalations_per_run = 32;
 };
 
 // One settled step attempt as reported in WorkflowRunResult.
@@ -60,8 +68,8 @@ struct WorkflowStepRecord final {
 };
 
 // The outcome of one drive: the run state when the drive stopped plus the
-// settled step history. `state` is terminal unless the drive stopped at a
-// pause boundary (Paused).
+// settled step history. `state` is terminal, or the boundary the drive
+// stopped at (Paused, WaitingUser, WaitingAgent).
 struct WorkflowRunResult final {
     WorkflowRunId run_id;
     WorkflowRunState state = WorkflowRunState::Created;
@@ -72,6 +80,53 @@ struct WorkflowRunResult final {
     // verified execution.
     std::uint32_t unevaluable_verifications = 0;
     std::string safe_summary;
+};
+
+// The reply of one patch submission (DEC-024 §2): `applied` is false only
+// for the idempotent NoOp (same patch_id + digest replay); `queued` marks a
+// patch accepted on a running run whose application lands at the next step
+// boundary.
+struct WorkflowPatchOutcome final {
+    WorkflowRunView view;
+    bool applied = false;
+    bool queued = false;
+};
+
+// Decision-point kinds (DEC-024 §6). StepFailure decisions are raised by the
+// runtime when an Interactive run exhausts its recovery chain; AgentPrompt
+// decisions are raised through the request_user_input tool.
+enum class WorkflowDecisionKind : std::uint8_t { StepFailure, AgentPrompt };
+
+// Host-visible view of one pending decision point. The payload digest is
+// computed over {prompt, proposal}; answers must match both decision_id and
+// the digest (DEC-022 §3).
+struct WorkflowDecisionRequest final {
+    WorkflowDecisionId decision_id;
+    Sha256Digest payload_digest{};
+    WorkflowDecisionKind kind = WorkflowDecisionKind::StepFailure;
+    // StepFailure: the step whose failure raised the decision.
+    std::optional<StepId> step_id;
+    // Applied when the decision is accepted (W-04: not an exemption channel).
+    std::vector<WorkflowPatchEntry> proposal;
+    std::string safe_summary;
+};
+
+// Agent continuation context for one WaitingAgent run (DEC-023 §3, design
+// §7.6 minimal form). Host-side API: effective parameters appear in clear
+// only at the host boundary; model-facing serialization applies the
+// existing sanitization rules.
+struct WorkflowAgentContinuation final {
+    WorkflowRunId run_id;
+    WorkflowId workflow_id;
+    Sha256Digest ir_digest{};
+    WorkflowPolicy policy = WorkflowPolicy::Strict;
+    std::optional<StepId> current_step;
+    std::string current_step_kind;
+    std::uint32_t current_step_attempts = 0;
+    JsonValue effective_parameters;
+    std::vector<WorkflowStepRecord> step_history;
+    std::string failure_reason;
+    std::optional<WorkflowPendingDecision> pending_decision;
 };
 
 struct WorkflowShutdownReport final {
@@ -166,19 +221,52 @@ class WorkflowRuntime final {
     wait_run(const WorkflowRunId &run_id, std::chrono::milliseconds timeout);
 
     // Run control. pause converges at the next step boundary; resume
-    // re-observes and continues from the cursor via a new asynchronous drive;
-    // cancel is idempotent.
+    // re-observes and continues from the cursor via a new asynchronous drive
+    // (Paused and WaitingAgent runs; a WaitingUser run is resolved through
+    // resolve_decision instead); cancel is idempotent.
     [[nodiscard]] Result<WorkflowRunView> pause_run(const WorkflowRunId &run_id);
     [[nodiscard]] Result<WorkflowRunView> resume_run(const WorkflowRunId &run_id);
     [[nodiscard]] Result<WorkflowRunView> cancel_run(const WorkflowRunId &run_id);
 
+    // Patch plane (DEC-024). Host-direct submission sharing the exact
+    // validation, idempotency and audit pipeline with the patch_workflow
+    // tool. Admission follows the policy x state matrix; a patch accepted on
+    // a running run is queued for the next step boundary.
+    [[nodiscard]] Result<WorkflowPatchOutcome>
+    patch_run(const WorkflowRunId &run_id, const WorkflowPatchId &patch_id,
+              const std::vector<WorkflowPatchEntry> &entries);
+
+    // Explicit rollback patch (DEC-024 §2): constructs revert entries from
+    // the recorded pre-application snapshot of one applied patch and submits
+    // them as a fresh patch through the same pipeline. No implicit snapshot
+    // restore exists.
+    [[nodiscard]] Result<WorkflowPatchOutcome>
+    rollback_run_patch(const WorkflowRunId &run_id, const WorkflowPatchId &patch_id);
+
+    // Decision points (DEC-024 §5/§6). pending_decision_request returns the
+    // current decision of a WaitingUser run; resolve_decision matches on
+    // decision_id plus payload digest and settles accept / reject / cancel.
+    [[nodiscard]] Result<WorkflowDecisionRequest>
+    pending_decision_request(const WorkflowRunId &run_id) const;
+    [[nodiscard]] Result<WorkflowRunView>
+    resolve_decision(const WorkflowRunId &run_id, const WorkflowDecisionId &decision_id,
+                     const Sha256Digest &payload_digest,
+                     WorkflowDecisionResolution resolution);
+
+    // Agent continuation context (DEC-023 §3): WaitingAgent runs only.
+    [[nodiscard]] Result<WorkflowAgentContinuation>
+    agent_continuation(const WorkflowRunId &run_id) const;
+
     [[nodiscard]] Result<WorkflowRunView> run_snapshot(const WorkflowRunId &run_id) const;
 
-    // The four stage-B operation handlers (run/pause/resume/cancel) bound to
-    // this runtime, ready for BuiltinToolRegistry::register_tool. The
-    // registry entries capture `this`: this runtime must outlive them.
-    // patch_workflow stays schema-only until stage C.
+    // The five stage-C operation handlers (run/patch/pause/resume/cancel)
+    // bound to this runtime, ready for BuiltinToolRegistry::register_tool.
+    // The registry entries capture `this`: this runtime must outlive them.
     [[nodiscard]] std::vector<BuiltinToolRegistration> operation_tool_registrations();
+
+    // The request_user_input handler (DEC-024 §4) under the same lifetime
+    // constraint as the operation handlers.
+    [[nodiscard]] std::vector<BuiltinToolRegistration> decision_tool_registrations();
 
     // Stops run producers, cancels active runs through the control plane and
     // drains drive futures within the bounded budget. Never shuts the
@@ -191,6 +279,8 @@ class WorkflowRuntime final {
   private:
     struct RunRecord;
     struct DriveFlags;
+    struct AppliedPatch;
+    struct PendingPatch;
 
     [[nodiscard]] Result<RunRecord *> find_run(const WorkflowRunId &run_id, Error &error);
     [[nodiscard]] Result<WorkflowRunView> create_run_locked(const WorkflowDefinition &definition,
@@ -199,7 +289,8 @@ class WorkflowRuntime final {
 
     // Applies one run-view transition through the frozen table under the
     // runtime mutex. Returns nullopt when applied; NoOpTerminal and Rejected
-    // carry the corresponding Error.
+    // carry the corresponding Error. Leaving WaitingUser also drops the
+    // record's staged decision details.
     [[nodiscard]] std::optional<Error> commit_transition(RunRecord &run,
                                                          WorkflowRunState target);
     // Commits the terminal transition, emits WorkflowRunSettled and settles
@@ -215,16 +306,36 @@ class WorkflowRuntime final {
     void emit_step_settled(const RunRecord &run, const WorkflowStep &step,
                            const WorkflowStepRecord &record);
     void emit_run_settled(const RunRecord &run, const std::string &safe_summary);
+    void emit_patch_proposed(const RunRecord &run, const WorkflowPatchId &patch_id,
+                             const Sha256Digest &digest, WorkflowPatchTarget target,
+                             const std::string &reason_code);
+    void emit_patch_applied(const RunRecord &run, const WorkflowPatchId &patch_id);
+    void emit_patch_rejected(const RunRecord &run, const WorkflowPatchId &patch_id,
+                             const std::string &reason_code);
+    void emit_policy_switched(const RunRecord &run, WorkflowPolicy from, WorkflowPolicy to);
+    void emit_decision_raised(const RunRecord &run, const WorkflowDecisionRequest &decision);
+    void emit_decision_resolved(const RunRecord &run, const WorkflowDecisionId &decision_id,
+                                WorkflowDecisionResolution resolution);
 
     [[nodiscard]] WorkflowRunResult drive(RunRecord &run, const OperationContext &context);
     void assemble_result(const RunRecord &run, WorkflowRunResult &result) const;
     void settle_step(RunRecord &run, const WorkflowStep &step, const WorkflowStepRecord &record);
     [[nodiscard]] std::size_t step_index(const RunRecord &run, const StepId &step_id) const;
     // Handles one failed step: records it, consults the recovery hook and
-    // either redirects the cursor (returning true) or settles the run Failed
-    // (returning false).
+    // either redirects the cursor (returning true), escalates to a wait
+    // state (returning false) or settles the run Failed (returning false).
     [[nodiscard]] bool handle_step_failure(RunRecord &run, const WorkflowStep &step,
                                            std::size_t index, const Error &failure);
+    // Escalation paths (DEC-023 §1). Both return nullopt when the run is in
+    // the wait state (the drive must stop) and the failure otherwise; the
+    // caller decides the fallback. escalate_waiting_* consume the run's
+    // escalation budget; enter_waiting_agent (checkpoint handoffs) does not.
+    [[nodiscard]] std::optional<Error> enter_waiting_agent(RunRecord &run,
+                                                           const std::string &reason);
+    [[nodiscard]] std::optional<Error> escalate_waiting_agent(RunRecord &run,
+                                                              const std::string &reason);
+    [[nodiscard]] std::optional<Error> escalate_waiting_user(RunRecord &run,
+                                                             WorkflowDecisionRequest decision);
     [[nodiscard]] bool step_tool_has_side_effects(const RunRecord &run, std::size_t index) const;
     [[nodiscard]] Result<void> dispatch_step(RunRecord &run, const WorkflowStep &step,
                                              std::size_t index, const OperationContext &parent,
@@ -234,8 +345,28 @@ class WorkflowRuntime final {
                                                                const WorkflowStep &step,
                                                                const OperationContext &parent);
     [[nodiscard]] Result<void> resolve_interrupted_step(RunRecord &run);
+    // Patch pipeline (DEC-024 §2/§3). submit_patch performs admission and
+    // validation and either queues (running) or applies immediately;
+    // apply_patch performs the atomic effective-state transition, audit
+    // events and epoch advance. Both fail closed with deterministic codes.
+    [[nodiscard]] Result<WorkflowPatchOutcome> submit_patch(RunRecord &run,
+                                                            const WorkflowPatchId &patch_id,
+                                                            const std::vector<WorkflowPatchEntry> &entries,
+                                                            bool decision_confirmed);
+    [[nodiscard]] std::optional<Error> apply_patch(RunRecord &run, const WorkflowPatchId &patch_id,
+                                                   const Sha256Digest &digest,
+                                                   const std::vector<WorkflowPatchEntry> &entries,
+                                                   bool decision_confirmed,
+                                                   const std::string &reason_code);
+    void drain_pending_patches(RunRecord &run);
+    [[nodiscard]] std::vector<WorkflowPatchEntry>
+    rollback_entries(const RunRecord &run, const AppliedPatch &target) const;
     [[nodiscard]] Result<JsonValue> execute_operation(WorkflowOperation operation,
                                                       const JsonValue &arguments);
+    [[nodiscard]] Result<JsonValue> execute_user_input(const JsonValue &arguments);
+    // Shared continuation for resume_run and resolve_decision: resumes the
+    // carrier task, re-observes, commits Running and launches the drive.
+    [[nodiscard]] Result<WorkflowRunView> continue_run(RunRecord &run);
     [[nodiscard]] WorkflowRunState run_state(const RunRecord &run) const;
     [[nodiscard]] JsonValue predicate_context_copy(const RunRecord &run) const;
 

@@ -98,6 +98,12 @@
 - patch 条目级权限差异（`execution_policy` 切换是否需要更高确认级别）——随阶段 C 的
   策略全集冻结；M8 按「策略切换只能在 `allowed_policies` 内且经控制面」处理。
 
+2026-09-08 补注：本节开放问题中的「决策点超时策略」与「并发决策点排序」已由
+[DEC-024](DEC-024-conversation-patch-execution.md) §5 关闭（v1 不自动超时；每 Run 单
+决策点维持并在决议管线内强制）；「patch 条目级权限差异」已由
+[DEC-023](DEC-023-workflow-policy-set-runtime-semantics.md) §5 关闭（不设高于全局
+SafetyPolicy 的额外确认层，`allowed_policies` 即预授权边界）。对话分叉投影仍未冻结。
+
 ## 备选方案
 
 - **不区分三类目标，全部当作 Run 修改**：「以后默认」类指令会丢失长期意图，违背 §7.4

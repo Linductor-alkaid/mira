@@ -418,6 +418,9 @@ enum class CommandKind : std::uint8_t {
     ReleaseTakeover,
     OperationCompletion,
     ShutdownRuntime,
+    // Stage C (DEC-023): carries a WorkflowRun escalation into WaitingAgent;
+    // the task enters Recovering through the single-writer control plane.
+    BeginTaskRecovery,
 };
 
 enum class ReceiptStatus : std::uint8_t { Accepted, Rejected };
