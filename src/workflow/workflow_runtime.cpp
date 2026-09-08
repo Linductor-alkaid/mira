@@ -1902,8 +1902,16 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
             }
         }
         ++run.executions;
-        const std::string call_id = "workflow-nav:" + run.view.run_id.to_string() + ":" +
-                                    step.id.to_string() + ":" + attempt_tag + ":" + edge_id;
+        // += chaining: this runs once per planned edge inside a loop, where a
+        // + chain would allocate one temporary per operand.
+        std::string call_id = "workflow-nav:";
+        call_id += run.view.run_id.to_string();
+        call_id += ':';
+        call_id += step.id.to_string();
+        call_id += ':';
+        call_id += attempt_tag;
+        call_id += ':';
+        call_id += edge_id;
         OperationContext context = parent;
         context.step = step.id;
         auto execution =
