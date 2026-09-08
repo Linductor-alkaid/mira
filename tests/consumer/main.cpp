@@ -383,6 +383,104 @@ int main() {
             return 49;
         }
 
+        // Navigation (M12): the host installs an App Model and a screen
+        // state provider (the recognition boundary stays host-side); a
+        // navigate step resolves through the planner, dispatches its edge
+        // action through the tool channel, verifies arrival and writes
+        // confidence back into the runtime projection.
+        mira::AppModelState home;
+        home.id = "home";
+        home.page = "Launcher";
+        mira::AppModelState inbox;
+        inbox.id = "inbox";
+        inbox.page = "Inbox";
+        mira::AppModelTransition open_inbox;
+        open_inbox.id = "t-open-inbox";
+        open_inbox.from_state = "home";
+        open_inbox.to_state = "inbox";
+        mira::JsonValue::Object action;
+        action.emplace_back("tool", "consumer_navigate");
+        open_inbox.action = mira::JsonValue{std::move(action)};
+        open_inbox.costs.latency_ms = 10.0;
+        mira::AppModel model;
+        model.app_id = "com.example.consumer";
+        model.name = "consumer-app";
+        model.states = {home, inbox};
+        model.transitions = {open_inbox};
+
+        std::string screen = "home";
+        const auto installed = workflows.set_navigation_context(
+            model, [&screen]() -> std::optional<mira::ScreenStateSnapshot> {
+                return mira::ScreenStateSnapshot{screen, 1};
+            });
+        if (!installed.has_value()) {
+            return 50;
+        }
+        mira::BuiltinToolRegistration navigator;
+        navigator.spec.wire_name = "consumer_navigate";
+        navigator.spec.description = "consumer navigation edge action";
+        navigator.spec.parameters_schema = mira::JsonSchema{mira::parse_json(R"json({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        })json").value()};
+        navigator.spec.has_side_effects = true;
+        navigator.handler = [&screen](const mira::JsonValue &,
+                                      const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+            screen = "inbox";
+            return mira::JsonValue{"moved"};
+        };
+        if (!tools->register_tool(navigator.spec, navigator.handler)) {
+            return 51;
+        }
+        const char *navigating_ir = R"({
+            "schema_version": {"major": 1, "minor": 0},
+            "workflow_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "name": "consumer-navigating",
+            "steps": [
+                {"step_id": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", "kind": "navigate",
+                 "arguments": {"target": "inbox"}}
+            ],
+            "default_policy": "strict",
+            "allowed_policies": ["strict", "dry_run"]
+        })";
+        auto navigating = mira::parse_workflow_definition(navigating_ir);
+        if (!navigating.has_value()) {
+            return 52;
+        }
+        const auto navigated =
+            workflows.create_run(navigating.value(), mira::JsonValue{mira::JsonValue::Object{}},
+                                 mira::WorkflowPolicy::Strict);
+        if (!navigated.has_value()) {
+            return 53;
+        }
+        const auto arrived = workflows.execute_run(navigated.value().run_id, context);
+        if (!arrived.has_value() ||
+            arrived.value().state != mira::WorkflowRunState::Completed) {
+            return 54;
+        }
+        const auto projection = workflows.app_model_snapshot();
+        if (!projection.has_value() ||
+            projection.value().transitions.front().confidence.verified_count != 1) {
+            return 55;
+        }
+        // The planner is usable directly from the installed headers too, and
+        // the confidence functions are pure: decaying and re-checking the
+        // exploration flag needs no runtime at all.
+        const auto planned = mira::plan_navigation(
+            model, "home", "inbox", mira::NavigationCostProfile{},
+            mira::JsonValue{mira::JsonValue::Object{}});
+        if (!planned.has_value() || planned.value().transition_ids.size() != 1) {
+            return 56;
+        }
+        const auto decayed = mira::apply_confidence_decay(
+            projection.value().transitions.front().confidence,
+            projection.value().transitions.front().confidence.last_verified_ms + 604'800'000,
+            604'800'000);
+        if (!mira::needs_exploration(decayed, 0.4)) {
+            return 57;
+        }
+
         const auto report = workflows.shutdown();
         if (!report.clean) {
             return 26;

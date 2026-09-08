@@ -1,6 +1,7 @@
 #include <mira/workflow_events.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <string_view>
 #include <vector>
 
@@ -124,6 +125,32 @@ constexpr std::string_view kPublishRejectedKeys[] = {
         "ir_digest",
         "reason_code",
 };
+constexpr std::string_view kNavigationPlannedKeys[] = {
+        "schema",
+        "run_id",
+        "step_id",
+        "from_state",
+        "to_state",
+        "edge_count",
+        "plan_digest",
+        "total_cost",
+        "guards_blocked",
+        "guards_unevaluable",
+};
+constexpr std::string_view kNavigationObservedKeys[] = {
+        "schema",
+        "run_id",
+        "step_id",
+        "transition_id",
+        "from_state",
+        "to_state",
+        "success",
+        "confidence",
+};
+
+// App Model identifiers are host contract strings (DEC-027), bounded by the
+// model limits; payloads enforce the same bound.
+constexpr std::size_t kMaxNavigationIdBytes = 8 * 1024;
 
 [[nodiscard]] Result<JsonValue> parse_payload_data(const EventPayload &payload) {
     auto json = parse_json(payload.data);
@@ -205,7 +232,7 @@ bool is_workflow_event_type(std::string_view type) {
         "WorkflowRunSettled",   "WorkflowPatchProposed", "WorkflowPatchApplied",
         "WorkflowPatchRejected", "WorkflowPolicySwitched", "WorkflowDecisionRaised",
         "WorkflowDecisionResolved", "WorkflowPublishProposed", "WorkflowPublishApplied",
-        "WorkflowPublishRejected",
+        "WorkflowPublishRejected", "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -938,6 +965,192 @@ Result<WorkflowPublishRejectedEvent> parse_workflow_publish_rejected(const Event
         return event_error(ErrorCode::InvalidArgument, "reason_code is not bounded");
     }
     event.reason_code = reason.value();
+    return event;
+}
+
+// --- Workflow navigation (stage E, DEC-028 §4) -------------------------------
+
+EventPayload to_event_payload(const WorkflowNavigationPlannedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.navigation-planned.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("step_id", event.step_id.to_string());
+    object.emplace_back("from_state", event.from_state);
+    object.emplace_back("to_state", event.to_state);
+    object.emplace_back("edge_count", static_cast<std::int64_t>(event.edge_count));
+    object.emplace_back("plan_digest", digest_text(event.plan_digest));
+    object.emplace_back("total_cost", event.total_cost);
+    object.emplace_back("guards_blocked", static_cast<std::int64_t>(event.guards_blocked));
+    object.emplace_back("guards_unevaluable",
+                        static_cast<std::int64_t>(event.guards_unevaluable));
+    EventPayload payload;
+    payload.type = "WorkflowNavigationPlanned";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.navigation-observed.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("step_id", event.step_id.to_string());
+    object.emplace_back("transition_id", event.transition_id);
+    object.emplace_back("from_state", event.from_state);
+    object.emplace_back("to_state", event.to_state);
+    object.emplace_back("success", event.success);
+    object.emplace_back("confidence", event.confidence);
+    EventPayload payload;
+    payload.type = "WorkflowNavigationObserved";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+namespace {
+
+[[nodiscard]] Result<std::string> parse_member_state_id(const JsonValue &json, const char *key) {
+    auto name = parse_member_name(json, key);
+    if (!name.has_value()) {
+        return name;
+    }
+    if (name.value().empty() || name.value().size() > kMaxNavigationIdBytes) {
+        return event_error(ErrorCode::InvalidArgument,
+                           std::string{"payload member '"} + key + "' is not bounded");
+    }
+    return name;
+}
+
+[[nodiscard]] Result<std::uint64_t> parse_member_count(const JsonValue &json, const char *key) {
+    const auto *member = json.find(key);
+    if (member == nullptr || !member->is_integer()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           std::string{"payload member '"} + key + "' must be an integer");
+    }
+    const auto value = member->as_integer().value();
+    if (value < 0) {
+        return event_error(ErrorCode::InvalidArgument,
+                           std::string{"payload member '"} + key + "' must be non-negative");
+    }
+    return static_cast<std::uint64_t>(value);
+}
+
+} // namespace
+
+Result<WorkflowNavigationPlannedEvent>
+parse_workflow_navigation_planned(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowNavigationPlanned",
+                              "mira.workflow.navigation-planned.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kNavigationPlannedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowNavigationPlannedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto step_id = parse_member_id<StepId>(json.value(), "step_id");
+    if (!step_id.has_value()) {
+        return step_id.error();
+    }
+    event.step_id = step_id.value();
+    auto from_state = parse_member_state_id(json.value(), "from_state");
+    if (!from_state.has_value()) {
+        return from_state.error();
+    }
+    event.from_state = from_state.value();
+    auto to_state = parse_member_state_id(json.value(), "to_state");
+    if (!to_state.has_value()) {
+        return to_state.error();
+    }
+    event.to_state = to_state.value();
+    auto edge_count = parse_member_count(json.value(), "edge_count");
+    if (!edge_count.has_value()) {
+        return edge_count.error();
+    }
+    event.edge_count = edge_count.value();
+    auto plan_digest = parse_member_digest(json.value(), "plan_digest");
+    if (!plan_digest.has_value()) {
+        return plan_digest.error();
+    }
+    event.plan_digest = plan_digest.value();
+    const auto *total_cost = json.value().find("total_cost");
+    if (total_cost == nullptr || !total_cost->is_number() ||
+        !std::isfinite(total_cost->as_number().value()) ||
+        total_cost->as_number().value() < 0.0) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'total_cost' must be a non-negative number");
+    }
+    event.total_cost = total_cost->as_number().value();
+    auto guards_blocked = parse_member_count(json.value(), "guards_blocked");
+    if (!guards_blocked.has_value()) {
+        return guards_blocked.error();
+    }
+    event.guards_blocked = guards_blocked.value();
+    auto guards_unevaluable = parse_member_count(json.value(), "guards_unevaluable");
+    if (!guards_unevaluable.has_value()) {
+        return guards_unevaluable.error();
+    }
+    event.guards_unevaluable = guards_unevaluable.value();
+    return event;
+}
+
+Result<WorkflowNavigationObservedEvent>
+parse_workflow_navigation_observed(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowNavigationObserved",
+                              "mira.workflow.navigation-observed.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kNavigationObservedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowNavigationObservedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto step_id = parse_member_id<StepId>(json.value(), "step_id");
+    if (!step_id.has_value()) {
+        return step_id.error();
+    }
+    event.step_id = step_id.value();
+    auto transition_id = parse_member_state_id(json.value(), "transition_id");
+    if (!transition_id.has_value()) {
+        return transition_id.error();
+    }
+    event.transition_id = transition_id.value();
+    auto from_state = parse_member_state_id(json.value(), "from_state");
+    if (!from_state.has_value()) {
+        return from_state.error();
+    }
+    event.from_state = from_state.value();
+    auto to_state = parse_member_state_id(json.value(), "to_state");
+    if (!to_state.has_value()) {
+        return to_state.error();
+    }
+    event.to_state = to_state.value();
+    const auto *success = json.value().find("success");
+    if (success == nullptr || !success->is_boolean()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'success' must be a boolean");
+    }
+    event.success = *success->as_boolean();
+    const auto *confidence = json.value().find("confidence");
+    if (confidence == nullptr || !confidence->is_number() ||
+        !std::isfinite(confidence->as_number().value()) ||
+        confidence->as_number().value() < 0.0 || confidence->as_number().value() > 1.0) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'confidence' must be within [0,1]");
+    }
+    event.confidence = confidence->as_number().value();
     return event;
 }
 

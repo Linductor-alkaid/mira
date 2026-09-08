@@ -43,6 +43,11 @@ enum class WorkflowRuntimeError : std::int32_t {
     DecisionMismatch = 18,
     UnknownPatchTarget = 19,
     EscalationBudgetExceeded = 20,
+    NavigateNoScreenState = 21,
+    NavigateTargetUnknown = 22,
+    NavigatePlanFailed = 23,
+    NavigateArrivalUnverified = 24,
+    NavigateTargetInvalid = 25,
 };
 
 Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
@@ -92,6 +97,15 @@ Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
     case WorkflowRuntimeError::DecisionMismatch:
         error.code = ErrorCode::InvalidState;
         break;
+    case WorkflowRuntimeError::NavigateNoScreenState:
+    case WorkflowRuntimeError::NavigatePlanFailed:
+    case WorkflowRuntimeError::NavigateArrivalUnverified:
+        error.code = ErrorCode::InvalidObservation;
+        break;
+    case WorkflowRuntimeError::NavigateTargetUnknown:
+    case WorkflowRuntimeError::NavigateTargetInvalid:
+        error.code = ErrorCode::InvalidArgument;
+        break;
     }
     return error;
 }
@@ -101,6 +115,14 @@ Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
         summary.resize(kWorkflowEventMaxSummaryBytes);
     }
     return summary;
+}
+
+// Wall-clock epoch milliseconds for confidence bookkeeping (DEC-027 §2);
+// system_clock periods differ across platforms, so cast explicitly.
+[[nodiscard]] std::uint64_t now_millis() noexcept {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
 [[nodiscard]] bool task_withdrawn(TaskState state) noexcept {
@@ -265,6 +287,35 @@ void WorkflowRuntime::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> too
     tools_ = std::move(tools);
 }
 
+Result<void> WorkflowRuntime::set_navigation_context(AppModel model, ScreenStateProvider provider) {
+    if (auto valid = validate_app_model(model); !valid.has_value()) {
+        return valid.error();
+    }
+    std::lock_guard lock(mutex_);
+    app_model_ = std::move(model);
+    screen_state_provider_ = std::move(provider);
+    return Result<void>{};
+}
+
+Result<void> WorkflowRuntime::set_app_model(AppModel model) {
+    if (auto valid = validate_app_model(model); !valid.has_value()) {
+        return valid.error();
+    }
+    std::lock_guard lock(mutex_);
+    app_model_ = std::move(model);
+    return Result<void>{};
+}
+
+std::optional<AppModel> WorkflowRuntime::app_model_snapshot() const {
+    std::lock_guard lock(mutex_);
+    return app_model_;
+}
+
+bool WorkflowRuntime::navigation_context_installed() const {
+    std::lock_guard lock(mutex_);
+    return app_model_.has_value() && screen_state_provider_ != nullptr;
+}
+
 Result<WorkflowRuntime::RunRecord *> WorkflowRuntime::find_run(const WorkflowRunId &run_id,
                                                                Error &error) {
     std::lock_guard lock(mutex_);
@@ -408,11 +459,30 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
     }
     for (std::size_t index = 0; index < definition.steps.size(); ++index) {
         const auto &step = definition.steps[index];
-        if (step.kind == WorkflowStepKind::Navigate && dispatches) {
-            return make_runtime_error(
-                WorkflowRuntimeError::NavigateUnresolvable,
-                "navigate steps cannot be resolved before phase E; dispatching policies "
-                "reject them at admission");
+        if (step.kind == WorkflowStepKind::Navigate) {
+            // Stage E (DEC-028 §3): navigate arguments must resolve to an
+            // object naming a string target (the same shape the patch plane
+            // enforces); dispatching policies additionally require an
+            // installed navigation context.
+            auto resolved = resolve_step_arguments(bindings.value(), step.arguments);
+            if (!resolved.has_value()) {
+                return resolved.error();
+            }
+            const auto *target = resolved.value().find("target");
+            if (!resolved.value().is_object() || target == nullptr || !target->is_string() ||
+                target->as_string()->empty()) {
+                return make_runtime_error(
+                    WorkflowRuntimeError::NavigateTargetInvalid,
+                    "navigate arguments must be an object naming a string \"target\" member");
+            }
+            if (dispatches && !navigation_context_installed()) {
+                return make_runtime_error(
+                    WorkflowRuntimeError::NavigateUnresolvable,
+                    "navigate steps require an installed navigation context under dispatching "
+                    "policies");
+            }
+            resolved_arguments[index] = std::move(resolved.value());
+            continue;
         }
         if (step.kind != WorkflowStepKind::ToolCall) {
             continue;
@@ -1079,7 +1149,7 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
 
         if (step.precondition.has_value()) {
             const auto verdict =
-                evaluate_workflow_predicate(*step.precondition, predicate_context_copy(run));
+                evaluate_workflow_predicate(*step.precondition, evaluation_context(run));
             if (verdict == WorkflowPredicateResult::NotEvaluable) {
                 if (!handle_step_failure(
                         run, step, index,
@@ -1165,9 +1235,25 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
         record.verification = "none";
 
         if (step.kind == WorkflowStepKind::Navigate) {
-            // Only reachable under DryRun: Strict rejects navigate steps at
-            // admission (navigate resolver arrives with phase E).
-            record.safe_summary = "planned navigation";
+            // Stage E (DEC-028 §3): resolve through the navigation context.
+            // DryRun plans for real when a context exists and keeps the M9
+            // shape-planning settlement otherwise.
+            bool nav_cancelled = false;
+            auto navigated = execute_navigate_step(run, step, index, context, flags, record,
+                                                   nav_cancelled);
+            if (nav_cancelled) {
+                record.disposition = WorkflowStepDisposition::Stale;
+                record.safe_summary = "step cut short at a control boundary";
+                settle_step(run, step, record);
+                run.interrupted = true;
+                continue;
+            }
+            if (navigated.has_value()) {
+                if (!handle_step_failure(run, step, index, navigated.value())) {
+                    break;
+                }
+                continue;
+            }
             settle_step(run, step, record);
             ++run.cursor;
             continue;
@@ -1176,7 +1262,7 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
         if (!dispatches) {
             if (step.verification.has_value()) {
                 const auto verdict = evaluate_workflow_predicate(*step.verification,
-                                                                 predicate_context_copy(run));
+                                                                 evaluation_context(run));
                 record.verification = verification_name(verdict);
                 if (verdict == WorkflowPredicateResult::NotSatisfied) {
                     if (!handle_step_failure(
@@ -1202,7 +1288,7 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
 
         if (step.kind == WorkflowStepKind::Verify) {
             const auto verdict =
-                evaluate_workflow_predicate(*step.verification, predicate_context_copy(run));
+                evaluate_workflow_predicate(*step.verification, evaluation_context(run));
             record.verification = verification_name(verdict);
             if (verdict == WorkflowPredicateResult::Satisfied) {
                 settle_step(run, step, record);
@@ -1448,43 +1534,22 @@ bool WorkflowRuntime::step_tool_has_side_effects(const RunRecord &run,
     return tool != exposed.end() && tool->has_side_effects;
 }
 
-Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &step,
-                                            std::size_t index, const OperationContext &parent,
-                                            const DriveFlags &flags, WorkflowStepRecord &record,
-                                            bool &cancelled) {
-    const JsonValue &resolved = run.resolved_arguments[index];
-    JsonValue input(JsonValue::Object{});
-    if (const auto *object = resolved.as_object()) {
-        for (const auto &member : *object) {
-            if (member.first != "tool") {
-                input.set(member.first, member.second);
-            }
-        }
-    }
-    const std::string wire_name = *resolved.find("tool")->as_string();
-
-    const auto exposed = tools_->exposed_tools();
-    const auto tool = std::find_if(
-        exposed.begin(), exposed.end(),
-        [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
-    if (tool == exposed.end()) {
-        return workflow_error(ErrorCode::NotFound, "step tool is not registered");
-    }
-
+Result<ToolExecutionRecord>
+WorkflowRuntime::dispatch_tool_invocation(RunRecord &run, const ExposedToolSpec &tool,
+                                          const JsonValue &input, const std::string &call_id,
+                                          const OperationContext &parent, const DriveFlags &flags,
+                                          bool &cancelled) {
     ToolProposal proposal;
-    proposal.provider_call_id = ProviderToolCallId{
-        "workflow:" + run.view.run_id.to_string() + ":" + step.id.to_string() + ":" +
-        std::to_string(run.attempts[index])};
-    proposal.tool_id = tool->tool_id;
-    proposal.wire_name = wire_name;
-    proposal.tool_version = tool->version;
+    proposal.provider_call_id = ProviderToolCallId{call_id};
+    proposal.tool_id = tool.tool_id;
+    proposal.wire_name = tool.wire_name;
+    proposal.tool_version = tool.version;
     proposal.arguments = input;
     proposal.arguments_digest = canonical_json_digest(input);
     proposal.operation_id = OperationId::generate();
-    proposal.has_side_effects = tool->has_side_effects;
+    proposal.has_side_effects = tool.has_side_effects;
 
     OperationContext context = parent;
-    context.step = step.id;
     context.task_epoch = run.task_epoch;
     context.started_at = Timestamp::now();
     context.deadline = std::chrono::steady_clock::now() + config_.step_deadline;
@@ -1509,20 +1574,59 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
     if (!outcome.has_value()) {
         if (outcome.error().code == ErrorCode::Cancelled) {
             cancelled = true;
-            return Result<void>{};
+            return Result<ToolExecutionRecord>{Error{}};
         }
         return outcome.error();
     }
-    const ToolExecutionRecord &execution = outcome.value();
-    if (execution.failed) {
+    if (outcome.value().failed) {
         return make_runtime_error(WorkflowRuntimeError::ToolDispatchFailed,
-                                  execution.safe_error_summary.empty()
+                                  outcome.value().safe_error_summary.empty()
                                       ? "tool execution failed"
-                                      : execution.safe_error_summary);
+                                      : outcome.value().safe_error_summary);
+    }
+    return outcome;
+}
+
+Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &step,
+                                            std::size_t index, const OperationContext &parent,
+                                            const DriveFlags &flags, WorkflowStepRecord &record,
+                                            bool &cancelled) {
+    const JsonValue &resolved = run.resolved_arguments[index];
+    JsonValue input(JsonValue::Object{});
+    if (const auto *object = resolved.as_object()) {
+        for (const auto &member : *object) {
+            if (member.first != "tool") {
+                input.set(member.first, member.second);
+            }
+        }
+    }
+    const std::string wire_name = *resolved.find("tool")->as_string();
+
+    const auto exposed = tools_->exposed_tools();
+    const auto tool = std::find_if(
+        exposed.begin(), exposed.end(),
+        [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
+    if (tool == exposed.end()) {
+        return workflow_error(ErrorCode::NotFound, "step tool is not registered");
+    }
+
+    const std::string call_id = "workflow:" + run.view.run_id.to_string() + ":" +
+                                step.id.to_string() + ":" +
+                                std::to_string(run.attempts[index]);
+    OperationContext context = parent;
+    context.step = step.id;
+    auto execution =
+        dispatch_tool_invocation(run, *tool, input, call_id, context, flags, cancelled);
+    if (cancelled) {
+        return Result<void>{};
+    }
+    if (!execution.has_value()) {
+        return execution.error();
     }
     {
         std::lock_guard lock(mutex_);
-        run.predicate_context.set("step_result:" + step.id.to_string(), execution.result);
+        run.predicate_context.set("step_result:" + step.id.to_string(),
+                                  execution.value().result);
     }
 
     record.safe_summary = "tool: " + wire_name;
@@ -1538,11 +1642,311 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
         }
     }
     const auto verdict =
-        evaluate_workflow_predicate(*step.verification, predicate_context_copy(run));
+        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
     record.verification = verification_name(verdict);
     switch (verdict) {
     case WorkflowPredicateResult::Satisfied:
         return Result<void>{};
+    case WorkflowPredicateResult::NotSatisfied:
+        return make_runtime_error(WorkflowRuntimeError::VerifyFailed,
+                                  "verification predicate failed");
+    case WorkflowPredicateResult::NotEvaluable:
+    default:
+        return make_runtime_error(WorkflowRuntimeError::VerifyNotEvaluable,
+                                  "verification predicate is not evaluable");
+    }
+}
+
+JsonValue WorkflowRuntime::evaluation_context(const RunRecord &run) const {
+    JsonValue context;
+    ScreenStateProvider provider;
+    {
+        std::lock_guard lock(mutex_);
+        context = run.predicate_context;
+        provider = screen_state_provider_;
+    }
+    // The provider is a host callback: never invoked under the runtime mutex
+    // (DEC-027 §3); a missing or empty reading injects nothing, so every
+    // screen_state predicate stays NotEvaluable (fail closed).
+    if (provider) {
+        const auto snapshot = provider();
+        if (snapshot.has_value() && !snapshot.value().state_id.empty()) {
+            context.set("screen_state:" + snapshot.value().state_id, true);
+            context.set("screen_state:current", snapshot.value().state_id);
+        }
+    }
+    return context;
+}
+
+void WorkflowRuntime::emit_navigation_planned(const RunRecord &run, const WorkflowStep &step,
+                                              const NavigationPlan &plan) {
+    if (!events_) {
+        return;
+    }
+    WorkflowNavigationPlannedEvent event;
+    event.run_id = run.view.run_id;
+    event.step_id = step.id;
+    event.from_state = plan.from_state;
+    event.to_state = plan.to_state;
+    event.edge_count = plan.transition_ids.size();
+    event.plan_digest = plan.plan_digest;
+    event.total_cost = plan.total_cost;
+    event.guards_blocked = plan.guards_blocked;
+    event.guards_unevaluable = plan.guards_unevaluable;
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.task_id = run.task;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const WorkflowStep &step,
+                                               const AppModelTransition &transition,
+                                               bool success) {
+    if (!events_) {
+        return;
+    }
+    WorkflowNavigationObservedEvent event;
+    event.run_id = run.view.run_id;
+    event.step_id = step.id;
+    event.transition_id = transition.id;
+    event.from_state = transition.from_state;
+    event.to_state = transition.to_state;
+    event.success = success;
+    event.confidence = transition.confidence.confidence;
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.task_id = run.task;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
+                                              const AppModelTransition &transition,
+                                              bool success, std::uint64_t now_ms) {
+    std::optional<AppModelTransition> updated;
+    {
+        std::lock_guard lock(mutex_);
+        if (!app_model_.has_value()) {
+            return;
+        }
+        const auto found = std::find_if(
+            app_model_->transitions.begin(), app_model_->transitions.end(),
+            [&](const AppModelTransition &candidate) { return candidate.id == transition.id; });
+        if (found == app_model_->transitions.end()) {
+            return;
+        }
+        found->confidence = note_transition_outcome(found->confidence, success, now_ms);
+        updated = *found;
+    }
+    // Audit outside the runtime mutex (the event store is host-supplied).
+    emit_navigation_observed(run, step, *updated, success);
+}
+
+std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
+                                                            const WorkflowStep &step,
+                                                            std::size_t index,
+                                                            const OperationContext &parent,
+                                                            const DriveFlags &flags,
+                                                            WorkflowStepRecord &record,
+                                                            bool &cancelled) {
+    JsonValue arguments;
+    ScreenStateProvider provider;
+    std::optional<AppModel> model;
+    {
+        std::lock_guard lock(mutex_);
+        arguments = run.resolved_arguments[index];
+        provider = screen_state_provider_;
+        model = app_model_;
+    }
+    const auto *target_member =
+        arguments.is_object() ? arguments.find("target") : nullptr;
+    if (target_member == nullptr || !target_member->is_string() ||
+        target_member->as_string()->empty()) {
+        return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid,
+                                  "navigate arguments must name a string \"target\" member");
+    }
+    const std::string target = *target_member->as_string();
+
+    const bool dispatches = workflow_policy_dispatches_side_effects(run.view.policy);
+    const bool context_ready = model.has_value() && provider != nullptr;
+    if (!context_ready) {
+        if (dispatches) {
+            // The context was required at admission; losing it since (host
+            // reinstallation raced) still fails closed.
+            return make_runtime_error(WorkflowRuntimeError::NavigateUnresolvable,
+                                      "navigation context is no longer installed");
+        }
+        // M9 shape-planning semantics for context-less DryRun runs.
+        record.safe_summary = "planned navigation";
+        return std::nullopt;
+    }
+
+    // 1. Screen read (DEC-028 §3): no current reading -> fail closed.
+    const auto snapshot = provider();
+    if (!snapshot.has_value() || snapshot.value().state_id.empty()) {
+        return make_runtime_error(WorkflowRuntimeError::NavigateNoScreenState,
+                                  "no current screen state reading");
+    }
+    // 2. The target must be a declared state of the installed model.
+    const bool declared = std::any_of(
+        model->states.begin(), model->states.end(),
+        [&](const AppModelState &state) { return state.id == target; });
+    if (!declared) {
+        return make_runtime_error(WorkflowRuntimeError::NavigateTargetUnknown,
+                                  "navigate target '" + target +
+                                      "' is not declared in the app model");
+    }
+    // 3. Plan with the configured weights and budgets; agent edges stay
+    //    unusable for workflow navigation (DEC-028 §1).
+    NavigationPlanOptions options;
+    options.allow_agent_edges = false;
+    options.max_edge_evaluations = config_.nav_max_edge_evaluations;
+    options.max_path_edges = config_.nav_max_path_edges;
+    auto plan = plan_navigation(model.value(), snapshot.value().state_id, target,
+                                config_.nav_cost_profile, evaluation_context(run), options);
+    if (!plan.has_value()) {
+        return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed,
+                                  plan.error().safe_message);
+    }
+    emit_navigation_planned(run, step, plan.value());
+    record.safe_summary = "navigation planned: " +
+                          std::to_string(plan.value().transition_ids.size()) +
+                          " edge(s) to '" + target + "'";
+
+    if (!dispatches) {
+        // DryRun: planning only. Verification predicates evaluate against the
+        // merged context; unevaluable ones are disclosed, never claimed
+        // (RULE-10). No dispatch, no write-back, no Observed events.
+        if (step.verification.has_value()) {
+            const auto verdict =
+                evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+            record.verification = verification_name(verdict);
+            if (verdict == WorkflowPredicateResult::NotSatisfied) {
+                return make_runtime_error(WorkflowRuntimeError::VerifyFailed,
+                                          "dry-run verification failed");
+            }
+            if (verdict == WorkflowPredicateResult::NotEvaluable) {
+                ++run.unevaluable;
+                record.safe_summary = "planned; verification not evaluable";
+            }
+        }
+        return std::nullopt;
+    }
+
+    // 4. Per-edge execution: dispatch the action through the tool registry
+    //    channel, then one arrival read (W-02). No blind redispatch
+    //    (RULE-05); recovery hooks apply at the step level.
+    if (!tools_) {
+        return workflow_error(ErrorCode::InvalidState,
+                              "a tool registry is required to dispatch navigation edges");
+    }
+    const auto exposed = tools_->exposed_tools();
+    const std::string attempt_tag = std::to_string(run.attempts[index]);
+    JsonValue last_edge_result;
+    for (const auto &edge_id : plan.value().transition_ids) {
+        if (flags.withdrawn.load(std::memory_order_relaxed) || parent.cancelled()) {
+            cancelled = true;
+            return std::nullopt;
+        }
+        if (run.executions >= config_.max_step_executions_per_run) {
+            return make_runtime_error(WorkflowRuntimeError::StepBudgetExceeded,
+                                      "run step budget exhausted");
+        }
+        // Resolve the edge against the live projection: a reinstall between
+        // planning and execution must not dispatch a stale action.
+        std::optional<AppModelTransition> edge;
+        {
+            std::lock_guard lock(mutex_);
+            if (app_model_.has_value()) {
+                const auto found = std::find_if(
+                    app_model_->transitions.begin(), app_model_->transitions.end(),
+                    [&](const AppModelTransition &candidate) { return candidate.id == edge_id; });
+                if (found != app_model_->transitions.end()) {
+                    edge = *found;
+                }
+            }
+        }
+        if (!edge.has_value()) {
+            return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed,
+                                      "planned edge '" + edge_id +
+                                          "' is no longer present in the app model");
+        }
+        const auto *tool_member = edge->action.find("tool");
+        if (tool_member == nullptr || !tool_member->is_string()) {
+            return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid,
+                                      "edge '" + edge_id + "' action misses the \"tool\" member");
+        }
+        const std::string wire_name = *tool_member->as_string();
+        const auto tool = std::find_if(
+            exposed.begin(), exposed.end(),
+            [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
+        if (tool == exposed.end()) {
+            return workflow_error(ErrorCode::NotFound,
+                                  "navigation edge tool '" + wire_name + "' is not registered");
+        }
+        JsonValue input(JsonValue::Object{});
+        if (const auto *object = edge->action.as_object()) {
+            for (const auto &member : *object) {
+                if (member.first != "tool") {
+                    input.set(member.first, member.second);
+                }
+            }
+        }
+        ++run.executions;
+        const std::string call_id = "workflow-nav:" + run.view.run_id.to_string() + ":" +
+                                    step.id.to_string() + ":" + attempt_tag + ":" + edge_id;
+        OperationContext context = parent;
+        context.step = step.id;
+        auto execution =
+            dispatch_tool_invocation(run, *tool, input, call_id, context, flags, cancelled);
+        if (cancelled) {
+            return std::nullopt;
+        }
+        if (!execution.has_value()) {
+            note_navigation_outcome(run, step, *edge, false, now_millis());
+            return execution.error();
+        }
+        last_edge_result = execution.value().result;
+        // Arrival verification: one fresh read; the observed state must be
+        // the edge target (W-02; navigate-arrival-unverified otherwise).
+        const auto arrival = provider();
+        const bool arrived = arrival.has_value() &&
+                             arrival.value().state_id == edge->to_state;
+        note_navigation_outcome(run, step, *edge, arrived, now_millis());
+        if (!arrived) {
+            return make_runtime_error(
+                WorkflowRuntimeError::NavigateArrivalUnverified,
+                "edge '" + edge_id + "' did not arrive at '" + edge->to_state + "'");
+        }
+    }
+    {
+        std::lock_guard lock(mutex_);
+        if (!last_edge_result.is_null()) {
+            run.predicate_context.set("step_result:" + step.id.to_string(), last_edge_result);
+        }
+    }
+
+    record.safe_summary = "navigated to '" + target + "' (" +
+                          std::to_string(plan.value().transition_ids.size()) + " edges)";
+    if (!step.verification.has_value()) {
+        record.verification = "none";
+        return std::nullopt;
+    }
+    const auto verdict =
+        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+    record.verification = verification_name(verdict);
+    switch (verdict) {
+    case WorkflowPredicateResult::Satisfied:
+        return std::nullopt;
     case WorkflowPredicateResult::NotSatisfied:
         return make_runtime_error(WorkflowRuntimeError::VerifyFailed,
                                   "verification predicate failed");
@@ -1819,7 +2223,7 @@ Result<void> WorkflowRuntime::resolve_interrupted_step(RunRecord &run) {
     // Uncertain side effect: RULE-05 forbids blind redispatch. W-02 guarantees
     // side-effecting steps carry a verification predicate; re-evaluate it.
     const auto verdict =
-        evaluate_workflow_predicate(*step.verification, predicate_context_copy(run));
+        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
     if (verdict == WorkflowPredicateResult::Satisfied) {
         WorkflowStepRecord record;
         record.step_id = step.id;
@@ -2172,12 +2576,15 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                     [](const WorkflowStep &step) {
                         return step.kind == WorkflowStepKind::Navigate;
                     });
-                if (navigate != run.definition.steps.end()) {
+                // Stage E (DEC-028 §3): with an installed navigation context
+                // the switch is admissible; without one the M9 gate stays.
+                if (navigate != run.definition.steps.end() &&
+                    !navigation_context_installed()) {
                     return reject("navigate-unresolvable",
                                   make_runtime_error(WorkflowRuntimeError::PolicySwitchRejected,
-                                                     "navigate steps cannot be resolved before "
-                                                     "phase E; dispatching policies are "
-                                                     "rejected"));
+                                                     "navigate steps require an installed "
+                                                     "navigation context under dispatching "
+                                                     "policies"));
                 }
             }
             break;
@@ -2218,8 +2625,29 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
         new_parameters = new_bindings.values;
         for (std::size_t index = 0; index < run.definition.steps.size(); ++index) {
             const auto &step = run.definition.steps[index];
-            if (step.kind != WorkflowStepKind::ToolCall ||
-                new_overrides.count(step.id.to_string()) != 0) {
+            if (new_overrides.count(step.id.to_string()) != 0) {
+                continue;
+            }
+            if (step.kind == WorkflowStepKind::Navigate) {
+                // Stage E: a parameterized navigate target re-resolves with
+                // the new bindings; the effective shape stays checked.
+                auto resolved = resolve_step_arguments(new_bindings, step.arguments);
+                if (!resolved.has_value()) {
+                    return reject("resolve-failed", resolved.error());
+                }
+                const auto *target = resolved.value().find("target");
+                if (!resolved.value().is_object() || target == nullptr ||
+                    !target->is_string() || target->as_string()->empty()) {
+                    return reject(
+                        "navigate-target-invalid",
+                        make_runtime_error(WorkflowRuntimeError::PatchRejected,
+                                           "navigate arguments must carry a string \"target\" "
+                                           "member"));
+                }
+                new_resolved[index] = std::move(resolved.value());
+                continue;
+            }
+            if (step.kind != WorkflowStepKind::ToolCall) {
                 continue;
             }
             auto resolved = resolve_step_arguments(new_bindings, step.arguments);
@@ -2261,6 +2689,22 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                     return reject("tool-binding-invalid", shape.value());
                 }
                 new_resolved[index] = std::move(resolved.value());
+            } else if (step->kind == WorkflowStepKind::Navigate) {
+                // Stage E: fall back to the creation-resolved arguments.
+                auto resolved = resolve_step_arguments(new_bindings, step->arguments);
+                if (!resolved.has_value()) {
+                    return reject("resolve-failed", resolved.error());
+                }
+                const auto *target = resolved.value().find("target");
+                if (!resolved.value().is_object() || target == nullptr ||
+                    !target->is_string() || target->as_string()->empty()) {
+                    return reject(
+                        "navigate-target-invalid",
+                        make_runtime_error(WorkflowRuntimeError::PatchRejected,
+                                           "navigate arguments must carry a string \"target\" "
+                                           "member"));
+                }
+                new_resolved[index] = std::move(resolved.value());
             }
             break;
         }
@@ -2286,7 +2730,8 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                 return reject("resolve-failed", resolved.error());
             }
             new_overrides[entry.path] = entry.value;
-            if (step->kind == WorkflowStepKind::ToolCall) {
+            if (step->kind == WorkflowStepKind::ToolCall ||
+                step->kind == WorkflowStepKind::Navigate) {
                 new_resolved[index] = std::move(resolved.value());
             }
             break;
