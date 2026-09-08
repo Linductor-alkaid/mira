@@ -1,6 +1,6 @@
 # M10：Workflow 介入与执行策略全集（阶段 C）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M9](m9-workflow-runtime-minimal-loop.md)（已完成）
@@ -141,7 +141,7 @@
 - [x] `M10-12` 端到端取证：模型经 AgentLoop 对 Interactive Run 发起 `patch_workflow`
   （步边界生效）与 `request_user_input`（宿主决议回流）的端到端；`WaitingAgent` 的
   模型修复-续跑路径。
-- [ ] `M10-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M10-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer 覆盖新公共面；总计划、设计
   文档、API 手册与 DEC-020/022 注记同步后关闭里程碑。
 
@@ -179,23 +179,23 @@
 ## 7. 测试与退出条件
 
 - [x] `M10-01` 至 `M10-12` 全部完成并有可复现验证记录。
-- [ ] 策略矩阵：三种新策略的失败升级、钩子两时机、检查点到访计数（含循环回归）、
+- [x] 策略矩阵：三种新策略的失败升级、钩子两时机、检查点到访计数（含循环回归）、
   跨 `WaitingAgent` 计数器累计与预算终态化、`Strict`/`DryRun` 全路径无回归。
-- [ ] 状态一致性：`WaitingUser -> Paused`、`WaitingAgent -> Recovering`（含
+- [x] 状态一致性：`WaitingUser -> Paused`、`WaitingAgent -> Recovering`（含
   `begin_task_recovery` 拒绝路径）、resume 出口、Task 终态 ⇒ Run 终态不变量扩展到
   新路径；takeover 与等待态交互。
-- [ ] Patch：幂等双检、三事件序列、epoch 语义、边界生效（执行中步骤不受影响）、参数
+- [x] Patch：幂等双检、三事件序列、epoch 语义、边界生效（执行中步骤不受影响）、参数
   重建（Unset 回落/必选拒绝/重解析/不回溯）、Skip 结算、policy 门禁（成员资格 +
   Navigate）、未知 path 与非法条目拒绝、整 patch 原子性、回退（含链式）、排队上限、
   准入矩阵全格。
-- [ ] 决策点：两类来源、digest 匹配/不匹配、accept/reject/cancel_run 全路径、
+- [x] 决策点：两类来源、digest 匹配/不匹配、accept/reject/cancel_run 全路径、
   `WaitingUser` 唯一出口、单决策点上限、无自动超时（等待可被取消）。
-- [ ] 工具闭环：`patch_workflow`/`request_user_input` 经注册表执行与错误信封；模型
+- [x] 工具闭环：`patch_workflow`/`request_user_input` 经注册表执行与错误信封；模型
   发起端到端（`M10-12`）。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9 模式取证；quality
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
-- [ ] 总计划第 4/5 节、`workflow_runtime_design`、API 手册、DEC-020/022（阶段 C
+- [x] 总计划第 4/5 节、`workflow_runtime_design`、API 手册、DEC-020/022（阶段 C
   注记）与本文件同步。
 
 ## 8. 验证记录
@@ -235,9 +235,24 @@ miniconda 发行版）。
 - 结果：Release/Debug/ASAN/UBSAN 各 57/57 通过；TSAN（`setarch x86_64 -R`，mbedtls
   portable 按配置禁用）56/56 通过；`format-check`、`docs-check`、`sbom-check`、
   `platform-boundary-check`、`consumer-check` 通过。
-- 限制：Windows/Android 构建组合与 clang-tidy 由 PR CI 补验后随 `M10-13` 回填；
-  阶段 D–F 不在本轮（范围外）。
+- 限制：Windows/Android 构建组合与 clang-tidy 由 PR CI 补验后随 `M10-13` 回填（见下
+  条）；阶段 D–F 不在本轮（范围外）。
 - 同步：DEC-020/022（阶段 C 补注）、DEC-023/024（本轮冻结）、
   `workflow_runtime_design`（v0.3 §11 与路由表）、`mira_runtime_design`
   （`begin_task_recovery`）、API 手册（workflow-contracts 增 M10 节并修订 M9 描述）、
   总计划（§4/§5）。
+
+2026-09-08：PR [#31](https://github.com/Linductor-alkaid/mira/pull/31) CI 全绿（head
+`3757629`，push pipeline run
+[`34253314526`](https://github.com/Linductor-alkaid/mira/actions/runs/34253314526)、
+pull_request pipeline run
+[`34253318615`](https://github.com/Linductor-alkaid/mira/actions/runs/34253318615)）：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与
+x86_64（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy 与跨平台验证。首轮
+quality 在 `workflow_runtime.cpp` 报 1 处 `performance-move-const-arg`（对
+trivially-copyable 的 `WorkflowPatchOutcome` 使用无效 `std::move`），去除后复验通过；
+语义不变（本地全量测试复跑 57/57）。PR 已合并（merge `8be7707`）。`M10-01` 至
+`M10-13` 全部完成，退出条件逐项满足，本里程碑关闭（`Completed`）。阶段 D（成功轨迹
+编译与任务归纳）里程碑可依据 `workflow_runtime_design` 与 DEC-014 创建并进入
+`Planned`。

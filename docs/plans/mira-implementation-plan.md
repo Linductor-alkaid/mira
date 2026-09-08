@@ -73,7 +73,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
-| [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | In Progress |
+| [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -122,7 +122,14 @@ quality 矩阵），M8 关闭（`Completed`）。同日，阶段 B（Runtime 最
 patch 执行语义与决策点交互）冻结，`workflow_runtime_design` 升至 v0.3（§11 阶段 C 实施
 规范）；里程碑 [M10](m10-workflow-intervention-and-policy-set.md) 依据其创建，经维护者
 评审（用户指示依设计与计划推进下一步开发，与 M8/M9 同一授权模式）转 `Planned` 并进入
-实施（`In Progress`）。
+实施（`In Progress`）。同日交付策略全集运行时（失败升级、检查点、升级预算）、对话
+patch 执行闭环（准入矩阵、幂等双检、步边界生效、审计、回退、策略切换）与决策点交互
+（`WaitingUser` 两类来源、`resolve_decision` 唯一出口、`request_user_input` 工具、
+模型发起端到端），五操作与决策工具 BuiltIn 闭环齐活；PR
+[#31](https://github.com/Linductor-alkaid/mira/pull/31) CI 全绿（三平台 + sanitizer +
+quality 矩阵 24 项；首轮 quality 1 处 clang-tidy `performance-move-const-arg` 修复后
+复验），M10 关闭（`Completed`）；阶段 D（成功轨迹编译与任务归纳）里程碑可依据该设计
+创建。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
