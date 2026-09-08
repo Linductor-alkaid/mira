@@ -309,6 +309,32 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
 
 } // namespace
 
+Result<std::vector<WorkflowPatchEntry>> parse_workflow_patch_entries(const JsonValue &items) {
+    std::vector<WorkflowPatchEntry> entries;
+    for (const auto &item : *items.as_array()) {
+        WorkflowPatchEntry entry;
+        auto target = parse_workflow_patch_target(*item.find("target")->as_string());
+        if (!target.has_value()) {
+            return target.error();
+        }
+        entry.target = target.value();
+        auto op = parse_workflow_patch_op(*item.find("op")->as_string());
+        if (!op.has_value()) {
+            return op.error();
+        }
+        entry.op = op.value();
+        entry.path = *item.find("path")->as_string();
+        if (const auto *value = item.find("value"); value != nullptr) {
+            entry.value = *value;
+        }
+        if (auto check = validate_workflow_patch_entry(entry); !check.has_value()) {
+            return check.error();
+        }
+        entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
 std::string_view workflow_operation_wire_name(WorkflowOperation operation) {
     switch (operation) {
     case WorkflowOperation::RunWorkflow:
@@ -444,26 +470,8 @@ Result<void> validate_workflow_operation(WorkflowOperation operation, const Json
     }
     if (operation == WorkflowOperation::PatchWorkflow) {
         const auto *entries = arguments.find("patch_entries");
-        for (const auto &item : *entries->as_array()) {
-            WorkflowPatchEntry entry;
-            auto target = parse_workflow_patch_target(*item.find("target")->as_string());
-            if (!target.has_value()) {
-                return target.error();
-            }
-            entry.target = target.value();
-            auto op = parse_workflow_patch_op(*item.find("op")->as_string());
-            if (!op.has_value()) {
-                return op.error();
-            }
-            entry.op = op.value();
-            const auto *path = item.find("path");
-            entry.path = *path->as_string();
-            if (const auto *value = item.find("value"); value != nullptr) {
-                entry.value = *value;
-            }
-            if (auto check = validate_workflow_patch_entry(entry); !check.has_value()) {
-                return check;
-            }
+        if (auto parsed = parse_workflow_patch_entries(*entries); !parsed.has_value()) {
+            return parsed.error();
         }
     }
     return Result<void>{};
@@ -480,6 +488,131 @@ JsonValue workflow_operation_error_envelope(const Error &error) {
         object.emplace_back("operation_id", error.operation_id->to_string());
     }
     return JsonValue{std::move(object)};
+}
+
+namespace {
+
+[[nodiscard]] JsonValue request_user_input_parameters_schema() {
+    JsonValue::Object entry_properties;
+    entry_properties.emplace_back("target", [&] {
+        JsonValue::Object target;
+        target.emplace_back("type", "string");
+        target.emplace_back("enum", enum_members(kPatchTargets));
+        return JsonValue{std::move(target)};
+    }());
+    entry_properties.emplace_back("op", [&] {
+        JsonValue::Object op;
+        op.emplace_back("type", "string");
+        op.emplace_back("enum", enum_members(kPatchOps));
+        return JsonValue{std::move(op)};
+    }());
+    JsonValue::Object path;
+    path.emplace_back("type", "string");
+    path.emplace_back("minLength", static_cast<std::int64_t>(1));
+    path.emplace_back("maxLength", static_cast<std::int64_t>(256));
+    entry_properties.emplace_back("path", JsonValue{std::move(path)});
+    JsonValue::Object value;
+    value.emplace_back("description", "Scalar or structured value; required for op=set");
+    entry_properties.emplace_back("value", JsonValue{std::move(value)});
+    JsonValue::Object entry;
+    entry.emplace_back("type", "object");
+    entry.emplace_back("properties", JsonValue{std::move(entry_properties)});
+    JsonValue::Array entry_required;
+    entry_required.emplace_back("target");
+    entry_required.emplace_back("op");
+    entry_required.emplace_back("path");
+    entry.emplace_back("required", JsonValue{std::move(entry_required)});
+    entry.emplace_back("additionalProperties", false);
+    JsonValue::Object proposal_items;
+    proposal_items.emplace_back("type", "array");
+    proposal_items.emplace_back("maxItems", static_cast<std::int64_t>(32));
+    proposal_items.emplace_back("items", JsonValue{std::move(entry)});
+    JsonValue::Object prompt;
+    prompt.emplace_back("type", "string");
+    prompt.emplace_back("minLength", static_cast<std::int64_t>(1));
+    prompt.emplace_back("maxLength", static_cast<std::int64_t>(kWorkflowEventMaxSummaryBytes));
+    prompt.emplace_back("description",
+                        "Pre-sanitized question summary; the host owns input sanitization");
+    JsonValue::Object properties;
+    properties.emplace_back("workflow_id", id_pattern());
+    properties.emplace_back("run_id", id_pattern());
+    properties.emplace_back("prompt", JsonValue{std::move(prompt)});
+    properties.emplace_back("proposal", JsonValue{std::move(proposal_items)});
+    JsonValue::Object root;
+    root.emplace_back("type", "object");
+    root.emplace_back("properties", JsonValue{std::move(properties)});
+    JsonValue::Array required;
+    required.emplace_back("workflow_id");
+    required.emplace_back("run_id");
+    required.emplace_back("prompt");
+    root.emplace_back("required", std::move(required));
+    root.emplace_back("additionalProperties", false);
+    return JsonValue{std::move(root)};
+}
+
+[[nodiscard]] JsonValue request_user_input_result_schema() {
+    JsonValue::Object properties;
+    properties.emplace_back("decision_id", id_pattern());
+    JsonValue::Object state;
+    state.emplace_back("type", "string");
+    JsonValue::Array state_values;
+    state_values.emplace_back(std::string{"waiting_user"});
+    state.emplace_back("enum", JsonValue{std::move(state_values)});
+    properties.emplace_back("state", JsonValue{std::move(state)});
+    JsonValue::Object root;
+    root.emplace_back("type", "object");
+    root.emplace_back("properties", JsonValue{std::move(properties)});
+    JsonValue::Array required;
+    required.emplace_back("decision_id");
+    required.emplace_back("state");
+    root.emplace_back("required", std::move(required));
+    root.emplace_back("additionalProperties", false);
+    return JsonValue{std::move(root)};
+}
+
+} // namespace
+
+const WorkflowUserInputToolSpec &workflow_request_user_input_spec() {
+    static const WorkflowUserInputToolSpec built = [] {
+        WorkflowUserInputToolSpec spec;
+        spec.description =
+            "Raise a WaitingUser decision point on one interactive workflow run; the "
+            "optional proposal is a patch applied when the user accepts";
+        spec.parameters_schema = schema_of(request_user_input_parameters_schema());
+        spec.result_schema = schema_of(request_user_input_result_schema());
+        spec.error_schema = schema_of(error_schema());
+        return spec;
+    }();
+    return built;
+}
+
+Result<void> validate_request_user_input_arguments(const JsonValue &arguments) {
+    const WorkflowUserInputToolSpec &spec = workflow_request_user_input_spec();
+    if (auto gate = gate_schema_subset(spec.parameters_schema); !gate.has_value()) {
+        return gate.error();
+    }
+    const auto violations = validate_instance_against_schema(arguments, spec.parameters_schema);
+    if (!violations.empty()) {
+        Error error = tool_error(ErrorCode::InvalidArgument,
+                                 "request_user_input arguments failed schema validation");
+        error.safe_message += ": ";
+        error.safe_message += violations.front().message;
+        return error;
+    }
+    if (const auto *proposal = arguments.find("proposal"); proposal != nullptr) {
+        if (auto entries = parse_workflow_patch_entries(*proposal); !entries.has_value()) {
+            return entries.error();
+        }
+    }
+    return Result<void>{};
+}
+
+Result<std::vector<WorkflowPatchEntry>> request_user_input_proposal(const JsonValue &arguments) {
+    const auto *proposal = arguments.find("proposal");
+    if (proposal == nullptr) {
+        return std::vector<WorkflowPatchEntry>{};
+    }
+    return parse_workflow_patch_entries(*proposal);
 }
 
 } // namespace mira

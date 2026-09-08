@@ -218,6 +218,69 @@ int main() {
             result.value().state != mira::WorkflowRunState::Completed) {
             return 25;
         }
+
+        // Workflow intervention (M10): an Interactive run parks in
+        // WaitingUser on failure, accepts a run patch in the wait state and
+        // resolves the decision point through the installed package.
+        const char *interactive_ir = R"({
+            "schema_version": {"major": 1, "minor": 0},
+            "workflow_id": "0123456789abcdef0123456789abcdef",
+            "name": "consumer-interactive",
+            "parameters": [
+                {"name": "contact", "type": "string", "required": true}
+            ],
+            "steps": [
+                {"step_id": "11111111111111111111111111111111", "kind": "verify",
+                 "verification": {"signal": "run_parameter:contact", "op": "eq",
+                                  "value": "blocked"}},
+                {"step_id": "22222222222222222222222222222222", "kind": "verify",
+                 "verification": {"signal": "run_parameter:contact", "op": "exists"}}
+            ],
+            "default_policy": "strict",
+            "allowed_policies": ["strict", "interactive"]
+        })";
+        auto interactive = mira::parse_workflow_definition(interactive_ir);
+        if (!interactive.has_value()) {
+            return 30;
+        }
+        const auto started = workflows.create_run(interactive.value(), parameters,
+                                                  mira::WorkflowPolicy::Interactive);
+        if (!started.has_value()) {
+            return 31;
+        }
+        const auto parked = workflows.execute_run(started.value().run_id, context);
+        if (!parked.has_value() ||
+            parked.value().state != mira::WorkflowRunState::WaitingUser) {
+            return 32;
+        }
+        mira::WorkflowPatchEntry entry;
+        entry.target = mira::WorkflowPatchTarget::RunParameters;
+        entry.op = mira::WorkflowPatchOp::Set;
+        entry.path = "contact";
+        entry.value = mira::JsonValue{std::string("resolved")};
+        const auto patched = workflows.patch_run(started.value().run_id,
+                                                 mira::WorkflowPatchId::generate(), {entry});
+        if (!patched.has_value() || !patched.value().applied ||
+            patched.value().view.run_patch_epoch != 1) {
+            return 33;
+        }
+        const auto decision = workflows.pending_decision_request(started.value().run_id);
+        if (!decision.has_value() ||
+            decision.value().kind != mira::WorkflowDecisionKind::StepFailure) {
+            return 34;
+        }
+        const auto resolved = workflows.resolve_decision(
+            started.value().run_id, decision.value().decision_id,
+            decision.value().payload_digest, mira::WorkflowDecisionResolution::Accept);
+        if (!resolved.has_value()) {
+            return 35;
+        }
+        const auto settled = workflows.wait_run(started.value().run_id, std::chrono::seconds(10));
+        if (!settled.has_value() ||
+            settled.value().state != mira::WorkflowRunState::Completed) {
+            return 36;
+        }
+
         const auto report = workflows.shutdown();
         if (!report.clean) {
             return 26;

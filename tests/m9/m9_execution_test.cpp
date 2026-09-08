@@ -215,21 +215,30 @@ int summaryless_definitions_round_trip() {
     return 0;
 }
 
-int stage_b_policy_scope_is_strict_and_dry_run() {
+int policy_admission_follows_allowed_set() {
     WorkflowFixture fixture;
+    CountingTool counter;
+    MIRA_CHECK(register_registration(*fixture.registry_, counter.registration()));
     auto workflow = fixture.make_workflow();
     auto definition = base_definition("policy-scope");
     definition.steps = {tool_step("counter", std::nullopt)};
 
+    // Stage C (DEC-023): every policy named in the allowed set is
+    // executable; the stage-B Strict/DryRun-only gate is gone.
     const auto recoverable = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
                                                   WorkflowPolicy::Recoverable);
-    MIRA_CHECK(!recoverable.has_value());
-    MIRA_CHECK(recoverable.error().code == ErrorCode::UnsupportedCapability);
+    MIRA_CHECK(recoverable.has_value());
 
     const auto interactive = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
                                                   WorkflowPolicy::Interactive);
-    MIRA_CHECK(!interactive.has_value());
-    MIRA_CHECK(interactive.error().code == ErrorCode::UnsupportedCapability);
+    MIRA_CHECK(interactive.has_value());
+
+    // Membership is still enforced: a policy outside the allowed set fails.
+    definition.allowed_policies = {WorkflowPolicy::Strict, WorkflowPolicy::DryRun};
+    const auto outside = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
+                                              WorkflowPolicy::Recoverable);
+    MIRA_CHECK(!outside.has_value());
+    MIRA_CHECK(outside.error().code == ErrorCode::InvalidArgument);
     return 0;
 }
 
@@ -506,7 +515,7 @@ int main() {
         dry_run_plans_without_dispatch,
         dry_run_evaluable_predicates_are_enforced,
         summaryless_definitions_round_trip,
-        stage_b_policy_scope_is_strict_and_dry_run,
+        policy_admission_follows_allowed_set,
         admission_fails_closed,
         retry_hook_recovers_scripted_failure,
         retry_hook_exhaustion_fails,

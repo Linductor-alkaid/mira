@@ -261,7 +261,11 @@ public:
     Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task);
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
-    Result<CommandHandle> cancel_task(TaskId task_id, CancelReason reason);
+    Result<CommandHandle> cancel_task(TaskId task_id);
+    // M10（DEC-023）：WorkflowRun 升级进入 WaitingAgent 时承载任务迁入
+    // Recovering 的唯一路径；进入与自其恢复均递增 epoch（迟到操作完成按
+    // Stale 结算）。
+    Result<CommandHandle> begin_task_recovery(TaskId task_id);
     Result<CommandHandle> request_human_takeover(SessionId session_id);
     Result<CommandHandle> release_human_takeover(SessionId session_id);
 

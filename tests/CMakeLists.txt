@@ -274,3 +274,27 @@ if(Python3_Interpreter_FOUND)
                 "${PROJECT_SOURCE_DIR}")
     set_tests_properties(mira_platform_boundary_test PROPERTIES LABELS "contract;platform")
 endif()
+
+# ---------------------------------------------------------------------------
+# M10: workflow intervention and the full policy set (stage C)
+# ---------------------------------------------------------------------------
+
+function(mira_add_m10_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m10" TIMEOUT 120)
+endfunction()
+
+mira_add_m10_test(mira_m10_policy_test m10/m10_policy_test.cpp)
+mira_add_m10_test(mira_m10_patch_test m10/m10_patch_test.cpp)
+mira_add_m10_test(mira_m10_interaction_test m10/m10_interaction_test.cpp)

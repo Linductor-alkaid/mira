@@ -96,6 +96,13 @@
   （条目顺序敏感）。
 - `workflow_operation_error_envelope`：统一错误信封 `{code, domain, domain_code,
   retryable, safe_message, operation_id}`；`safe_message` 必须已脱敏。
+- `parse_workflow_patch_entries`：patch 条目数组的共享解码（`patch_workflow` 的
+  `patch_entries` 与 `request_user_input` 的 `proposal` 同形）；未知形状 fail closed。
+- `workflow_request_user_input_spec()`（M10，DEC-024 §4）：`request_user_input` 工具
+  规格——arguments `{workflow_id, run_id, prompt, proposal?}`（prompt 为已脱敏摘要，
+  ≤2 KiB；proposal 为可选 patch 条目数组，≤32 条），结果 `{decision_id,
+  state:"waiting_user"}`；`validate_request_user_input_arguments` 本地校验（schema 子集
+  + 条目规则），Run 准入（Interactive、非终态、无未决议决策点）是 Runtime 检查。
 
 ## WorkflowRuntime 执行闭环（`workflow_runtime.hpp`，M9）
 
@@ -104,15 +111,16 @@
   步执行预算与并发异步驱动上限由 `WorkflowRuntimeConfig` 约束（`RULE-08`）。
 - `create_run`（宿主直达，宿主是信任边界）与 `create_run(workflow_id, ir_digest, ...)`
   （库路径，仅 `DryRunPassed`/`Validated` 版本可运行，`W-03`/`W-04`）。准入 fail closed：
-  M9 仅承载 `Strict`/`DryRun`（其余策略 `UnsupportedCapability`，阶段 C）、
-  `AgentEscalation` 钩子拒绝、dispatching 策略下 Navigate 步骤与缺失验证声明的副作用
-  步骤拒绝、参数绑定确定性错误码透传。
+  `allowed_policies` 成员资格、非 agent-capable 策略下的 `AgentEscalation` 钩子拒绝、
+  dispatching 策略下 Navigate 步骤与缺失验证声明的副作用步骤拒绝、参数绑定确定性
+  错误码透传（M9 的两策略限制已随 M10 移除，五种策略均可执行）。
 - `execute_run`（调用线程同步驱动）与 `start_run`（异步驱动，受并发上限约束）；
   `wait_run` 有界等待当前驱动的结果。DryRun 不派发任何工具或环境动作，不可求值验证按
   「已规划、未宣称验证」结算并在结果中计数披露（`RULE-10`）。
 - `pause_run` 在步边界安全点收敛：被截断步骤按 `Stale` 结算且游标不推进；
   `resume_run` 重新观察后从游标继续（无副作用工具或 DryRun 重执行；副作用工具复评验证
-  谓词，不可恢复时按 `ExecutionUncertain` 失败，禁止盲目重发）；`cancel_run` 幂等，
+  谓词，不可恢复时按 `ExecutionUncertain` 失败，禁止盲目重发；`WaitingAgent` 经同一
+  路径续跑，`WaitingUser` 自 M10 起拒绝并指引 `resolve_decision`）；`cancel_run` 幂等，
   迟到完成隔离为 `Stale`。Run/Task 终态保持一致（`run_task_state_compatible`）。
 - `operation_tool_registrations()` 返回 run/pause/resume/cancel 四个 BuiltIn handler
   （`patch_workflow` 执行属阶段 C）；handler 捕获 `this`，Runtime 必须覆盖注册条目
@@ -122,14 +130,54 @@
   宿主关闭顺序：`WorkflowRuntime::shutdown` → `MiraRuntime` 停止 → Executor
   `shutdown(true)`。
 
+## WorkflowRuntime 介入与策略全集（M10，DEC-023/024）
+
+- 策略准入：五种策略全部可执行（`allowed_policies` 成员资格与 agent-capable 钩子校验
+  沿用契约函数）。失败分流（恢复链耗尽点，步边界）：`Strict`/`DryRun` → `Failed`；
+  `Recoverable`/`AgentAssisted` → `WaitingAgent`（载体任务经 `MiraRuntime::
+  begin_task_recovery` 进入 `Recovering`）；`Interactive` → `WaitingUser` 决策点（载体
+  走 pause 族）。升级预算 `max_escalations_per_run`（默认 32）耗尽按 `Failed`
+  终态化（`escalation-budget-exceeded`）；检查点交出不消耗该预算。
+- 检查点（`AgentAssisted`）：声明 `AgentEscalation` 钩子的步骤即检查点，到达驱动——
+  每次到达先 `WaitingAgent` 交出再执行；「到达」按游标进入计（全新启动或驱动内移动），
+  等待恢复消费既有到达。`AgentEscalation` 钩子在 agent-capable 策略下失败时立即升级。
+- `agent_continuation(run_id)`：仅 `WaitingAgent`；返回当前步（ID/种类/尝试数）、有效
+  参数（宿主边界明文，进模型上下文走既有脱敏）、步历史、失败原因与 pending 决策。
+- Patch 平面：`patch_run`（宿主直达）与 `patch_workflow` handler 同源。准入矩阵：
+  `Interactive` 在全部边界态接受；agent-capable 策略在 `WaitingAgent` 接受（修复）；
+  其余拒绝（`policy-not-interactive`）；终态拒绝（幂等重放除外）。`Running` Run 的
+  patch 排队至步边界（上限 `max_pending_patches_per_run`，默认 16）；等待态直达应用。
+- Patch 语义：整 patch 原子生效（任一条目校验失败全部拒绝，`run_patch_epoch` 每
+  patch +1）；幂等键 `patch_id`+digest 写前与应用双检（同 ID 同 digest NoOp、异
+  digest `id-conflict`）；参数 Set/Unset 以绑定纯函数整体重建（Unset 回落默认值，
+  必选缺失拒绝），未执行步骤重解析、已结算不回溯；`step_arguments` Set 经 `$param`
+  解析与工具绑定校验、Unset 清除该步覆盖（含跳过）、Skip 入跳过集；`execution_policy`
+  Set 校验 `allowed_policies` 成员资格与 Navigate 剩余门禁（含 Navigate 步骤的定义
+  拒绝切换到 dispatching 策略）并发出 `WorkflowPolicySwitched`。审计：逐条目
+  `WorkflowPatchProposed` → `WorkflowPatchApplied`/`Rejected`（原因码稳定命名）。
+- 回退：`rollback_run_patch(run_id, target_patch_id)` 从应用前快照构造差异条目，以新
+  `patch_id` 走同一管线（无隐式快照恢复；无差异时报 `InvalidArgument`）。
+- 决策点：`StepFailure`（Interactive 失败，提议=跳过失败步骤）与 `AgentPrompt`
+  （`request_user_input`）两类；`pending_decision_request` 读取当前决策（含类别、
+  提议与 payload digest）；`resolve_decision(run_id, decision_id, payload_digest,
+  resolution)` 按 ID+digest 匹配（不匹配 `decision-mismatch` 拒绝）——accept 应用提议
+  并续跑、reject 按类别终态化（StepFailure 经 `Running` 边转 `Failed`）或直接续跑、
+  cancel_run 取消；每 Run 至多一个 pending 决策；无自动超时（宿主可取消）。
+  `WaitingUser` 的唯一出口是决议：`resume_run` 对其拒绝并指引 `resolve_decision`。
+- `decision_tool_registrations()` 返回 `request_user_input` 的 BuiltIn handler
+  （捕获 `this`，生命周期约束同五操作 handler）；`operation_tool_registrations()`
+  自 M10 起返回全部五个操作（含 `patch_workflow`）。
+
 ## 兼容性与限制
 
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
   更强的承诺。
 - `Navigate` 目标与 `screen_state` 谓词在阶段 E 之前只做形状校验，不可求值；dispatching
-  策略在创建 Run 时即拒绝含 Navigate 步骤的定义（`navigate-unresolvable`）；不得据此
-  宣称导航或验证能力已实现（`RULE-10`）。
+  策略在创建 Run 时即拒绝含 Navigate 步骤的定义（`navigate-unresolvable`），patch 切换
+  到 dispatching 策略同样拒绝；不得据此宣称导航或验证能力已实现（`RULE-10`）。
 - `Strict` 为 IR 未声明默认策略时的默认值（DEC-019/020，暂定状态已于 M9 冻结）。
 - Workflow 库与 Run 表为进程内投影（EventStore 仍是权威记录）；SQLite Workflow Library
   存储与跨进程续跑未交付（`RISK-2026-038`）。`DryRunPassed` 证据入库链属阶段 D。
+- 自然语言 → patch 条目的解释编排（含三类目标判定）与 Workflow 定义/偏好两类目标属
+  Agent 侧与后续阶段（DEC-024 §7）；M10 交付的是解释结果的机器侧闭环。
 - 异步驱动上限必须小于 Executor worker 数（一个驱动占用一个 worker 等待步 future）。

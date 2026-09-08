@@ -271,11 +271,12 @@ class MiraRuntime::Impl final {
             snapshot.state = target;
             if (target == TaskState::Observing &&
                 (previous_state == TaskState::Paused ||
-                 previous_state == TaskState::SuspendedForTakeover)) {
+                 previous_state == TaskState::SuspendedForTakeover ||
+                 previous_state == TaskState::Recovering)) {
                 ++snapshot.epoch;
             }
             if (target == TaskState::Paused || target == TaskState::SuspendedForTakeover ||
-                target == TaskState::Cancelled) {
+                target == TaskState::Cancelled || target == TaskState::Recovering) {
                 ++snapshot.epoch;
             }
             if (target == TaskState::Cancelled) {
@@ -459,6 +460,11 @@ Result<CommandHandle> MiraRuntime::resume_task(TaskId task_id) {
 
 Result<CommandHandle> MiraRuntime::cancel_task(TaskId task_id) {
     return impl_->simple_task_command(CommandKind::CancelTask, task_id, TaskState::Cancelled);
+}
+
+Result<CommandHandle> MiraRuntime::begin_task_recovery(TaskId task_id) {
+    return impl_->simple_task_command(CommandKind::BeginTaskRecovery, task_id,
+                                       TaskState::Recovering);
 }
 
 Result<CommandHandle> MiraRuntime::complete_task(TaskId task_id, TaskOutcome outcome) {
