@@ -290,7 +290,7 @@ Result<Sha256Digest> WorkflowRuntime::publish_workflow(const WorkflowDefinition 
         return valid.error();
     }
     auto appended = append_version_record(definition, workflow_definition_digest(definition),
-                                          actor, reason, validation, std::move(evidence), false);
+                                          actor, reason, validation, evidence, false);
     if (!appended.has_value()) {
         return appended.error();
     }
