@@ -1899,7 +1899,7 @@ WorkflowRuntime::submit_patch(RunRecord &run, const WorkflowPatchId &patch_id,
                 WorkflowPatchOutcome outcome;
                 outcome.view = run.view;
                 outcome.applied = false;
-                return Result<WorkflowPatchOutcome>{std::move(outcome)};
+                return Result<WorkflowPatchOutcome>{outcome};
             }
             return Result<WorkflowPatchOutcome>{make_runtime_error(
                 WorkflowRuntimeError::PatchIdConflict,
