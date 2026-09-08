@@ -1,6 +1,6 @@
 # M12：App Model 与导航（阶段 E）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M9](m9-workflow-runtime-minimal-loop.md)（已完成；阶段 E 的直接前置是阶段 B，
@@ -120,7 +120,7 @@ guard、代价向量、置信度记录）、确定性置信度更新（观测、
   路径、失败边置信度回写与重规划、恢复钩子路径、取消 Stale）；`publish_validated`
   门禁对含 Navigate 定义的行为（有上下文 DryRun 规划约束）；installed-consumer
   用例。
-- [ ] `M12-07` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M12-07` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer；总计划、设计文档（v0.5）、
   API 手册与 DEC-019 注记同步后关闭里程碑。
 
@@ -152,35 +152,35 @@ deadline 与预算计数）。关闭顺序不变（M9 §5）：`WorkflowRuntime:
 
 ## 7. 测试与退出条件
 
-- [ ] `M12-01` 至 `M12-06` 全部完成并有可复现验证记录。
-- [ ] 契约矩阵：JSON 往返无损；未知字段/悬垂引用/重复 ID/空串/上限 fail closed；
+- [x] `M12-01` 至 `M12-06` 全部完成并有可复现验证记录。
+- [x] 契约矩阵：JSON 往返无损；未知字段/悬垂引用/重复 ID/空串/上限 fail closed；
   `validate_app_model` 与解码同源；digest 确定性（同内容两次相等、改动即变）；
   source 封闭集负向。
-- [ ] 置信度矩阵：成功/失败更新计数与数值逐值断言；衰减单调不增、`Δt<=0` 不变、
+- [x] 置信度矩阵：成功/失败更新计数与数值逐值断言；衰减单调不增、`Δt<=0` 不变、
   计数与时间戳不被衰减改动；`needs_exploration` 阈值边界；纯函数性（重复调用同
   输出）。
-- [ ] 规划器矩阵：确定性（重复调用同结果）；权重改变改变路径选择；guard
+- [x] 规划器矩阵：确定性（重复调用同结果）；权重改变改变路径选择；guard
   `NotSatisfied`/`NotEvaluable` 分计数且边不可用；等代价字典序平局；
   `agent_required` 排除与 `allow_agent_edges`；预算超限 `nav-budget-exceeded`；
   未知端点；from == to 空路径；无路径 vs guard 全挡可分辨。
-- [ ] Runtime 导航矩阵：无上下文 `navigate-unresolvable` 准入拒绝（M9 回归）与
+- [x] Runtime 导航矩阵：无上下文 `navigate-unresolvable` 准入拒绝（M9 回归）与
   policy patch 门禁拒绝回归；有上下文准入放行；逐边派发与到达验证成功路径；
   `navigate-arrival-unverified` 失败与恢复钩子（Retry/FallbackStep/升级）；
   `navigate-no-screen-state`；目标未声明 `navigate-target-unknown`；边动作工具
   缺失/校验失败；step 预算计入；执行中取消 Navigate 步 Stale 结算；置信度回写
   （成功/失败逐值）与投影再规划吃到回写。
-- [ ] 谓词矩阵：`screen_state:<name>` eq/exists 求值；非当前状态 NotEvaluable；
+- [x] 谓词矩阵：`screen_state:<name>` eq/exists 求值；非当前状态 NotEvaluable；
   Provider 缺席全部 NotEvaluable（M8/M9 回归）；DryRun 完成的 unevaluable 计数
   行为（有快照后可求值路径）。
-- [ ] DryRun 矩阵：有上下文真实规划（Planned 事件、规划失败即步失败、无 Observed、
+- [x] DryRun 矩阵：有上下文真实规划（Planned 事件、规划失败即步失败、无 Observed、
   无回写）；无上下文形状规划回归；`publish_validated` 对含 Navigate 定义的门禁
   行为。
-- [ ] 事件矩阵：两员载荷往返、未知字段 fail closed、DryRun 只发 Planned、闭集
+- [x] 事件矩阵：两员载荷往返、未知字段 fail closed、DryRun 只发 Planned、闭集
   扩展回归；离线回放无副作用。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9–M11 模式取证；quality
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9–M11 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
-- [ ] 总计划第 4/5 节、`workflow_runtime_design` v0.5、API 手册、DEC-019 注记与
+- [x] 总计划第 4/5 节、`workflow_runtime_design` v0.5、API 手册、DEC-019 注记与
   本文件同步。
 
 ## 8. 验证记录
@@ -228,3 +228,21 @@ miniconda 发行版但本机 format 结论以 PR CI 为准）。
 - 同步：DEC-027/028（本轮冻结）、`workflow_runtime_design`（v0.5 §13 与路由/事件/
   模块/测试表）、API 手册（workflow-contracts 增 M12 节与兼容性更新）、总计划
   （§4/§5）、本文件。
+
+2026-09-09：PR [#33](https://github.com/Linductor-alkaid/mira/pull/33) CI 全绿（head
+`cc569c9`，push pipeline run
+[`34277090112`](https://github.com/Linductor-alkaid/mira/actions/runs/34277090112)、
+pull_request pipeline run
+[`34277095666`](https://github.com/Linductor-alkaid/mira/actions/runs/34277095666)）：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与
+x86_64（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy、format 与跨平台
+验证。前两轮 quality 各报 1 处 clang-tidy 违例——`workflow_runtime.cpp:1906`
+`performance-inefficient-string-concatenation`（边循环内 call_id 链式拼接，改 `+=`
+构造并顺带处理循环内其余诊断串）与 `workflow_navigation.cpp:530`
+`bugprone-branch-clone`（`AppModelError` 映射两个连续相同分支合并，与 PR #29 同
+模式）——修复后复验全绿；语义不变（本地 m8–m12 套件复跑通过）。PR 已合并（merge
+`1b8692b`）。`M12-01` 至 `M12-07` 全部完成，退出条件逐项满足，本里程碑关闭
+（`Completed`）。阶段 F（Memory 与学习闭环，前置 D/E）里程碑可依据
+`agent_harness_and_workflow_architecture` §10/§16 与 `workflow_runtime_design` 创建并
+进入 `Planned`（先专项设计与决策，不预分配编号）。

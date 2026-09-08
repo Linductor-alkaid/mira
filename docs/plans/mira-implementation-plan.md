@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-09（M12 实施中）
+> 更新日期：2026-09-09（M12 关闭）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -75,7 +75,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
 | [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | Completed |
-| [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | In Progress |
+| [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -151,7 +151,16 @@ M11 关闭（`Completed`）；阶段 E（App Model 与导航）里程碑可依�
 （Navigation Planner 与 Navigate 步骤解析）冻结，`workflow_runtime_design` 升至 v0.5
 （§13 阶段 E 实施规范）；里程碑 [M12](m12-app-model-and-navigation.md) 依据其创建，经
 维护者评审（用户指示依设计与计划推进下一步开发，与 M8–M11 同一授权模式）转 `Planned`
-并进入实施（`In Progress`）。
+并进入实施（`In Progress`）。同日交付 `workflow_navigation` 模块（`AppModel` 契约与
+置信度纯函数、确定性 Dijkstra 规划器）、导航两员事件与 `WorkflowRuntime` 集成
+（导航上下文安装、Navigate 准入条件化与逐边执行、`screen_state` 谓词绑定、置信度
+回写；DryRun 真实规划使 `publish_validated` 门禁对导航可达性有约束力）；本机全矩阵
+（Debug/Release/ASAN/UBSAN 63/63、TSAN 62/62、本地门禁）通过，PR
+[#33](https://github.com/Linductor-alkaid/mira/pull/33) CI 全绿（三平台 + sanitizer +
+quality 24 项；两轮 quality 各 1 处 clang-tidy 违例——`performance-inefficient-
+string-concatenation` 与 `bugprone-branch-clone`——修复后复验），M12 关闭
+（`Completed`）；阶段 F（Memory 与学习闭环，前置 D/E）里程碑可依据架构设计 §10/§16
+创建（先专项设计与决策，不预分配编号）。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
