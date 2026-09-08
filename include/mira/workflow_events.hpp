@@ -158,6 +158,33 @@ struct WorkflowPublishRejectedEvent final {
     std::string reason_code;
 };
 
+// --- Workflow navigation (State, DEC-028 §4, stage E) -----------------------
+
+// One navigation plan resolution (DryRun and dispatching policies alike).
+struct WorkflowNavigationPlannedEvent final {
+    WorkflowRunId run_id;
+    StepId step_id;
+    std::string from_state;
+    std::string to_state;
+    std::uint64_t edge_count = 0;
+    Sha256Digest plan_digest{};
+    double total_cost = 0.0;
+    std::uint64_t guards_blocked = 0;
+    std::uint64_t guards_unevaluable = 0;
+};
+
+// One real transition observation with the post-update edge confidence.
+// Emitted only when the run actually dispatched the edge action.
+struct WorkflowNavigationObservedEvent final {
+    WorkflowRunId run_id;
+    StepId step_id;
+    std::string transition_id;
+    std::string from_state;
+    std::string to_state;
+    bool success = false;
+    double confidence = 0.0;
+};
+
 // --- Payload builders and parsers -------------------------------------------
 
 // Builders return ready-to-append payloads with the event type and schema
@@ -175,6 +202,8 @@ struct WorkflowPublishRejectedEvent final {
 [[nodiscard]] EventPayload to_event_payload(const WorkflowPublishProposedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowPublishAppliedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowNavigationPlannedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event);
 
 // Parsers fail closed on schema mismatch, unknown fields and malformed ids.
 // The payload data is JSON text (EventPayload::data).
@@ -204,5 +233,9 @@ parse_workflow_publish_proposed(const EventPayload &payload);
 parse_workflow_publish_applied(const EventPayload &payload);
 [[nodiscard]] Result<WorkflowPublishRejectedEvent>
 parse_workflow_publish_rejected(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowNavigationPlannedEvent>
+parse_workflow_navigation_planned(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowNavigationObservedEvent>
+parse_workflow_navigation_observed(const EventPayload &payload);
 
 } // namespace mira

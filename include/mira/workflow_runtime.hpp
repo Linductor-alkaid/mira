@@ -8,6 +8,7 @@
 #include <mira/workflow_compiler.hpp>
 #include <mira/workflow_events.hpp>
 #include <mira/workflow_ir.hpp>
+#include <mira/workflow_navigation.hpp>
 #include <mira/workflow_run.hpp>
 #include <mira/workflow_tools.hpp>
 #include <mira/workflow_versioning.hpp>
@@ -56,6 +57,12 @@ struct WorkflowRuntimeConfig final {
     // DEC-023 §1); exhausting it settles the run Failed. Checkpoint handoffs
     // are bounded by the loop and step budgets instead.
     std::uint32_t max_escalations_per_run = 32;
+    // Stage E navigation (DEC-028 §1): planner weights and budgets. The
+    // weight defaults are provisional pending target-platform calibration
+    // (RULE-10); the budgets bound one plan_navigation call.
+    NavigationCostProfile nav_cost_profile;
+    std::size_t nav_max_edge_evaluations = 4096;
+    std::size_t nav_max_path_edges = 64;
 };
 
 // One settled step attempt as reported in WorkflowRunResult.
@@ -192,6 +199,21 @@ class WorkflowRuntime final {
     // Registry used to dispatch ToolCall steps. Required before creating a
     // Strict run whose definition contains ToolCall steps.
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
+
+    // Stage E navigation context (DEC-027 §3, DEC-028 §3). The model must
+    // pass validate_app_model (fail closed here); the provider is a host
+    // callback invoked synchronously on drive and caller threads, so it must
+    // be cheap and non-blocking. With a context installed, Navigate steps
+    // become admissible under dispatching policies; without one the M9
+    // navigate-unresolvable admission rejection stays in force.
+    [[nodiscard]] Result<void> set_navigation_context(AppModel model,
+                                                      ScreenStateProvider provider);
+    // Reinstalls the model projection (e.g. a decayed or host-edited
+    // document); the screen state provider stays. Same validation rules.
+    [[nodiscard]] Result<void> set_app_model(AppModel model);
+    // The confidence-evolved projection for host inspection and decay
+    // workflows; nullopt when no context is installed.
+    [[nodiscard]] std::optional<AppModel> app_model_snapshot() const;
 
     // Appends one immutable version record for the definition to the runtime's
     // library and returns its content digest. Validation defaults to
@@ -363,11 +385,38 @@ class WorkflowRuntime final {
     // Session-scoped publish-gate audit events (DEC-025 §3): no run record
     // exists while the gate runs, so these carry the workflow identity.
     void emit_publish_proposed(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
-                              const std::optional<WorkflowRunId> &source_run_id);
+                               const std::optional<WorkflowRunId> &source_run_id);
     void emit_publish_applied(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
                               const Sha256Digest &evidence, const WorkflowRunId &dry_run_id);
     void emit_publish_rejected(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
                                const std::string &reason_code);
+    // Stage E navigation events (DEC-028 §4). Planned is emitted for both
+    // DryRun and dispatching resolutions; Observed only after a real edge
+    // dispatch, carrying the post-update edge confidence.
+    void emit_navigation_planned(const RunRecord &run, const WorkflowStep &step,
+                                 const NavigationPlan &plan);
+    void emit_navigation_observed(const RunRecord &run, const WorkflowStep &step,
+                                  const AppModelTransition &transition, bool success);
+
+    // Stage E Navigate execution (DEC-028 §3): screen read, target check,
+    // planning (DryRun stops here), per-edge tool dispatch with arrival
+    // verification and confidence write-back. Returns nullopt on success with
+    // the step record filled; `cancelled` mirrors dispatch_step semantics.
+    [[nodiscard]] std::optional<Error>
+    execute_navigate_step(RunRecord &run, const WorkflowStep &step, std::size_t index,
+                          const OperationContext &parent, const DriveFlags &flags,
+                          WorkflowStepRecord &record, bool &cancelled);
+    // The run's predicate context merged with the host screen state snapshot
+    // (DEC-028 §2): screen_state:<id> (true) for the current state plus
+    // screen_state:current (id string); nothing injected without a snapshot.
+    // The provider is invoked without holding the runtime mutex.
+    [[nodiscard]] JsonValue evaluation_context(const RunRecord &run) const;
+    // Confidence write-back for one traversed edge (DEC-027 §2 pure update
+    // under the mutex); events are emitted outside it.
+    void note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
+                                 const AppModelTransition &transition, bool success,
+                                 std::uint64_t now_ms);
+    [[nodiscard]] bool navigation_context_installed() const;
 
     [[nodiscard]] WorkflowRunResult drive(RunRecord &run, const OperationContext &context);
     void assemble_result(const RunRecord &run, WorkflowRunResult &result) const;
@@ -393,6 +442,13 @@ class WorkflowRuntime final {
                                              std::size_t index, const OperationContext &parent,
                                              const DriveFlags &flags,
                                              WorkflowStepRecord &record, bool &cancelled);
+    // One BuiltIn-boundary invocation shared by step tools and navigation
+    // edge actions (stage E): bounded submit_auto dispatch with the common
+    // cancellation probe, deadline and error mapping.
+    [[nodiscard]] Result<ToolExecutionRecord>
+    dispatch_tool_invocation(RunRecord &run, const ExposedToolSpec &tool, const JsonValue &input,
+                             const std::string &call_id, const OperationContext &parent,
+                             const DriveFlags &flags, bool &cancelled);
     [[nodiscard]] Result<Observation> observe_for_verification(const RunRecord &run,
                                                                const WorkflowStep &step,
                                                                const OperationContext &parent);
@@ -441,6 +497,11 @@ class WorkflowRuntime final {
     std::shared_ptr<IEventStore> events_;
     RuntimeId runtime_id_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
+    // Stage E navigation context (DEC-027/028): the installed App Model
+    // projection and the host screen-state callback. Both are guarded by
+    // mutex_; the provider is copied out and invoked without the lock.
+    std::optional<AppModel> app_model_;
+    ScreenStateProvider screen_state_provider_;
 
     std::atomic<std::uint32_t> event_emit_failures_{0};
     std::atomic<std::uint32_t> task_settlement_failures_{0};

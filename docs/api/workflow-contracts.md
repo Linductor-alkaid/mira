@@ -2,8 +2,9 @@
 
 > 适用头文件：`workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、
 > `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、
-> `workflow_runtime.hpp`（CMake 目标 `Mira::workflow`）
-> 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`；M11 起含编译层）
+> `workflow_navigation.hpp`、`workflow_runtime.hpp`（CMake 目标 `Mira::workflow`）
+> 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`；M11 起含编译层；
+> M12 起含导航层）
 > 依据：[DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
 > [DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)、
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
@@ -12,11 +13,14 @@
 > [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)、
 > [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)、
 > [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)、
+> [DEC-027](../decisions/DEC-027-app-model-contract-and-confidence.md)、
+> [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)、
 > [Workflow Runtime 设计](../design/workflow_runtime_design.md)
 
-`Mira::workflow` 是 Workflow 双路径的契约层、（M9 起）执行层与（M11 起）编译层：Workflow
-IR、WorkflowRun 状态视图、资产版本化、事件载荷、Workflow 操作的 Tool 规格、
-`WorkflowRuntime` 执行闭环与成功轨迹编译/任务归纳。
+`Mira::workflow` 是 Workflow 双路径的契约层、（M9 起）执行层、（M11 起）编译层与
+（M12 起）导航层：Workflow IR、WorkflowRun 状态视图、资产版本化、事件载荷、Workflow
+操作的 Tool 规格、`WorkflowRuntime` 执行闭环、成功轨迹编译/任务归纳与 App Model
+导航。
 契约函数全部为**同步纯函数**；`WorkflowRuntime` 的 Executor 路由与关闭顺序见
 [workflow_runtime_design](../design/workflow_runtime_design.md) 第 7/8 节。
 
@@ -216,13 +220,75 @@ IR、WorkflowRun 状态视图、资产版本化、事件载荷、Workflow 操作
 - Executor 路由（设计 §7）：捕获 = 调用线程互斥下快照；编译/归纳 = 调用线程纯函数；
   门禁驱动 = 复用 `execute_run` 宿主同步路径（不得在持有宿主关键锁的上下文调用）。
 
+## App Model 与导航（`workflow_navigation.hpp`，M12，DEC-027/028）
+
+- `AppModel`：UI 状态图公共契约（v1，内容寻址 digest）——状态节点
+  （`AppModelState`：id + 层次描述 page/modal/context + summary + 置信度）与迁移边
+  （`AppModelTransition`：id、from/to、action（保留成员 `"tool"`，与 ToolCall 步骤同一
+  约定）、可选 guard（v1 谓词 DSL 复用）、代价向量 `NavigationCosts`、置信度）。
+  `app_model_to_json/from_json/parse` 往返无损；未知字段、悬垂引用、重复 ID、越界数值
+  与 `AppModelLimits` 上限 fail closed（`AppModelError` 确定性错误码）；
+  `validate_app_model` 与解码同源（结构构造模型同受检）；`app_model_digest` 同内容同
+  digest。
+- `ConfidenceRecord` + 纯函数（DEC-027 §2）：`note_transition_outcome`（拉普拉斯平滑，
+  成功/失败分别单调推高/压低）、`apply_confidence_decay`（自 `last_verified_ms` 起指数
+  衰减，单调不增、`Δt<=0` 或零半衰期为 NoOp、不动计数与时间戳）、`needs_exploration`
+  （阈值判定）。时间由调用方传入，同输入同输出（投影可从事件重建，`W-03`）。
+  `source` 是封闭集 `host|agent|trajectory` 的溯源标注，不构成授权（`RULE-09`）。
+- `plan_navigation(model, from, to, profile, context, options)`：确定性 Dijkstra 纯函数。
+  代价 = `NavigationCostProfile` 权重线性和（权重是配置，缺省全 1 为**暂定默认值**，
+  未经目标平台校准，`RULE-10`）；guard 以谓词上下文求值，`NotSatisfied` 计
+  `guards_blocked`、`NotEvaluable` 计 `guards_unevaluable`（均使边不可用但分开披露）；
+  等代价按边序列 `(edge_cost, edge_id, to_state)` 字典序打破平局；`agent_required` 边
+  缺省不可用（`allow_agent_edges` 为宿主保留口）；`max_edge_evaluations`（缺省 4096）
+  与 `max_path_edges`（缺省 64）预算（`RULE-08`）；`NavigationError` 区分未知端点、
+  同状态空路径、无路径（消息携带 guard 计数，可分辨图不连通与 guard 全挡）与预算
+  超限；`NavigationPlan.plan_digest` 为边 ID 序列的规范化 digest。
+- `ScreenStateProvider` / `ScreenStateSnapshot`（DEC-027 §3）：宿主侧 UI 状态识别
+  边界——宿主决定如何得出状态名（Accessibility/OCR/VLM/人），Core 只消费快照
+  `{state_id, observed_at_ms}`；回调在驱动/调用线程同步执行，**必须廉价非阻塞**；
+  缺席或返回空时一切依赖当前状态的判定 fail closed。
+- `WorkflowRuntime::set_navigation_context(model, provider)` / `set_app_model(model)` /
+  `app_model_snapshot()`：安装/重装（如衰减后内容）/读回置信度演化的投影。模型必须
+  过 `validate_app_model`（fail closed，`Result<void>`）。
+- Navigate 步骤解析（DEC-028 §3）：准入——`arguments["target"]` 必须解析为非空字符串
+  （`NavigateTargetInvalid`）；派发策略额外要求导航上下文已安装（否则维持 M9 的
+  `navigate-unresolvable` 拒绝；policy patch 切入派发策略的门禁同条件放松）。执行——
+  读屏（缺席 `navigate-no-screen-state`）→ 目标已声明
+  （`navigate-target-unknown`）→ 规划（失败原因码透出 `navigate-no-path`/
+  `navigate-budget-exceeded` 等）→ 逐边经工具注册表派发（同 ToolCall 通道与 schema
+  校验、计入 Run 步预算、同一取消探针）→ 每边后读屏到达验证
+  （`navigate-arrival-unverified`，禁盲目重发边动作，恢复钩子照常）→ 步级
+  verification 谓词在到达后求值。置信度按边成败回写投影（纯函数，互斥下更新、事件
+  锁外发射）。
+- `screen_state` 谓词绑定（设计 §4.1 兑现）：快照存在时谓词上下文注入
+  `screen_state:<state_id>`（true，仅当前状态）与 `screen_state:current`（ID 字符串）；
+  Provider 缺席时不注入任何条目，全部 `screen_state` 谓词维持 `NotEvaluable`
+  （fail closed 不变）。
+- DryRun 语义：不派发边动作、不回写置信度；有导航上下文时执行**真实规划**并以
+  `WorkflowNavigationPlanned` 留痕，规划失败即步失败（`publish_validated` 门禁因此对
+  导航可达性有约束力）；无上下文维持 M9 形状规划结算（`planned navigation`）。
+- 导航事件（DEC-028 §4，v1 闭集扩展两员，State 类）：
+  `WorkflowNavigationPlanned`（run/step、from/to、edge_count、plan_digest、total_cost、
+  guards_blocked/unevaluable；DryRun 与派发策略都发）与
+  `WorkflowNavigationObserved`（run/step、transition_id、from/to、success、回写后
+  confidence；仅真实派发后发）。OfflineReplay 识别且无副作用。
+- `WorkflowRuntimeConfig` 新增：`nav_cost_profile`（权重）、`nav_max_edge_evaluations`、
+  `nav_max_path_edges`（预算）。
+- Executor 路由（设计 §7）：规划 = 调用线程纯函数；读屏 = 宿主回调（同步、无锁调用，
+  宿主保证非阻塞）；边动作派发 = 复用步骤执行 `submit_auto` 通道（计入步预算）；
+  置信度回写 = 调用线程互斥下投影更新。
+
 ## 兼容性与限制
 
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
   更强的承诺。
-- `Navigate` 目标与 `screen_state` 谓词在阶段 E 之前只做形状校验，不可求值；dispatching
-  策略在创建 Run 时即拒绝含 Navigate 步骤的定义（`navigate-unresolvable`），patch 切换
-  到 dispatching 策略同样拒绝；不得据此宣称导航或验证能力已实现（`RULE-10`）。
+- `Navigate` 解析与 `screen_state` 谓词自 M12 起落地（DEC-028）：**前提是宿主安装了
+  导航上下文**（App Model + ScreenStateProvider）。未安装时 dispatching 策略仍在创建
+  Run 时拒绝含 Navigate 步骤的定义（`navigate-unresolvable`），DryRun 维持形状规划，
+  全部 `screen_state` 谓词维持不可求值（fail closed）。UI 状态识别本身始终在宿主侧
+  （DEC-011）；代价权重与置信度参数（缺省全 1 / 半衰期由宿主传入）为暂定默认值，
+  未经目标平台校准（`RULE-10`）。
 - `Strict` 为 IR 未声明默认策略时的默认值（DEC-019/020，暂定状态已于 M9 冻结）。
 - Workflow 库与 Run 表为进程内投影（EventStore 仍是权威记录）；SQLite Workflow Library
   存储与跨进程续跑未交付（`RISK-2026-038`）。publish 门禁三事件自 M11 起为库变更提供了

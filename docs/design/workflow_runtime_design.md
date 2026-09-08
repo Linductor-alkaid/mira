@@ -1,7 +1,7 @@
 # Workflow Runtime 设计
 
-> 状态：Active（阶段 D 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10 交付，接口以代码与 API 手册为准）
-> 版本：0.4
+> 状态：Active（阶段 E 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11 交付，接口以代码与 API 手册为准）
+> 版本：0.5
 > 更新日期：2026-09-09
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
@@ -12,8 +12,11 @@
 > [DEC-023](../decisions/DEC-023-workflow-policy-set-runtime-semantics.md)、
 > [DEC-024](../decisions/DEC-024-conversation-patch-execution.md)、
 > [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)、
-> [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)
-> 适用范围：Workflow 双路径的契约层（M8 已交付部分）、执行层（阶段 B/C）与编译层（阶段 D）
+> [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)、
+> [DEC-027](../decisions/DEC-027-app-model-contract-and-confidence.md)、
+> [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)
+> 适用范围：Workflow 双路径的契约层（M8 已交付部分）、执行层（阶段 B/C）、编译层
+> （阶段 D）与导航层（阶段 E）
 
 ## 1. 文档目的与效力
 
@@ -24,7 +27,8 @@
 第 7 节路由表按 M9 定稿；阶段 C（策略全集、对话 patch 与决策点）的实施规范见第 11 节，
 由 [M10](../plans/m10-workflow-intervention-and-policy-set.md) 承载；阶段 D（成功轨迹
 编译与任务归纳）的实施规范见第 12 节，由 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
-承载。
+承载；阶段 E（App Model 与导航）的实施规范见第 13 节，由
+[M12](../plans/m12-app-model-and-navigation.md) 承载。
 
 效力约定：
 
@@ -82,9 +86,12 @@ AgentLoop 步与 WorkflowRun 步共用该原语：单写者提交、步边界 dr
 ```
 
 - `signal-ref` v1 封闭集合：`run_parameter:<name>`、`step_result:<step_id>`、
-  `screen_state:<name>`。前两者在阶段 B 可完全求值；`screen_state` 绑定在阶段 E 落地，
-  求值前 Runtime 对含它的谓词返回「不可求值」→ 按 DryRun 规则只能校验形状，不得宣称
-  验证通过（`RULE-10`）。
+  `screen_state:<state_id>`。前两者在阶段 B 可完全求值；`screen_state` 自阶段 E
+  （M12）起由宿主快照绑定求值（DEC-028 §2）：当前状态注入
+  `screen_state:<state_id>`（true）与 `screen_state:current`（状态 ID 字符串）两个
+  条目，其余状态名不在上下文中（`NotEvaluable` fail closed）；宿主 Provider 缺席或
+  返回空时不注入任何条目，全部 `screen_state` 谓词维持不可求值——按 DryRun 规则
+  只能校验形状，不得宣称验证通过（`RULE-10`）。
 - 求值是纯函数：`(predicate, bindings) -> Satisfied | NotSatisfied | NotEvaluable`。
   类型不匹配（如对 string 用 `lt`）= `NotEvaluable`，按配置视为失败（fail closed），
   不是静默通过。
@@ -127,6 +134,7 @@ RecoveryHook
 | `WorkflowPolicySwitched` | State | run_id、from、to |
 | `WorkflowDecisionRaised/Resolved` | State | decision_id、payload_digest、resolution（accept/reject/cancel_run） |
 | `WorkflowPublishProposed/Applied/Rejected`（阶段 D） | State | workflow_id、ir_digest、source_run_id、evidence、原因码 |
+| `WorkflowNavigationPlanned/Observed`（阶段 E） | State | run_id、step_id、from/to 状态、edge_count、plan_digest、total_cost、guard 计数；transition_id、success、confidence |
 
 OfflineReplay 语义（`W-08`）：以上事件在回放中被识别并重建投影（对话视图、Run 视图），
 不派发输入、不调用工具、不发网络请求；已记录的 patch/决策结果显示为已发生事实。
@@ -164,6 +172,10 @@ M8 契约层全部为同步纯函数，无异步路径。M9 交付的路由表�
 | 轨迹捕获（`capture_trajectory`，阶段 D） | 调用线程（互斥下快照拷贝） | 无 | 生效态一致性由互斥保证 |
 | 编译与归纳（`compile_workflow`/`induce_parameters`，阶段 D） | 调用线程同步（纯函数） | 无 | 无 |
 | 门禁驱动（`publish_validated` 内的 DryRun `execute_run`，阶段 D） | 宿主调用线程（复用 `execute_run` 同步路径） | 调用方 | 门禁 Run 占用 Run 表容量；失败即拒绝发布 |
+| 导航规划（`plan_navigation`，阶段 E） | 调用线程同步（纯函数） | 无 | 无 |
+| 读屏（ScreenStateProvider 回调，阶段 E） | 驱动/调用线程同步回调 | 宿主 | 宿主保证非阻塞；失败或缺席即 fail closed |
+| 导航边动作派发（Navigate 步逐边，阶段 E） | `submit_auto` 普通有限任务（复用步骤执行通道） | 驱动任务 | 计入 Run 步预算；异常转步骤失败 |
+| 置信度回写（阶段 E） | 调用线程（互斥下投影更新） | 无 | 更新是纯函数；事件在锁外发射 |
 | patch 应用（步边界排水 / 等待态直达） | 调用线程（控制面提交）或驱动任务（排水） | 无新任务 | 校验失败确定性拒绝；事件在锁外发射 |
 | 周期性健康检查 | timer 能力（随首个需要它的阶段立项，M10 非目标） | Runtime 生命周期所有者 | 停止时取消 |
 | 实时连续控制（若 Workflow 含连续步骤） | realtime/low-latency 能力 | Runtime，watchdog 约束 | `Up/Cancel` 安全收敛（`RULE-06`） |
@@ -210,6 +222,7 @@ mira-workflow (Mira::workflow)
 ├── workflow_events.hpp       事件载荷构建/解析（M8-10；阶段 D 增 publish 三员）
 ├── workflow_tools.hpp        五操作 schema 与本地校验（M8-11）
 ├── workflow_compiler.hpp     轨迹契约、编译与归纳纯函数（阶段 D，DEC-025/026）
+├── workflow_navigation.hpp   App Model 契约、置信度与导航规划纯函数（阶段 E，DEC-027/028）
 └── workflow_runtime.hpp      执行闭环：Run 表、驱动、控制与四操作 handler（M9）
 ```
 
@@ -235,6 +248,14 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
   不可变回归）、归纳矩阵（结构 diff 命名与常量保持、显式候选校验、参数化重写与
   绑定解析、类型不一致负向）、publish 三事件序列与离线回放无副作用、端到端
   （Run -> 捕获 -> 归纳 -> 编译 -> 入库 -> 新版本运行）。
+- **阶段 E 增量**（DEC-027/028 验证方式的里程碑化）：契约矩阵（App Model 往返、
+  fail closed、digest 确定性）、置信度矩阵（成功/失败更新逐值、衰减单调、探索阈值、
+  纯函数性）、规划器矩阵（确定性、权重选路、guard 分计数、平局字典序、agent 边
+  排除、预算、未知端点、无路径 vs guard 全挡）、Runtime 导航矩阵（无上下文
+  `navigate-unresolvable` 回归、逐边派发与到达验证、`navigate-arrival-unverified`、
+  `navigate-no-screen-state`、目标未声明、工具缺失、置信度回写与两员事件、DryRun
+  真实规划、step 预算计入、取消 Stale、policy patch 门禁放松）、谓词矩阵
+  （`screen_state` 绑定求值与缺席 fail closed 回归）。
 - 门禁：既有 ASAN/UBSAN/TSAN 矩阵与 installed-consumer 覆盖 `Mira::workflow`。
 
 ## 11. 阶段 C 实施规范（策略全集、对话 patch 与决策点）
@@ -345,13 +366,83 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
   事件基础）。
 - 阶段 E 能力（App Model、导航解析、`screen_state` 谓词求值）。
 
-## 13. 关联文档
+## 13. 阶段 E 实施规范（App Model、导航解析与 screen_state 绑定）
+
+规范来源：[DEC-027](../decisions/DEC-027-app-model-contract-and-confidence.md)（App
+Model 契约与置信度）、[DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)
+（规划器与 Navigate 解析）。本节为里程碑 [M12](../plans/m12-app-model-and-navigation.md)
+的入口摘要；语义细节以决策为准。
+
+### 13.1 App Model 契约与置信度
+
+- `AppModel`（`workflow_navigation.hpp`）：状态节点（id + 层次描述 page/modal/
+  context + summary）与迁移边（id、from/to、action（保留成员 `"tool"`）、可选
+  guard（v1 谓词 DSL）、代价向量、置信度记录）；JSON 往返无损、未知字段/悬垂
+  引用/上限 fail closed（`app-model-*` 错误码）、内容寻址 digest。
+- 置信度（`ConfidenceRecord`）：confidence/observed_at/last_verified/verified_count/
+  failure_count/source（封闭集 host|agent|trajectory）。更新全为纯函数（时间由调用方
+  传入）：`note_transition_outcome`（拉普拉斯平滑）、`apply_confidence_decay`
+  （指数衰减、单调不增、Δt<=0 不变）、`needs_exploration`（阈值判定）。
+- 感知边界（DEC-011）：UI 状态识别由宿主经 `ScreenStateProvider` 供给
+  （`{state_id, observed_at_ms}` 快照，非阻塞同步回调）；Core 不做识别。App Model
+  是可从「安装内容 + 事件序列」重建的投影（`W-03`）；持久化沿袭 `RISK-2026-038`
+  推迟。
+
+### 13.2 规划器
+
+- `plan_navigation(model, from, to, profile, context, options)`：确定性 Dijkstra；
+  代价 = 权重线性和（`NavigationCostProfile`，配置非硬编码）；guard 以谓词上下文
+  求值，`NotSatisfied`/`NotEvaluable` 均使边不可用但分开计数；等代价按状态 ID
+  字典序打破平局；`max_edge_evaluations`（缺省 4096）与 `max_path_edges`（缺省
+  64）预算（`RULE-08`）；`agent_required` 边缺省不可用（`allow_agent_edges` 为
+  宿主保留口）；`nav-*` 确定性错误码区分未知端点、同状态空路径、无路径与预算
+  超限。
+- 无路径错误携带 `guards_blocked`/`guards_unevaluable` 计数，可分辨「图不连通」
+  与「guard 全挡」（`RULE-10` 诚实披露）。
+
+### 13.3 Runtime 集成
+
+- 导航上下文：`set_navigation_context(model, provider)` 与 `set_app_model(model)`
+  （重装投影）；未安装时派发策略下 Navigate 步维持 `navigate-unresolvable`
+  准入拒绝（M9 语义回归锁定），policy patch 切入派发策略的门禁同条件放松。
+- Navigate 执行（派发策略）：读屏（缺席 `navigate-no-screen-state` fail closed）
+  → 目标必须是已声明状态（`navigate-target-unknown`）→ 规划（失败原因码透出）→
+  逐边派发动作（工具注册表通道、`"tool"` 保留成员、计入 step 预算）→ 每边后读屏
+  到达验证（未到达 `navigate-arrival-unverified`，禁盲目重发，恢复钩子照常）→
+  步级 verification 谓词在到达后求值。步内被截断（暂停/取消）按 Stale 结算、游标
+  不推进；resume 时 Navigate 步从**当前读屏状态重新规划**（规划是状态驱动的，
+  不重放旧计划边序列，`RULE-05` 由构造满足）。
+- `screen_state` 谓词绑定（§4.1 兑现）：快照注入 `screen_state:<state_id>`（true）
+  与 `screen_state:current`（ID 字符串）；缺席时全部 `NotEvaluable`（回归锁定）。
+- DryRun：不派发边动作、不回写置信度；有导航上下文时执行真实规划并
+  `WorkflowNavigationPlanned` 留痕，规划失败即步失败（门禁因此对导航可达性有约束
+  力）；无上下文维持 M9 形状规划结算。
+- 置信度回写：逐边按成败纯函数更新 Runtime 持有的模型投影（互斥下、事件锁外
+  发射）；`WorkflowNavigationPlanned`（两种策略都发）与
+  `WorkflowNavigationObserved`（仅真实派发）入 v1 事件闭集，OfflineReplay 识别
+  且无副作用。
+
+### 13.4 显式非目标（阶段 E 内）
+
+- UI 状态识别、Accessibility/OCR/CV/VLM 感知与目标解析优先级（§9.6 层级）：按
+  DEC-011 由 demo 证据决定是否回归；本阶段 Core 只消费宿主快照。
+- 探索循环与规划失败的自动 Agent 升级（GUI Mapping 的编排侧）：升级经恢复钩子
+  显式声明，自动升级属 Agent Harness 编排。
+- Verify 步骤更高级证据声明（screen diff / 本地感知 / VLM）：M10 §11.4 的推迟
+  维持；本阶段只落地 `screen_state` 谓词层。
+- 多设备/多环境 App Model 命名空间、图自动失效检测、Memory 四类组织与学习闭环
+  （阶段 F）。
+- App Model 持久化与跨进程重建（`RISK-2026-038` 沿袭推迟）。
+- 代价权重与置信度参数的目标平台校准（`RULE-10`：缺省值为暂定，未实测）。
+
+## 14. 关联文档
 
 - 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024、DEC-025、
-  DEC-026（及 DEC-015/016/017/018 既有边界）
+  DEC-026、DEC-027、DEC-028（及 DEC-015/016/017/018 既有边界）
 - 计划：[M8](../plans/m8-workflow-contracts.md)、
   [M9](../plans/m9-workflow-runtime-minimal-loop.md)、
   [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
-  [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
+  [M11](../plans/m11-trajectory-compilation-and-task-induction.md)、
+  [M12](../plans/m12-app-model-and-navigation.md)
 - 参考研究：[Agent Harness 参考研究](harness_reference_study.md) §5.3/§6
 - API：[workflow-contracts](../api/workflow-contracts.md)
