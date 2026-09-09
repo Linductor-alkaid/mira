@@ -1,6 +1,6 @@
 # Mira Agent Harness 与 Workflow 架构设计
 
-> 状态：Active（阶段 A–F 实现已交付；Android 设备验收与 Agent 恢复编排实现待补）
+> 状态：Active（阶段 A–F 实现已交付；Agent 恢复编排已随 M14 交付；Android 设备验收待补）
 > 版本：0.2
 > 更新日期：2026-09-10
 > 负责人：Mira Maintainers  
@@ -801,9 +801,10 @@ Android CI 漏构建 `mira_workflow`（`BUG-20260909-001`），六个里程碑�
 [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)、
 [M12](../plans/m12-app-model-and-navigation.md)、[M13](../plans/m13-memory-and-learning-loop.md)。
-后续优先补齐 Android 门禁；Harness 采纳 lesson 的编排已于 2026-09-10 由 DEC-031 与
-[Workflow 恢复编排设计](workflow_recovery_orchestration_design.md) 冻结（实现待
-`MNT-202609-24` 立项）；持久化恢复取证、真实平台与评估、
+后续优先补齐 Android 门禁；Harness 采纳 lesson 的编排已由 DEC-031 与
+[Workflow 恢复编排设计](workflow_recovery_orchestration_design.md) 冻结并随
+[M14](../plans/m14-recovery-orchestration.md) 交付实现（`WorkflowRecoveryOrchestrator`，
+2026-09-10）；持久化恢复取证、真实平台与评估、
 Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) 跟踪。
 这不扩展既有 DEC，也不自动恢复 M5/M6 或解冻 M7。
 

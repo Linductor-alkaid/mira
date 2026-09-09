@@ -392,3 +392,23 @@ endfunction()
 
 mira_add_m13_persistence_test(mira_m13_learning_persistence_test
     m13/m13_learning_persistence_test.cpp)
+
+# M14 (DEC-031): the recovery orchestrator lives in Mira::workflow; its tests
+# also assemble a ModelGateway over a scripted provider.
+function(mira_add_m14_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m14" TIMEOUT 180)
+endfunction()
+
+mira_add_m14_test(mira_m14_recovery_test m14/m14_recovery_test.cpp)

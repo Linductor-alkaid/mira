@@ -2,6 +2,7 @@
 
 #include <mira/core_contracts.hpp>
 #include <mira/event_store.hpp>
+#include <mira/model_contracts.hpp>
 #include <mira/workflow_ir.hpp>
 #include <mira/workflow_run.hpp>
 
@@ -209,6 +210,54 @@ struct WorkflowLessonRecordedEvent final {
     std::string reason_code;
 };
 
+// --- Workflow recovery orchestration (State, DEC-031 §7, M14) ---------------
+
+// The settled outcome of one agent-side recovery attempt. PatchedAndResumed /
+// ResumedWithoutPatch / CancelRequested changed the run through the existing
+// public exits; DeferredToHost asks the host to decide (Run stays
+// WaitingAgent); Aborted ended on an external condition (cancel, takeover,
+// shutdown, state drift, model unavailable, duplicate notification) and may
+// be retried after the condition clears.
+enum class WorkflowRecoveryOutcome : std::uint8_t {
+    PatchedAndResumed,
+    ResumedWithoutPatch,
+    CancelRequested,
+    DeferredToHost,
+    Aborted,
+};
+
+[[nodiscard]] std::string workflow_recovery_outcome_name(WorkflowRecoveryOutcome outcome);
+[[nodiscard]] Result<WorkflowRecoveryOutcome>
+parse_workflow_recovery_outcome(std::string_view name);
+
+// One settled recovery attempt over a WaitingAgent run (DEC-031 §7): the
+// whole-chain correlation key linking the model request (model_request_id),
+// the decision (decision_digest), the applied patch (patch_id) and the run's
+// escalation context (run_id + ordinal). Lesson filtering counters make "no
+// lessons" and "lessons offered but all filtered" distinguishable. Payload
+// discipline follows DEC-030 §5: ids, digests, enum names and bounded
+// counters only; the rationale never travels in events.
+struct WorkflowRecoveryAttemptedEvent final {
+    WorkflowRunId run_id;
+    WorkflowId workflow_id;
+    // Orchestrator-side per-run attempt ordinal, starting at 1.
+    std::uint32_t ordinal = 0;
+    // The carrier task the recovery model request was attributed to.
+    TaskId task_id;
+    WorkflowRecoveryOutcome outcome = WorkflowRecoveryOutcome::Aborted;
+    // Closed-set reason code (e.g. "not-waiting-agent", "takeover",
+    // "decision-invalid", "patch-rejected:<code>", "cancelled"); empty when
+    // the outcome itself carries the cause.
+    std::string reason_code;
+    std::optional<Sha256Digest> decision_digest;
+    std::optional<WorkflowPatchId> patch_id;
+    std::optional<ModelRequestId> model_request_id;
+    std::uint32_t lessons_offered = 0;
+    std::uint32_t lessons_stale = 0;
+    std::uint32_t lessons_unparseable = 0;
+    std::uint32_t lessons_kept = 0;
+};
+
 // --- Payload builders and parsers -------------------------------------------
 
 // Builders return ready-to-append payloads with the event type and schema
@@ -230,6 +279,7 @@ struct WorkflowLessonRecordedEvent final {
 [[nodiscard]] EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event);
 
 // Parsers fail closed on schema mismatch, unknown fields and malformed ids.
 // The payload data is JSON text (EventPayload::data).
@@ -267,5 +317,7 @@ parse_workflow_navigation_observed(const EventPayload &payload);
 parse_workflow_episode_recorded(const EventPayload &payload);
 [[nodiscard]] Result<WorkflowLessonRecordedEvent>
 parse_workflow_lesson_recorded(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowRecoveryAttemptedEvent>
+parse_workflow_recovery_attempted(const EventPayload &payload);
 
 } // namespace mira

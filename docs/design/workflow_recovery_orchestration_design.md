@@ -1,9 +1,9 @@
 # Workflow 恢复编排设计（Agent Harness 恢复闭环）
 
 > 状态：Active（冻结规范，决策载体为
-> [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)；实现随
-> `MNT-202609-24` 立项的里程碑交付，代码片段均为草案）
-> 版本：1.0
+> [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)；实现已随
+> [M14](../plans/m14-recovery-orchestration.md) 交付，代码片段均为草案，签名以实现为准）
+> 版本：1.0.1
 > 更新日期：2026-09-10
 > 负责人：Mira Maintainers
 > 适用范围：`WaitingAgent` Run 的 Agent 侧恢复编排（Core 组件），不改变
@@ -457,10 +457,15 @@ Settled ──审计事件 + 宿主回调─────────────
   淘汰终态 Run。
 - **shutdown 矩阵**：在途 attempt 的 drain、shutdown 后 notify 拒绝、编排器先于
   runtime 关闭的顺序断言；事件发射失败不影响结果。
-- **端到端**（MNT-24 验收主场景）：Run A 失败升级（检索空）→ 编排修复 → 完成 → 宿主
-  记 lesson → Run B 同签名失败升级 → 检索命中 A 的 Episode+Lesson → 模型合成修复 →
-  完成；全链路事件序列（ModelRequest → RecoveryAttempted → PatchProposed/Applied →
-  StepSettled… → RunSettled → EpisodeRecorded/LessonRecorded）逐条断言关联键。
+- **端到端**（MNT-24 验收主场景）：Run 0 终态失败（Strict）→ Run A 失败升级（检索
+  已见 Run 0 的 Episode）→ 编排修复 → 完成 → 宿主记 lesson → Run B 同签名失败升级 →
+  检索命中失败结局的 Episode 与 A 的 Lesson → 模型合成修复 → 完成；全链路事件序列
+  （ModelRequestPrepared → RecoveryAttempted → PatchProposed/Applied → StepSettled… →
+  RunSettled → EpisodeRecorded/LessonRecorded）逐条断言关联键。实现澄清（与 DEC-030
+  §2 一致）：Completed Run 的 Episode 不携带 `failed_step_id`（失败身份仅 failure 结局
+  记录），签名检索命中的 Episode 来自失败结局的 Run；成功恢复的经验经其 Lesson 复用。
+  原 v1.0 表述「命中 A 的 Episode+Lesson」按此语义理解为「失败结局 Episode + A 的
+  Lesson」。
 - **安全负向**：lesson 引导的越权 patch（策略越界/未知 path/危险参数形状）被确定性
   拒绝；参数投影缺省不带值；`rationale` 不出现在任何事件载荷。
 

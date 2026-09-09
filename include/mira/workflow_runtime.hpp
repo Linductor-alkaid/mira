@@ -151,6 +151,17 @@ struct WorkflowAgentContinuation final {
     // Retrieved at the last failure-driven escalation; empty when the
     // learning context is absent, the query degraded or nothing matched.
     std::vector<WorkflowRetrievedLesson> relevant_lessons;
+    // Recovery-orchestration identity fields (DEC-031 §7): values already
+    // tracked inside the run record, surfaced for the agent-side recovery
+    // orchestrator. carrier_task_id/carrier_task_epoch attribute the recovery
+    // model request to the carrier task (admission + late-response epoch
+    // isolation); run_epoch drives the pre-submit recheck; escalations feeds
+    // the model context and the orchestrator's budget view. Incremental
+    // fields, source-compatible like relevant_lessons (DEC-030 precedent).
+    TaskId carrier_task_id;
+    std::uint64_t carrier_task_epoch = 0;
+    std::uint64_t run_epoch = 0;
+    std::uint32_t escalations = 0;
 };
 
 struct WorkflowShutdownReport final {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string_view>
 #include <vector>
 
@@ -163,6 +164,22 @@ constexpr std::string_view kLessonRecordedKeys[] = {
         "outcome",
         "reason_code",
 };
+constexpr std::string_view kRecoveryAttemptedKeys[] = {
+        "schema",
+        "run_id",
+        "workflow_id",
+        "ordinal",
+        "task_id",
+        "outcome",
+        "reason_code",
+        "decision_digest",
+        "patch_id",
+        "model_request_id",
+        "lessons_offered",
+        "lessons_stale",
+        "lessons_unparseable",
+        "lessons_kept",
+};
 
 // App Model identifiers are host contract strings (DEC-027), bounded by the
 // model limits; payloads enforce the same bound.
@@ -249,7 +266,7 @@ bool is_workflow_event_type(std::string_view type) {
         "WorkflowPatchRejected", "WorkflowPolicySwitched", "WorkflowDecisionRaised",
         "WorkflowDecisionResolved", "WorkflowPublishProposed", "WorkflowPublishApplied",
         "WorkflowPublishRejected", "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
-        "WorkflowEpisodeRecorded", "WorkflowLessonRecorded",
+        "WorkflowEpisodeRecorded", "WorkflowLessonRecorded", "WorkflowRecoveryAttempted",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -1305,6 +1322,186 @@ Result<WorkflowLessonRecordedEvent> parse_workflow_lesson_recorded(const EventPa
         return reason.error();
     }
     event.reason_code = reason.value();
+    return event;
+}
+
+std::string workflow_recovery_outcome_name(WorkflowRecoveryOutcome outcome) {
+    switch (outcome) {
+    case WorkflowRecoveryOutcome::PatchedAndResumed:
+        return "patched-and-resumed";
+    case WorkflowRecoveryOutcome::ResumedWithoutPatch:
+        return "resumed-without-patch";
+    case WorkflowRecoveryOutcome::CancelRequested:
+        return "cancel-requested";
+    case WorkflowRecoveryOutcome::DeferredToHost:
+        return "deferred-to-host";
+    case WorkflowRecoveryOutcome::Aborted:
+        return "aborted";
+    }
+    return "aborted";
+}
+
+Result<WorkflowRecoveryOutcome> parse_workflow_recovery_outcome(std::string_view name) {
+    if (name == "patched-and-resumed") {
+        return WorkflowRecoveryOutcome::PatchedAndResumed;
+    }
+    if (name == "resumed-without-patch") {
+        return WorkflowRecoveryOutcome::ResumedWithoutPatch;
+    }
+    if (name == "cancel-requested") {
+        return WorkflowRecoveryOutcome::CancelRequested;
+    }
+    if (name == "deferred-to-host") {
+        return WorkflowRecoveryOutcome::DeferredToHost;
+    }
+    if (name == "aborted") {
+        return WorkflowRecoveryOutcome::Aborted;
+    }
+    return event_error(ErrorCode::InvalidArgument, "unknown workflow recovery outcome");
+}
+
+EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.recovery-attempted.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("ordinal", static_cast<std::int64_t>(event.ordinal));
+    object.emplace_back("task_id", event.task_id.to_string());
+    object.emplace_back("outcome", workflow_recovery_outcome_name(event.outcome));
+    object.emplace_back("reason_code", event.reason_code);
+    object.emplace_back("decision_digest", event.decision_digest.has_value()
+                                                ? JsonValue{digest_text(*event.decision_digest)}
+                                                : JsonValue{nullptr});
+    object.emplace_back("patch_id", event.patch_id.has_value()
+                                        ? JsonValue{event.patch_id->to_string()}
+                                        : JsonValue{nullptr});
+    object.emplace_back("model_request_id", event.model_request_id.has_value()
+                                                    ? JsonValue{event.model_request_id->to_string()}
+                                                    : JsonValue{nullptr});
+    object.emplace_back("lessons_offered", static_cast<std::int64_t>(event.lessons_offered));
+    object.emplace_back("lessons_stale", static_cast<std::int64_t>(event.lessons_stale));
+    object.emplace_back("lessons_unparseable",
+                        static_cast<std::int64_t>(event.lessons_unparseable));
+    object.emplace_back("lessons_kept", static_cast<std::int64_t>(event.lessons_kept));
+    EventPayload payload;
+    payload.type = "WorkflowRecoveryAttempted";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowRecoveryAttemptedEvent>
+parse_workflow_recovery_attempted(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowRecoveryAttempted",
+                              "mira.workflow.recovery-attempted.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kRecoveryAttemptedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowRecoveryAttemptedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto ordinal = parse_member_count(json.value(), "ordinal");
+    if (!ordinal.has_value()) {
+        return ordinal.error();
+    }
+    if (ordinal.value() > std::numeric_limits<std::uint32_t>::max()) {
+        return event_error(ErrorCode::InvalidArgument, "payload member 'ordinal' overflows");
+    }
+    event.ordinal = static_cast<std::uint32_t>(ordinal.value());
+    auto task_id = parse_member_id<TaskId>(json.value(), "task_id");
+    if (!task_id.has_value()) {
+        return task_id.error();
+    }
+    event.task_id = task_id.value();
+    const auto *outcome_name = json.value().find("outcome");
+    if (outcome_name == nullptr || !outcome_name->is_string()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'outcome' must be a string");
+    }
+    auto outcome = parse_workflow_recovery_outcome(*outcome_name->as_string());
+    if (!outcome.has_value()) {
+        return outcome.error();
+    }
+    event.outcome = outcome.value();
+    auto reason = parse_learning_reason_code(json.value());
+    if (!reason.has_value()) {
+        return reason.error();
+    }
+    event.reason_code = reason.value();
+    const auto *decision_digest = json.value().find("decision_digest");
+    if (decision_digest == nullptr ||
+        !(decision_digest->is_null() || decision_digest->is_string())) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'decision_digest' must be a digest or null");
+    }
+    if (decision_digest->is_string()) {
+        auto digest = digest_from_hex(*decision_digest->as_string());
+        if (!digest) {
+            return event_error(ErrorCode::InvalidArgument,
+                               "payload member 'decision_digest' is not a valid digest");
+        }
+        event.decision_digest = *digest;
+    }
+    const auto *patch_id = json.value().find("patch_id");
+    if (patch_id == nullptr || !(patch_id->is_null() || patch_id->is_string())) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'patch_id' must be an id or null");
+    }
+    if (patch_id->is_string()) {
+        auto parsed = WorkflowPatchId::parse(*patch_id->as_string());
+        if (!parsed.has_value()) {
+            return event_error(ErrorCode::InvalidArgument,
+                               "payload member 'patch_id' is not a valid id");
+        }
+        event.patch_id = *parsed;
+    }
+    const auto *model_request_id = json.value().find("model_request_id");
+    if (model_request_id == nullptr ||
+        !(model_request_id->is_null() || model_request_id->is_string())) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'model_request_id' must be an id or null");
+    }
+    if (model_request_id->is_string()) {
+        auto parsed = ModelRequestId::parse(*model_request_id->as_string());
+        if (!parsed.has_value()) {
+            return event_error(ErrorCode::InvalidArgument,
+                               "payload member 'model_request_id' is not a valid id");
+        }
+        event.model_request_id = *parsed;
+    }
+    for (const auto *counter : {"lessons_offered", "lessons_stale", "lessons_unparseable",
+                                "lessons_kept"}) {
+        auto value = parse_member_count(json.value(), counter);
+        if (!value.has_value()) {
+            return value.error();
+        }
+        if (value.value() > std::numeric_limits<std::uint32_t>::max()) {
+            return event_error(ErrorCode::InvalidArgument,
+                               std::string{"payload member '"} + counter + "' overflows");
+        }
+        const auto bounded = static_cast<std::uint32_t>(value.value());
+        if (std::string_view{counter} == "lessons_offered") {
+            event.lessons_offered = bounded;
+        } else if (std::string_view{counter} == "lessons_stale") {
+            event.lessons_stale = bounded;
+        } else if (std::string_view{counter} == "lessons_unparseable") {
+            event.lessons_unparseable = bounded;
+        } else {
+            event.lessons_kept = bounded;
+        }
+    }
     return event;
 }
 
