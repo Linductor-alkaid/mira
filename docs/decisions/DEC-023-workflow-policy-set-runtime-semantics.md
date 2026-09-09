@@ -134,7 +134,8 @@ agent-capable 校验沿用既有契约函数，M9 拒绝门移除）。失败路
 - 检查点复用 `AgentEscalation` 钩子在 `AgentAssisted` 下改变钩子的触发时机（失败驱动
   → 到达驱动）：两种时机按策略互斥、同一钩子声明不会同时呈现两种行为；风险是读者
   需意识到「钩子语义按策略分流」，以 API 手册与本决策显式披露。
-- Agent 参与依赖宿主装配 Agent 侧（AgentLoop 续跑编排不在本决策范围）；未装配时
+- Agent 参与依赖宿主装配 Agent 侧（AgentLoop 续跑编排不在本决策范围；后由
+  [DEC-031](DEC-031-agent-recovery-orchestration.md) 冻结为独立恢复编排器）；未装配时
   `WaitingAgent` Run 停留等待，出口仍有 `cancel_run`，无死锁路径。
 
 ## 验证方式
@@ -154,6 +155,8 @@ agent-capable 校验沿用既有契约函数，M9 拒绝门移除）。失败路
   [DEC-019](DEC-019-workflow-ir-contract.md)、
   [DEC-020](DEC-020-workflow-run-lifecycle.md)、
   [DEC-022](DEC-022-conversation-patch-semantics.md)、
-  [DEC-024](DEC-024-conversation-patch-execution.md)
+  [DEC-024](DEC-024-conversation-patch-execution.md)、
+  [DEC-031](DEC-031-agent-recovery-orchestration.md)（§3 续跑上下文与 §6 出口的
+  Agent 侧消费者）
 - [Workflow Runtime 设计](../design/workflow_runtime_design.md)（阶段 C 章节）
 - [Agent Harness 参考研究](../design/harness_reference_study.md) §5.3/§6

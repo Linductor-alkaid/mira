@@ -69,7 +69,8 @@ set_learning_context(shared_ptr<IMemory> memory, MemoryScope scope,
   执行；结果写入持锁。
 - **降级**：查询失败（后端不可用、超时）→ 空结果 + 诊断计数器，升级路径照常完成
   （无记忆继续当前任务）。检索结果只是**数据**：进入模型上下文时按既有脱敏规则处理，
-  不提升权限（`RULE-09`），Agent 对 lesson 的采纳是 Agent Harness 编排，不在本决策。
+  不提升权限（`RULE-09`），Agent 对 lesson 的采纳是 Agent Harness 编排，不在本决策
+  （后由 [DEC-031](DEC-031-agent-recovery-orchestration.md) 冻结）。
 - **有界性**：每次升级至多一次查询；结果条数与 token 预算受 §1 配置约束（`RULE-08`）；
   RunRecord 只保留最后一次升级的检索结果（覆盖式，不累积）。
 
@@ -168,7 +169,8 @@ record_recovery_lesson(run_id) -> Result<WorkflowRecoveryLesson>
   [DEC-023](DEC-023-workflow-policy-set-runtime-semantics.md)（升级与续跑上下文）、
   [DEC-024](DEC-024-conversation-patch-execution.md)（patch 记录）、
   [DEC-025](DEC-025-success-trajectory-compilation-and-publish-gate.md)（宿主信任边界
-  同模式）
+  同模式）、[DEC-031](DEC-031-agent-recovery-orchestration.md)（Agent 侧对 §3 检索结果
+  的采纳编排与 §4 宿主记录的触发时机）
 - [Context 与 Memory 架构设计](../design/context_and_memory_design.md) §17/§18（路由与
   降级）、[Workflow Runtime 设计](../design/workflow_runtime_design.md)（阶段 F 章节）
 - API 手册 workflow-contracts

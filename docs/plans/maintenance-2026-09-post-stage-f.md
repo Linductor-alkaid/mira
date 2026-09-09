@@ -5,7 +5,7 @@
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M8–M13 已合入的实现；跨平台验收缺口见下文
 > 建议发布点：先恢复 Workflow learning alpha 验收，再按 demo 证据定义下一发布点
-> 更新日期：2026-09-09
+> 更新日期：2026-09-10
 
 ## 1. 目标与边界
 
@@ -18,7 +18,9 @@
 [Workflow 专项设计](../design/workflow_runtime_design.md) §11–14、
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)、
 [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md)、
-[DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md)。
+[DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md)、
+[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)（本计划 `MNT-202609-23`
+产出）。
 M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围或扩大 v1 平台承诺。
 
 ## 2. 状态核对与缺口
@@ -28,7 +30,7 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
 | 范围 | 已有证据与实际边界 | 尚缺内容 / 跟踪项 |
 | --- | --- | --- |
 | 阶段 A–F | M8–M13 实现与测试已合入；历史记录为 Linux/Windows、sanitizer、quality 通过；`BUG-20260909-001` 已由 `MNT-202609-22` 修复，两 ABI 实际编译 `mira_workflow` 并完成安装包 consumer 交叉链接（PR #35） | Android 设备运行与宿主消费证据仍缺，`MNT-202609-27` |
-| F 学习闭环 | 域映射、Episode/Lesson、失败查询与 `relevant_lessons` 已实现；M13 测试以三个 Run 验证记住、恢复、再次检索 | AgentLoop 未消费 continuation；测试由宿主直接 resume/record lesson，不能证明模型采纳有效，`MNT-202609-23/24` |
+| F 学习闭环 | 域映射、Episode/Lesson、失败查询与 `relevant_lessons` 已实现；M13 测试以三个 Run 验证记住、恢复、再次检索；恢复编排设计与决策已由 `MNT-202609-23` 冻结（DEC-031） | AgentLoop 未消费 continuation；测试由宿主直接 resume/record lesson，不能证明模型采纳有效，实现由 `MNT-202609-24` 承载 |
 | 长期资产与恢复 | M4 有 SQLite Memory；M9 Library/Run 与 M12 App Model 为进程内投影 | 跨重启学习持久化已由 25 取证（SQLite 通过）；事件重建配方载荷缺口登记 `BUG-20260909-002`，DEC-030 §5 修订待立项；Library/Run/App Model 跨进程持久化仍缺，`MNT-202609-26` |
 | 自动化资产复用 | M11 有轨迹捕获、编译、归纳、DryRun 入库；M12 有图与导航规划 | 缺 Procedure 索引消费者、按目标选 Workflow，以及真实 UI 到 `ScreenStateProvider` 的消费侧验证，`MNT-202609-27/31` |
 | 真实平台与 Provider | Android ABI 文档已有 miracle P1 截图及 lease 路径证据；Provider 矩阵逐 capability 记录 | UI tree、转码后视觉闭环、决策修复、输入/权限/Takeover/宿主销毁完整矩阵仍有外部未结项，`MNT-202609-27` |
@@ -96,6 +98,10 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
 `relevant_lessons` 是数据，`record_recovery_lesson` 是宿主专用写入门面；采纳经验、生成
 修复、重新验证和决定是否沉淀资产仍缺 Harness 编排。学习记录默认还要求宿主安装
 IMemory 与 EventStore；缺事件锚点的 Episode 会跳过（`record_episode`），并非开箱即持久学习。
+该编排的设计与决策已由 `MNT-202609-23` 冻结
+（[恢复编排设计](../design/workflow_recovery_orchestration_design.md)、DEC-031）：独立 Core
+编排器、宿主通知触发、恢复请求归属载体 Task、四动作决策闭集、lesson 三层过滤、
+`WorkflowRecoveryAttempted` 审计事件；实现与证据仍待 `MNT-202609-24`，冻结不等于能力已交付。
 
 M13 已按范围推迟 Procedure 自动索引、向量召回、User Model 扩展、TTL/retention、训练导出。
 这些属于新增能力，不据此重开已完成的功能项。跨进程 Library/Run/App Model 持久化亦为
@@ -122,12 +128,19 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 
 ### 3.2 P1：让 Agent 使用经验并可验证地恢复
 
-- [ ] `MNT-202609-23`（Planned）冻结 Harness 恢复编排设计与决策。依赖：DEC-023/024/030。
+- [x] `MNT-202609-23`（Completed）冻结 Harness 恢复编排设计与决策。依赖：DEC-023/024/030。
   验收产物明确 `WaitingAgent -> continuation -> 有界模型请求 -> 结构化 patch/决策 ->
   resume -> Observe/Verify -> 宿主记录 lesson` 的所有者、事件关联与失败出口；定义无
   lesson、拒绝采纳、失效 lesson、取消/Takeover/迟到响应、升级预算及敏感信息处理。
-- [ ] `MNT-202609-24`（Proposed）实现上述编排与公共 consumer。依赖：22 的验收补齐、23
-  冻结后正式立项。验收：recorded Provider 真正收到检索上下文并生成可验证修复；首次
+  结果（2026-09-10）：产出
+  [Workflow 恢复编排设计](../design/workflow_recovery_orchestration_design.md) 与
+  [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)。七阶段管线逐段定义
+  所有者/输入输出/失败出口（设计 §4），失败出口矩阵覆盖验收列举的全部场景（§8），
+  全链路关联键为新增 `WorkflowRecoveryAttempted` 审计事件（§5.5）。证据见第 5 节
+  2026-09-10 记录。
+- [ ] `MNT-202609-24`（Planned）实现上述编排与公共 consumer。依赖：22 的验收补齐（已完成）、
+  23 冻结（已完成，DEC-031）；开工时按 §1 规则创建对应里程碑承载 DEC-031 验证方式。
+  验收：recorded Provider 真正收到检索上下文并生成可验证修复；首次
   失败、恢复、再次命中全链路可追踪；恶意 lesson 不提升权限，取消/接管后无新增动作，
   终态不复活，正常/异常/拒绝/超时/shutdown 均有测试；真实 Provider 证据由 27 补齐。
 - [x] `MNT-202609-25`（Completed）验证学习持久化与事件重建配方，形成字段级证据及差异清单。
@@ -181,7 +194,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
-产品范围决策，也不把缺少外部证据的任务置为已就绪。
+产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25 已完成，
+24 已 Planned 待立项，28 为下一项可独立开工的设计任务。
 
 ## 4. Executor、风险与退出条件
 
@@ -199,7 +213,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 - [x] 22 完成并恢复 M8–M13 的适用跨平台验收（PR #35，`8a5bd53`，run 34353919141
   12/12；两 ABI 编译全部 Workflow 源文件并完成安装包 consumer 交叉链接；六个里程碑
   与平台矩阵已回填；设备运行明确不在本项范围）。
-- [ ] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录。
+- [ ] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录（23/25 已完成，
+  28 未开工；24 已 Planned 但尚未立项里程碑）。
 - [ ] 27 外部证据归档；30 完成 M7 范围决策及任务映射。
 - [ ] 本计划内 Proposed 实现项已正式迁移或通过决策明确取消/推迟，不能因文档更新完成
   而将整个维护计划关闭。
@@ -289,3 +304,27 @@ format + docs/sbom/platform-boundary）。新增测试目标仅进入 Linux/Wind
 sanitizer 矩阵；Android 仍为编译与 consumer 链接取证，设备运行归 27。本条与上一条
 共同构成 25 的完整验证记录，任务关闭；`BUG-20260909-002` 与 DEC-030 §5 修订提案
 保持待立项。
+
+2026-09-10：`MNT-202609-23` 完成（基线 `909f6e2`，仅文档变更）。产出
+[Workflow 恢复编排设计](../design/workflow_recovery_orchestration_design.md)（v1.0）与
+[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)（Accepted）。设计依据
+静态核对源码：`WorkflowRuntime` 公开面（`agent_continuation`/`patch_run`/`resume_run`/
+`cancel_run`/`run_snapshot`/`record_recovery_lesson`）、`workflow_events.hpp` v1 闭集
+（确认无「进入 `WaitingAgent`」事件）、`WorkflowRunView`/`WorkflowAgentContinuation`
+（确认载体 TaskId/epoch 未公开，需增量字段）、`runtime.cpp` `begin_operation`
+准入（放行 `Recovering`、拒绝 `Paused`/`SuspendedForTakeover`/终态）、
+`workflow_learning.hpp`（lesson `recovery[]` 无参数值，采纳只能是模型合成）、
+`ModelGateway`/`TaskAdmissionGate`/`OperationContext` 探针纪律。验收对照：七阶段管线
+所有者/输入输出/失败出口（设计 §4 表）、事件关联键（§5.5
+`WorkflowRecoveryAttempted`）、失败出口矩阵（§8，覆盖无 lesson、拒绝采纳三层、失效
+lesson、取消、Takeover、迟到响应、两侧升级/恢复预算、模型不可用、shutdown）、敏感信息
+（§9：参数投影缺省无值、rationale 不入事件、lesson 是数据非授权）、Executor 路由与关闭
+顺序（§7）。同步：DEC-023/030 增加前向链接（不改语义）、Workflow 设计 §14.3/§15、
+架构设计 §7.6/§16/§17、总计划 §4.1/§5 决策索引、README 能力表（并修正 MNT-22 后
+失实的「Android 构建验收重新打开」表述）；`MNT-202609-24` 转 `Planned`。
+验证（Ubuntu 24.04.4 x86_64、Python 3.14.6）：`python3 tools/check_docs.py .` 通过
+（"Markdown links and fences: OK"）；9 个改动文件逐文件脚本检查唯一一级标题、标题层级
+连续、代码围栏配对与相对链接可达通过（README 第 5 行无语言标注的围栏为 2026-09-05
+既有内容，仓库门禁接受，未改动）；`git diff --check` 通过。限制：本轮无代码变更，
+未执行 C++ 构建/CTest；恢复编排能力本身未实现，本记录只证明设计与决策冻结，不构成
+「Agent 采纳 lesson」的能力证据；PR CI（quality 含 docs 门禁）结果合并后回填。
