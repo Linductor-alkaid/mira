@@ -775,8 +775,10 @@ Environment Model、Recovery Pattern 与执行经验的持续积累，而不是�
 ## 16. 分阶段落地
 
 以下阶段已由 M8–M13 承载，专项设计与 DEC-019–030 已冻结。2026-09-09 复核发现
-Android CI 漏构建 `mira_workflow`（`BUG-20260909-001`），六个里程碑实现保持已交付，
-跨平台验收项重开为 `In Progress`；历史功能测试结果保留。
+Android CI 漏构建 `mira_workflow`（`BUG-20260909-001`），六个里程碑跨平台验收项
+一度重开；同日 `MNT-202609-22` 修复 CI 并取得两 ABI 编译与安装包 consumer 链接
+证据（PR #35）后逐项关闭，里程碑恢复 `Completed`。历史功能测试结果保留；Android
+设备运行证据仍由 `MNT-202609-27` 跟踪。
 
 | 阶段 | 内容 | 前置冻结 |
 | --- | --- | --- |

@@ -1,16 +1,18 @@
 # M9：Workflow Runtime 最小闭环（阶段 B）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
-> 前置：[M8](m8-workflow-contracts.md)（实现已交付；Android 验收重开）
+> 前置：[M8](m8-workflow-contracts.md)（实现已交付；Android 验收缺口已由 `MNT-202609-22` 补齐）
 > 建议发布点：Workflow runtime alpha
 > 更新日期：2026-09-09
 
 > 2026-09-09 状态复核：实现已交付；`BUG-20260909-001` 发现 Android CI 未构建
-> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。历史验证记录保留，
-> 当前状态以本注记为准；依赖方可复用冻结契约，跨平台关闭共同等待
-> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22`。
+> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。同日
+> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 修复 CI 并
+> 取得两 ABI 交叉编译与安装包 consumer 链接证据（PR #35，合并提交 `8a5bd53`）后，
+> 重开项逐项复核关闭，里程碑恢复 `Completed`。设备运行验证仍由 `MNT-202609-27`
+> 单独跟踪，不因本轮回填改为已验证。
 
 ## 1. 目标
 
@@ -163,7 +165,7 @@
   `patch_workflow` 不注册（阶段 C）。
 - [x] `M9-12` 端到端取证：AgentLoop 经模型响应发起 `run_workflow` 工具调用 →
   Run 创建并驱动至终态 → 工具结果回流模型（`RISK-2026-035` 的阶段 B 部分）。
-- [ ] `M9-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M9-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer 覆盖 `workflow_runtime.hpp`；
   总计划、设计文档、API 手册与 DEC 同步后关闭里程碑。
 
@@ -218,7 +220,7 @@
 - [x] 工具闭环：四操作经 `BuiltinToolRegistry` 执行与错误信封；库版本门禁
   （`NotValidated` 不可运行、`DryRunPassed` 可运行）；模型发起 `run_workflow`
   端到端（`M9-12`）。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M8 模式取证（53/53）；
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M8 模式取证（53/53）；
   quality（clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建
   组合与 clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共头。
 - [x] 总计划第 4 节、`workflow_runtime_design`（路由与限制章节）、API 手册、
@@ -287,3 +289,12 @@ Android 构建声明。已交付功能项及其他历史证据保留；这是验
 [后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 补齐两 ABI
 实际编译与安装消费链接证据后，逐项复核并关闭。本轮本地构建因未初始化子模块未能
 复跑，环境与补跑条件见后续计划第 5 节。
+
+2026-09-09：`MNT-202609-22` 修复落地后关闭重开项。PR #35（`65c79a8`，合并提交
+`8a5bd53`）将 `mira_workflow` 补入 Android CI 目标列表并新增安装包 consumer 交叉
+链接门禁；合并提交 [run 34353919141](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141)
+12/12 job 通过，arm64-v8a 与 x86_64 两配置实际编译全部 Workflow 源文件（含
+`workflow_runtime.cpp`，NDK 26.3.11579264、API 24、warnings-as-errors）并完成
+`Mira::workflow` 安装闭包链接；本机以同一 pinned NDK 复现双 ABI 链接与负向用例，
+细节见 M8 同日记录。Android 设备运行与宿主消费仍由 `MNT-202609-27` 跟踪，未验证
+不声明。`M9-13` 与重开门禁退出条件据此复核关闭，里程碑恢复 `Completed`。

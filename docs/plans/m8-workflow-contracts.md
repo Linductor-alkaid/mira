@@ -1,6 +1,6 @@
 # M8：Workflow 双路径契约冻结
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；方向依据 [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)
@@ -8,9 +8,11 @@
 > 更新日期：2026-09-09
 
 > 2026-09-09 状态复核：实现已交付；`BUG-20260909-001` 发现 Android CI 未构建
-> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。历史验证记录保留，
-> 当前状态以本注记为准；依赖方可复用冻结契约，跨平台关闭共同等待
-> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22`。
+> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。同日
+> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 修复 CI 并
+> 取得两 ABI 交叉编译与安装包 consumer 链接证据（PR #35，合并提交 `8a5bd53`）后，
+> 重开项逐项复核关闭，里程碑恢复 `Completed`。设备运行验证仍由 `MNT-202609-27`
+> 单独跟踪，不因本轮回填改为已验证。
 
 ## 1. 目标
 
@@ -126,7 +128,7 @@ DEC-014 明确不解冻 M7。将 Workflow 方向并入 M7 会加重 `RISK-2026-0
 
 - [x] `M8-12` `Mira::workflow` 进入安装包，最小 consumer 独立包含、链接与运行通过（对齐
   DEC-011 的公共 API 检验边界与既有 installed-consumer 测试模式）。
-- [ ] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
+- [x] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
   补跑条件）、负向与边界测试全绿；总计划、决策索引、设计与 API 手册同步后关闭本里程碑。
 
 ## 5. Executor 路由与关闭
@@ -155,12 +157,12 @@ Runtime 关闭顺序。Workflow Runtime 的 Executor 路由表（步骤执行、
 
 ## 7. 测试与退出条件
 
-- [ ] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
+- [x] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
 - [x] 四份决策记录 `Accepted`、专项设计文档 `Active`；其中暂定默认值均注明负责人与最迟
   冻结里程碑。
 - [x] IR 序列化与校验、参数绑定、状态转换表、版本化、事件 schema、Tool 规格 schema 均有
   正向与负向测试；未知字段、版本不匹配、超限、非法转换与终态复活尝试全部 fail closed。
-- [ ] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
+- [x] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
   M0 基线执行并记录；未运行项保持未勾选并记录补跑条件。
 - [x] OfflineReplay 对 workflow 事件不产生副作用的契约断言通过。
 - [x] 总计划第 4 节、决策索引、API 手册与本文件同步；阶段 B 里程碑文档可依据 `M8-05`
@@ -226,3 +228,22 @@ Android 构建声明。已交付功能项及其他历史证据保留；这是验
 [后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 补齐两 ABI
 实际编译与安装消费链接证据后，逐项复核并关闭。本轮本地构建因未初始化子模块未能
 复跑，环境与补跑条件见后续计划第 5 节。
+
+2026-09-09：`MNT-202609-22` 修复落地后关闭重开项（PR #35，`65c79a8`，合并提交
+`8a5bd53`）。变更：Android CI 目标列表补入 `mira_workflow`；新增
+`tests/cmake/RunAndroidConsumerLink.cmake`——安装 Android 构建到独立 prefix 后，
+以同 ABI toolchain 配置 `tests/consumer` 对安装包链接（`Mira::workflow` 连同
+core/state_store/net_transport/mbedtls_transport、executor 与 sqlite3 闭包）；
+install 步骤对 MiraTargets 导出成员未构建即失败，防止目标列表回归静默通过。
+CI 证据（合并提交 [run 34353919141](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141)，
+12/12 job 通过）：
+[arm64-v8a](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681503)
+与 [x86_64](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681333)
+两配置编译全部 9 个 Workflow 源文件（NDK 26.3.11579264、API 24、clang 17/libc++、
+warnings-as-errors）并完成安装包 consumer 交叉链接；Linux/Windows/sanitizers/quality
+同步通过。本机复现（Ubuntu 24.04 x86_64，同一 pinned NDK）：两 ABI 安装包 consumer
+链接产出真实 Android ELF；移除 `libmira_workflow.a` 后门禁在 install 步骤按预期失败；
+Linux gcc 13.3 Debug 66/66 ctest 通过（含 `mira_installed_consumer_test`）。
+限制：仅证明交叉编译与链接闭包，Android 设备运行与宿主消费仍由 `MNT-202609-27`
+跟踪，未验证不声明。`M8-13` 与两项重开退出条件据此复核关闭，里程碑恢复
+`Completed`。

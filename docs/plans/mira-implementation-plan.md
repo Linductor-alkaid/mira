@@ -71,23 +71,27 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
 | [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
-| [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | In Progress |
-| [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | In Progress |
-| [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | In Progress |
-| [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | In Progress |
-| [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | In Progress |
-| [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | In Progress |
+| [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
+| [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
+| [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
+| [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | Completed |
+| [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | Completed |
+| [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
 阶段 A–F（M8–M13）实现已合入，阶段 F 已具备记忆域、Episode/Lesson 与失败检索。
-本轮发现 `BUG-20260909-001`：Android CI 未构建独立的 `mira_workflow` 目标。
-因此六个里程碑的跨平台取证项与退出条件重新打开，状态为 `In Progress`；已交付功能和
-历史 Linux/Windows 等验证记录保留，下文关闭记录是历史事实，不能覆盖本次复核。
+本轮发现 `BUG-20260909-001`：Android CI 未构建独立的 `mira_workflow` 目标，
+六个里程碑的跨平台取证项与退出条件一度重新打开。同日 P0 `MNT-202609-22` 修复
+合入（PR #35，`8a5bd53`）：Android CI 显式编译 `mira_workflow` 并新增安装包
+consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际编译全部 Workflow
+源文件并完成安装闭包链接；六个里程碑据此逐项复核后恢复 `Completed`，已交付功能和
+历史验证记录保留。Android 设备运行证据仍缺，由 `MNT-202609-27` 跟踪。
 
 [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) 为下一轮执行入口：
 
-1. P0 `MNT-202609-22`：补齐 Android 两 ABI Workflow 编译与安装消费链接证据。
+1. P0 `MNT-202609-22`（Completed）：Android 两 ABI Workflow 编译与安装消费链接
+   证据已补齐并回填六个里程碑与平台矩阵。
 2. P1 `MNT-202609-23`–`26`：冻结并实现 Agent 采纳 lesson 的恢复编排，验证真实 SQLite
    学习后端与事件重建；有需求证据后推进 Library/Run/App Model 跨进程持久化。
 3. P1 `MNT-202609-27`–`30`：回收 miracle 真机/Provider 证据，建立任务评估基线，形成

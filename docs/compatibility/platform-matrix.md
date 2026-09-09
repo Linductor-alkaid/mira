@@ -1,7 +1,7 @@
 # Mira 平台构建与 Adapter 兼容性矩阵
 
 > 状态：Active
-> 版本：0.7
+> 版本：0.8
 > 更新日期：2026-09-09
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
@@ -64,20 +64,23 @@ model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows 已具备
 ### Workflow 模块证据复核（2026-09-09）
 
 `Mira::workflow` 是独立 CMake 目标，M8–M13 的实现不被 Core/Stateful Consumer 的
-Android 构建传递覆盖。当前 `.github/workflows/ci.yml` 的 Android 显式构建列表遗漏
-`mira_workflow`，因此原 Android job 成功仅适用于实际列出的目标，不能外推到 Workflow。
-Linux/Windows 的历史功能测试证据仍见相应里程碑；本轮未重跑远端 CI。
+Android 构建传递覆盖。`BUG-20260909-001`：原 `.github/workflows/ci.yml` 的 Android
+显式构建列表遗漏 `mira_workflow`，因此旧 Android job 成功仅适用于实际列出的目标，
+不能外推到 Workflow。同日 `MNT-202609-22` 修复（PR #35，合并提交 `8a5bd53`）：
+目标列表补入 `mira_workflow`，并新增 `tests/cmake/RunAndroidConsumerLink.cmake`
+安装包 consumer 交叉链接门禁。Linux/Windows 的功能测试证据见相应里程碑。
 
-| 模块 / 环境 | 本轮可确认等级 | 待补证据 |
+| 模块 / 环境 | 当前证据等级 | 证据 |
 | --- | --- | --- |
-| Workflow / Android arm64-v8a | `Configured`；未确认 `Build verified` | NDK 实际编译、安装包 consumer 交叉链接 |
-| Workflow / Android x86_64 | `Configured`；未确认 `Build verified` | NDK 实际编译、安装包 consumer 交叉链接 |
-| Workflow / Android 设备运行 | 未验证 | 宿主消费与 A–F 组合任务的目标设备记录 |
+| Workflow / Android arm64-v8a | `Build verified`（编译 + 安装闭包链接） | [run 34353919141](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681503)：全部 9 个 Workflow 源文件编译（NDK 26.3.11579264、API 24、clang 17/libc++、warnings-as-errors）+ installed consumer 链接 |
+| Workflow / Android x86_64 | `Build verified`（编译 + 安装闭包链接） | [run 34353919141](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681333)：同上 |
+| Workflow / Android 设备运行 | 未验证 | 宿主消费与 A–F 组合任务的目标设备记录，`MNT-202609-27` |
 
-负责人 Mira Maintainers。`BUG-20260909-001` 与补跑条件见
+`Build verified` 仅覆盖交叉编译与链接闭包，不代表设备运行支持。本机以同一 pinned
+NDK 复现两 ABI 链接并验证负向用例（缺失 `libmira_workflow.a` 时门禁失败），细节见
+M8 同日验证记录。负责人 Mira Maintainers；`BUG-20260909-001` 与后续跟踪见
 [阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) `MNT-202609-22/27`。
-M8–M13 的跨平台验收项已重新打开；现有 ABI 截图运行证据不因此撤销，也不代表 Workflow
-已通过设备运行。
+现有 ABI 截图运行证据不因此撤销，也不代表 Workflow 已通过设备运行。
 
 ## 3. 可复现入口
 

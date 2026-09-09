@@ -27,7 +27,7 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
 
 | 范围 | 已有证据与实际边界 | 尚缺内容 / 跟踪项 |
 | --- | --- | --- |
-| 阶段 A–F | M8–M13 实现与测试已合入；历史记录为 Linux/Windows、sanitizer、quality 通过 | Android CI 漏编译 Workflow；重开六个里程碑的跨平台验收，`MNT-202609-22` |
+| 阶段 A–F | M8–M13 实现与测试已合入；历史记录为 Linux/Windows、sanitizer、quality 通过；`BUG-20260909-001` 已由 `MNT-202609-22` 修复，两 ABI 实际编译 `mira_workflow` 并完成安装包 consumer 交叉链接（PR #35） | Android 设备运行与宿主消费证据仍缺，`MNT-202609-27` |
 | F 学习闭环 | 域映射、Episode/Lesson、失败查询与 `relevant_lessons` 已实现；M13 测试以三个 Run 验证记住、恢复、再次检索 | AgentLoop 未消费 continuation；测试由宿主直接 resume/record lesson，不能证明模型采纳有效，`MNT-202609-23/24` |
 | 长期资产与恢复 | M4 有 SQLite Memory；M9 Library/Run 与 M12 App Model 为进程内投影 | M13 fixture 与 consumer 学习段均用内存后端；缺跨重启学习集成与事件重建逐字段/digest 验证，`MNT-202609-25/26` |
 | 自动化资产复用 | M11 有轨迹捕获、编译、归纳、DryRun 入库；M12 有图与导航规划 | 缺 Procedure 索引消费者、按目标选 Workflow，以及真实 UI 到 `ScreenStateProvider` 的消费侧验证，`MNT-202609-27/31` |
@@ -48,6 +48,10 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
 - Owner：Mira Maintainers。解除条件：两种 Android ABI 实际编译 Workflow，并保留准确
   commit、NDK、命令、日志与结果；按各里程碑退出条件复核后逐项关闭。属于 Mira CI
   覆盖问题，无证据表明是 Executor 能力缺口。
+- 修复（2026-09-09）：PR #35（`65c79a8`，合并提交 `8a5bd53`）补入 `mira_workflow`
+  目标并新增 `tests/cmake/RunAndroidConsumerLink.cmake` 安装包 consumer 交叉链接
+  门禁；合并提交 CI 12/12 通过，两 ABI 编译与链接证据已回填六个里程碑与平台矩阵，
+  重开项逐项关闭。设备运行单列，仍由 `MNT-202609-27` 跟踪。
 
 ### 2.2 能力边界
 
@@ -70,12 +74,12 @@ DEC-030 §5 的重建配方目前缺少“仅凭持久事件恢复同一学习�
 
 - [x] `MNT-202609-21`（Completed）完成阶段 F 状态审计、缺口归类及后续计划；同步总计划、
   M8–M13、M7 跟进入口、README、架构现状与平台证据边界，校验文档链接与结构。
-- [ ] `MNT-202609-22`（Planned）修复 `BUG-20260909-001`：Android CI 显式编译
+- [x] `MNT-202609-22`（Completed）修复 `BUG-20260909-001`：Android CI 显式编译
   `mira_workflow`，增加安装包 consumer 对 `Mira::workflow` 的交叉链接检查，防止只产出
   静态库而遗漏链接闭包。依赖：完整 pinned 子模块、NDK 26.3.11579264/API 24。
   验收：arm64-v8a/x86_64 两配置实际编译全部 Workflow 源文件并完成 consumer 链接；
-  原有 Linux/Windows/quality 回归通过；回填六个里程碑与平台矩阵。设备运行单列，不能
-  用交叉链接成功代替。
+  原有 Linux/Windows/quality 回归通过；回填六个里程碑与平台矩阵。设备运行单列，不能用
+  交叉链接成功代替。证据见第 5 节 2026-09-09 第二条记录及 PR #35。
 
 ### 3.2 P1：让 Agent 使用经验并可验证地恢复
 
@@ -150,7 +154,9 @@ DEC-030 §5 的重建配方目前缺少“仅凭持久事件恢复同一学习�
 - 外部阻塞负责人：Mira Maintainers；设备与 Provider 补跑条件见 27。
 
 - [x] 本轮审计事实、计划与文档入口一致，历史失败及验收记录保留。
-- [ ] 22 完成并恢复 M8–M13 的适用跨平台验收。
+- [x] 22 完成并恢复 M8–M13 的适用跨平台验收（PR #35，`8a5bd53`，run 34353919141
+  12/12；两 ABI 编译全部 Workflow 源文件并完成安装包 consumer 交叉链接；六个里程碑
+  与平台矩阵已回填；设备运行明确不在本项范围）。
 - [ ] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录。
 - [ ] 27 外部证据归档；30 完成 M7 范围决策及任务映射。
 - [ ] 本计划内 Proposed 实现项已正式迁移或通过决策明确取消/推迟，不能因文档更新完成
@@ -176,3 +182,27 @@ configure/build/CTest；Android 按 22 使用 NDK 与两 ABI 取证。
 仍失败，四处均为既有文档指向未初始化子模块中的 Executor API/集成指南/LICENSE 与
 Mbed TLS LICENSE；未修改这些引用或将缺失伪造为通过。负责人 Mira Maintainers，补跑
 条件为初始化上述 pinned 子模块后重新执行该命令。
+
+2026-09-09：`MNT-202609-22` 完成（PR #35，`65c79a8`，合并提交 `8a5bd53`）。
+变更：`.github/workflows/ci.yml` Android job 目标列表补入 `mira_workflow`，matrix
+增加 preset→toolchain 映射；新增 `tests/cmake/RunAndroidConsumerLink.cmake`——安装
+Android 构建到独立 prefix，再以同 ABI toolchain 配置 `tests/consumer` 对安装包链接
+`Mira::workflow`（含 core/state_store/net_transport/mbedtls_transport、executor、
+sqlite3 闭包），install 步骤对 MiraTargets 导出成员未构建即失败；仅链接不运行，
+设备执行由 `MNT-202609-27` 跟踪。交叉编译下包查找需 `CMAKE_FIND_ROOT_PATH` 与
+`CMAKE_PREFIX_PATH` 并用。CI 证据：合并提交
+[run 34353919141](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141)
+12/12 job 通过——
+[arm64-v8a](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681503)、
+[x86_64](https://github.com/Linductor-alkaid/mira/actions/runs/34353919141/job/102473681333)
+均以 NDK 26.3.11579264、API 24 编译全部 9 个 Workflow 源文件（clang 17/libc++、
+warnings-as-errors）并完成 consumer 交叉链接；PR 检查全绿（含两事件各一轮）。
+本机复现（Ubuntu 24.04 x86_64，同一 pinned NDK）：两 ABI 安装包 consumer 链接产出
+真实 Android ELF；负向用例（移除 `libmira_workflow.a`）按预期在 install 步骤失败；
+Linux gcc 13.3 Debug 66/66 ctest（含 `mira_installed_consumer_test`）。回填：M8–M13
+六个里程碑重开项逐项关闭并恢复 `Completed`、平台矩阵 Workflow 双 ABI 行升级
+`Build verified`（设备运行保持未验证）、总计划 4.1 与里程碑索引同步。限制：本轮
+不覆盖 Android 设备运行、宿主消费与真实 Provider 证据（27），不外推为运行支持；
+Windows/quality 由合并提交 run 原样通过，未额外增加组合。另：上一条记录中因未初始
+化子模块而登记的 `tools/check_docs.py` 补跑条件已满足——子模块初始化后本轮
+docs/sbom/platform-boundary 门禁全绿。
