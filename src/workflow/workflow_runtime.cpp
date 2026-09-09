@@ -6,6 +6,7 @@
 #include <chrono>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <thread>
 #include <utility>
 
