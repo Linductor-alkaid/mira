@@ -1805,8 +1805,19 @@ std::optional<Error> WorkflowRuntime::enter_waiting_agent(RunRecord &run,
     if (command.has_value()) {
         static_cast<void>(command.value().outcome(config_.command_timeout));
     }
+    // Entering Recovering advances the carrier epoch; refresh the cached
+    // value outside the mutex (leaf-lock discipline) so the agent
+    // continuation exposes the live epoch to the recovery orchestrator
+    // (DEC-031 §5.4).
+    std::optional<std::uint64_t> recovered_epoch;
+    if (const auto snapshot = runtime_.task_snapshot(run.task); snapshot.has_value()) {
+        recovered_epoch = snapshot.value().epoch;
+    }
     {
         std::lock_guard lock(mutex_);
+        if (recovered_epoch.has_value()) {
+            run.task_epoch = *recovered_epoch;
+        }
         run.safe_summary = bounded_summary("waiting for agent: " + reason);
     }
     return std::nullopt;
@@ -3367,6 +3378,10 @@ Result<WorkflowAgentContinuation> WorkflowRuntime::agent_continuation(
     continuation.failure_reason = run.failure_reason;
     continuation.pending_decision = run.view.pending_decision;
     continuation.relevant_lessons = run.retrieved_lessons;
+    continuation.carrier_task_id = run.task;
+    continuation.carrier_task_epoch = run.task_epoch;
+    continuation.run_epoch = run.view.run_epoch;
+    continuation.escalations = run.escalations;
     if (run.cursor < run.definition.steps.size()) {
         const auto &step = run.definition.steps[run.cursor];
         continuation.current_step = step.id;

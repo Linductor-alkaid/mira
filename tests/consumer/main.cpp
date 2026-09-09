@@ -6,6 +6,7 @@
 #include <mira/workflow_compiler.hpp>
 #include <mira/workflow_ir.hpp>
 #include <mira/workflow_learning.hpp>
+#include <mira/workflow_recovery.hpp>
 #include <mira/workflow_runtime.hpp>
 #include <mira/workflow_tools.hpp>
 
@@ -702,6 +703,130 @@ int main() {
             mira::recovery_lesson_from_record(lessons_found.value().records.front());
         if (!parsed_lesson.has_value() || !(parsed_lesson.value() == lesson.value())) {
             return 73;
+        }
+
+        // Recovery orchestration (M14, DEC-031): a package-only consumer
+        // assembles the recovery orchestrator over its own ModelGateway and a
+        // scripted provider; a WaitingAgent run is repaired through the
+        // model-synthesized patch and the audit event lands in the same
+        // event store (start_run -> wait_run -> notify -> attempt -> wait).
+        class ConsumerRecoveryProvider final : public mira::IModelProvider {
+          public:
+            mira::ModelProfile profile_;
+            std::vector<mira::ModelResponse> script;
+            std::size_t consumed = 0;
+
+            [[nodiscard]] const mira::ModelProfile &profile() const override { return profile_; }
+            [[nodiscard]] mira::Result<mira::ModelResponse>
+            infer(const mira::ModelRequest &request, const mira::OperationContext &,
+                  const mira::ProviderInferOptions &) override {
+                if (consumed >= script.size()) {
+                    return mira::make_model_error(mira::ModelDomainCode::ModelResourceExhausted,
+                                                  "consumer recovery script exhausted", false,
+                                                  request.operation_id);
+                }
+                mira::ModelResponse response = script[consumed++];
+                response.request_id = request.request_id;
+                response.operation_id = request.operation_id;
+                response.profile_id = request.profile_id;
+                return response;
+            }
+        };
+        auto recovery_provider = std::make_shared<ConsumerRecoveryProvider>();
+        recovery_provider->profile_.id = mira::ModelProfileId::generate();
+        recovery_provider->profile_.display_name = "consumer-recovery";
+        recovery_provider->profile_.version = mira::SemanticVersion{1, 0, 0};
+        recovery_provider->profile_.dialect = mira::ProtocolDialect::OpenAIResponsesV1;
+        recovery_provider->profile_.endpoint_origin = "https://recovery.consumer.test";
+        recovery_provider->profile_.model_selector = "consumer-recovery-model";
+        recovery_provider->profile_.capabilities.text = {true, mira::CapabilityEvidence::FixtureVerified, ""};
+        recovery_provider->profile_.capabilities.strict_json_schema = {
+            true, mira::CapabilityEvidence::FixtureVerified, ""};
+        mira::ModelResponse decision_response;
+        decision_response.contract_version = mira::SchemaVersion{1, 0};
+        decision_response.status = mira::ModelCompletionStatus::Completed;
+        mira::MessageOutput decision_message;
+        mira::OutputTextPart decision_text;
+        decision_text.text = "{\"action\":\"need_user\",\"used_lessons\":[],\"rationale\":\"consumer probe\"}";
+        decision_message.content.emplace_back(std::move(decision_text));
+        decision_response.output.emplace_back(std::move(decision_message));
+        decision_response.requested_model = "consumer-recovery-model";
+        recovery_provider->script.push_back(std::move(decision_response));
+        mira::ModelRouter recovery_router;
+        recovery_router.register_profile(
+            std::make_shared<const mira::ModelProfile>(recovery_provider->profile_));
+        mira::ModelGateway recovery_gateway{host_executor, recovery_router, nullptr,
+                                            mira::PriceTable{}, mira::ModelGatewayConfig{}};
+        recovery_gateway.register_provider(recovery_provider);
+        mira::WorkflowRecoveryConfig recovery_config;
+        recovery_config.profile_id = recovery_provider->profile_.id;
+        mira::WorkflowRecoveryOrchestrator recovery{
+            host_executor, workflows, runtime, recovery_gateway, session.value().id,
+            recovery_config};
+        recovery.set_event_store(std::make_shared<mira::MemoryEventStore>());
+        mira::BuiltinToolRegistration recovery_flaky;
+        recovery_flaky.spec.wire_name = "consumer_recovery_flaky";
+        recovery_flaky.spec.description = "consumer recovery failure source";
+        recovery_flaky.spec.parameters_schema = mira::JsonSchema{mira::parse_json(R"json({
+            "type": "object",
+            "properties": {"payload": {"type": "string"}},
+            "additionalProperties": false
+        })json").value()};
+        recovery_flaky.spec.has_side_effects = false;
+        recovery_flaky.handler = [](const mira::JsonValue &,
+                                    const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+            mira::Error error;
+            error.code = mira::ErrorCode::PlatformError;
+            error.domain = "mira.consumer";
+            error.safe_message = "scripted recovery failure";
+            return error;
+        };
+        if (!tools->register_tool(recovery_flaky.spec, recovery_flaky.handler)) {
+            return 76;
+        }
+        const char *recovery_ir = R"({
+            "schema_version": {"major": 1, "minor": 0},
+            "workflow_id": "ababababababababababababababab12",
+            "name": "consumer-recovery",
+            "steps": [
+                {"step_id": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcd12", "kind": "tool_call",
+                 "arguments": {"tool": "consumer_recovery_flaky", "payload": "p"}}
+            ],
+            "default_policy": "strict",
+            "allowed_policies": ["strict", "recoverable"]
+        })";
+        auto recoverable = mira::parse_workflow_definition(recovery_ir);
+        if (!recoverable.has_value()) {
+            return 77;
+        }
+        const auto escalating = workflows.create_run(
+            recoverable.value(), mira::JsonValue{mira::JsonValue::Object{}},
+            mira::WorkflowPolicy::Recoverable);
+        if (!escalating.has_value()) {
+            return 78;
+        }
+        const auto wait_escalated =
+            workflows.execute_run(escalating.value().run_id, context);
+        if (!wait_escalated.has_value() ||
+            wait_escalated.value().state != mira::WorkflowRunState::WaitingAgent) {
+            return 79;
+        }
+        const auto attempt = recovery.attempt_recovery(escalating.value().run_id);
+        if (!attempt.has_value() ||
+            attempt.value().outcome != mira::WorkflowRecoveryOutcome::DeferredToHost ||
+            attempt.value().reason_code != "decision-need-user" ||
+            !attempt.value().model_request_id.has_value() ||
+            attempt.value().lessons_offered != 0) {
+            return 80;
+        }
+        const auto after_attempt = workflows.run_snapshot(escalating.value().run_id);
+        if (recovery_provider->consumed != 1 ||
+            after_attempt.value().state != mira::WorkflowRunState::WaitingAgent) {
+            return 81;
+        }
+        const auto recovery_report = recovery.shutdown();
+        if (!recovery_report.clean) {
+            return 82;
         }
 
         const auto report = workflows.shutdown();

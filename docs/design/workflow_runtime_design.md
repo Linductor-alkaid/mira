@@ -2,7 +2,7 @@
 
 > 状态：Active（阶段 F 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11、导航随 M12 交付，接口以代码与 API 手册为准）
 > 版本：0.6
-> 更新日期：2026-09-10（§14.3/§15 增补恢复编排设计与 DEC-031 交叉引用）
+> 更新日期：2026-09-10（M14 交付 `WorkflowRecoveryOrchestrator`：continuation 增量字段、`WorkflowRecoveryAttempted` 事件与 §5 事件表同步）
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
 > [DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
@@ -140,6 +140,7 @@ RecoveryHook
 | `WorkflowNavigationPlanned/Observed`（阶段 E） | State | run_id、step_id、from/to 状态、edge_count、plan_digest、total_cost、guard 计数；transition_id、success、confidence |
 | `WorkflowEpisodeRecorded`（阶段 F） | State | run_id、workflow_id、episode_digest、outcome（recorded/failed）、原因码 |
 | `WorkflowLessonRecorded`（阶段 F） | State | run_id、workflow_id、lesson_digest、outcome（recorded/failed）、原因码 |
+| `WorkflowRecoveryAttempted`（M14，DEC-031） | State | run_id、workflow_id、ordinal、task_id、outcome 五值闭集、reason_code、可选 decision_digest/patch_id/model_request_id、lessons_offered/stale/unparseable/kept 计数 |
 
 OfflineReplay 语义（`W-08`）：以上事件在回放中被识别并重建投影（对话视图、Run 视图），
 不派发输入、不调用工具、不发网络请求；已记录的 patch/决策结果显示为已发生事实。
@@ -505,9 +506,11 @@ Model 契约与置信度）、[DEC-028](../decisions/DEC-028-navigation-planner-
 - Agent 自动采纳/执行 lesson 的编排（Agent Harness 侧；`relevant_lessons` 只供数据）。
   该编排已由 [Workflow 恢复编排设计](workflow_recovery_orchestration_design.md) 与
   [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) 冻结为独立 Core 组件
-  `WorkflowRecoveryOrchestrator`，实现随 `MNT-202609-24` 立项的里程碑交付；其对本文
-  的唯一触达是 `WorkflowAgentContinuation` 四个增量字段与 v1 事件闭集新增
-  `WorkflowRecoveryAttempted`（实现时同步 §5 事件表）。
+  `WorkflowRecoveryOrchestrator`，并已随 [M14](../plans/m14-recovery-orchestration.md)
+  交付实现（2026-09-10）；其对本文的触达是 `WorkflowAgentContinuation` 四个增量字段
+  （`carrier_task_id`/`carrier_task_epoch`/`run_epoch`/`escalations`，`enter_waiting_agent`
+  在载体进入 `Recovering` 后刷新缓存 task epoch）与 v1 事件闭集新增
+  `WorkflowRecoveryAttempted`（§5 事件表已同步）。
 - 学习记录的专用持久化 schema（宿主 IMemory 后端承载；`RISK-2026-038` 沿袭）。
 - 训练数据导出（`RULE-12` 维持默认关闭）。
 

@@ -12,8 +12,9 @@ Platform Adapter 接入，Core 不依赖任何平台 SDK。所有异步任务、
 
 ## 当前能力状态
 
-Mira 已交付 M0–M4，阶段 A–F（M8–M13）的实现已合入并通过 Android 两 ABI 编译与安装包
-consumer 链接门禁；设备运行与宿主消费证据仍待补（见[实施总计划](docs/plans/mira-implementation-plan.md)）：
+Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M14）的实现已合入并通过
+Android 两 ABI 编译与安装包 consumer 链接门禁；设备运行与宿主消费证据仍待补
+（见[实施总计划](docs/plans/mira-implementation-plan.md)）：
 
 | 能力 | 状态 | 证据 |
 | --- | --- | --- |
@@ -23,10 +24,11 @@ consumer 链接门禁；设备运行与宿主消费证据仍待补（见[实施�
 | Context/Memory、Checkpoint、崩溃恢复、Replay | 已交付（M4） | [Stateful agent beta](docs/releases/stateful-agent-beta.md) |
 | Workflow 契约、执行、对话 patch 与策略 | 实现已交付（M8–M10），Android 设备运行待补 | [Workflow API](docs/api/workflow-contracts.md) |
 | 轨迹编译、任务归纳、App Model 与导航 | 实现已交付（M11/M12），Android 设备运行待补 | [Workflow 专项设计](docs/design/workflow_runtime_design.md) |
-| 四类记忆域、Episode/Lesson、失败检索 | 实现已交付（M13），Android 设备运行待补；Agent 采纳经验的恢复编排已冻结设计（DEC-031），实现待补 | [阶段 F 计划](docs/plans/m13-memory-and-learning-loop.md)、[恢复编排设计](docs/design/workflow_recovery_orchestration_design.md) |
+| 四类记忆域、Episode/Lesson、失败检索 | 实现已交付（M13），Android 设备运行待补 | [阶段 F 计划](docs/plans/m13-memory-and-learning-loop.md) |
+| `WaitingAgent` 恢复编排（模型决策修复 + `WorkflowRecoveryAttempted` 审计） | 实现已交付（M14，DEC-031），Android 设备运行与真实 Provider 证据待补 | [M14 计划](docs/plans/m14-recovery-orchestration.md)、[恢复编排设计](docs/design/workflow_recovery_orchestration_design.md) |
 
-下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：实现已冻结的
-Agent 恢复编排、定义最小评估 profile，再推进持久化取证、真实任务评估与 M7 重定义。
+下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：定义最小评估
+profile（含恢复编排对照组），再推进持久化取证、真实任务评估与 M7 重定义。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求

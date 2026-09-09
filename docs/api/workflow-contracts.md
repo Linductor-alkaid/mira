@@ -2,10 +2,10 @@
 
 > 适用头文件：`workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、
 > `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、
-> `workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`
-> （CMake 目标 `Mira::workflow`）
+> `workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`、
+> `workflow_recovery.hpp`（CMake 目标 `Mira::workflow`）
 > 状态：Active（M8 契约层；M9 起含执行闭环 `WorkflowRuntime`；M11 起含编译层；
-> M12 起含导航层；M13 起含学习层）
+> M12 起含导航层；M13 起含学习层；M14 起含恢复编排层）
 > 依据：[DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
 > [DEC-020](../decisions/DEC-020-workflow-run-lifecycle.md)、
 > [DEC-021](../decisions/DEC-021-workflow-tool-channel.md)、
@@ -328,6 +328,86 @@
 - Executor 路由（设计 §7）：episode/lesson 写与失败检索均为同步 IMemory 门面调用
   （后端自路由 store worker，M4 §17）；无新任务类别、timer 或私有并发；关闭顺序不变。
 
+## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
+
+- `WorkflowRecoveryOrchestrator`（Core，`mira_workflow` 目标内）：把一次失败升级变成
+  有界工作单元——脱敏上下文装配与 lesson 三层过滤 → 一次有界模型请求（归属载体
+  Task）→ 四动作闭集决策解析 → 经既有 `patch_run`/`resume_run`/`cancel_run` 出口提交 →
+  `WorkflowRecoveryAttempted` 审计事件。依赖 `WorkflowRuntime`/`ModelGateway`/
+  `MiraRuntime`/`IEventStore` 公开接口，不接触平台 API 与 `IMemory`；由宿主装配，
+  唯一触发面是通知（`attempt_recovery` 同步原语 / `start_recovery` + `wait_recovery`
+  异步面，后者经 `submit_auto` 承载并受 `max_concurrent_attempts` 约束）。
+- `WorkflowRecoveryConfig`（构造时 fail closed：零/负值、空 profile 拒绝）：
+  `max_attempts_per_run`（默认 8，耗尽 `DeferredToHost`）、`model_call_deadline`
+  （默认 30 s，经 `OperationContext.deadline` 传达，同时构成 shutdown drain 预算）、
+  `max_decision_repairs`（默认 1，决策解析失败与 patch 拒绝共用）、
+  `max_lessons_in_context`（默认 8）、`max_rationale_bytes`（默认 2 KiB）、
+  `max_concurrent_attempts`（默认 1）、`max_tracked_runs`（默认 32，优先淘汰已终态
+  Run）、`profile_id`（必填）。全部数值为**暂定默认值**（`RULE-10`），随
+  `MNT-202609-28/29` 评估校准。
+- 准入（阶段 1，全部满足才受理，拒绝确定性命名并审计）：Run 处于 `WaitingAgent`
+  （否则 `not-waiting-agent`——迟到/重复通知的幂等出口）、无在途 attempt（否则
+  `attempt-in-progress`，重复通知吸收不排队）、attempt 预算未耗尽（否则
+  `attempt-budget-exhausted` 上交宿主）、追踪表未超限（淘汰终态 Run 后仍超限则
+  `ResourceExhausted` 错误）。
+- 前置状态检查（阶段 2）：载体 Task 经 `MiraRuntime::task_snapshot` 复核——
+  `Recovering` 通过；`SuspendedForTakeover`/`TakeoverSettling` 出口 `takeover`
+  （DEC-018：被接管任务不准入导向新自主动作的工作）；终态/其余状态出口
+  `run-state-changed`（fail closed，不猜测）。
+- 上下文装配（阶段 3）：`agent_continuation` 的脱敏投影（run/workflow/digest、当前
+  步骤、失败 safe 摘要、已结算步骤历史、pending_decision、`escalations` 计数）；
+  **有效参数缺省只透出名称、值类型与 SHA-256 前 16 hex 内容摘要，不透出值**，宿主可经
+  `WorkflowRecoveryHooks::project_parameters` 提供白名单投影。lesson 三层处理：
+  解析层（`workflow_episode_from_json`/`recovery_lesson_from_json`，失败即丢弃并计数
+  fail closed）、失效层（`workflow_id` 或 `ir_digest` 漂移判失效，无跨版本复用开关）、
+  预算层（按 runtime 返回序截取 `max_lessons_in_context`，不重排）。过滤计数
+  `lessons_offered/stale/unparseable/kept` 全部进入审计事件。
+- 模型请求（阶段 4）：归属载体 Task（`carrier_task_id`/`carrier_task_epoch`，宿主
+  `TaskAdmissionGate` 对恢复请求与普通请求施加同一准入；epoch 隔离迟到响应）；每
+  attempt 至多 `1 + max_decision_repairs` 次请求；不暴露工具
+  （`ToolChoice::None`，恢复请求不得成为触达其他能力的旁路，`W-04`）；协作取消经
+  `OperationContext.cancellation_requested` 探针（`cancel_recovery`/`shutdown` 置位；
+  检查点在请求前、每次修复回合前、决策执行前）。
+- 决策 schema `mira.workflow.recovery-decision.v1`
+  （`workflow_recovery_decision_schema()`，通过 `gate_schema_subset`）：四动作闭集
+  `patch_and_resume|resume|cancel|need_user`；`patch_entries` 形状同 `patch_workflow`
+  并经 `parse_workflow_patch_entries` + `validate_workflow_patch_entry` 先期校验
+  （`patch_and_resume` 必须非空、其余动作不得携带）；`used_lessons` 为审计引用
+  （不构成任何权限，`RULE-09`）；`rationale` 有界（≤ `max_rationale_bytes`）且
+  **不进入任何事件**。解析失败（Malformed/Ambiguous/NoExecutableOutput/Incomplete/
+  ContentFiltered/Failed/ToolProposals）进入修复回合（携带 violation 摘要重新请求），
+  耗尽后 `DeferredToHost`（`decision-invalid`）；`Refused`（模型拒答）不消耗修复回合
+  直接 `decision-invalid`。
+- 决策执行（阶段 6，提交前重核 `run_snapshot`：状态非 `WaitingAgent` 出口
+  `run-state-changed`，`run_epoch` 与采样不一致出口 `epoch-advanced`——迟到模型响应
+  不可能作用到已变化的 Run，`RULE-03`；自身的 patch 提交合法推进 epoch 后基线更新）：
+  `patch_and_resume` = `patch_run`（生成 patch_id）成功后 `resume_run`（patch 拒绝进入
+  修复回合，耗尽 `DeferredToHost`（`patch-rejected:<code>`）；resume 拒绝
+  `resume-rejected`）；`resume` = 直接 `resume_run`；`cancel` = `cancel_run`（幂等）；
+  `need_user` = 不动 Run，`DeferredToHost`（`decision-need-user`，不升 `WaitingUser`
+  决策点）。
+- `WorkflowRecoveryOutcome` 五值闭集（`workflow_events.hpp`）：
+  `PatchedAndResumed`/`ResumedWithoutPatch`/`CancelRequested`（改变了 Run，经既有出口）；
+  `DeferredToHost`（请宿主决断）与 `Aborted`（外部条件终止：cancelled、takeover、
+  shutdown、run-state-changed、epoch-advanced、model-unavailable、resume-rejected、
+  not-waiting-agent/attempt-in-progress）共同不变量：**Run 保持 `WaitingAgent`**。
+- 审计事件 `WorkflowRecoveryAttempted`（v1 闭集扩展，State 类，
+  `mira.workflow.recovery-attempted.v1`，未知字段 fail closed）：run/workflow、ordinal、
+  载体 task_id、outcome、reason_code、可选 decision_digest/patch_id/model_request_id、
+  lesson 过滤计数——全链路关联键（ModelRequestPrepared 事件 → 决策 digest → patch 三
+  事件 → Run 升级上下文）。事件发射在编排器互斥锁外，失败转诊断计数器（结果不受
+  影响）；宿主回调 `on_attempt_settled` 异常隔离转诊断。
+- `WorkflowAgentContinuation` 增量字段（DEC-031 §7）：`carrier_task_id`、
+  `carrier_task_epoch`、`run_epoch`、`escalations`——既有 RunRecord 内部值透出，源码
+  兼容（同 DEC-030 `relevant_lessons` 先例）；`enter_waiting_agent` 在载体进入
+  `Recovering` 后刷新缓存的 task epoch，保证透出值为当前值。
+- 生命周期与关闭（设计 §7）：编排器互斥锁为叶子锁（runtime/gateway/控制面/事件调用
+  在锁外）；`shutdown()` 拒绝新通知 → 置位全部取消 → 有界 drain 在途 future（预算 =
+  `model_call_deadline × (2 + max_decision_repairs) + 2 s`）→ 报告
+  （clean/cancelled/drained 与诊断计数器）；编排器是 WorkflowRuntime 的任务生产者，
+  必须在其之前完成 `shutdown()`。Verify 归运行时（resume 后每步验证照常）、lesson 记录
+  归宿主（`record_recovery_lesson` 不变，DEC-030 §4）。
+
 ## 兼容性与限制
 
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
@@ -355,3 +435,12 @@
   首期（无 embedding 腿、无召回质量声明，`RULE-10`）；`relevant_lessons` 是
   `WorkflowAgentContinuation` 的**增量字段**（旧消费者源码兼容，紧序列化消费者需留意）；
   Agent 对 lesson 的采纳编排属 Agent Harness 侧（数据面只到续跑上下文为止）。
+- 恢复编排自 M14 起落地（DEC-031）：**前提是宿主装配编排器并传递升级通知**
+  （`WaitingAgent` 不会自动触发模型请求；升级可经 drive 结果与载体 Task 的
+  `Recovering` 转换观察）。模型修复质量不可预测（`RISK-2026-052`）：三层预算与
+  `DeferredToHost` 上交为缓解，无 `MNT-202609-29` 对照证据前不宣称恢复率改善；
+  参数投影缺省不带值可能降低修复质量（`RISK-2026-053`，宿主可经 hooks 放开白名单）。
+  按 DEC-030 §2，Completed Run 的 Episode 不携带失败签名标识（`failed_step_id` 仅
+  failure 结局记录），签名检索命中的 Episode 来自失败结局的 Run；成功恢复的经验经其
+  Lesson 检索复用。`epoch-advanced` 出口在现行公开语义下为防御性守卫（`run_epoch`
+  仅在状态转换时推进，状态检查已覆盖可观测竞态），保留 fail closed。

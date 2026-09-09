@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-10（`MNT-202609-23` 恢复编排设计冻结，DEC-031）
+> 更新日期：2026-09-10（`MNT-202609-24` 立项 M14：恢复编排实现开工，DEC-031）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -77,6 +77,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | Completed |
 | [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | Completed |
 | [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | Completed |
+| [M14](m14-recovery-orchestration.md) | Workflow 恢复编排（[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)：`WaitingAgent` 到 resume 的有界恢复闭环、恢复决策模型请求、`WorkflowRecoveryAttempted` 审计） | M13（`MNT-202609-24` 立项） | Workflow recovery alpha | In Progress |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -94,8 +95,8 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    证据已补齐并回填六个里程碑与平台矩阵。
 2. P1 `MNT-202609-23`–`26`：冻结并实现 Agent 采纳 lesson 的恢复编排——23 已于
    2026-09-10 完成（[恢复编排设计](../design/workflow_recovery_orchestration_design.md)
-   与 [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)），24 转
-   `Planned` 待立项里程碑实现；
+   与 [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)），24 已于
+   2026-09-10 立项 [M14](m14-recovery-orchestration.md)（`In Progress`）承载实现；
    `MNT-202609-25` 已完成——真实 SQLite 学习后端跨 owner 重建取证通过，慢/失败
    store 下取消与 shutdown 闭合，DEC-030 §5 事件重建配方缺口登记
    `BUG-20260909-002`（修订提案待立项）；26 依证据推进 Library/Run/App Model
@@ -259,7 +260,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md) | Navigation Planner 与 Navigate 步骤解析（阶段 E） | Accepted | M12 |
 | [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md) | Memory 四类组织与 Workflow 学习契约（阶段 F） | Accepted | M13 |
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
-| [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | `MNT-202609-24` 立项的里程碑 |
+| [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

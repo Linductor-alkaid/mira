@@ -138,8 +138,11 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   所有者/输入输出/失败出口（设计 §4），失败出口矩阵覆盖验收列举的全部场景（§8），
   全链路关联键为新增 `WorkflowRecoveryAttempted` 审计事件（§5.5）。证据见第 5 节
   2026-09-10 记录。
-- [ ] `MNT-202609-24`（Planned）实现上述编排与公共 consumer。依赖：22 的验收补齐（已完成）、
-  23 冻结（已完成，DEC-031）；开工时按 §1 规则创建对应里程碑承载 DEC-031 验证方式。
+- [ ] `MNT-202609-24`（In Progress）实现上述编排与公共 consumer。依赖：22 的验收补齐（已完成）、
+  23 冻结（已完成，DEC-031）；已按 §1 规则立项 [M14](m14-recovery-orchestration.md)
+  承载 DEC-031 验证方式。2026-09-10 实现与本地验证完成（编排器、增量字段、审计事件、
+  17 场景测试矩阵与 installed-consumer，本地全量 ctest/sanitizer/双 ABI 编译通过，见
+  M14 验证记录）；Release/Windows/quality 与完整 sanitizer 矩阵由 PR CI 取证后回填关闭。
   验收：recorded Provider 真正收到检索上下文并生成可验证修复；首次
   失败、恢复、再次命中全链路可追踪；恶意 lesson 不提升权限，取消/接管后无新增动作，
   终态不复活，正常/异常/拒绝/超时/shutdown 均有测试；真实 Provider 证据由 27 补齐。
@@ -328,3 +331,14 @@ lesson、取消、Takeover、迟到响应、两侧升级/恢复预算、模型�
 既有内容，仓库门禁接受，未改动）；`git diff --check` 通过。限制：本轮无代码变更，
 未执行 C++ 构建/CTest；恢复编排能力本身未实现，本记录只证明设计与决策冻结，不构成
 「Agent 采纳 lesson」的能力证据；PR CI（quality 含 docs 门禁）结果合并后回填。
+
+2026-09-10：`MNT-202609-24` 实现完成（详见 [M14 验证记录](m14-recovery-orchestration.md)）。
+新增 `WorkflowRecoveryOrchestrator`（七阶段管线、四动作决策闭集、lesson 三层过滤、
+提交前重核、三层预算、协作取消与 shutdown drain）、`WorkflowRecoveryAttempted` 审计
+事件（v1 闭集扩展）与 `WorkflowAgentContinuation` 四个增量字段；修复
+`enter_waiting_agent` 未刷新载体 task epoch 的记账缺口（透出的
+`carrier_task_epoch` 曾过期一拍）。本地：Debug 68/68、ASAN/UBSAN/TSAN 目标组、
+format/platform-boundary/docs 门禁、Android 两 ABI 编译 `mira_workflow` 通过；
+实现澄清（episode 检索语义、lesson 四元计数、`epoch-advanced` 守卫定位）记录于
+M14 文档与恢复编排设计 v1.0.1。任务保持未勾选，等待 PR CI（Release/Windows/quality/
+完整 sanitizer）回填后关闭；设备运行与真实 Provider 证据仍归 27。

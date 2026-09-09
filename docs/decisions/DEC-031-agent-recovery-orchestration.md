@@ -3,9 +3,7 @@
 > 状态：Accepted
 > 日期：2026-09-10
 > 负责人：Mira Maintainers
-> 冻结里程碑：随 `MNT-202609-24` 立项创建的里程碑（编号按
-> [阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) §1 规则在立项时分配，
-> 不预占）
+> 冻结里程碑：[M14](../plans/m14-recovery-orchestration.md)（`MNT-202609-24` 立项）
 > 替代/被替代：无（补全 [DEC-023](DEC-023-workflow-policy-set-runtime-semantics.md) 明确
 > 留白的「Agent 侧续跑编排」与 [DEC-030](DEC-030-learning-loop-runtime-semantics.md) §3
 > 「lesson 采纳属 Agent Harness 编排」；不改变二者已冻结语义）
