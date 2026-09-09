@@ -1,8 +1,8 @@
 # Mira Agent Harness 与 Workflow 架构设计
 
-> 状态：Active（阶段 A–F 实现已交付；Android 验收补齐中）
+> 状态：Active（阶段 A–F 实现已交付；Android 设备验收与 Agent 恢复编排实现待补）
 > 版本：0.2
-> 更新日期：2026-09-09
+> 更新日期：2026-09-10
 > 负责人：Mira Maintainers  
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)  
 > 适用范围：Mira 长期产品定位、Agent Harness 与 Workflow 系统分解、后续里程碑重定义
@@ -477,6 +477,13 @@ ask user / skip / abort`。修复后从当前执行点恢复。该恢复链复�
 RecoveryPolicy/错误分类语义（执行不确定不重发、先观察验证），只是决策者从固定策略
 升级为 Agent。
 
+Agent 侧的执行者已由 [Workflow 恢复编排设计](workflow_recovery_orchestration_design.md)
+与 [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) 冻结：独立 Core 组件
+`WorkflowRecoveryOrchestrator` 把一次失败升级变成一次有界、可取消、可审计的模型决策；
+v1 决策闭集为 `patch_and_resume / resume / cancel / need_user`（上述 `change selector`、
+`replace skill` 等表达为 patch 条目或留待后续扩展），`ask user` 在修复期不向用户提问而
+上交宿主。实现随 `MNT-202609-24` 立项的里程碑交付。
+
 ### 7.7 版本化
 
 Agent 或用户修改 Workflow 必须产生新版本，记录 `Who / Why / What Changed /
@@ -794,7 +801,9 @@ Android CI 漏构建 `mira_workflow`（`BUG-20260909-001`），六个里程碑�
 [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)、
 [M12](../plans/m12-app-model-and-navigation.md)、[M13](../plans/m13-memory-and-learning-loop.md)。
-后续优先补齐 Android 门禁；Harness 采纳 lesson、持久化恢复取证、真实平台与评估、
+后续优先补齐 Android 门禁；Harness 采纳 lesson 的编排已于 2026-09-10 由 DEC-031 与
+[Workflow 恢复编排设计](workflow_recovery_orchestration_design.md) 冻结（实现待
+`MNT-202609-24` 立项）；持久化恢复取证、真实平台与评估、
 Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) 跟踪。
 这不扩展既有 DEC，也不自动恢复 M5/M6 或解冻 M7。
 
@@ -811,8 +820,9 @@ Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-sta
 - **范围风险**：本方向显著扩大长期范围。缓解：阶段化落地（第 16 节），不改变 v1 现有
   边界，不自动恢复已终止里程碑。
 - **已冻结问题**：IR 表达、执行策略默认值、`WaitingUser/WaitingAgent` 状态映射与导航
-  搜索算法以 DEC-019/020/023/028 和 Workflow 专项设计为准。
-- **开放问题**：真实导航代价校准、跨进程资产恢复、Agent 采纳 lesson 的编排、Procedure
+  搜索算法以 DEC-019/020/023/028 和 Workflow 专项设计为准；Agent 采纳 lesson 的恢复
+  编排以 DEC-031 与恢复编排设计为准。
+- **开放问题**：真实导航代价校准、跨进程资产恢复、Procedure
   检索消费者、真实任务学习收益、多设备/多环境 App Model 命名空间及宿主 retention
   策略；由阶段 F 后续计划按证据收敛。
 

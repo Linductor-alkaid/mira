@@ -2,7 +2,7 @@
 
 > 状态：Active（阶段 F 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11、导航随 M12 交付，接口以代码与 API 手册为准）
 > 版本：0.6
-> 更新日期：2026-09-09
+> 更新日期：2026-09-10（§14.3/§15 增补恢复编排设计与 DEC-031 交叉引用）
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
 > [DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
@@ -503,13 +503,21 @@ Model 契约与置信度）、[DEC-028](../decisions/DEC-028-navigation-planner-
 - 对话式 `update_memory` 编排、User Model 扩展（M4 既有规则不变）。
 - Episode TTL/compaction 策略（宿主 retention 既有能力承载）。
 - Agent 自动采纳/执行 lesson 的编排（Agent Harness 侧；`relevant_lessons` 只供数据）。
+  该编排已由 [Workflow 恢复编排设计](workflow_recovery_orchestration_design.md) 与
+  [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) 冻结为独立 Core 组件
+  `WorkflowRecoveryOrchestrator`，实现随 `MNT-202609-24` 立项的里程碑交付；其对本文
+  的唯一触达是 `WorkflowAgentContinuation` 四个增量字段与 v1 事件闭集新增
+  `WorkflowRecoveryAttempted`（实现时同步 §5 事件表）。
 - 学习记录的专用持久化 schema（宿主 IMemory 后端承载；`RISK-2026-038` 沿袭）。
 - 训练数据导出（`RULE-12` 维持默认关闭）。
 
 ## 15. 关联文档
 
 - 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024、DEC-025、
-  DEC-026、DEC-027、DEC-028、DEC-029、DEC-030（及 DEC-015/016/017/018 既有边界）
+  DEC-026、DEC-027、DEC-028、DEC-029、DEC-030（及 DEC-015/016/017/018 既有边界）；
+  阶段 F 后续的 Agent 侧恢复编排见
+  [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) 与
+  [Workflow 恢复编排设计](workflow_recovery_orchestration_design.md)
 - 计划：[M8](../plans/m8-workflow-contracts.md)、
   [M9](../plans/m9-workflow-runtime-minimal-loop.md)、
   [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
