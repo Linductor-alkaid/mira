@@ -5,10 +5,13 @@
 #include <mira/state_store.hpp>
 #include <mira/workflow_compiler.hpp>
 #include <mira/workflow_ir.hpp>
+#include <mira/workflow_learning.hpp>
 #include <mira/workflow_runtime.hpp>
 #include <mira/workflow_tools.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -169,9 +172,12 @@ int main() {
     {
         executor::Executor host_executor;
         executor::ExecutorConfig host_config;
-        host_config.min_threads = 2;
-        host_config.max_threads = 2;
-        host_config.queue_capacity = 8;
+        // 4 threads: one async drive + its monitor + one step dispatch +
+        // one spare (M13 resumed drives occupy workers while waiting on
+        // step futures, mirroring the test fixture).
+        host_config.min_threads = 4;
+        host_config.max_threads = 4;
+        host_config.queue_capacity = 16;
         if (!host_executor.initialize(host_config)) {
             return 20;
         }
@@ -479,6 +485,223 @@ int main() {
             604'800'000);
         if (!mira::needs_exploration(decayed, 0.4)) {
             return 57;
+        }
+
+        // Learning loop (M13): the four-domain organization and the learning
+        // contracts are usable straight from the installed headers, and the
+        // runtime closes the loop through a host-supplied memory backend.
+        if (mira::memory_domain_of(mira::MemoryKind::RecoveryLesson) !=
+                mira::MemoryDomain::ProceduralMemory ||
+            mira::memory_kinds_of_domain(mira::MemoryDomain::EpisodicMemory).size() != 1) {
+            return 58;
+        }
+        mira::WorkflowEpisodeRecord episode_probe;
+        episode_probe.run_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        episode_probe.workflow_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        episode_probe.ir_digest = mira::digest_string("probe").to_string();
+        episode_probe.policy = "recoverable";
+        episode_probe.outcome = "failed";
+        episode_probe.failed_step_id = "cccccccccccccccccccccccccccccccc";
+        episode_probe.failure_reason_code = "mira.workflow:6";
+        episode_probe.recorded_at_ms = 1;
+        auto episode_rebuilt =
+            mira::workflow_episode_from_json(mira::workflow_episode_to_json(episode_probe));
+        if (!episode_rebuilt.has_value() || !(episode_rebuilt.value() == episode_probe)) {
+            return 59;
+        }
+        mira::WorkflowFailureSignature signature;
+        signature.workflow_id = episode_probe.workflow_id;
+        signature.step_id = episode_probe.failed_step_id.value_or(std::string{});
+        signature.reason_code = episode_probe.failure_reason_code.value_or(
+            std::string{"mira.workflow:6"});
+        mira::MemoryScope learning_scope;
+        learning_scope.kind = mira::MemoryScopeKind::Agent;
+        learning_scope.subject_id = "consumer.learning";
+        const auto probe_record = mira::episode_to_memory_record(
+            episode_probe, learning_scope, {mira::EventId::generate()},
+            std::chrono::system_clock::now());
+        if (!probe_record.validate().has_value()) {
+            return 60;
+        }
+        const auto retrieval = mira::failure_retrieval_query(signature, learning_scope);
+        if (!retrieval.has_value() || retrieval.value().exact_terms.size() != 2 ||
+            !retrieval.value().query_embedding.empty()) {
+            return 61;
+        }
+
+        class ConsumerMemory final : public mira::IMemory {
+          public:
+            mira::Result<mira::MemoryQueryResult>
+            query(const mira::MemoryQuery &query) const override {
+                mira::MemoryQueryResult result;
+                for (const auto &record : records_) {
+                    const bool scope_ok = std::any_of(
+                        query.scopes.begin(), query.scopes.end(),
+                        [&](const mira::MemoryScope &scope) { return scope == record.scope; });
+                    const bool kind_ok =
+                        !query.kinds.has_value() ||
+                        std::find(query.kinds->begin(), query.kinds->end(), record.kind) !=
+                            query.kinds->end();
+                    if (!scope_ok || !kind_ok) {
+                        continue;
+                    }
+                    bool terms_ok = true;
+                    for (const auto &term : query.exact_terms) {
+                        if (record.statement.find(term) == std::string::npos) {
+                            terms_ok = false;
+                        }
+                    }
+                    if (terms_ok) {
+                        result.records.push_back(record);
+                        result.scores.push_back(1.0);
+                    }
+                }
+                result.quality.exact_leg_ran = true;
+                return result;
+            }
+            mira::Result<std::optional<mira::MemoryRecord>>
+            get(mira::MemoryId record) const override {
+                for (const auto &stored : records_) {
+                    if (stored.id == record) {
+                        return std::optional<mira::MemoryRecord>{stored};
+                    }
+                }
+                return std::optional<mira::MemoryRecord>{};
+            }
+            mira::Result<mira::MemoryMutationResult>
+            apply(const mira::MemoryMutation &mutation) override {
+                if (auto valid = mutation.validate(); !valid.has_value()) {
+                    return valid.error();
+                }
+                ++applies;
+                records_.push_back(mutation.proposed);
+                mira::MemoryMutationResult result;
+                result.record = mutation.proposed.id;
+                return result;
+            }
+            mira::Result<mira::MemoryCompactionResult>
+            compact(const mira::MemoryScope &) override {
+                return mira::MemoryCompactionResult{};
+            }
+            mira::Result<mira::ErasureResult> erase(const mira::ErasureRequest &) override {
+                mira::ErasureResult result;
+                result.status = mira::ErasureStatus::Complete;
+                return result;
+            }
+            std::vector<mira::MemoryRecord> records_;
+            int applies = 0;
+        };
+        auto learning = std::make_shared<ConsumerMemory>();
+        // Learning writes need traceable provenance: wire an event store so
+        // settlements anchor the memory records (DEC-030 §2).
+        workflows.set_event_store(std::make_shared<mira::MemoryEventStore>());
+        if (!workflows.set_learning_context(learning, learning_scope).has_value()) {
+            return 62;
+        }
+        int failing_dispatches = 0;
+        mira::BuiltinToolRegistration flaky;
+        flaky.spec.wire_name = "consumer_flaky";
+        flaky.spec.description = "consumer learning failure source";
+        flaky.spec.parameters_schema = mira::JsonSchema{mira::parse_json(R"json({
+            "type": "object",
+            "properties": {"payload": {"type": "string"}},
+            "additionalProperties": false
+        })json").value()};
+        flaky.spec.has_side_effects = false;
+        flaky.handler = [&failing_dispatches](const mira::JsonValue &,
+                                              const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+            if (++failing_dispatches <= 2) {
+                mira::Error error;
+                error.code = mira::ErrorCode::PlatformError;
+                error.domain = "mira.consumer";
+                error.safe_message = "scripted consumer failure";
+                return error;
+            }
+            return mira::JsonValue{"sent"};
+        };
+        if (!tools->register_tool(flaky.spec, flaky.handler)) {
+            return 63;
+        }
+        const char *learning_ir = R"({
+            "schema_version": {"major": 1, "minor": 0},
+            "workflow_id": "dddddddddddddddddddddddddddddddd",
+            "name": "consumer-learning",
+            "steps": [
+                {"step_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "tool_call",
+                 "arguments": {"tool": "consumer_flaky", "payload": "p"}}
+            ],
+            "default_policy": "strict",
+            "allowed_policies": ["strict", "recoverable"]
+        })";
+        auto learnable = mira::parse_workflow_definition(learning_ir);
+        if (!learnable.has_value()) {
+            return 64;
+        }
+        const auto failed_run = workflows.create_run(learnable.value(),
+                                                     mira::JsonValue{mira::JsonValue::Object{}},
+                                                     mira::WorkflowPolicy::Strict);
+        const auto failed_outcome =
+            failed_run.has_value()
+                ? workflows.execute_run(failed_run.value().run_id, context)
+                : mira::Result<mira::WorkflowRunResult>{mira::Error{}};
+        if (!failed_outcome.has_value() ||
+            failed_outcome.value().state != mira::WorkflowRunState::Failed) {
+            return 65;
+        }
+        const auto recovered_run = workflows.create_run(
+            learnable.value(), mira::JsonValue{mira::JsonValue::Object{}},
+            mira::WorkflowPolicy::Recoverable);
+        if (!recovered_run.has_value()) {
+            return 66;
+        }
+        const auto escalated = workflows.execute_run(recovered_run.value().run_id, context);
+        if (!escalated.has_value() ||
+            escalated.value().state != mira::WorkflowRunState::WaitingAgent) {
+            return 67;
+        }
+        const auto continuation = workflows.agent_continuation(recovered_run.value().run_id);
+        if (!continuation.has_value() ||
+            continuation.value().relevant_lessons.size() != 1 ||
+            continuation.value().relevant_lessons[0].kind != mira::MemoryKind::Episode) {
+            return 68;
+        }
+        const auto resumed = workflows.resume_run(recovered_run.value().run_id);
+        if (!resumed.has_value()) {
+            std::cerr << "resume failed: " << resumed.error().safe_message << '\n';
+            return 69;
+        }
+        const auto recovered_outcome =
+            workflows.wait_run(recovered_run.value().run_id, std::chrono::seconds(10));
+        if (!recovered_outcome.has_value()) {
+            std::cerr << "wait failed: " << recovered_outcome.error().safe_message << '\n';
+            return 74;
+        }
+        if (recovered_outcome.value().state != mira::WorkflowRunState::Completed) {
+            std::cerr << "recovered state: "
+                      << mira::workflow_run_state_name(recovered_outcome.value().state)
+                      << " summary: " << recovered_outcome.value().safe_summary << '\n';
+            return 75;
+        }
+        const auto lesson = workflows.record_recovery_lesson(recovered_run.value().run_id);
+        if (!lesson.has_value() || !lesson.value().resumed_without_patch ||
+            lesson.value().outcome != "recovered") {
+            return 70;
+        }
+        if (learning->records_.size() != 3 || learning->applies != 3) {
+            return 71;
+        }
+        mira::MemoryQuery lesson_query;
+        lesson_query.scopes = {learning_scope};
+        lesson_query.kinds = std::vector<mira::MemoryKind>{mira::MemoryKind::RecoveryLesson};
+        lesson_query.exact_terms = {learnable.value().workflow_id.to_string()};
+        const auto lessons_found = learning->query(lesson_query);
+        if (!lessons_found.has_value() || lessons_found.value().records.size() != 1) {
+            return 72;
+        }
+        auto parsed_lesson =
+            mira::recovery_lesson_from_record(lessons_found.value().records.front());
+        if (!parsed_lesson.has_value() || !(parsed_lesson.value() == lesson.value())) {
+            return 73;
         }
 
         const auto report = workflows.shutdown();

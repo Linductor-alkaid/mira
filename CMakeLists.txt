@@ -133,6 +133,7 @@ add_library(mira_workflow
     src/workflow/workflow_runtime.cpp
     src/workflow/workflow_compiler.cpp
     src/workflow/workflow_navigation.cpp
+    src/workflow/workflow_learning.cpp
 )
 add_library(Mira::workflow ALIAS mira_workflow)
 target_include_directories(mira_workflow

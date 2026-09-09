@@ -1,7 +1,7 @@
 # Workflow Runtime 设计
 
-> 状态：Active（阶段 E 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11 交付，接口以代码与 API 手册为准）
-> 版本：0.5
+> 状态：Active（阶段 F 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11、导航随 M12 交付，接口以代码与 API 手册为准）
+> 版本：0.6
 > 更新日期：2026-09-09
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
@@ -14,9 +14,11 @@
 > [DEC-025](../decisions/DEC-025-success-trajectory-compilation-and-publish-gate.md)、
 > [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)、
 > [DEC-027](../decisions/DEC-027-app-model-contract-and-confidence.md)、
-> [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)
+> [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)、
+> [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md)、
+> [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md)
 > 适用范围：Workflow 双路径的契约层（M8 已交付部分）、执行层（阶段 B/C）、编译层
-> （阶段 D）与导航层（阶段 E）
+> （阶段 D）、导航层（阶段 E）与学习层（阶段 F）
 
 ## 1. 文档目的与效力
 
@@ -28,7 +30,8 @@
 由 [M10](../plans/m10-workflow-intervention-and-policy-set.md) 承载；阶段 D（成功轨迹
 编译与任务归纳）的实施规范见第 12 节，由 [M11](../plans/m11-trajectory-compilation-and-task-induction.md)
 承载；阶段 E（App Model 与导航）的实施规范见第 13 节，由
-[M12](../plans/m12-app-model-and-navigation.md) 承载。
+[M12](../plans/m12-app-model-and-navigation.md) 承载；阶段 F（Memory 与学习闭环）的
+实施规范见第 14 节，由 [M13](../plans/m13-memory-and-learning-loop.md) 承载。
 
 效力约定：
 
@@ -135,6 +138,8 @@ RecoveryHook
 | `WorkflowDecisionRaised/Resolved` | State | decision_id、payload_digest、resolution（accept/reject/cancel_run） |
 | `WorkflowPublishProposed/Applied/Rejected`（阶段 D） | State | workflow_id、ir_digest、source_run_id、evidence、原因码 |
 | `WorkflowNavigationPlanned/Observed`（阶段 E） | State | run_id、step_id、from/to 状态、edge_count、plan_digest、total_cost、guard 计数；transition_id、success、confidence |
+| `WorkflowEpisodeRecorded`（阶段 F） | State | run_id、workflow_id、episode_digest、outcome（recorded/failed）、原因码 |
+| `WorkflowLessonRecorded`（阶段 F） | State | run_id、workflow_id、lesson_digest、outcome（recorded/failed）、原因码 |
 
 OfflineReplay 语义（`W-08`）：以上事件在回放中被识别并重建投影（对话视图、Run 视图），
 不派发输入、不调用工具、不发网络请求；已记录的 patch/决策结果显示为已发生事实。
@@ -176,6 +181,9 @@ M8 契约层全部为同步纯函数，无异步路径。M9 交付的路由表�
 | 读屏（ScreenStateProvider 回调，阶段 E） | 驱动/调用线程同步回调 | 宿主 | 宿主保证非阻塞；失败或缺席即 fail closed |
 | 导航边动作派发（Navigate 步逐边，阶段 E） | `submit_auto` 普通有限任务（复用步骤执行通道） | 驱动任务 | 计入 Run 步预算；异常转步骤失败 |
 | 置信度回写（阶段 E） | 调用线程（互斥下投影更新） | 无 | 更新是纯函数；事件在锁外发射 |
+| Episode 记录（结算期 `IMemory.apply`，阶段 F） | 结算线程同步门面（后端自路由 store worker） | 无新任务 | 失败转诊断计数器与审计事件，不影响终态 |
+| 失败检索（升级期 `IMemory.query`，阶段 F） | 驱动线程同步门面、有界 deadline | 无新任务 | 失败/超时降级为空结果 + 诊断计数器 |
+| Lesson 记录（`record_recovery_lesson`，阶段 F） | 调用线程同步门面 | 无新任务 | 失败对调用方可见（Result 错误）+ 审计事件 |
 | patch 应用（步边界排水 / 等待态直达） | 调用线程（控制面提交）或驱动任务（排水） | 无新任务 | 校验失败确定性拒绝；事件在锁外发射 |
 | 周期性健康检查 | timer 能力（随首个需要它的阶段立项，M10 非目标） | Runtime 生命周期所有者 | 停止时取消 |
 | 实时连续控制（若 Workflow 含连续步骤） | realtime/low-latency 能力 | Runtime，watchdog 约束 | `Up/Cancel` 安全收敛（`RULE-06`） |
@@ -223,6 +231,7 @@ mira-workflow (Mira::workflow)
 ├── workflow_tools.hpp        五操作 schema 与本地校验（M8-11）
 ├── workflow_compiler.hpp     轨迹契约、编译与归纳纯函数（阶段 D，DEC-025/026）
 ├── workflow_navigation.hpp   App Model 契约、置信度与导航规划纯函数（阶段 E，DEC-027/028）
+├── workflow_learning.hpp     Memory 四类域、Episode/Lesson 契约与失败检索纯函数（阶段 F，DEC-029/030）
 └── workflow_runtime.hpp      执行闭环：Run 表、驱动、控制与四操作 handler（M9）
 ```
 
@@ -256,6 +265,16 @@ Runtime 执行体依赖 Workflow 契约，方向不变。
   `navigate-no-screen-state`、目标未声明、工具缺失、置信度回写与两员事件、DryRun
   真实规划、step 预算计入、取消 Stale、policy patch 门禁放松）、谓词矩阵
   （`screen_state` 绑定求值与缺席 fail closed 回归）。
+- **阶段 F 增量**（DEC-029/030 验证方式的里程碑化）：域矩阵（`MemoryKind` 全集映射
+  逐值、逆映射覆盖、name/parse 负向）、契约矩阵（Episode/Lesson/签名 JSON 往返、
+  fail closed、digest 确定性、消毒规则负向）、转换矩阵（`to_memory_record` 逐字段且过
+  `MemoryRecord::validate`、lesson 往返与非 canonical fail closed、纯函数性）、查询矩阵
+  （同签名同查询、kinds 恒为 Episodic 服务子集、limits 负向）、结算矩阵（三终态记录、
+  DryRun/未装上下文零记录、写失败不影响终态、幂等）、升级矩阵（失败驱动检索进入
+  `relevant_lessons`、检查点让渡不检索、查询失败降级、条数上限）、Lesson 矩阵（准入
+  负向、两形态派生、幂等、失败可见）、事件矩阵（两员往返与闭集扩展、离线回放无
+  IMemory 调用）、端到端（失败 -> Episode -> 恢复完成 -> Lesson -> 再失败检索同时命中
+  两者）。
 - 门禁：既有 ASAN/UBSAN/TSAN 矩阵与 installed-consumer 覆盖 `Mira::workflow`。
 
 ## 11. 阶段 C 实施规范（策略全集、对话 patch 与决策点）
@@ -435,14 +454,67 @@ Model 契约与置信度）、[DEC-028](../decisions/DEC-028-navigation-planner-
 - App Model 持久化与跨进程重建（`RISK-2026-038` 沿袭推迟）。
 - 代价权重与置信度参数的目标平台校准（`RULE-10`：缺省值为暂定，未实测）。
 
-## 14. 关联文档
+## 14. 阶段 F 实施规范（Memory 四类组织、失败检索与学习闭环）
+
+规范来源：[DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md)
+（四类域组织与学习契约）、[DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md)
+（学习闭环运行时语义）。本节为里程碑 [M13](../plans/m13-memory-and-learning-loop.md)
+的入口摘要；语义细节以决策为准。
+
+### 14.1 四类域组织与学习契约
+
+- `MemoryDomain`（environment/user/procedural/episodic 封闭集）是 `MemoryKind` 之上的
+  确定性全映射与域级检索视图，不是新存储分层；不改变 `IMemory`、scope/ACL 与 M4
+  审批规则。Environment 域的图级载体是 M12 `AppModel` 投影；Procedural 域的版本化
+  本体是 M11 Workflow 库。
+- `WorkflowEpisodeRecord`（终态 Run 的结构化情景：身份、策略、outcome、失败签名、
+  升级/检查点计数）与 `WorkflowRecoveryLesson`（失败签名 + 恢复动作序列 + 恢复完成）
+  是版本化公共契约：JSON 往返 fail closed、内容寻址 digest、statement 只含 ID/digest/
+  枚举/原因码/计数器（脱敏面同 DEC-022 §5）。
+- `episode_to_memory_record`/`recovery_lesson_to_memory_record` 为纯函数
+  （verification=Verified、confidence=1.0、provenance=RunSettled 事件）；记录 ID 与
+  mutation ID 从 run_id 经 SHA-256 派生（幂等重放友好）。
+- `failure_retrieval_query`（签名 -> `MemoryQuery`）：kinds 恒为 `{Episode,
+  RecoveryLesson}`、exact_terms 为签名标识、无 embedding 腿；同签名同查询。
+
+### 14.2 运行时集成
+
+- 学习上下文：`set_learning_context(memory, scope, config)` 安装即启用；scope 拒绝
+  `User`；未安装时一切学习路径 NoOp（M12 行为回归锁定）。
+- 结算期 Episode 记录：`settle_terminal` 完成 Task 结算后在结算线程同步执行；DryRun
+  跳过（设计行为，无事件）；写失败不影响终态，转诊断计数器 + `WorkflowEpisodeRecorded`
+  （failed）。
+- 失败检索：仅失败驱动升级（`escalate_waiting_agent`）在驱动线程同步查询；结果存
+  RunRecord 并经 `agent_continuation().relevant_lessons` 透出（增量字段）；检查点让渡
+  不检索；查询失败降级为空结果；结果条数/token/deadline 受配置约束（`RULE-08`）。
+- Lesson 记录：`record_recovery_lesson(run_id)` 为宿主专用 API（不注册为模型工具，
+  `W-04`）；准入 = Completed + 非 DryRun + 失败升级计数 > 0 + 学习上下文已安装；
+  恢复动作取最后一次失败升级后应用的 patch（无 patch 时 `resumed_without_patch`）；
+  mutation-id 幂等。
+- 事件：`WorkflowEpisodeRecorded`/`WorkflowLessonRecorded` 两员入 v1 闭集；
+  OfflineReplay 识别且不调用 IMemory；学习投影按 DEC-030 §5 配方从事件流重建
+  （`W-03`）。
+
+### 14.3 显式非目标（阶段 F 内）
+
+- Workflow/Skill 版本资产自动索引为 Procedure 记录：无检索消费者，推迟（DEC-029
+  备选方案）。
+- 检索向量腿、排序调优、召回质量声明（`RULE-10`：exact+FTS 两腿为保守首期）。
+- 对话式 `update_memory` 编排、User Model 扩展（M4 既有规则不变）。
+- Episode TTL/compaction 策略（宿主 retention 既有能力承载）。
+- Agent 自动采纳/执行 lesson 的编排（Agent Harness 侧；`relevant_lessons` 只供数据）。
+- 学习记录的专用持久化 schema（宿主 IMemory 后端承载；`RISK-2026-038` 沿袭）。
+- 训练数据导出（`RULE-12` 维持默认关闭）。
+
+## 15. 关联文档
 
 - 决策：DEC-014、DEC-019、DEC-020、DEC-021、DEC-022、DEC-023、DEC-024、DEC-025、
-  DEC-026、DEC-027、DEC-028（及 DEC-015/016/017/018 既有边界）
+  DEC-026、DEC-027、DEC-028、DEC-029、DEC-030（及 DEC-015/016/017/018 既有边界）
 - 计划：[M8](../plans/m8-workflow-contracts.md)、
   [M9](../plans/m9-workflow-runtime-minimal-loop.md)、
   [M10](../plans/m10-workflow-intervention-and-policy-set.md)、
   [M11](../plans/m11-trajectory-compilation-and-task-induction.md)、
-  [M12](../plans/m12-app-model-and-navigation.md)
+  [M12](../plans/m12-app-model-and-navigation.md)、
+  [M13](../plans/m13-memory-and-learning-loop.md)
 - 参考研究：[Agent Harness 参考研究](harness_reference_study.md) §5.3/§6
 - API：[workflow-contracts](../api/workflow-contracts.md)

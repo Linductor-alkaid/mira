@@ -147,6 +147,22 @@ constexpr std::string_view kNavigationObservedKeys[] = {
         "success",
         "confidence",
 };
+constexpr std::string_view kEpisodeRecordedKeys[] = {
+        "schema",
+        "run_id",
+        "workflow_id",
+        "episode_digest",
+        "outcome",
+        "reason_code",
+};
+constexpr std::string_view kLessonRecordedKeys[] = {
+        "schema",
+        "run_id",
+        "workflow_id",
+        "lesson_digest",
+        "outcome",
+        "reason_code",
+};
 
 // App Model identifiers are host contract strings (DEC-027), bounded by the
 // model limits; payloads enforce the same bound.
@@ -233,6 +249,7 @@ bool is_workflow_event_type(std::string_view type) {
         "WorkflowPatchRejected", "WorkflowPolicySwitched", "WorkflowDecisionRaised",
         "WorkflowDecisionResolved", "WorkflowPublishProposed", "WorkflowPublishApplied",
         "WorkflowPublishRejected", "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
+        "WorkflowEpisodeRecorded", "WorkflowLessonRecorded",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -1151,6 +1168,143 @@ parse_workflow_navigation_observed(const EventPayload &payload) {
                            "payload member 'confidence' must be within [0,1]");
     }
     event.confidence = confidence->as_number().value();
+    return event;
+}
+
+// --- Workflow learning audit (stage F, DEC-030 §5) ---------------------------
+
+namespace {
+
+[[nodiscard]] Result<std::string> parse_learning_outcome(const JsonValue &json) {
+    const auto *outcome = json.find("outcome");
+    if (outcome == nullptr || !outcome->is_string()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'outcome' must be a string");
+    }
+    const auto &text = *outcome->as_string();
+    if (text != "recorded" && text != "failed") {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'outcome' is outside the closed set");
+    }
+    return text;
+}
+
+[[nodiscard]] Result<std::string> parse_learning_reason_code(const JsonValue &json) {
+    const auto *reason = json.find("reason_code");
+    if (reason == nullptr || !reason->is_string()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'reason_code' must be a string");
+    }
+    return *reason->as_string();
+}
+
+} // namespace
+
+EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.episode-recorded.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("episode_digest", digest_text(event.episode_digest));
+    object.emplace_back("outcome", event.outcome);
+    object.emplace_back("reason_code", event.reason_code);
+    EventPayload payload;
+    payload.type = "WorkflowEpisodeRecorded";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowEpisodeRecordedEvent> parse_workflow_episode_recorded(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowEpisodeRecorded",
+                              "mira.workflow.episode-recorded.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kEpisodeRecordedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowEpisodeRecordedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "episode_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.episode_digest = digest.value();
+    auto outcome = parse_learning_outcome(json.value());
+    if (!outcome.has_value()) {
+        return outcome.error();
+    }
+    event.outcome = outcome.value();
+    auto reason = parse_learning_reason_code(json.value());
+    if (!reason.has_value()) {
+        return reason.error();
+    }
+    event.reason_code = reason.value();
+    return event;
+}
+
+EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.lesson-recorded.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("lesson_digest", digest_text(event.lesson_digest));
+    object.emplace_back("outcome", event.outcome);
+    object.emplace_back("reason_code", event.reason_code);
+    EventPayload payload;
+    payload.type = "WorkflowLessonRecorded";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowLessonRecordedEvent> parse_workflow_lesson_recorded(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowLessonRecorded",
+                              "mira.workflow.lesson-recorded.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kLessonRecordedKeys);
+        !check.has_value()) {
+        return check.error();
+    }
+    WorkflowLessonRecordedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "lesson_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.lesson_digest = digest.value();
+    auto outcome = parse_learning_outcome(json.value());
+    if (!outcome.has_value()) {
+        return outcome.error();
+    }
+    event.outcome = outcome.value();
+    auto reason = parse_learning_reason_code(json.value());
+    if (!reason.has_value()) {
+        return reason.error();
+    }
+    event.reason_code = reason.value();
     return event;
 }
 

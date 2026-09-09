@@ -346,3 +346,27 @@ endfunction()
 mira_add_m12_test(mira_m12_contract_test m12/m12_contract_test.cpp)
 mira_add_m12_test(mira_m12_navigation_test m12/m12_navigation_test.cpp)
 mira_add_m12_test(mira_m12_events_test m12/m12_events_test.cpp)
+
+# ---------------------------------------------------------------------------
+# M13: stage F - memory domains and the learning loop
+# ---------------------------------------------------------------------------
+
+function(mira_add_m13_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m13" TIMEOUT 120)
+endfunction()
+
+mira_add_m13_test(mira_m13_contract_test m13/m13_contract_test.cpp)
+mira_add_m13_test(mira_m13_learning_test m13/m13_learning_test.cpp)
+mira_add_m13_test(mira_m13_events_test m13/m13_events_test.cpp)
