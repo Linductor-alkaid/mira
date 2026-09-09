@@ -727,7 +727,6 @@ JsonValue WorkflowRecoveryOrchestrator::assemble_context(
     // Lesson three-layer filtering (DEC-031 §4): parse fail closed, drop
     // version-stale, truncate to the context budget in runtime return order.
     JsonValue::Array lessons;
-    const std::string expected_digest = continuation.ir_digest.to_string();
     const std::string expected_workflow = continuation.workflow_id.to_string();
     for (const auto &lesson : continuation.relevant_lessons) {
         ++offered;
