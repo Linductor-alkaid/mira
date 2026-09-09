@@ -370,3 +370,25 @@ endfunction()
 mira_add_m13_test(mira_m13_contract_test m13/m13_contract_test.cpp)
 mira_add_m13_test(mira_m13_learning_test m13/m13_learning_test.cpp)
 mira_add_m13_test(mira_m13_events_test m13/m13_events_test.cpp)
+
+# MNT-202609-25: learning persistence against the real SQLite backend and the
+# DEC-030 §5 event-rebuild recipe need Mira::state_store as well.
+function(mira_add_m13_persistence_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter Mira::state_store
+        executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m13" TIMEOUT 300)
+endfunction()
+
+mira_add_m13_persistence_test(mira_m13_learning_persistence_test
+    m13/m13_learning_persistence_test.cpp)
