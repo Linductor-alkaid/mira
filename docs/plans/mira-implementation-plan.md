@@ -2,7 +2,7 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-09（M13 实施中）
+> 更新日期：2026-09-09（M13 关闭）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -76,7 +76,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
 | [M11](m11-trajectory-compilation-and-task-induction.md) | 成功轨迹编译与任务归纳（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 D：轨迹采集、编译、归纳、DryRun 入库门禁） | M9（阶段 B；M10 生效态为输入） | Workflow compilation alpha | Completed |
 | [M12](m12-app-model-and-navigation.md) | App Model 与导航（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 E：UI 状态图、Navigation Planner、GUI Mapping 数据面、置信度、`screen_state` 谓词） | M9（阶段 B；感知能力按 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)） | Workflow navigation alpha | Completed |
-| [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | In Progress |
+| [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | Completed |
 
 `M0 -> M1 -> M2 -> M3 -> M4` 已完成。2026-09-05 起（
 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)），`M3 -> M5 -> M6`
@@ -173,8 +173,18 @@ string-concatenation` 与 `bugprone-branch-clone`——修复后复验），M12 
 纯转换与失败检索查询构建）与 `WorkflowRuntime` 学习集成（`set_learning_context`、
 结算期 Episode 记录、失败驱动升级的检索进入 `agent_continuation().relevant_lessons`、
 `record_recovery_lesson` 恢复复用闭环、两员学习审计事件）；本机全矩阵
-（Debug/Release/ASAN/UBSAN 66/66、TSAN 65/65、本地门禁）通过，Windows/Android 构建组
-合与 clang-tidy 由 PR CI 补验后随验证记录回填关闭。
+（Debug/Release/ASAN/UBSAN 66/66、TSAN 65/65、本地门禁）通过；PR
+[#34](https://github.com/Linductor-alkaid/mira/pull/34) CI 全绿（head `bff2fe3`，push
+pipeline run [`34310027223`](https://github.com/Linductor-alkaid/mira/actions/runs/34310027223)、
+pull_request pipeline run
+[`34310029920`](https://github.com/Linductor-alkaid/mira/actions/runs/34310029920)）：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与
+x86_64（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过（两轮修复后复验：MSVC 需要 `<numeric>` 提供
+`std::accumulate`；clang-tidy `optin.performance.Padding` 要求 RunRecord 按对齐分组
+重排字段），M13 关闭（`Completed`）。DEC-014 阶段 A–F 至此全部交付；后续方向（真实
+平台 Adapter 契约验证与 M7 重定义、阶段 F 显式非目标中的 Procedure 索引/失败检索
+向量腿/Agent 采纳 lesson 的编排）按证据另行立项，不设隐式关键路径。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02

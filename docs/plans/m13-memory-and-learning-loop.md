@@ -1,6 +1,6 @@
 # M13：Memory 与学习闭环（阶段 F）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M11](m11-trajectory-compilation-and-task-induction.md)、
@@ -125,7 +125,7 @@ Episode 记录、失败驱动升级时的检索进入 `agent_continuation`、恢
 - [x] `M13-08` 端到端取证：失败 → Episode → 恢复完成 → Lesson → 再失败检索同时命中
   两者的闭环用例；installed-consumer 用例（域映射、契约转换、检索查询直接使用 +
   Runtime 学习上下文安装与 lesson 记录）。
-- [ ] `M13-09` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [x] `M13-09` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer；总计划、设计文档（v0.6）、
   API 手册与 DEC 注记同步后关闭里程碑。
 
@@ -158,34 +158,34 @@ worker 线程 `executor.shutdown(true)`；学习路径无待排空队列。
 ## 7. 测试与退出条件
 
 - [x] `M13-01` 至 `M13-08` 全部完成并有可复现验证记录。
-- [ ] 域矩阵：`memory_domain_of` 全部 `MemoryKind` 逐值断言；逆映射覆盖全域且元素
+- [x] 域矩阵：`memory_domain_of` 全部 `MemoryKind` 逐值断言；逆映射覆盖全域且元素
   完整；name/parse 正反向与未知名字负向。
-- [ ] 契约矩阵：Episode/Lesson/签名 JSON 往返无损；未知字段、未知版本、未知枚举、
+- [x] 契约矩阵：Episode/Lesson/签名 JSON 往返无损；未知字段、未知版本、未知枚举、
   空 ID、负计数、超限字段、非法字符 reason_code fail closed；digest 确定性（同内容
   两次相等、一次改动即变）。
-- [ ] 转换矩阵：`to_memory_record` 产物 kind/verification/confidence/provenance/
+- [x] 转换矩阵：`to_memory_record` 产物 kind/verification/confidence/provenance/
   validity/scope 逐字段断言且通过 `MemoryRecord::validate` 与 `MemoryMutation`
   （Add 形态）校验；lesson canonical 往返相等、非 canonical statement fail closed；
   ID 派生确定性（同种子同 ID）。
-- [ ] 查询矩阵：同签名同查询逐字段断言；kinds 恒为 `{Episode, RecoveryLesson}`；
+- [x] 查询矩阵：同签名同查询逐字段断言；kinds 恒为 `{Episode, RecoveryLesson}`；
   step_id 缺席不进 exact_terms；零/越界 limits 负向。
-- [ ] 结算矩阵：非 DryRun 三终态（Completed/Failed/Cancelled）各记录一条 Episode
+- [x] 结算矩阵：非 DryRun 三终态（Completed/Failed/Cancelled）各记录一条 Episode
   （字段逐值）；DryRun 完成零记录；未装学习上下文零记录（M12 行为回归）；memory 写
   失败不影响终态与 Task 结算、计数器与 failed 事件到位；同 Run 重复结算幂等。
-- [ ] 升级矩阵：失败驱动升级触发检索且 `relevant_lessons` 含既有 Episode/Lesson
+- [x] 升级矩阵：失败驱动升级触发检索且 `relevant_lessons` 含既有 Episode/Lesson
   （含截断上限）；检查点让渡（AgentAssisted）不检索；后端查询失败降级为空且升级完成
   （诊断计数器递增）；无匹配结果为空列表。
-- [ ] Lesson 矩阵：准入全负向（非 Completed、DryRun、零升级、未装上下文）；恢复
+- [x] Lesson 矩阵：准入全负向（非 Completed、DryRun、零升级、未装上下文）；恢复
   patch 形态（patch_id/digest/targets、无参数值）与 `resumed_without_patch` 形态派生
   正确；同 run 幂等重放不报错不重复；写失败对调用方可见且审计事件到位。
-- [ ] 事件矩阵：两员载荷往返、未知字段 fail closed、闭集扩展回归（既有事件类型解析
+- [x] 事件矩阵：两员载荷往返、未知字段 fail closed、闭集扩展回归（既有事件类型解析
   不受影响）；离线回放无 IMemory 调用与无副作用。
-- [ ] 端到端：闭环用例（失败 → 检索空 → Episode → 恢复完成 → Lesson → 再失败检索
+- [x] 端到端：闭环用例（失败 → 检索空 → Episode → 恢复完成 → Lesson → 再失败检索
   同时命中两者）断言 `relevant_lessons` 内容与顺序边界。
-- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9–M12 模式取证；quality
+- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9–M12 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
-- [ ] 总计划第 4/5 节、`workflow_runtime_design` v0.6、API 手册与本文件同步。
+- [x] 总计划第 4/5 节、`workflow_runtime_design` v0.6、API 手册与本文件同步。
 
 ## 8. 验证记录
 
@@ -237,3 +237,20 @@ miniconda 发行版但本机 format 结论以 PR CI 为准）。
 - 同步：DEC-029/030（本轮冻结）、`workflow_runtime_design`（v0.6 §14 与路由/事件/
   模块/测试表）、API 手册（workflow-contracts 增 M13 节与兼容性更新）、总计划
   （§4/§5）、本文件。
+
+2026-09-09：PR [#34](https://github.com/Linductor-alkaid/mira/pull/34) CI 全绿（head
+`bff2fe3`，push pipeline run
+[`34310027223`](https://github.com/Linductor-alkaid/mira/actions/runs/34310027223)、
+pull_request pipeline run
+[`34310029920`](https://github.com/Linductor-alkaid/mira/actions/runs/34310029920)）：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android arm64-v8a 与
+x86_64（NDK）、ASAN/UBSAN/TSAN 与 quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）全部 24 项通过，补齐本机缺失的 clang-tidy、format 权威结论与
+跨平台验证。两轮修复：Windows Debug 首轮报 MSVC `std::accumulate` 缺 `<numeric>`
+（GCC 传递包含掩盖，commit `ef03e5f`）；quality 首轮报 clang-tidy
+`clang-analyzer-optin.performance.Padding`——`RunRecord` 新增学习字段打乱对齐分组
+（32 字节填充），按建议重排字段（commit `bff2fe3`）；修复后复验全绿，语义不变
+（本机 m8–m13 套件复跑通过）。PR 已合并（merge `db2e814`）。`M13-01` 至 `M13-09`
+全部完成，退出条件逐项满足，本里程碑关闭（`Completed`）。DEC-014 阶段 A–F 全部交付；
+后续方向（M7 重定义与真实平台验证、阶段 F 非目标中的 Procedure 索引/失败检索向量腿/
+Agent 采纳 lesson 编排）按证据另行立项。
