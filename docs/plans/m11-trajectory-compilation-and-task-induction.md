@@ -1,12 +1,17 @@
 # M11：成功轨迹编译与任务归纳（阶段 D）
 
-> 状态：Completed
+> 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
-> 前置：[M9](m9-workflow-runtime-minimal-loop.md)（已完成；阶段 D 的直接前置是阶段 B，
+> 前置：[M9](m9-workflow-runtime-minimal-loop.md)（实现已交付；Android 验收重开；阶段 D 的直接前置是阶段 B，
 > 阶段 C 的 patch 生效态是固化语义的输入）
 > 建议发布点：Workflow compilation alpha
 > 更新日期：2026-09-09
+
+> 2026-09-09 状态复核：实现已交付；`BUG-20260909-001` 发现 Android CI 未构建
+> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。历史验证记录保留，
+> 当前状态以本注记为准；依赖方可复用冻结契约，跨平台关闭共同等待
+> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22`。
 
 ## 1. 目标
 
@@ -111,7 +116,7 @@
 - [x] `M11-07` 端到端取证：含 patch 修复的成功 Run -> 捕获 ->（多轨迹）归纳 ->
   编译 -> 门禁入库 -> 新版本运行（固化默认与参数复用两条路径）；installed-consumer
   用例。
-- [x] `M11-08` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [ ] `M11-08` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer；总计划、设计文档（v0.4）、
   API 手册与 DEC-019/020/022 注记同步后关闭里程碑。
 
@@ -158,7 +163,7 @@
   传参）与 `bind-*` 错误码透出。
 - [x] 事件：publish 三事件序列与载荷、未知字段 fail closed、闭集扩展回归；门禁
   Run 自身的 `WorkflowRunStarted/Settled` 事件如实记录。
-- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9/M10 模式取证；quality
+- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9/M10 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
 - [x] 总计划第 4/5 节、`workflow_runtime_design` v0.4、API 手册、DEC-019/020/022
@@ -220,3 +225,12 @@ trivially-copyable 的 `std::optional<Sha256Digest>` 使用无效 `std::move`）
 `M11-01` 至 `M11-08` 全部完成，退出条件逐项满足，本里程碑关闭（`Completed`）。阶段 E
 （App Model 与导航）里程碑可依据 `workflow_runtime_design` 与 DEC-014 创建并进入
 `Planned`（前置为阶段 B，已满足；感知能力边界按 DEC-011）。
+
+2026-09-09：阶段 F 后状态审计重新打开 `M11-08` 与跨平台退出条件，
+里程碑恢复 `In Progress`。`BUG-20260909-001`：Android CI 显式目标列表未包含
+`mira_workflow`，且已有 consumer 不依赖该目标，历史 job 全绿不足以支撑本模块
+Android 构建声明。已交付功能项及其他历史证据保留；这是验收覆盖缺口，尚无 Android
+编译失败证据。负责人 Mira Maintainers；按
+[后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 补齐两 ABI
+实际编译与安装消费链接证据后，逐项复核并关闭。本轮本地构建因未初始化子模块未能
+复跑，环境与补跑条件见后续计划第 5 节。

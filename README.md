@@ -12,7 +12,8 @@ Platform Adapter 接入，Core 不依赖任何平台 SDK。所有异步任务、
 
 ## 当前能力状态
 
-Mira 已交付 M0–M4（见[实施总计划](docs/plans/mira-implementation-plan.md)）：
+Mira 已交付 M0–M4，阶段 A–F（M8–M13）的实现已合入；Workflow 的 Android 构建验收
+因 CI 目标遗漏重新打开（见[实施总计划](docs/plans/mira-implementation-plan.md)）：
 
 | 能力 | 状态 | 证据 |
 | --- | --- | --- |
@@ -20,6 +21,12 @@ Mira 已交付 M0–M4（见[实施总计划](docs/plans/mira-implementation-pla
 | Observation、坐标、Simulator、Android Host ABI v1 | 已交付（M2） | — |
 | OpenAI-compatible Provider、视觉离散闭环 | 已交付（M3） | [Agent loop alpha](docs/releases/agent-loop-alpha.md) |
 | Context/Memory、Checkpoint、崩溃恢复、Replay | 已交付（M4） | [Stateful agent beta](docs/releases/stateful-agent-beta.md) |
+| Workflow 契约、执行、对话 patch 与策略 | 实现已交付（M8–M10），Android 验收待补 | [Workflow API](docs/api/workflow-contracts.md) |
+| 轨迹编译、任务归纳、App Model 与导航 | 实现已交付（M11/M12），Android 验收待补 | [Workflow 专项设计](docs/design/workflow_runtime_design.md) |
+| 四类记忆域、Episode/Lesson、失败检索 | 实现已交付（M13），Android 验收待补；Agent 采纳经验另行编排 | [阶段 F 计划](docs/plans/m13-memory-and-learning-loop.md) |
+
+下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：优先补齐
+验收，再推进 Agent 恢复编排、持久化取证、真实任务评估与 M7 重定义。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求
@@ -68,9 +75,10 @@ target_link_libraries(my_app PRIVATE
 )
 ```
 
-可选目标：`Mira::android_adapter`、`Mira::net_transport`、`Mira::openssl_transport`、
+可选目标：`Mira::workflow`、`Mira::android_adapter`、`Mira::net_transport`、`Mira::openssl_transport`、
 `Mira::mbedtls_transport`。安装消费路径由 `mira_installed_consumer_test` 在 CI 全矩阵
-持续验证。最小示例见 [`examples/minimal_consumer.cpp`](examples/minimal_consumer.cpp)；
+持续验证（Android Workflow 交叉链接覆盖待补，不宣称设备运行通过）。最小示例见
+[`examples/minimal_consumer.cpp`](examples/minimal_consumer.cpp)；
 有状态 Agent（Checkpoint + Memory + supervised shutdown）完整示例见
 [`examples/stateful_agent_consumer.cpp`](examples/stateful_agent_consumer.cpp)。
 

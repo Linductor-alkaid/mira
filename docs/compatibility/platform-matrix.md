@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.7
-> 更新日期：2026-09-06
+> 更新日期：2026-09-09
 > 适用范围：Mira Core、构建组合和 Platform Adapter 发布门禁
 
 ## 1. 证据等级
@@ -60,6 +60,24 @@ model request 字节写出前以 `CapabilityMismatch` 拒绝。Windows 已具备
 所有目标共享同一套平台无关 `mira_core` 公共头和 `IEnvironment` 边界。平台 SDK、JNI、权限、
 生命周期和线程亲和逻辑只能进入对应 Host/Adapter；没有真实 Adapter 或目标环境运行证据时，
 不能把 `Configured` 或 `Build verified` 表述为平台运行支持。
+
+### Workflow 模块证据复核（2026-09-09）
+
+`Mira::workflow` 是独立 CMake 目标，M8–M13 的实现不被 Core/Stateful Consumer 的
+Android 构建传递覆盖。当前 `.github/workflows/ci.yml` 的 Android 显式构建列表遗漏
+`mira_workflow`，因此原 Android job 成功仅适用于实际列出的目标，不能外推到 Workflow。
+Linux/Windows 的历史功能测试证据仍见相应里程碑；本轮未重跑远端 CI。
+
+| 模块 / 环境 | 本轮可确认等级 | 待补证据 |
+| --- | --- | --- |
+| Workflow / Android arm64-v8a | `Configured`；未确认 `Build verified` | NDK 实际编译、安装包 consumer 交叉链接 |
+| Workflow / Android x86_64 | `Configured`；未确认 `Build verified` | NDK 实际编译、安装包 consumer 交叉链接 |
+| Workflow / Android 设备运行 | 未验证 | 宿主消费与 A–F 组合任务的目标设备记录 |
+
+负责人 Mira Maintainers。`BUG-20260909-001` 与补跑条件见
+[阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) `MNT-202609-22/27`。
+M8–M13 的跨平台验收项已重新打开；现有 ABI 截图运行证据不因此撤销，也不代表 Workflow
+已通过设备运行。
 
 ## 3. 可复现入口
 

@@ -1,8 +1,8 @@
 # Mira Agent Harness 与 Workflow 架构设计
 
-> 状态：Active（目标架构方向；实施未开始）  
-> 版本：0.1  
-> 更新日期：2026-09-07  
+> 状态：Active（阶段 A–F 实现已交付；Android 验收补齐中）
+> 版本：0.2
+> 更新日期：2026-09-09
 > 负责人：Mira Maintainers  
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)  
 > 适用范围：Mira 长期产品定位、Agent Harness 与 Workflow 系统分解、后续里程碑重定义
@@ -15,8 +15,9 @@
 
 效力约定：
 
-- 本文是目标架构与后续专项设计的分解依据，不是已实现行为的描述。文中接口、模块名和
-  状态名均为目标草案（伪代码级别），实现前由专项设计和决策记录冻结。
+- 本文是目标架构与后续专项设计的分解依据；§2.4/§5/§16 同步当前实施状态，其余概念图
+  与示意接口不构成完整交付声明。阶段 A–F 已由 DEC-019–030 与
+  [Workflow 专项设计](workflow_runtime_design.md) §8–14 冻结，具体 API 以专项规范为准。
 - 已实现部分的现行规范仍是
   [Mira Runtime 设计](mira_runtime_design.md)及其引用的专项文档；本文与它们冲突时，以
   已接受的 DEC 和已冻结专项规范为准，并按规范流程同步修正。
@@ -85,7 +86,8 @@ Workflow Run
 | Context/Memory、EventStore 事实源、Checkpoint、Replay | M1/M4 已交付 | 复用；Memory 按第 10 节演进，EventStore 保持事实源 |
 | Tool Registry / 模组体系（ITool/ToolModule，[DEC-009](../decisions/DEC-009-tool-module-boundary.md)） | **未实现**；现有的是 DEC-015 的最小 BuiltIn 执行边界（无 manifest/签名/隔离） | 模组体系随 M7 重定义落地，届时吸纳 BuiltIn 边界 |
 | 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义 |
-| Workflow Compiler/Runtime、App Model、Navigation Planner、对话介入的完整语义（patch/三类目标区分） | 未实现（对话事件与步边界消息已按 DEC-016 交付最小机制） | 本方向新增，按第 16 节分阶段落地 |
+| Workflow Compiler/Runtime、App Model、Navigation Planner、对话 patch | M8–M12 分阶段范围已实现；Android 模块构建证据待补 | 宿主编排、资产持久化与真实 UI 消费验证仍有后续项，见第 16 节 |
+| Memory 四类域、Episode/Lesson 与失败检索 | M13 分阶段范围已实现；Android 模块构建证据待补 | 提供 `relevant_lessons`；Agent 采纳与执行经验的编排、Procedure 索引尚待立项 |
 
 ## 3. 核心设计原则
 
@@ -199,11 +201,11 @@ flowchart TD
 | 目标组件 | 职责 | 现状 |
 | --- | --- | --- |
 | Agent Harness | Session、Agent Loop、模型、工具、上下文、事件、中断、权限、恢复、Trace、持久化 | M0–M4 核心已交付 |
-| Workflow Composer / Compiler | 从成功轨迹与相似任务归纳、参数化并编译 Workflow IR | 未实现 |
-| Workflow Runtime | IR 执行、参数绑定、前置检查、导航、验证、暂停/恢复/重试、恢复钩子 | 未实现 |
-| UI Navigation Planner | 目标 UI 状态上的图搜索与路径选择 | 未实现 |
-| App Model / UI Graph | 应用 UI 状态图的长期知识与投影 | 未实现 |
-| Memory（四类） | 环境模型、用户模型、程序性记忆、情景记忆 | M4 已含雏形（见第 10.2 节） |
+| Workflow Composer / Compiler | 从成功轨迹与相似任务归纳、参数化并编译 Workflow IR | M11 编译、归纳与 DryRun 入库门禁已实现 |
+| Workflow Runtime | IR 执行、参数绑定、前置检查、导航、验证、暂停/恢复/重试、恢复钩子 | M9/M10 已实现，M12/M13 扩展导航与学习 |
+| UI Navigation Planner | 目标 UI 状态上的图搜索与路径选择 | M12 确定性规划与 Navigate 执行已实现 |
+| App Model / UI Graph | 应用 UI 状态图的长期知识与投影 | M12 进程内图与置信度已实现，持久化推迟 |
+| Memory（四类） | 环境模型、用户模型、程序性记忆、情景记忆 | M4 事实层 + M13 域映射、学习契约与检索已实现；Procedure 自动索引推迟 |
 | Verifier / Recovery | 执行后验证与恢复 | 已有分层验证与恢复规则，向 Workflow 路径复用 |
 
 ## 6. Agent Harness（控制平面）
@@ -772,8 +774,9 @@ Environment Model、Recovery Pattern 与执行经验的持续积累，而不是�
 
 ## 16. 分阶段落地
 
-落地顺序与范围由里程碑重定义（M7 或新增 M8+）承载；以下阶段划分作为重定义的输入。
-每个阶段进入实施前需先完成对应专项设计与 DEC：
+以下阶段已由 M8–M13 承载，专项设计与 DEC-019–030 已冻结。2026-09-09 复核发现
+Android CI 漏构建 `mira_workflow`（`BUG-20260909-001`），六个里程碑实现保持已交付，
+跨平台验收项重开为 `In Progress`；历史功能测试结果保留。
 
 | 阶段 | 内容 | 前置冻结 |
 | --- | --- | --- |
@@ -783,6 +786,15 @@ Environment Model、Recovery Pattern 与执行经验的持续积累，而不是�
 | D 编译与抽象 | 成功轨迹 -> Workflow 编译、任务归纳、版本化 | 阶段 B |
 | E App Model 与导航 | UI 状态图、Navigation Planner、GUI Mapping、置信度 | 阶段 B；感知能力按 DEC-011 |
 | F Memory 与学习闭环 | 四类记忆组织、失败检索、恢复复用、长期闭环 | 阶段 D/E |
+
+阶段 A/B/C/D/E/F 分别对应
+[M8](../plans/m8-workflow-contracts.md)、[M9](../plans/m9-workflow-runtime-minimal-loop.md)、
+[M10](../plans/m10-workflow-intervention-and-policy-set.md)、
+[M11](../plans/m11-trajectory-compilation-and-task-induction.md)、
+[M12](../plans/m12-app-model-and-navigation.md)、[M13](../plans/m13-memory-and-learning-loop.md)。
+后续优先补齐 Android 门禁；Harness 采纳 lesson、持久化恢复取证、真实平台与评估、
+Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-stage-f.md) 跟踪。
+这不扩展既有 DEC，也不自动恢复 M5/M6 或解冻 M7。
 
 ## 17. 风险与开放问题
 
@@ -796,9 +808,11 @@ Environment Model、Recovery Pattern 与执行经验的持续积累，而不是�
   上下文绑定 + 歧义确认；patch 幂等且可撤销。
 - **范围风险**：本方向显著扩大长期范围。缓解：阶段化落地（第 16 节），不改变 v1 现有
   边界，不自动恢复已终止里程碑。
-- **开放问题**：Workflow IR 的具体表达（图 vs 线性 + 条件）；导航搜索算法与代价权重
-  校准；Conversation 工件的脱敏与保留策略；执行策略默认值；`WaitingUser/WaitingAgent`
-  与 Task 状态机的精确映射；多设备/多环境 App Model 的命名空间。
+- **已冻结问题**：IR 表达、执行策略默认值、`WaitingUser/WaitingAgent` 状态映射与导航
+  搜索算法以 DEC-019/020/023/028 和 Workflow 专项设计为准。
+- **开放问题**：真实导航代价校准、跨进程资产恢复、Agent 采纳 lesson 的编排、Procedure
+  检索消费者、真实任务学习收益、多设备/多环境 App Model 命名空间及宿主 retention
+  策略；由阶段 F 后续计划按证据收敛。
 
 ## 18. Harness 设计参考
 

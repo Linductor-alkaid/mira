@@ -1,11 +1,16 @@
 # M10：Workflow 介入与执行策略全集（阶段 C）
 
-> 状态：Completed
+> 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
-> 前置：[M9](m9-workflow-runtime-minimal-loop.md)（已完成）
+> 前置：[M9](m9-workflow-runtime-minimal-loop.md)（实现已交付；Android 验收重开）
 > 建议发布点：Workflow intervention alpha
-> 更新日期：2026-09-08
+> 更新日期：2026-09-09
+
+> 2026-09-09 状态复核：实现已交付；`BUG-20260909-001` 发现 Android CI 未构建
+> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。历史验证记录保留，
+> 当前状态以本注记为准；依赖方可复用冻结契约，跨平台关闭共同等待
+> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22`。
 
 ## 1. 目标
 
@@ -141,7 +146,7 @@
 - [x] `M10-12` 端到端取证：模型经 AgentLoop 对 Interactive Run 发起 `patch_workflow`
   （步边界生效）与 `request_user_input`（宿主决议回流）的端到端；`WaitingAgent` 的
   模型修复-续跑路径。
-- [x] `M10-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
+- [ ] `M10-13` 测试矩阵取证与文档同步：本机 Release/Debug/ASAN/UBSAN（TSAN 按环境
   限制记录补跑条件）、quality 门禁、installed-consumer 覆盖新公共面；总计划、设计
   文档、API 手册与 DEC-020/022 注记同步后关闭里程碑。
 
@@ -192,7 +197,7 @@
   `WaitingUser` 唯一出口、单决策点上限、无自动超时（等待可被取消）。
 - [x] 工具闭环：`patch_workflow`/`request_user_input` 经注册表执行与错误信封；模型
   发起端到端（`M10-12`）。
-- [x] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9 模式取证；quality
+- [ ] 门禁：ASAN/UBSAN 全绿；TSAN 在本机限制下按 M9 模式取证；quality
   （clang-format、docs、sbom、platform-boundary）通过；Windows/Android 构建组合与
   clang-tidy 由 PR CI 补验全绿；installed-consumer 覆盖新公共面。
 - [x] 总计划第 4/5 节、`workflow_runtime_design`、API 手册、DEC-020/022（阶段 C
@@ -256,3 +261,12 @@ trivially-copyable 的 `WorkflowPatchOutcome` 使用无效 `std::move`），去�
 `M10-13` 全部完成，退出条件逐项满足，本里程碑关闭（`Completed`）。阶段 D（成功轨迹
 编译与任务归纳）里程碑可依据 `workflow_runtime_design` 与 DEC-014 创建并进入
 `Planned`。
+
+2026-09-09：阶段 F 后状态审计重新打开 `M10-13` 与跨平台退出条件，
+里程碑恢复 `In Progress`。`BUG-20260909-001`：Android CI 显式目标列表未包含
+`mira_workflow`，且已有 consumer 不依赖该目标，历史 job 全绿不足以支撑本模块
+Android 构建声明。已交付功能项及其他历史证据保留；这是验收覆盖缺口，尚无 Android
+编译失败证据。负责人 Mira Maintainers；按
+[后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 补齐两 ABI
+实际编译与安装消费链接证据后，逐项复核并关闭。本轮本地构建因未初始化子模块未能
+复跑，环境与补跑条件见后续计划第 5 节。

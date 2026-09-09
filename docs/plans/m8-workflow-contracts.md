@@ -1,11 +1,16 @@
 # M8：Workflow 双路径契约冻结
 
-> 状态：Completed
+> 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；方向依据 [DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)
 > 建议发布点：Workflow contract alpha
-> 更新日期：2026-09-08
+> 更新日期：2026-09-09
+
+> 2026-09-09 状态复核：实现已交付；`BUG-20260909-001` 发现 Android CI 未构建
+> `mira_workflow`，本里程碑的矩阵取证项及相关退出条件重新打开。历史验证记录保留，
+> 当前状态以本注记为准；依赖方可复用冻结契约，跨平台关闭共同等待
+> [阶段 F 后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22`。
 
 ## 1. 目标
 
@@ -121,7 +126,7 @@ DEC-014 明确不解冻 M7。将 Workflow 方向并入 M7 会加重 `RISK-2026-0
 
 - [x] `M8-12` `Mira::workflow` 进入安装包，最小 consumer 独立包含、链接与运行通过（对齐
   DEC-011 的公共 API 检验边界与既有 installed-consumer 测试模式）。
-- [x] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
+- [ ] `M8-13` 契约测试矩阵取证：三平台构建组合、ASAN/UBSAN（TSAN 按本机环境限制记录
   补跑条件）、负向与边界测试全绿；总计划、决策索引、设计与 API 手册同步后关闭本里程碑。
 
 ## 5. Executor 路由与关闭
@@ -150,12 +155,12 @@ Runtime 关闭顺序。Workflow Runtime 的 Executor 路由表（步骤执行、
 
 ## 7. 测试与退出条件
 
-- [x] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
+- [ ] `M8-01` 至 `M8-13` 全部完成并有可复现验证记录。
 - [x] 四份决策记录 `Accepted`、专项设计文档 `Active`；其中暂定默认值均注明负责人与最迟
   冻结里程碑。
 - [x] IR 序列化与校验、参数绑定、状态转换表、版本化、事件 schema、Tool 规格 schema 均有
   正向与负向测试；未知字段、版本不匹配、超限、非法转换与终态复活尝试全部 fail closed。
-- [x] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
+- [ ] `Mira::workflow` 最小 consumer 在 Linux 基准环境通过；Windows/Android 构建组合按
   M0 基线执行并记录；未运行项保持未勾选并记录补跑条件。
 - [x] OfflineReplay 对 workflow 事件不产生副作用的契约断言通过。
 - [x] 总计划第 4 节、决策索引、API 手册与本文件同步；阶段 B 里程碑文档可依据 `M8-05`
@@ -212,3 +217,12 @@ quality 在 `workflow_run.cpp` 报 3 处 `bugprone-branch-clone`（Paused/Waitin
 分支），合并 case 标签后复验通过；语义不变（转换表、映射与终态幂等测试全绿）。`M8-01`
 至 `M8-13` 全部完成，退出条件逐项满足，本里程碑关闭（Completed）。阶段 B 里程碑可依据
 [workflow_runtime_design](../design/workflow_runtime_design.md) 创建并进入 `Planned`。
+
+2026-09-09：阶段 F 后状态审计重新打开 `M8-13` 与跨平台退出条件，
+里程碑恢复 `In Progress`。`BUG-20260909-001`：Android CI 显式目标列表未包含
+`mira_workflow`，且已有 consumer 不依赖该目标，历史 job 全绿不足以支撑本模块
+Android 构建声明。已交付功能项及其他历史证据保留；这是验收覆盖缺口，尚无 Android
+编译失败证据。负责人 Mira Maintainers；按
+[后续计划](maintenance-2026-09-post-stage-f.md) `MNT-202609-22` 补齐两 ABI
+实际编译与安装消费链接证据后，逐项复核并关闭。本轮本地构建因未初始化子模块未能
+复跑，环境与补跑条件见后续计划第 5 节。
