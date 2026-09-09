@@ -138,11 +138,10 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   所有者/输入输出/失败出口（设计 §4），失败出口矩阵覆盖验收列举的全部场景（§8），
   全链路关联键为新增 `WorkflowRecoveryAttempted` 审计事件（§5.5）。证据见第 5 节
   2026-09-10 记录。
-- [ ] `MNT-202609-24`（In Progress）实现上述编排与公共 consumer。依赖：22 的验收补齐（已完成）、
+- [x] `MNT-202609-24`（Completed）实现上述编排与公共 consumer。依赖：22 的验收补齐（已完成）、
   23 冻结（已完成，DEC-031）；已按 §1 规则立项 [M14](m14-recovery-orchestration.md)
-  承载 DEC-031 验证方式。2026-09-10 实现与本地验证完成（编排器、增量字段、审计事件、
-  17 场景测试矩阵与 installed-consumer，本地全量 ctest/sanitizer/双 ABI 编译通过，见
-  M14 验证记录）；Release/Windows/quality 与完整 sanitizer 矩阵由 PR CI 取证后回填关闭。
+  承载 DEC-031 验证方式并交付（PR #38，合并提交 `bb77a0a`，CI 全绿；端到端主场景、
+  五组矩阵与安全负向逐项取证，证据与实现澄清见 M14 验证记录）。
   验收：recorded Provider 真正收到检索上下文并生成可验证修复；首次
   失败、恢复、再次命中全链路可追踪；恶意 lesson 不提升权限，取消/接管后无新增动作，
   终态不复活，正常/异常/拒绝/超时/shutdown 均有测试；真实 Provider 证据由 27 补齐。
@@ -197,8 +196,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
-产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25 已完成，
-24 已 Planned 待立项，28 为下一项可独立开工的设计任务。
+产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25/24 已完成
+（24 由 M14 承载，PR #38），28 为下一项可独立开工的设计任务。
 
 ## 4. Executor、风险与退出条件
 
@@ -216,8 +215,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 - [x] 22 完成并恢复 M8–M13 的适用跨平台验收（PR #35，`8a5bd53`，run 34353919141
   12/12；两 ABI 编译全部 Workflow 源文件并完成安装包 consumer 交叉链接；六个里程碑
   与平台矩阵已回填；设备运行明确不在本项范围）。
-- [ ] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录（23/25 已完成，
-  28 未开工；24 已 Planned 但尚未立项里程碑）。
+- [x] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录（23/25/24 已完成，
+  24 由 M14 承载并关闭；28 未开工，为下一项可独立开工的设计任务）。
 - [ ] 27 外部证据归档；30 完成 M7 范围决策及任务映射。
 - [ ] 本计划内 Proposed 实现项已正式迁移或通过决策明确取消/推迟，不能因文档更新完成
   而将整个维护计划关闭。
@@ -342,3 +341,15 @@ format/platform-boundary/docs 门禁、Android 两 ABI 编译 `mira_workflow` �
 实现澄清（episode 检索语义、lesson 四元计数、`epoch-advanced` 守卫定位）记录于
 M14 文档与恢复编排设计 v1.0.1。任务保持未勾选，等待 PR CI（Release/Windows/quality/
 完整 sanitizer）回填后关闭；设备运行与真实 Provider 证据仍归 27。
+
+2026-09-10：`MNT-202609-24` CI 证据回填并关闭（PR
+[#38](https://github.com/Linductor-alkaid/mira/pull/38)，head `89fae06`，合并提交
+`bb77a0a`）。PR push/pull_request 两 pipeline 各 12 项与合并提交 master pipeline run
+[34393602561](https://github.com/Linductor-alkaid/mira/actions/runs/34393602561) 全绿：
+Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android 双 ABI
+（编译级 + consumer 链接）、ASAN/UBSAN/TSAN、quality；首轮 quality 一处 clang-tidy
+违例（未用局部变量）修复后复验。验收对照：recorded Provider 收到检索上下文并生成
+可验证修复（端到端主场景，含 used_lessons 审计往返）；首次失败、恢复、再次命中全链路
+事件关联键逐条断言；越权 patch 确定性拒绝、参数投影缺省无值、rationale 不入事件；
+取消/接管/迟到响应/预算/shutdown 矩阵闭合，终态不复活。[M14](m14-recovery-orchestration.md)
+退出条件逐项复核后关闭。真实 Provider 与设备运行证据仍归 27；恢复收益声明待 29 对照。

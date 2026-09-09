@@ -1,6 +1,6 @@
 # M14：Workflow 恢复编排（Agent Harness 恢复闭环）
 
-> 状态：In Progress（实现与本地验证已完成，PR CI 与跨平台取证待回填）
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M13](m13-memory-and-learning-loop.md)（学习闭环数据面已交付）、
@@ -146,30 +146,32 @@ lesson 三层过滤 → 一次有界模型请求（归属载体 Task）→ 四�
 
 ## 6. 测试与退出条件
 
-- [ ] 全部工作项（`M14-01`–`M14-07`）完成且测试通过。
-- [ ] 决策矩阵：recorded Provider 四动作 ×（合法/格式错/拒答/超时/熔断）有测试；
+- [x] 全部工作项（`M14-01`–`M14-07`）完成且测试通过。
+- [x] 决策矩阵：recorded Provider 四动作 ×（合法/格式错/拒答/超时/熔断）有测试；
   修复回合边界（0/1/N）覆盖；`used_lessons` 与 decision digest 审计往返断言。
-- [ ] lesson 矩阵：空、全失效（版本漂移）、不可解析 statement、混合截断覆盖；
+- [x] lesson 矩阵：空、全失效（版本漂移）、不可解析 statement、混合截断覆盖；
   `lessons_offered/stale/unparseable/kept` 计数断言；过滤后 statement 与原记录逐字节
   一致。
-- [ ] 竞态矩阵：请求在途宿主 cancel / 第二次通知 / Takeover / run_epoch 变化覆盖；
+- [x] 竞态矩阵：请求在途宿主 cancel / 第二次通知 / Takeover / 请求在途宿主 patch（epoch 守卫 fail closed）覆盖；
   迟到响应丢弃（无 patch、无 resume、Run 状态保持宿主造成的终态不复活）；
   `DeferredToHost`/`Aborted` 后 Run 状态不变（保持 `WaitingAgent`）。
-- [ ] 预算矩阵：`max_attempts_per_run` 耗尽 `DeferredToHost`；runtime 升级预算先行
+- [x] 预算矩阵：`max_attempts_per_run` 耗尽 `DeferredToHost`；runtime 升级预算先行
   耗尽的组合；`max_concurrent_attempts` 超限 `ResourceExhausted`；`max_tracked_runs`
   淘汰终态 Run。
-- [ ] shutdown 矩阵：在途 attempt drain、shutdown 后通知拒绝、编排器先于 runtime
+- [x] shutdown 矩阵：在途 attempt drain、shutdown 后通知拒绝、编排器先于 runtime
   关闭的顺序断言；事件发射失败不影响 attempt 结果。
-- [ ] 端到端主场景（`MNT-202609-24` 验收）：recorded Provider 真正收到检索上下文并
+- [x] 端到端主场景（`MNT-202609-24` 验收）：recorded Provider 真正收到检索上下文并
   生成可验证修复；Run A 失败升级（检索空）→ 编排修复 → 完成 → 宿主记 lesson →
   Run B 同签名失败升级 → 命中 A 的 Episode+Lesson → 模型合成修复 → 完成；
   全链路事件序列（ModelRequest → RecoveryAttempted → PatchProposed/Applied →
   StepSettled… → RunSettled → EpisodeRecorded/LessonRecorded）逐条断言关联键。
-- [ ] 安全负向：lesson 引导的越权 patch（策略越界/未知 path/危险参数形状）确定性
+- [x] 安全负向：lesson 引导的越权 patch（策略越界/未知 path/危险参数形状）确定性
   拒绝；参数投影缺省不带值；`rationale` 不出现在任何事件载荷。
-- [ ] Linux 本机全量 ctest（Debug）与 ASAN/UBSAN/TSAN 目标测试通过；
-  Release/Windows/Android 编译与 quality 由 PR CI 取证后回填。
-- [ ] 文档（API 手册、设计、架构、README、DEC-031 冻结点、计划状态）同步完成。
+- [x] Linux 本机全量 ctest（Debug）与 ASAN/UBSAN/TSAN 目标测试通过；Release、
+  Windows MSVC（Debug/Release）、Android 双 ABI（含 `mira_workflow` 编译与安装包
+  consumer 链接）、quality（clang-tidy + format + docs/sbom/platform-boundary）与完整
+  sanitizer 矩阵经 PR #38 CI 全绿取证（见下）。
+- [x] 文档（API 手册、设计、架构、README、DEC-031 冻结点、计划状态）同步完成。
 
 ## 7. 验证记录
 
@@ -210,3 +212,19 @@ learning/persistence 4 组通过（runtime epoch 刷新改动的回归面）；`
 quality（clang-tidy）与完整 sanitizer 矩阵由 PR CI 执行后回填；Android 设备运行与
 真实 Provider 证据仍归 `MNT-202609-27`，不因本轮回填外推。
 
+2026-09-10：PR [#38](https://github.com/Linductor-alkaid/mira/pull/38) CI 证据回填并关闭。
+head `89fae06`（含一处 quality 修复：clang-tidy
+`bugprone-unused-local-non-trivial-variable`，字节级 digest 比较遗留的未用变量），
+合并提交 `bb77a0a`。PR 检查全绿：push pipeline run
+[34389297172](https://github.com/Linductor-alkaid/mira/actions/runs/34389297172) 与
+pull_request pipeline run
+[34389329504](https://github.com/Linductor-alkaid/mira/actions/runs/34389329504) 各 12
+项通过——Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release，含
+`mira_m14_recovery_test`）、Android arm64-v8a 与 x86_64（NDK 26.3.11579264，编译级 +
+安装包 consumer 交叉链接）、ASAN/UBSAN/TSAN、quality（clang-tidy + clang-format +
+docs/sbom/platform-boundary）；合并提交 master pipeline run
+[34393602561](https://github.com/Linductor-alkaid/mira/actions/runs/34393602561) 同样
+全绿（14m56s）。首轮 quality 因上述 clang-tidy 违例失败一次，修复后复验通过（两轮
+记录保留）。限制：Android 设备运行与真实 Provider 消费证据仍归 `MNT-202609-27`，
+本轮不外推为运行支持；恢复率/成本收益无 `MNT-202609-29` 对照前不作声明
+（`RISK-2026-052`）。里程碑退出条件逐项复核后关闭（`Completed`）。
