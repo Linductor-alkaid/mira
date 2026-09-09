@@ -227,9 +227,18 @@ struct WorkflowRuntime::AppliedPatch final {
 // One run: the pinned definition, bindings, per-step execution state and the
 // carrier task identity. Settled history and counters feed WorkflowRunResult.
 struct WorkflowRuntime::RunRecord final {
+    // Field order follows alignment groups (clang-tidy optin.performance
+    // Padding): pointers/large members first, scalars last.
     WorkflowRunView view;
     WorkflowDefinition definition;
     WorkflowParameterBindings bindings;
+    TaskId task;
+    std::uint64_t task_epoch = 0;
+    std::size_t cursor = 0;
+    // Stage F learning state (DEC-030): the applied-patch watermark at the
+    // last failure-driven escalation (lesson derivation anchor).
+    std::size_t patches_at_last_escalation = 0;
+    std::shared_future<Result<WorkflowRunResult>> drive_future;
     // Resolved ToolCall arguments per step index (binding applied at
     // admission); other kinds keep the raw arguments.
     std::vector<JsonValue> resolved_arguments;
@@ -239,10 +248,6 @@ struct WorkflowRuntime::RunRecord final {
     std::map<std::string, JsonValue> argument_overrides;
     std::vector<AppliedPatch> applied_patches;
     std::vector<PendingPatch> pending_patches;
-    TaskId task;
-    std::uint64_t task_epoch = 0;
-    std::size_t cursor = 0;
-    std::uint32_t executions = 0;
     std::vector<std::uint32_t> attempts;
     std::vector<std::uint32_t> retries;
     std::vector<std::uint32_t> jumps;
@@ -251,28 +256,27 @@ struct WorkflowRuntime::RunRecord final {
     // arrival hands off at most once; a resume consumes the obligation.
     std::vector<std::uint32_t> checkpoint_arrivals;
     std::vector<std::uint32_t> checkpoint_handoffs;
-    // Failure escalations consumed against max_escalations_per_run (DEC-023
-    // §1); checkpoint handoffs do not count.
-    std::uint32_t escalations = 0;
-    bool interrupted = false;
     JsonValue predicate_context;
     std::vector<WorkflowStepRecord> settled;
-    std::uint32_t unevaluable = 0;
+    // Stage F: the bounded retrieval results attached to continuations.
+    std::vector<WorkflowRetrievedLesson> retrieved_lessons;
     std::string safe_summary;
     std::string failure_reason;
     std::optional<WorkflowDecisionRequest> decision;
-    bool drive_active = false;
-    std::shared_future<Result<WorkflowRunResult>> drive_future;
     std::optional<WorkflowRunResult> result;
-    // Stage F learning state (DEC-030): the last failure-driven escalation's
-    // signature, the bounded retrieval results attached to continuations,
-    // the settlement event (memory-write provenance), the applied-patch
-    // watermark at the last escalation (lesson derivation) and the episode
-    // write marker (idempotency beyond the store's mutation id).
+    // Stage F: the last failure-driven escalation's sanitized signature and
+    // the settlement event (memory-write provenance).
     std::optional<WorkflowFailureSignature> last_failure_signature;
-    std::vector<WorkflowRetrievedLesson> retrieved_lessons;
     std::optional<EventId> settled_event;
-    std::size_t patches_at_last_escalation = 0;
+    std::uint32_t executions = 0;
+    // Failure escalations consumed against max_escalations_per_run (DEC-023
+    // §1); checkpoint handoffs do not count.
+    std::uint32_t escalations = 0;
+    std::uint32_t unevaluable = 0;
+    bool interrupted = false;
+    bool drive_active = false;
+    // Stage F: episode write marker (idempotency beyond the store's
+    // mutation id).
     bool episode_recorded = false;
 };
 
