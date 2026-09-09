@@ -263,6 +263,16 @@ struct WorkflowRuntime::RunRecord final {
     bool drive_active = false;
     std::shared_future<Result<WorkflowRunResult>> drive_future;
     std::optional<WorkflowRunResult> result;
+    // Stage F learning state (DEC-030): the last failure-driven escalation's
+    // signature, the bounded retrieval results attached to continuations,
+    // the settlement event (memory-write provenance), the applied-patch
+    // watermark at the last escalation (lesson derivation) and the episode
+    // write marker (idempotency beyond the store's mutation id).
+    std::optional<WorkflowFailureSignature> last_failure_signature;
+    std::vector<WorkflowRetrievedLesson> retrieved_lessons;
+    std::optional<EventId> settled_event;
+    std::size_t patches_at_last_escalation = 0;
+    bool episode_recorded = false;
 };
 
 WorkflowRuntime::WorkflowRuntime(executor::Executor &executor, MiraRuntime &runtime,
@@ -314,6 +324,315 @@ std::optional<AppModel> WorkflowRuntime::app_model_snapshot() const {
 bool WorkflowRuntime::navigation_context_installed() const {
     std::lock_guard lock(mutex_);
     return app_model_.has_value() && screen_state_provider_ != nullptr;
+}
+
+// --- Stage F: learning loop (DEC-030) ----------------------------------------
+
+Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memory,
+                                                    MemoryScope scope,
+                                                    WorkflowLearningLimits limits) {
+    if (memory == nullptr) {
+        return workflow_error(ErrorCode::InvalidArgument,
+                              "learning context requires a memory backend");
+    }
+    if (scope.kind == MemoryScopeKind::User) {
+        // DEC-030 §1: episodes and lessons are automatic operational
+        // experience; the User domain stays the human-approval channel.
+        return workflow_error(ErrorCode::InvalidArgument,
+                              "learning scope must not be the user memory domain");
+    }
+    if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
+        scope.kind != MemoryScopeKind::Agent) {
+        return workflow_error(ErrorCode::InvalidArgument,
+                              "learning scope requires a subject id");
+    }
+    if (auto valid = limits.validate(); !valid.has_value()) {
+        return valid.error();
+    }
+    std::lock_guard lock(mutex_);
+    learning_memory_ = std::move(memory);
+    learning_scope_ = std::move(scope);
+    learning_limits_ = limits;
+    return Result<void>{};
+}
+
+void WorkflowRuntime::record_episode(RunRecord &run, WorkflowRunState terminal_state) {
+    std::shared_ptr<IMemory> memory;
+    MemoryScope scope;
+    {
+        std::lock_guard lock(mutex_);
+        if (!learning_memory_ || run.episode_recorded) {
+            return;
+        }
+        memory = learning_memory_;
+        scope = learning_scope_;
+    }
+    // DryRun settlements are planning rehearsals, not environment experience;
+    // skipping them is a design behavior, not a failure (DEC-030 §2).
+    if (run.view.policy == WorkflowPolicy::DryRun) {
+        return;
+    }
+    // Without the settled event there is no traceable provenance, and M4
+    // memory mutations require event evidence: nothing to anchor a record on.
+    if (!run.settled_event.has_value()) {
+        return;
+    }
+    WorkflowEpisodeRecord episode;
+    episode.run_id = run.view.run_id.to_string();
+    episode.workflow_id = run.view.workflow_id.to_string();
+    episode.ir_digest = run.view.ir_digest.to_string();
+    episode.policy = workflow_policy_name(run.view.policy);
+    episode.escalations = run.escalations;
+    episode.checkpoint_handoffs =
+        std::accumulate(run.checkpoint_handoffs.begin(), run.checkpoint_handoffs.end(), 0U);
+    episode.recorded_at_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    if (terminal_state == WorkflowRunState::Completed) {
+        episode.outcome = "completed";
+    } else if (terminal_state == WorkflowRunState::Failed) {
+        episode.outcome = "failed";
+        if (run.last_failure_signature.has_value()) {
+            episode.failed_step_id = run.last_failure_signature->step_id;
+            episode.failure_reason_code = run.last_failure_signature->reason_code;
+        } else {
+            episode.failure_reason_code = "unsettled-failure-signature";
+        }
+    } else {
+        episode.outcome = "cancelled";
+    }
+    MemoryMutation mutation;
+    mutation.id = workflow_episode_mutation_id(episode.run_id);
+    mutation.type = MemoryMutationType::Add;
+    mutation.scope = scope;
+    mutation.proposed = episode_to_memory_record(episode, scope, {*run.settled_event},
+                                                 std::chrono::system_clock::now());
+    mutation.evidence = {*run.settled_event};
+    mutation.reason = MutationReasonCode::VerifiedEvent;
+    const auto applied = memory->apply(mutation);
+    if (!applied.has_value()) {
+        ++episode_record_failures_;
+        emit_episode_recorded(run, Sha256Digest{},
+                              "failed",
+                              bounded_summary(applied.error().domain + ":" +
+                                              std::to_string(applied.error().domain_code)));
+        return;
+    }
+    {
+        std::lock_guard lock(mutex_);
+        run.episode_recorded = true;
+    }
+    emit_episode_recorded(run, workflow_episode_digest(episode), "recorded", std::string{});
+}
+
+void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
+    std::shared_ptr<IMemory> memory;
+    MemoryScope scope;
+    WorkflowLearningLimits limits;
+    std::optional<WorkflowFailureSignature> signature;
+    {
+        std::lock_guard lock(mutex_);
+        if (!learning_memory_) {
+            return;
+        }
+        memory = learning_memory_;
+        scope = learning_scope_;
+        limits = learning_limits_;
+        signature = run.last_failure_signature;
+        // Cover, not accumulate: only the latest escalation's retrieval is
+        // attached (DEC-030 §3).
+        run.retrieved_lessons.clear();
+    }
+    if (!signature.has_value()) {
+        return;
+    }
+    auto query = failure_retrieval_query(*signature, scope, limits);
+    if (!query.has_value()) {
+        ++retrieval_failures_;
+        return;
+    }
+    const auto found = memory->query(query.value());
+    if (!found.has_value()) {
+        // Degraded retrieval keeps the escalation path intact (DEC-030 §3);
+        // the diagnostic counter discloses the miss.
+        ++retrieval_failures_;
+        return;
+    }
+    std::vector<WorkflowRetrievedLesson> lessons;
+    lessons.reserve(found.value().records.size());
+    for (const auto &record : found.value().records) {
+        if (record.kind != MemoryKind::Episode && record.kind != MemoryKind::RecoveryLesson) {
+            continue;
+        }
+        WorkflowRetrievedLesson lesson;
+        lesson.kind = record.kind;
+        lesson.statement = record.statement.substr(0, limits.max_document_bytes);
+        lesson.confidence = record.confidence;
+        lessons.push_back(std::move(lesson));
+        if (lessons.size() >= limits.max_retrieval_results) {
+            break;
+        }
+    }
+    std::lock_guard lock(mutex_);
+    run.retrieved_lessons = std::move(lessons);
+}
+
+void WorkflowRuntime::emit_episode_recorded(const RunRecord &run, const Sha256Digest &digest,
+                                            const std::string &outcome,
+                                            const std::string &reason_code) {
+    if (!events_) {
+        return;
+    }
+    WorkflowEpisodeRecordedEvent event;
+    event.run_id = run.view.run_id;
+    event.workflow_id = run.view.workflow_id;
+    event.episode_digest = digest;
+    event.outcome = outcome;
+    event.reason_code = bounded_summary(reason_code);
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.task_id = run.task;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+void WorkflowRuntime::emit_lesson_recorded(const RunRecord &run, const Sha256Digest &digest,
+                                           const std::string &outcome,
+                                           const std::string &reason_code) {
+    if (!events_) {
+        return;
+    }
+    WorkflowLessonRecordedEvent event;
+    event.run_id = run.view.run_id;
+    event.workflow_id = run.view.workflow_id;
+    event.lesson_digest = digest;
+    event.outcome = outcome;
+    event.reason_code = bounded_summary(reason_code);
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.task_id = run.task;
+    append.payload = to_event_payload(event);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+    }
+}
+
+Result<WorkflowRecoveryLesson> WorkflowRuntime::record_recovery_lesson(
+    const WorkflowRunId &run_id) {
+    Error error;
+    auto found = find_run(run_id, error);
+    if (!found.has_value()) {
+        return error;
+    }
+    RunRecord &run = *found.value();
+    std::shared_ptr<IMemory> memory;
+    MemoryScope scope;
+    WorkflowLearningLimits limits;
+    WorkflowFailureSignature signature;
+    WorkflowRunView view;
+    EventId settled_event;
+    std::vector<AppliedPatch> recovery_patches;
+    {
+        std::lock_guard lock(mutex_);
+        if (shut_down_) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "workflow runtime is shutting down");
+        }
+        const auto replayed = recorded_lessons_.find(run_id);
+        if (replayed != recorded_lessons_.end()) {
+            return replayed->second;
+        }
+        if (run.view.state != WorkflowRunState::Completed) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "recovery lessons require a completed run");
+        }
+        if (run.view.policy == WorkflowPolicy::DryRun) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "dry-run completions carry no recovery experience");
+        }
+        if (run.escalations == 0) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "run completed without a failure-driven escalation");
+        }
+        if (!learning_memory_) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "no learning context is installed");
+        }
+        if (!run.last_failure_signature.has_value()) {
+            return workflow_error(ErrorCode::Internal,
+                                  "escalation bookkeeping lost the failure signature");
+        }
+        if (!run.settled_event.has_value()) {
+            return workflow_error(ErrorCode::InvalidState,
+                                  "run settlement event is missing as provenance");
+        }
+        memory = learning_memory_;
+        scope = learning_scope_;
+        limits = learning_limits_;
+        signature = *run.last_failure_signature;
+        view = run.view;
+        settled_event = *run.settled_event;
+        recovery_patches.assign(run.applied_patches.begin() +
+                                    static_cast<std::ptrdiff_t>(run.patches_at_last_escalation),
+                                run.applied_patches.end());
+    }
+    WorkflowRecoveryLesson lesson;
+    lesson.lesson_id = view.run_id.to_string();
+    lesson.workflow_id = view.workflow_id.to_string();
+    lesson.ir_digest = view.ir_digest.to_string();
+    lesson.recovered_run_id = view.run_id.to_string();
+    lesson.failure = signature;
+    lesson.resumed_without_patch = recovery_patches.empty();
+    lesson.outcome = "recovered";
+    lesson.recorded_at_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    for (const auto &patch : recovery_patches) {
+        WorkflowRecoveryAction action;
+        action.patch_id = patch.patch_id.to_string();
+        action.patch_digest = patch.digest.to_string();
+        for (const auto &entry : patch.entries) {
+            if (entry.op == WorkflowPatchOp::Skip) {
+                action.targets.push_back("skip");
+            } else {
+                action.targets.push_back(workflow_patch_target_name(entry.target));
+            }
+        }
+        lesson.recovery.push_back(std::move(action));
+        if (lesson.recovery.size() >= limits.max_recovery_actions) {
+            break;
+        }
+    }
+    MemoryMutation mutation;
+    mutation.id = recovery_lesson_mutation_id(lesson.recovered_run_id);
+    mutation.type = MemoryMutationType::Add;
+    mutation.scope = scope;
+    mutation.proposed = recovery_lesson_to_memory_record(lesson, scope, {settled_event},
+                                                         std::chrono::system_clock::now());
+    mutation.evidence = {settled_event};
+    mutation.reason = MutationReasonCode::VerifiedEvent;
+    const auto applied = memory->apply(mutation);
+    if (!applied.has_value()) {
+        ++lesson_record_failures_;
+        emit_lesson_recorded(run, Sha256Digest{}, "failed",
+                             bounded_summary(applied.error().domain + ":" +
+                                             std::to_string(applied.error().domain_code)));
+        return applied.error();
+    }
+    {
+        std::lock_guard lock(mutex_);
+        recorded_lessons_.emplace(run_id, lesson);
+    }
+    emit_lesson_recorded(run, recovery_lesson_digest(lesson), "recorded", std::string{});
+    return lesson;
 }
 
 Result<WorkflowRuntime::RunRecord *> WorkflowRuntime::find_run(const WorkflowRunId &run_id,
@@ -755,6 +1074,10 @@ std::optional<Error> WorkflowRuntime::settle_terminal(RunRecord &run,
             }
         }
     }
+    // Stage F (DEC-030 §2): the episodic memory write trails the committed
+    // facts — the terminal state, the settled event and the carrier task are
+    // already durable, so a memory failure can never un-settle the run.
+    record_episode(run, terminal_state);
     return std::nullopt;
 }
 
@@ -822,7 +1145,7 @@ void WorkflowRuntime::emit_step_settled(const RunRecord &run, const WorkflowStep
     }
 }
 
-void WorkflowRuntime::emit_run_settled(const RunRecord &run, const std::string &safe_summary) {
+void WorkflowRuntime::emit_run_settled(RunRecord &run, const std::string &safe_summary) {
     if (!events_) {
         return;
     }
@@ -837,7 +1160,11 @@ void WorkflowRuntime::emit_run_settled(const RunRecord &run, const std::string &
     append.session_id = session_;
     append.task_id = run.task;
     append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
+    if (events_->append(append).has_value()) {
+        // Provenance anchor for stage-F memory writes (DEC-030 §2): the
+        // episode derives from this committed fact.
+        run.settled_event = append.event_id;
+    } else {
         ++event_emit_failures_;
     }
 }
@@ -1376,6 +1703,17 @@ bool WorkflowRuntime::handle_step_failure(RunRecord &run, const WorkflowStep &st
     {
         std::lock_guard lock(mutex_);
         run.failure_reason = bounded_summary(failure.safe_message);
+        // Stage F (DEC-029 §4): the sanitized failure signature feeding
+        // retrieval queries and episode/lesson records. domain + domain_code
+        // is a stable identifier; free text never reaches the memory or
+        // retrieval surface.
+        WorkflowFailureSignature signature;
+        signature.workflow_id = run.view.workflow_id.to_string();
+        signature.step_id = step.id.to_string();
+        signature.step_kind = workflow_step_kind_name(step.kind);
+        signature.reason_code =
+            failure.domain + ":" + std::to_string(failure.domain_code);
+        run.last_failure_signature = std::move(signature);
     }
 
     const auto hook = step.recovery;
@@ -1478,8 +1816,18 @@ std::optional<Error> WorkflowRuntime::escalate_waiting_agent(RunRecord &run,
                                       "run escalation budget exhausted");
         }
         ++run.escalations;
+        // Lesson derivation anchor (DEC-030 §4): recovery actions are the
+        // patches applied after this escalation.
+        run.patches_at_last_escalation = run.applied_patches.size();
     }
-    return enter_waiting_agent(run, reason);
+    auto failure = enter_waiting_agent(run, reason);
+    if (failure.has_value()) {
+        return failure;
+    }
+    // Failure-driven escalation only (DEC-030 §3): attach the retrieved
+    // episodic material before the agent asks for its continuation.
+    retrieve_lessons(run);
+    return std::nullopt;
 }
 
 std::optional<Error> WorkflowRuntime::escalate_waiting_user(RunRecord &run,
@@ -3013,6 +3361,7 @@ Result<WorkflowAgentContinuation> WorkflowRuntime::agent_continuation(
     continuation.step_history = run.settled;
     continuation.failure_reason = run.failure_reason;
     continuation.pending_decision = run.view.pending_decision;
+    continuation.relevant_lessons = run.retrieved_lessons;
     if (run.cursor < run.definition.steps.size()) {
         const auto &step = run.definition.steps[run.cursor];
         continuation.current_step = step.id;

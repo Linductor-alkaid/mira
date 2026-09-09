@@ -3,11 +3,13 @@
 #include <mira/core_contracts.hpp>
 #include <mira/environment.hpp>
 #include <mira/event_store.hpp>
+#include <mira/memory_contracts.hpp>
 #include <mira/runtime.hpp>
 #include <mira/tool_executor.hpp>
 #include <mira/workflow_compiler.hpp>
 #include <mira/workflow_events.hpp>
 #include <mira/workflow_ir.hpp>
+#include <mira/workflow_learning.hpp>
 #include <mira/workflow_navigation.hpp>
 #include <mira/workflow_run.hpp>
 #include <mira/workflow_tools.hpp>
@@ -123,6 +125,17 @@ struct WorkflowDecisionRequest final {
 // §7.6 minimal form). Host-side API: effective parameters appear in clear
 // only at the host boundary; model-facing serialization applies the
 // existing sanitization rules.
+//
+// Stage F (DEC-030 §3): failure-driven escalations attach the retrieved
+// episodic material (past episodes and recovery lessons matching the failure
+// signature) as bounded data. Statements are canonical learning-contract
+// JSON — sanitized by construction — and never authorization (RULE-09).
+struct WorkflowRetrievedLesson final {
+    MemoryKind kind = MemoryKind::Episode;
+    std::string statement;
+    float confidence = 0.0F;
+};
+
 struct WorkflowAgentContinuation final {
     WorkflowRunId run_id;
     WorkflowId workflow_id;
@@ -135,6 +148,9 @@ struct WorkflowAgentContinuation final {
     std::vector<WorkflowStepRecord> step_history;
     std::string failure_reason;
     std::optional<WorkflowPendingDecision> pending_decision;
+    // Retrieved at the last failure-driven escalation; empty when the
+    // learning context is absent, the query degraded or nothing matched.
+    std::vector<WorkflowRetrievedLesson> relevant_lessons;
 };
 
 struct WorkflowShutdownReport final {
@@ -214,6 +230,19 @@ class WorkflowRuntime final {
     // The confidence-evolved projection for host inspection and decay
     // workflows; nullopt when no context is installed.
     [[nodiscard]] std::optional<AppModel> app_model_snapshot() const;
+
+    // Stage F learning context (DEC-030 §1). Installing it enables the
+    // learning loop: settlement-time episode records, failure-driven
+    // retrieval into agent continuations and recovery-lesson recording.
+    // Without a context every learning path is a NoOp (M12 behavior). The
+    // scope is the single ACL scope learning records live in and retrieval
+    // queries against; User scope is rejected (episodes and lessons are
+    // automatic operational experience, not preferences). The memory backend
+    // routes its own I/O through its store workers (M4 §17); the runtime
+    // never owns storage workers.
+    [[nodiscard]] Result<void>
+    set_learning_context(std::shared_ptr<IMemory> memory, MemoryScope scope,
+                         WorkflowLearningLimits limits = kDefaultWorkflowLearningLimits);
 
     // Appends one immutable version record for the definition to the runtime's
     // library and returns its content digest. Validation defaults to
@@ -299,6 +328,15 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<WorkflowTrajectory>
     capture_trajectory(const WorkflowRunId &run_id) const;
 
+    // Stage F recovery-lesson recording (DEC-030 §4). Host-only API (never a
+    // model tool, W-04): derives one lesson from a Completed run that
+    // recovered from at least one failure-driven escalation, applies it to
+    // the learning memory and audits the outcome. The failure signature is
+    // the run's last escalation; the recovery actions are the patches applied
+    // after it (or the resumed_without_patch mark). Idempotent per run.
+    [[nodiscard]] Result<WorkflowRecoveryLesson>
+    record_recovery_lesson(const WorkflowRunId &run_id);
+
     // The stage-D publish gate (DEC-025 §3): structural validation, a DryRun
     // drive on the calling thread (empty parameters, defaults apply) and a
     // DryRunPassed version record with content-derived evidence. Gate
@@ -371,7 +409,9 @@ class WorkflowRuntime final {
                            std::uint32_t attempt);
     void emit_step_settled(const RunRecord &run, const WorkflowStep &step,
                            const WorkflowStepRecord &record);
-    void emit_run_settled(const RunRecord &run, const std::string &safe_summary);
+    // Emits WorkflowRunSettled and stores the appended event id on the run
+    // record as the provenance anchor for stage-F memory writes.
+    void emit_run_settled(RunRecord &run, const std::string &safe_summary);
     void emit_patch_proposed(const RunRecord &run, const WorkflowPatchId &patch_id,
                              const Sha256Digest &digest, WorkflowPatchTarget target,
                              const std::string &reason_code);
@@ -417,6 +457,21 @@ class WorkflowRuntime final {
                                  const AppModelTransition &transition, bool success,
                                  std::uint64_t now_ms);
     [[nodiscard]] bool navigation_context_installed() const;
+
+    // Stage F learning loop (DEC-030). record_episode runs on the settling
+    // thread after the carrier task settles: DryRun runs skip by design, and
+    // a memory write failure never touches the already-settled terminal
+    // state (it lands in a diagnostic counter and the failed audit event).
+    // retrieve_lessons runs on the drive thread after a failure-driven
+    // escalation commits: the store query happens without the runtime mutex
+    // and the bounded results land in the run record under it. Both are
+    // NoOps without a learning context.
+    void record_episode(RunRecord &run, WorkflowRunState terminal_state);
+    void retrieve_lessons(RunRecord &run);
+    void emit_episode_recorded(const RunRecord &run, const Sha256Digest &digest,
+                               const std::string &outcome, const std::string &reason_code);
+    void emit_lesson_recorded(const RunRecord &run, const Sha256Digest &digest,
+                              const std::string &outcome, const std::string &reason_code);
 
     [[nodiscard]] WorkflowRunResult drive(RunRecord &run, const OperationContext &context);
     void assemble_result(const RunRecord &run, WorkflowRunResult &result) const;
@@ -502,10 +557,23 @@ class WorkflowRuntime final {
     // mutex_; the provider is copied out and invoked without the lock.
     std::optional<AppModel> app_model_;
     ScreenStateProvider screen_state_provider_;
+    // Stage F learning context (DEC-030 §1): the memory facade, its single
+    // ACL scope and the retrieval bounds. Guarded by mutex_; the memory
+    // facade is copied out and invoked without the lock.
+    std::shared_ptr<IMemory> learning_memory_;
+    MemoryScope learning_scope_;
+    WorkflowLearningLimits learning_limits_;
+    // Lessons already recorded per run (idempotent replay without a store
+    // round-trip). Guarded by mutex_.
+    std::unordered_map<WorkflowRunId, WorkflowRecoveryLesson, StrongIdHash<WorkflowRunId>>
+        recorded_lessons_;
 
     std::atomic<std::uint32_t> event_emit_failures_{0};
     std::atomic<std::uint32_t> task_settlement_failures_{0};
     std::atomic<std::uint32_t> monitor_failures_{0};
+    std::atomic<std::uint32_t> episode_record_failures_{0};
+    std::atomic<std::uint32_t> lesson_record_failures_{0};
+    std::atomic<std::uint32_t> retrieval_failures_{0};
 };
 
 } // namespace mira

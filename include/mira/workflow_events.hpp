@@ -185,6 +185,30 @@ struct WorkflowNavigationObservedEvent final {
     double confidence = 0.0;
 };
 
+// --- Workflow learning audit (State, DEC-030 §5, stage F) -------------------
+
+// One settlement-time episode memory write attempt. `recorded` carries the
+// episode digest; `failed` carries a bounded reason code instead. DryRun
+// settlements skip recording by design and emit nothing.
+struct WorkflowEpisodeRecordedEvent final {
+    WorkflowRunId run_id;
+    WorkflowId workflow_id;
+    Sha256Digest episode_digest{};
+    std::string outcome; // recorded | failed
+    // Machine-readable reason code (e.g. "memory-unavailable"); empty when
+    // recorded.
+    std::string reason_code;
+};
+
+// One host-initiated recovery-lesson memory write attempt, same shape.
+struct WorkflowLessonRecordedEvent final {
+    WorkflowRunId run_id;
+    WorkflowId workflow_id;
+    Sha256Digest lesson_digest{};
+    std::string outcome; // recorded | failed
+    std::string reason_code;
+};
+
 // --- Payload builders and parsers -------------------------------------------
 
 // Builders return ready-to-append payloads with the event type and schema
@@ -204,6 +228,8 @@ struct WorkflowNavigationObservedEvent final {
 [[nodiscard]] EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowNavigationPlannedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event);
 
 // Parsers fail closed on schema mismatch, unknown fields and malformed ids.
 // The payload data is JSON text (EventPayload::data).
@@ -237,5 +263,9 @@ parse_workflow_publish_rejected(const EventPayload &payload);
 parse_workflow_navigation_planned(const EventPayload &payload);
 [[nodiscard]] Result<WorkflowNavigationObservedEvent>
 parse_workflow_navigation_observed(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowEpisodeRecordedEvent>
+parse_workflow_episode_recorded(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowLessonRecordedEvent>
+parse_workflow_lesson_recorded(const EventPayload &payload);
 
 } // namespace mira
