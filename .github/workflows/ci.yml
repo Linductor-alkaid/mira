@@ -60,7 +60,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [android-arm64-release, android-x86_64-release]
+        include:
+          - preset: android-arm64-release
+            toolchain: android-arm64.cmake
+          - preset: android-x86_64-release
+            toolchain: android-x86_64.cmake
     runs-on: ubuntu-24.04
     env:
       ANDROID_NDK_VERSION: 26.3.11579264
@@ -80,8 +84,14 @@ jobs:
           echo "ANDROID_NDK_HOME=${android_sdk_root}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
       - name: Configure Android ${{ matrix.preset }}
         run: cmake --preset ${{ matrix.preset }}
-      - name: Build Android Core, Simulator and Host Adapter
-        run: cmake --build --preset ${{ matrix.preset }} --target mira_core mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport mira_state_store mira_stateful_consumer
+      - name: Build Android Core, Workflow and Host Adapter
+        run: cmake --build --preset ${{ matrix.preset }} --target mira_core mira_workflow mira_simulator_adapter mira_android_adapter mira_net_transport mira_mbedtls_transport mira_state_store mira_stateful_consumer
+      - name: Cross-link installed consumer against Mira::workflow
+        run: >
+          cmake -DSOURCE_DIR=${{ github.workspace }}
+          -DPROJECT_BUILD_DIR=${{ github.workspace }}/build/${{ matrix.preset }}
+          -DTOOLCHAIN_FILE=${{ github.workspace }}/cmake/toolchains/${{ matrix.toolchain }}
+          -P ${{ github.workspace }}/tests/cmake/RunAndroidConsumerLink.cmake
 
   sanitizers:
     strategy:
