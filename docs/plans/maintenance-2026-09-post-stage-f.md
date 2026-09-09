@@ -29,7 +29,7 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
 | --- | --- | --- |
 | 阶段 A–F | M8–M13 实现与测试已合入；历史记录为 Linux/Windows、sanitizer、quality 通过；`BUG-20260909-001` 已由 `MNT-202609-22` 修复，两 ABI 实际编译 `mira_workflow` 并完成安装包 consumer 交叉链接（PR #35） | Android 设备运行与宿主消费证据仍缺，`MNT-202609-27` |
 | F 学习闭环 | 域映射、Episode/Lesson、失败查询与 `relevant_lessons` 已实现；M13 测试以三个 Run 验证记住、恢复、再次检索 | AgentLoop 未消费 continuation；测试由宿主直接 resume/record lesson，不能证明模型采纳有效，`MNT-202609-23/24` |
-| 长期资产与恢复 | M4 有 SQLite Memory；M9 Library/Run 与 M12 App Model 为进程内投影 | M13 fixture 与 consumer 学习段均用内存后端；缺跨重启学习集成与事件重建逐字段/digest 验证，`MNT-202609-25/26` |
+| 长期资产与恢复 | M4 有 SQLite Memory；M9 Library/Run 与 M12 App Model 为进程内投影 | 跨重启学习持久化已由 25 取证（SQLite 通过）；事件重建配方载荷缺口登记 `BUG-20260909-002`，DEC-030 §5 修订待立项；Library/Run/App Model 跨进程持久化仍缺，`MNT-202609-26` |
 | 自动化资产复用 | M11 有轨迹捕获、编译、归纳、DryRun 入库；M12 有图与导航规划 | 缺 Procedure 索引消费者、按目标选 Workflow，以及真实 UI 到 `ScreenStateProvider` 的消费侧验证，`MNT-202609-27/31` |
 | 真实平台与 Provider | Android ABI 文档已有 miracle P1 截图及 lease 路径证据；Provider 矩阵逐 capability 记录 | UI tree、转码后视觉闭环、决策修复、输入/权限/Takeover/宿主销毁完整矩阵仍有外部未结项，`MNT-202609-27` |
 | 评估与发布 | 有单元/集成/consumer 测试与 M4 benchmark；BuiltIn 工具闭环已交付 | 缺 Workflow 任务级统一评估、学习增益/成本基线、soak；ToolModule 签名/协商/OOP 仍未交付，`MNT-202609-28/29/30` |
@@ -53,7 +53,45 @@ M5/M6 保持 Cancelled，M7 保持 Blocked；本计划不批准恢复原范围�
   门禁；合并提交 CI 12/12 通过，两 ABI 编译与链接证据已回填六个里程碑与平台矩阵，
   重开项逐项关闭。设备运行单列，仍由 `MNT-202609-27` 跟踪。
 
-### 2.2 能力边界
+### 2.2 BUG-20260909-002：DEC-030 §5 重建配方事件载荷缺口
+
+- 证据：`MNT-202609-25` 取证（新增 `tests/m13/m13_learning_persistence_test.cpp`，
+  严格按 DEC-030 §5 五类事件——`WorkflowRunStarted` + `WorkflowStepSettled` +
+  `WorkflowRunSettled` + `WorkflowPatchApplied` + 两员审计事件——实现重建并与直接
+  记录路径写入 SQLite 的原记录逐字段比较）。**可恢复字段全部一致**：Episode 的
+  run_id/workflow_id/ir_digest/policy/outcome/failed_step_id，Lesson 的
+  lesson_id/recovered_run_id/failure.workflow_id/failure.step_id/
+  resumed_without_patch/recovery[].patch_id，以及全部确定性派生 ID（MemoryId/
+  MutationId）与 provenance（`WorkflowRunSettled` 事件 ID 锚点）。**缺口字段**
+  （原记录有值、重建为默认，测试以冻结断言固化）：
+  - Episode：`failure_reason_code`（`WorkflowStepSettled` 载荷无失败原因码）、
+    `escalations`（无事件携带升级计数）、`checkpoint_handoffs`（同前；本轮场景无
+    正样本，载荷缺失为同构缺口）、`recorded_at_ms`（只能以 `WorkflowRunSettled`
+    envelope 时间戳代位，是另一次时钟读数，仅同源近似不逐位相等）。
+  - Lesson：`failure.reason_code`、`failure.step_kind`（配方事件不含；`WorkflowStepStarted`
+    有 kind 但不在配方五类内）、`recovery[].patch_digest`（`WorkflowPatchApplied`
+    仅 patch_id/run_patch_epoch；`WorkflowPatchProposed` 有 digest 但同样不在配方内）、
+    `recovery[].targets`（无配方事件携带逐 entry 目标）、`recorded_at_ms`。
+  - 因此 `workflow_episode_digest`/`recovery_lesson_digest` 均无法由配方事件复现；
+    审计事件中的 digest 只能由原记录内容复现（直接路径自洽已断言通过）。
+- 影响：DEC-030 §5「足以确定性重建 Episode/Lesson 记忆记录；Memory 损坏后可从
+  事件流重放恢复」的声明**未获证实**。ID、provenance 与身份字段可重建（重放落点
+  幂等已验证），但记录内容与 digest 不具备逐字段可重建性；依赖「从事件流恢复同一
+  学习记录」的消费者（MNT-202609-26 的恢复工具、MNT-202609-24 编排对 lesson 的
+  patch 摘要关联）当前无充分数据源。
+- 修订提案（待专项立项，不因登记而视为已批准）：方案 A——扩展事件载荷
+  （`WorkflowStepSettled` 增有界 reason_code；`WorkflowRunSettled` 增
+  escalations/checkpoint_handoffs 有界计数；`WorkflowPatchApplied` 增 patch_digest
+  与目标摘要；两员审计事件携带 recorded_at_ms），闭集载荷扩展须按 DEC-022 §2 的
+  fail-closed 原则走 schema 版本决策并评估既有消费者；方案 B——修订 DEC-030 §5 为
+  「可恢复字段子集重建」，显式声明不参与重建与 digest 的字段，放弃审计 digest 与
+  重建产物的一致要求。建议与 MNT-202609-24 联合评估（恢复编排消费 lesson 时
+  patch 摘要是关键关联键）。
+- Owner：Mira Maintainers。解除条件：选定方案并按「先专项设计与 DEC」流程冻结修订
+  后实施，复跑本测试的缺口断言（字段补齐时冻结断言翻转，须同步更新本条与差异
+  清单）。属于事件载荷设计缺口，非 Executor 能力缺口。
+
+### 2.3 能力边界
 
 `relevant_lessons` 是数据，`record_recovery_lesson` 是宿主专用写入门面；采纳经验、生成
 修复、重新验证和决定是否沉淀资产仍缺 Harness 编排。学习记录默认还要求宿主安装
@@ -62,8 +100,9 @@ IMemory 与 EventStore；缺事件锚点的 Episode 会跳过（`record_episode`
 M13 已按范围推迟 Procedure 自动索引、向量召回、User Model 扩展、TTL/retention、训练导出。
 这些属于新增能力，不据此重开已完成的功能项。跨进程 Library/Run/App Model 持久化亦为
 M9/M12 显式非目标；M4 恢复能力不能直接外推到它们。
-DEC-030 §5 的重建配方目前缺少“仅凭持久事件恢复同一学习记录”的完整取证；本轮将其列为
-待核实契约风险，不将事件可解析等同于已实现恢复工具。
+DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份字段可确定性重建且
+重放落点幂等，但内容字段与 digest 存在载荷缺口（`BUG-20260909-002`），“足以确定性
+重建”未证实；修订实施前不将事件可解析等同于可恢复工具。
 
 ## 3. 工作项与顺序
 
@@ -91,11 +130,14 @@ DEC-030 §5 的重建配方目前缺少“仅凭持久事件恢复同一学习�
   冻结后正式立项。验收：recorded Provider 真正收到检索上下文并生成可验证修复；首次
   失败、恢复、再次命中全链路可追踪；恶意 lesson 不提升权限，取消/接管后无新增动作，
   终态不复活，正常/异常/拒绝/超时/shutdown 均有测试；真实 Provider 证据由 27 补齐。
-- [ ] `MNT-202609-25`（Planned）验证学习持久化与事件重建配方，形成字段级证据及差异清单。
+- [x] `MNT-202609-25`（Completed）验证学习持久化与事件重建配方，形成字段级证据及差异清单。
   依赖：现有 M4/M13 接口及可构建环境。验收：用真实 SQLite IMemory 写 Episode/Lesson，
   关闭并重建 owner 后同 scope 查询一致、跨 scope 不可读；从持久事件重建时逐字段比较
   ID、timestamp、failure signature、patch 摘要、provenance 与 digest；缺字段则登记
   实现缺陷或提出 DEC-030 修订，不标为成功。另覆盖慢/失败 store 对取消与 shutdown 的影响。
+  结果（2026-09-09）：SQLite 持久化与慢/失败 store 组通过；事件重建配方取证**未通过**
+  ——载荷缺口按验收登记 `BUG-20260909-002`（§2.2，含 DEC-030 §5 修订提案），
+  未宣称配方验证成功；修订实施另行立项。证据见第 5 节 2026-09-09 第三条记录。
 - [ ] `MNT-202609-26`（Proposed）交付有需求证据支持的 Workflow Library/Run/App Model
   持久化与恢复。依赖：25 的差异清单、27 的跨重启需求证据、专项存储/迁移 DEC。
   验收：旧版本 Run 固定原 digest、crash window 重建幂等、损坏/未知版本拒绝、未确认
@@ -206,3 +248,31 @@ Linux gcc 13.3 Debug 66/66 ctest（含 `mira_installed_consumer_test`）。回�
 Windows/quality 由合并提交 run 原样通过，未额外增加组合。另：上一条记录中因未初始
 化子模块而登记的 `tools/check_docs.py` 补跑条件已满足——子模块初始化后本轮
 docs/sbom/platform-boundary 门禁全绿。
+
+2026-09-09：`MNT-202609-25` 完成。新增 `tests/m13/m13_learning_persistence_test.cpp`
+（`mira_add_m13_persistence_test`，额外链接 `Mira::state_store`，标签 integration/m13），
+三组取证共享同一驱动场景：run A（Strict 终态失败）记 Episode；run B（Recoverable
+失败升级 → skip patch → resume 完成）记 Episode 并由宿主 `record_recovery_lesson`
+记 Lesson；事件经 `FileEventStore` 落盘。1) 持久化组：按文档顺序关闭整个 owner 栈
+（runtime shutdown → store close → MiraRuntime stop → `executor.shutdown(true)`）后以
+全新 executor 与 `SqliteMemoryStore` 重建同库文件——同 ID 记录逐字段一致（statement、
+kind、scope、verification、confidence、status、version=1、provenance），同 scope
+`failure_retrieval_query` 找回逐字节一致，跨 scope（Agent 异 subject、Application
+kind）零结果，确定性 mutation id 重放 `idempotent_replay` 且版本不涨；审计事件
+`WorkflowEpisodeRecorded`×2 / `WorkflowLessonRecorded`×1 均 outcome=recorded。
+2) 重建配方组（`BUG-20260909-002` 证据）：严格按 DEC-030 §5 五类事件重建，可恢复
+字段全部一致（身份/策略/ir_digest/outcome/failed_step_id、lesson 的
+resumed_without_patch 与 recovery[].patch_id、全部确定性 ID 与 provenance 锚点）；
+缺口字段以冻结断言固化（episode 的 failure_reason_code/escalations/
+checkpoint_handoffs/recorded_at_ms，lesson 的 failure.reason_code/step_kind/
+recovery[].patch_digest/targets/recorded_at_ms，timestamp 仅 RunSettled envelope
+代位且偏差 ≤60s 同源近似），episode/lesson digest 均无法由重建复现而原记录 digest
+与审计事件一致（直接路径自洽）。3) 慢/失败 store 组：query 慢 200ms 不阻塞升级至
+WaitingAgent 且 `relevant_lessons` 为空、cancel 收敛 Cancelled 且幂等；apply 慢
+200ms 的异步 drive 与 `shutdown()` 并发，drain 在预算内 clean；失败 store（注意
+fixture 的 fail_applies 为一次性旋钮，已重新武装）终态不被 un-settle、审计
+outcome=failed×2、cancel/shutdown 闭合、零记录落库。本机环境 Ubuntu 24.04 x86_64、
+gcc 13.3.0、CMake 3.28.3：Debug 全量 ctest 67/67（原 66 + 本测试）、ASAN/UBSAN/TSAN
+（`setarch -R`）m13 4/4、`format-check` 通过；Release、Windows、Android 编译与
+quality 由 PR CI 补齐后回填。未覆盖：Android 设备运行与真实 Provider（27）、
+Library/Run/App Model 跨进程持久化（26）。

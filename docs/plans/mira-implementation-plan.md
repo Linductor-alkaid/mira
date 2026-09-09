@@ -92,8 +92,11 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
 
 1. P0 `MNT-202609-22`（Completed）：Android 两 ABI Workflow 编译与安装消费链接
    证据已补齐并回填六个里程碑与平台矩阵。
-2. P1 `MNT-202609-23`–`26`：冻结并实现 Agent 采纳 lesson 的恢复编排，验证真实 SQLite
-   学习后端与事件重建；有需求证据后推进 Library/Run/App Model 跨进程持久化。
+2. P1 `MNT-202609-23`–`26`：冻结并实现 Agent 采纳 lesson 的恢复编排（23 待冻结）；
+   `MNT-202609-25` 已完成——真实 SQLite 学习后端跨 owner 重建取证通过，慢/失败
+   store 下取消与 shutdown 闭合，DEC-030 §5 事件重建配方缺口登记
+   `BUG-20260909-002`（修订提案待立项）；26 依证据推进 Library/Run/App Model
+   跨进程持久化。
 3. P1 `MNT-202609-27`–`30`：回收 miracle 真机/Provider 证据，建立任务评估基线，形成
    M7 重定义提案；外部证据缺失项保持未完成。
 4. P2 `MNT-202609-31`–`32`：Procedure 检索消费者、语义召回与 retention 按实际需求立项。

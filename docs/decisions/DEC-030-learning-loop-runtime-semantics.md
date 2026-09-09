@@ -105,6 +105,12 @@ record_recovery_lesson(run_id) -> Result<WorkflowRecoveryLesson>
   （失败步骤）+ `WorkflowRunSettled`（终态与摘要）+ `WorkflowPatchApplied`（恢复动作）
   + 两员审计事件，足以确定性重建 Episode/Lesson 记忆记录；Memory 损坏后可从事件流
   重放恢复。
+  取证状态（2026-09-09，`MNT-202609-25`）：ID、provenance 与身份字段可确定性重建且
+  重放落点幂等，但上述事件载荷不携带失败原因码、升级/让渡计数、patch 摘要与逐
+  entry 目标及记录时间戳，digest 无法由配方复现——「足以确定性重建」**未获证实**。
+  缺口与修订提案见
+  [维护计划 BUG-20260909-002](../plans/maintenance-2026-09-post-stage-f.md)；修订
+  立项实施前，本条配方仅可作部分字段重建依据。
 
 ### 6. Executor 路由与关闭
 
