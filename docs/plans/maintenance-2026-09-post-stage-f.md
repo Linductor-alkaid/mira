@@ -276,3 +276,16 @@ gcc 13.3.0、CMake 3.28.3：Debug 全量 ctest 67/67（原 66 + 本测试）、A
 （`setarch -R`）m13 4/4、`format-check` 通过；Release、Windows、Android 编译与
 quality 由 PR CI 补齐后回填。未覆盖：Android 设备运行与真实 Provider（27）、
 Library/Run/App Model 跨进程持久化（26）。
+
+2026-09-09：`MNT-202609-25` CI 证据回填。PR
+[#36](https://github.com/Linductor-alkaid/mira/pull/36)（`ac73386`，合并提交
+`20a58f6`）检查全绿：PR pipeline run
+[34361479640](https://github.com/Linductor-alkaid/mira/actions/runs/34361479640)
+12/12 与合并提交 master pipeline run
+[34363464570](https://github.com/Linductor-alkaid/mira/actions/runs/34363464570)
+12/12 均通过——Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、
+Android arm64-v8a 与 x86_64（NDK，编译级）、ASAN/UBSAN/TSAN、quality（clang-tidy +
+format + docs/sbom/platform-boundary）。新增测试目标仅进入 Linux/Windows 测试与
+sanitizer 矩阵；Android 仍为编译与 consumer 链接取证，设备运行归 27。本条与上一条
+共同构成 25 的完整验证记录，任务关闭；`BUG-20260909-002` 与 DEC-030 §5 修订提案
+保持待立项。

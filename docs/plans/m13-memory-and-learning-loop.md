@@ -289,3 +289,9 @@ shutdown 均闭合。DEC-030 §5 事件重建配方逐字段取证未通过：�
 `BUG-20260909-002`（修订提案待立项），「足以确定性重建」声明未证实。本里程碑
 「跨重启学习持久化未验证不声明」的边界相应收敛：SQLite 持久化与慢/失败降级已验证，
 事件重建缺口与 Android 设备运行仍分别由修订立项与 `MNT-202609-27` 跟踪。
+
+2026-09-09 补充：`MNT-202609-25` 交付经 PR
+[#36](https://github.com/Linductor-alkaid/mira/pull/36) 合入（`ac73386`，合并提交
+`20a58f6`），PR 与合并提交 pipeline 各 12/12 通过（Linux/Windows/Android 编译、
+ASAN/UBSAN/TSAN、quality）；CI 证据见
+[后续计划](maintenance-2026-09-post-stage-f.md) 第 5 节同日回填记录。
