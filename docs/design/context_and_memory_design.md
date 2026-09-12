@@ -1,9 +1,13 @@
 # Mira Context 与 Memory 架构设计
 
 > 状态：Active  
-> 版本：0.4  
-> 更新日期：2026-09-03  
-> 上位设计：[Mira Runtime 设计](mira_runtime_design.md)
+> 版本：0.5  
+> 更新日期：2026-09-12  
+> 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
+> 上下文智能扩展：长会话语义压缩方向（Retrieve/Rerank/Consolidate/Compress 与
+> Hot/Warm/Cold 生命周期）由 [Context Intelligence 设计](context_intelligence_design.md)
+> （[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)，2026-09-12
+> 起冻结）承接；本文 Layer 0 的确定性压缩与准入语义不变
 
 ## 0. M4 实现状态注记
 
@@ -882,6 +886,7 @@ Mira 额外测试：
 ## 25. 参考资料
 
 - [Mira Runtime 设计](mira_runtime_design.md)
+- [Context Intelligence 设计](context_intelligence_design.md)（长会话语义压缩扩展）
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [EventStore、ArtifactStore 与崩溃一致性](event_artifact_crash_consistency.md)
 - [本地感知与任务 ONNX 模型](local_perception_and_task_models.md)

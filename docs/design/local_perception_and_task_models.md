@@ -1,8 +1,12 @@
 # Mira 本地感知与任务 ONNX 模型设计
 
-> 状态：Active  
-> 版本：1.1  
-> 更新日期：2026-08-31  
+> 状态：Active（假设记录：M5 里程碑已随 [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)
+> 终止，本文保留为方向与边界记录；OCR/检测的回归目标契约由
+> [视觉 Grounding 设计](visual_grounding_design.md)
+> （[DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)）承接，其中 §5 模型包、
+> §6 推理边界与 §11 评估纪律被该设计直接沿用）  
+> 版本：1.2  
+> 更新日期：2026-09-12  
 > 适用范围：OCR、目标/元素检测、状态识别、模型蒸馏、ONNX 推理、模型包与评估  
 > 上位决策：[DEC-006](../decisions/DEC-006-local-perception-task-models.md)
 

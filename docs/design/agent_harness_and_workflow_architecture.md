@@ -1,8 +1,8 @@
 # Mira Agent Harness 与 Workflow 架构设计
 
 > 状态：Active（阶段 A–F 实现已交付；Agent 恢复编排已随 M14 交付；Android 设备验收待补）
-> 版本：0.2
-> 更新日期：2026-09-10
+> 版本：0.3
+> 更新日期：2026-09-12
 > 负责人：Mira Maintainers  
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)  
 > 适用范围：Mira 长期产品定位、Agent Harness 与 Workflow 系统分解、后续里程碑重定义
@@ -85,7 +85,7 @@ Workflow Run
 | Observation Pipeline、截图与结构化 UI、坐标与 Android Host ABI | M2 已交付 | 复用；为 App Model 与感知层级提供输入 |
 | Context/Memory、EventStore 事实源、Checkpoint、Replay | M1/M4 已交付 | 复用；Memory 按第 10 节演进，EventStore 保持事实源 |
 | Tool Registry / 模组体系（ITool/ToolModule，[DEC-009](../decisions/DEC-009-tool-module-boundary.md)） | **未实现**；现有的是 DEC-015 的最小 BuiltIn 执行边界（无 manifest/签名/隔离） | 模组体系随 M7 重定义落地，届时吸纳 BuiltIn 边界 |
-| 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义 |
+| 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义；OCR/检测的目标契约已由 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) 冻结（实现不开始） |
 | Workflow Compiler/Runtime、App Model、Navigation Planner、对话 patch | M8–M12 分阶段范围已实现；Android 模块构建证据待补 | 宿主编排、资产持久化与真实 UI 消费验证仍有后续项，见第 16 节 |
 | Memory 四类域、Episode/Lesson 与失败检索 | M13 分阶段范围已实现；Android 模块构建证据待补 | 提供 `relevant_lessons`；Agent 采纳与执行经验的编排、Procedure 索引尚待立项 |
 
@@ -621,7 +621,10 @@ Accessibility -> OCR -> CV / Detector -> VLM
 
 原则：优先低成本、稳定、确定性的感知方式，必要时再升级到 VLM。该层级与现有验证分层
 （receipt -> 结构化谓词 -> screen diff -> 本地感知 -> VLM）同构，实现上共用证据与降级
-机制；OCR/CV 能力本身按 DEC-011 由 demo 证据决定是否回归。
+机制；OCR/CV 能力是否回归仍按 DEC-011 由 demo 证据决定，其目标契约与调度策略由
+[视觉 Grounding 设计](visual_grounding_design.md)
+（[DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)）冻结，实现进入里程碑以
+`MNT-202609-27/30` 证据为门槛。
 
 ## 10. Memory 架构
 
@@ -729,7 +732,7 @@ mira-core            session / context / event / state / persistence / permissio
 mira-agent           agent_loop / model_provider / tool_registry / planner / recovery / interrupt
 mira-workflow        ir / compiler / composer / runtime / versioning / verifier      （新增）
 mira-app-model       ui_state / ui_transition / navigator / graph / mapper           （新增）
-mira-perception      accessibility / ocr / cv / detector / vlm                       （按 DEC-011 重定义）
+mira-perception      accessibility / ocr / cv / detector / vlm                       （按 DEC-011 重定义；目标契约见视觉 Grounding 设计）
 mira-memory          user_model / environment_model / procedural / episodic / retrieval
 mira-platform-*      screenshot / input / app_control / accessibility                （Adapter 层，边界不变）
 ```
@@ -865,10 +868,14 @@ Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-sta
   [DEC-003](../decisions/DEC-003-event-sourced-persistence.md)、
   [DEC-004](../decisions/DEC-004-security-authority-confirmation.md)、
   [DEC-009](../decisions/DEC-009-tool-module-boundary.md)、
-  [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)
+  [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)、
+  [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)、
+  [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
 - 现行规范：[Mira Runtime 设计](mira_runtime_design.md)、
   [核心公共契约与状态机](core_contracts_and_state_machine.md)、
   [Context 与 Memory 架构设计](context_and_memory_design.md)、
+  [Context Intelligence 设计](context_intelligence_design.md)、
+  [视觉 Grounding 设计](visual_grounding_design.md)、
   [工具模组设计](tool_module_design.md)
 - 计划：[Mira 实施总计划](../plans/mira-implementation-plan.md)
 - 规范：[项目管理与文档规范](../project/project_management_and_documentation.md)、
