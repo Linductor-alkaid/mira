@@ -1,12 +1,12 @@
 # Mira 直接依赖与许可证
 
 > 状态：Active
-> 更新日期：2026-09-03
+> 更新日期：2026-09-12
 > 适用范围：Mira 可构建目标的直接第三方依赖
 
 | 依赖 | 固定版本 | 来源 | 许可证 | 许可证文件 |
 | --- | --- | --- | --- | --- |
-| Executor | `4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9`（`v0.4.0-82-g4fd8e60`） | git submodule | MIT | [`third_party/executor/LICENSE`](../../third_party/executor/LICENSE) |
+| Executor | `e2dc8ca2243345e2e6cf35b395793a58796457b9`（`v0.4.0-100-ge2dc8ca`） | git submodule | MIT | [`third_party/executor/LICENSE`](../../third_party/executor/LICENSE) |
 | Mbed TLS | `068ff080b369adfac81509f9b57b2afabaf82dc5`（`v3.6.7`，3.6 LTS；framework `dde0c4a`） | recursive git submodule | Apache-2.0（从双许可证中选择） | [`third_party/mbedtls/LICENSE`](../../third_party/mbedtls/LICENSE) |
 | SQLite | `3.53.4`（amalgamation `3530400`，archive SHA-256 `1e71ddf9…e87d`） | vendored source archive | Public Domain | [`third_party/sqlite/LICENSE.md`](../../third_party/sqlite/LICENSE.md) |
 

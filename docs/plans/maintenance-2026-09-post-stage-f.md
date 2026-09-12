@@ -223,12 +223,26 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   Context Intelligence 框架（[专项设计](../design/context_intelligence_design.md)）内
   立项；两项的证据条件不变，不因方向冻结自动就绪。
 
+### 3.5 依赖维护
+
+- [ ] `MNT-202609-33`（In Progress）将 `third_party/executor` 固定版本从 `4fd8e60`
+  升级到 `e2dc8ca`（上游 18 个提交：停机/提交交错生命周期竞态 UAF 修复 P-001/P-002、
+  Windows >64 CPU 处理器组亲和、线程池提交热路径重建 P1、lock-free 池/MPMC 消费侧/
+  futex 驻停 worker P2），并完成 Mira 使用面回归取证。依赖：无（独立维护项；旧 pin
+  含上游已确认并修复的 `RealtimeThreadExecutor`/`LockFreeTaskExecutor` 停机竞态，
+  Mira 集成测试正使用 realtime register/start/stop 路径）。验收：上游公开
+  facade/serial/admission 契约未变（`4fd8e60..e2dc8ca` diff 核对）；executor 自身
+  测试全量取证（含 TSAN 新旧 pin 对照，不引入新报告）；Mira 门禁（debug/TSAN/ASAN/
+  四检查目标/Android 交叉编译预演）通过；锁定信息、SBOM、供应链文档与 DEC-001 引用
+  同步；PR CI（Linux×4/Windows×2/Android×2/sanitizers×3/quality）全绿后回填勾选。
+
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
 产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25/24 已完成
 （24 由 M14 承载，PR #38）。2026-09-12 状态：28 完成（profile + DEC-034 冻结），29 的
 设计前置满足转 `Planned`，recorded 基线轮可开工；其真实平台组与 live canary 仍分别等
-27 的外部证据与受控凭据，26 依 25 差异清单与 27 需求推进。
+27 的外部证据与受控凭据，26 依 25 差异清单与 27 需求推进；33（依赖维护）同日立项并
+完成本地取证，待 PR CI 回填。
 
 ## 4. Executor、风险与退出条件
 
@@ -491,3 +505,38 @@ RSS 增长 2.0%，基线与首轮发现登记于
 format/platform-boundary/docs 门禁通过。限制：live canary 未执行（凭据未配置，
 补跑条件已登记）、真实平台组归 27、fd 句柄计数未实现（句柄项仅 soak RSS 覆盖）、
 Windows/Android/Release/quality 由 PR CI 回填。任务保持未勾选。
+
+2026-09-12：`MNT-202609-33` Executor 固定版本升级 `4fd8e60` → `e2dc8ca`
+（`v0.4.0-100-ge2dc8ca`，上游 18 提交，PR #180/#181/#182/#183/#184）。动机：旧 pin 含
+上游 P-001/P-002 已确认并修复的停机/提交交错生命周期竞态（`LockFreeTaskExecutor::enter_push()`、
+`RealtimeThreadExecutor::push_task_ex()` 三步非原子序列可致 `stop_and_join()` 后 UAF），
+而 Mira `tests/integration/executor_lifecycle_test.cpp` 正使用 realtime register/start/stop
+路径；另吸收 P1 线程池热路径重建与 P2 lock-free 池。契约核对：`4fd8e60..e2dc8ca` 未触及
+`serial_execution_context.hpp`、facade `executor.hpp` 与 admission `config.hpp`，Mira 使用面
+（facade + `SerialExecutionContext` + `max_in_flight_tasks` + blocking I/O + timers + 集成
+测试内 realtime）公开契约不变。本地验证（Linux x86_64，gcc 13.3，glibc 2.39，NDK
+26.3.11579264，14 核）：
+
+- executor 自身套件（`EXECUTOR_BUILD_TESTS=ON` + `EXECUTOR_FETCH_GTEST`，Debug，树外
+  `/tmp` 构建）：ctest 135/140 通过；5 个 `test_api_doc_*` 失败为相对路径 `../docs/API.md`
+  查找伪影（上游 CI 为树内 `build/`），以 `cwd=third_party/executor/tests/` 直跑 5/5
+  通过；`benchmark_lockfree_task_executor` 仅在 `-j4` 并行负载下偶发延迟断言失败，
+  `-j2` 与单独运行均通过。
+- executor TSAN（`EXECUTOR_ENABLE_TSAN=ON`，`setarch x86_64 -R`）：新 pin 失败
+  batch_integration/executor_manager/lockfree_mpsc/benchmark 四项（另 5 项 api_doc 为
+  上述路径伪影）；旧 pin `4fd8e60` 同套件对照失败相同四项另加
+  `test_lockfree_task_executor`——升级未引入新 TSAN 报告并消除一项。该四项均不在上游
+  TSAN CI 子集内；`test_lockfree_mpsc` 的竞争位于测试自身（`executed_count` 先于加锁
+  `insert` 递增后无锁读 `executed_ids`），`test_executor_manager` 报告位于 monitor
+  析构路径，均不属 Mira 使用面（Mira 不使用 `ExecutorManager`/batch/`MpscChannel`）。
+- Mira 门禁：`ctest --preset debug` 69/69；TSAN 68/68（`mira_m3_mbedtls_portable_test`
+  按设计禁用）、0 报告；ASAN 69/69、0 错误；`format-check`/`docs-check`/`sbom-check`/
+  `platform-boundary-check` 通过；`android-arm64-release` 交叉编译 mira_core/
+  mira_workflow/两 Adapter/net/mbedtls transport/state_store/stateful_consumer 全部通过。
+- 同步：`dependencies.lock.json`、`sbom.cdx.json`、[直接依赖文档](../supply-chain/direct-dependencies.md)、
+  [DEC-001](../decisions/DEC-001-runtime-executor-ownership.md) 版本引用；反馈台账三条
+  Resolved 记录为锚定原复现/迁移 commit 的历史证据，不随 pin 前移改写。
+
+限制与剩余：Windows/clang/Release、Android x86_64 与 UBSAN 由 PR CI 回填；上游面外 4 项
+TSAN 发现未向上游登记 issue（不影响 Mira，是否上报由维护者决定）。任务保持未勾选至 CI
+回填。

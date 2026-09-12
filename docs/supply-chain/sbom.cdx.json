@@ -14,11 +14,11 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "pkg:github/Linductor-alkaid/executor@4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
+      "bom-ref": "pkg:github/Linductor-alkaid/executor@e2dc8ca2243345e2e6cf35b395793a58796457b9",
       "name": "executor",
-      "version": "4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
+      "version": "e2dc8ca2243345e2e6cf35b395793a58796457b9",
       "licenses": [{ "license": { "id": "MIT" } }],
-      "purl": "pkg:github/Linductor-alkaid/executor@4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9"
+      "purl": "pkg:github/Linductor-alkaid/executor@e2dc8ca2243345e2e6cf35b395793a58796457b9"
     },
     {
       "type": "library",
@@ -42,7 +42,7 @@
   ],
   "dependencies": [
     {
-      "ref": "pkg:github/Linductor-alkaid/executor@4fd8e6097879a56c7c3ad33b10f803cfe2e2e4d9",
+      "ref": "pkg:github/Linductor-alkaid/executor@e2dc8ca2243345e2e6cf35b395793a58796457b9",
       "dependsOn": []
     },
     {
