@@ -30,8 +30,10 @@ Task 状态，将产生终态复活、错 epoch 提交和 shutdown 竞态。原�
 
 M0 验证发现 Executor 的提交 facade 存在进展、同步对象生命周期和总量 admission 问题，记录为
 `EXE-20260830-001`、`EXE-20260830-002`、`EXE-20260830-003`。Executor `4fd8e60` 已解决这些问题；
+当前固定版本为 `e2dc8ca`（`MNT-202609-33` 升级，含停机/提交交错竞态修复与线程池热路径重建，
+facade、serial 与 admission 公开契约未变）。
 Mira 直接配置 `max_in_flight_tasks` 并使用 `submit_on_with_handle()`，所有返回 future 仍由 Runtime
-保存和消费。此前的 `reserve`/`post_reserved` compatibility boundary 仅保留在历史验证记录中，
+保存并消费。此前的 `reserve`/`post_reserved` compatibility boundary 仅保留在历史验证记录中，
 不再属于当前实现。
 
 ## 备选方案

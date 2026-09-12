@@ -3,7 +3,8 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-12（`MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；评估 harness
-> 实现与基线运行归 `MNT-202609-29`，能力未运行不构成指标结论）
+> 实现与基线运行归 `MNT-202609-29`，能力未运行不构成指标结论；`MNT-202609-33` 升级
+> Executor pin 至 `e2dc8ca` 并完成本地回归取证，待 PR CI 回填）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -115,7 +116,13 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    [discrete-workflow-eval-v1](../benchmarks/discrete-workflow-eval-v1.md)；live
    canary 与真实平台组仍分别等受控凭据与 27 证据。
 4. P2 `MNT-202609-31`–`32`：Procedure 检索消费者、语义召回与 retention 按实际需求立项。
-5. 方向登记（2026-09-12，实现未开始）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
+5. 依赖维护 `MNT-202609-33`（2026-09-12 立项，In Progress）：Executor pin `4fd8e60` →
+   `e2dc8ca`，吸收上游停机/提交交错 UAF 修复（P-001/P-002，Mira 集成测试的 realtime
+   register/start/stop 路径在修复范围）与线程池热路径/lock-free 池重建；Mira 使用面
+   公开契约未变，本地门禁（debug 69/69、TSAN 68/68 零报告、ASAN 69/69、四检查目标、
+   Android arm64 交叉编译）与 executor 自身套件及新旧 pin TSAN 对照取证通过，待 PR CI
+   回填勾选；证据见[维护计划验证记录](maintenance-2026-09-post-stage-f.md)。
+6. 方向登记（2026-09-12，实现未开始）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
    （长会话上下文管理）与 [Issue #25](https://github.com/Linductor-alkaid/mira/issues/25)
    （Android 混合视觉 grounding）的架构改动方案已结合现状评审并冻结为
    [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)（
