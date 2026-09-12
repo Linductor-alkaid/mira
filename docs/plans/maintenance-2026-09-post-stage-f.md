@@ -424,3 +424,18 @@ Python 3.14）：`python3 tools/check_docs.py .` 通过；新增/修改 Markdown
 一级标题、标题层级、代码围栏与相对链接通过；`git diff --check` 无空白问题。限制：本轮
 无代码变更，未执行 C++ 构建/CTest；profile 是规范冻结，评估能力本身未实现、未运行，
 任何成功率/恢复率/成本结论须待 29 产出；PR CI（quality 含 docs 门禁）结果合并后回填。
+
+2026-09-12：`MNT-202609-28` CI 证据回填并关闭（PR
+[#41](https://github.com/Linductor-alkaid/mira/pull/41)，head `ad192be`，合并提交
+`8523e9e`）。PR push pipeline run
+[`34689917454`](https://github.com/Linductor-alkaid/mira/actions/runs/34689917454) 与
+pull_request pipeline run
+[`34689929556`](https://github.com/Linductor-alkaid/mira/actions/runs/34689929556) 各
+12 项，合并提交 master pipeline run
+[`34690567829`](https://github.com/Linductor-alkaid/mira/actions/runs/34690567829) 12
+项，三轮共 36/36 全绿：Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/
+Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、ASAN/UBSAN/TSAN、quality
+（clang-tidy + clang-format + docs/sbom/platform-boundary）全部通过，零修复复验。本条
+与上一条共同构成 28 的完整验证记录，任务关闭。评估能力本身未实现、未运行，harness 与
+基线轮归 `MNT-202609-29`（`Planned`，recorded 基线轮可开工）。本地 master 已同步至
+合并提交，工作分支（本地与远端）已删除。
