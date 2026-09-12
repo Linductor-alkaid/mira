@@ -160,8 +160,12 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 
 ### 3.3 P1：真实任务证据与统一评估
 
-- [ ] `MNT-202609-27`（Blocked）汇总 miracle 在固定 Mira 版本上的消费与需求报告。
-  阻塞：本仓库相关外部验收项尚未回填，本轮未取得完整设备/宿主报告。
+- [ ] `MNT-202609-27`（In Progress）汇总 miracle 在固定 Mira 版本上的消费与需求报告。
+  阻塞解除进度（2026-09-12）：miracle 已在真机（OnePlus Ace 3 `PJE110`/`a4dfdcbf`，
+  Android 16/API 36）完成 P3h 轮——消费 mira `5b55e14`，干跑矩阵、R3 确认协议、
+  Takeover 输入释放、用户消息介入、`wait` 工具与真实任务至 `Completed` 均有设备证据；
+  但统一报告所需的完整矩阵仍未回填，本项保持未完成（证据摘要与剩余项见第 5 节
+  2026-09-12 第四条记录）。
   补跑条件：宿主实现、受支持设备、受控 Provider profile 与脱敏记录可用。验收包括
   `mira.host.tree.v1`、转码后图像请求、决策编译修复同任务复验，以及旋转/前后台/
   权限撤销/Takeover 输入释放/宿主销毁；补充 A–F 组合任务与跨重启需求，记录 Mira 与
@@ -439,3 +443,28 @@ Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、ASAN/UBSAN/TSAN�
 与上一条共同构成 28 的完整验证记录，任务关闭。评估能力本身未实现、未运行，harness 与
 基线轮归 `MNT-202609-29`（`Planned`，recorded 基线轮可开工）。本地 master 已同步至
 合并提交，工作分支（本地与远端）已删除。
+
+2026-09-12：`MNT-202609-27` 外部证据进度登记（miracle 真机轮，本条为证据回填，27 保持
+未完成）。来源：miracle 仓库 `Linductor-alkaid/miracle`，合并提交 `21e82a6`（PR #4，
+P3h 实现提交 `9de0ed5`），消费 mira `5b55e14`（tools/mira.lock；当前 mira master
+`81ddff9` 相对 `5b55e14` 仅文档变更，不影响消费面）。设备：OnePlus Ace 3 `PJE110`
+（序列号 `a4dfdcbf`，Android 16 / API 36，补丁 2026-07-01；本机 adb 已确认在线）。
+Provider：siliconflow / Qwen3.5-4B（真实任务轮）。**已覆盖**：(1) 干跑矩阵六场景
+（complete/max_steps/cancel/user_message 四路径含队列满与关闭后拒绝/tool 与回填可见/
+tool_budget 预算耗尽）；(2) R3 确认协议两轮各 2 次挑战（approved→consume→tap→
+Completed，顺带暴露并修复 miracle 侧两个潜伏缺陷）；(3) **Takeover 输入释放**（悬浮球
+长按，timeline 记录阻断新动作 + RELEASE_ALL，UI 截图取证）——27 验收矩阵中
+Takeover 项的首份真机证据；(4) 用户消息介入与会话投影真机呈现；(5) **真实任务至终态
+`Completed`**（「打开设置并调亮亮度」，29 s 三步直达，证据
+`build/p3-device-evidence/hang-fix-verify.logcat.txt`）；(6) 真实任务诚实失败轮（模型
+两次漏 tap 坐标 → 恢复预算耗尽 → `Failed`，恢复/反馈机制按设计工作）——**该失败语料
+登记为 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) 视觉 grounding 的
+直接需求证据**（VLM 坐标定位失败，同任务两轮）。**缺陷定性**：`BUG-20260912-P3H-01`
+（真实传输取消路径挂起）根因为 miracle 侧 `KotlinHttpTransport` 在持有 exchange 互斥
+锁窗口内同线程重入 `complete()` 的自死锁，修复（通知移锁外）后真机复验通过；**非**
+mira 公开契约或 Executor 问题，无需 mira 侧台账登记。**剩余未结**（27 验收源不变）：
+`mira.host.tree.v1` 消费与真机 structure 证据、转码后图像请求端到端、决策编译修复
+同任务复验（issue #21）、旋转/前后台/权限撤销/宿主销毁矩阵、A–F 组合任务与跨重启
+需求、以及含样本数/成本/成功率的统一汇总报告（当前真实任务 n=2，不足以支撑统计）。
+补跑条件已具备（设备在线、宿主可构建）；29 的 live canary 亦可复用该受控 Provider
+profile。Owner：Mira Maintainers（汇总）+ miracle 维护者（执行）。
