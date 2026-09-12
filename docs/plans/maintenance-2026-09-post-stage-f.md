@@ -199,7 +199,11 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   全绿（69/69 ctest + 三 sanitizer + format/boundary/docs），基线登记
   [discrete-workflow-eval-v1](../benchmarks/discrete-workflow-eval-v1.md)；任务保持
   未勾选，待 PR CI（Release/Windows/quality/Android）回填与 live canary/真机补跑
-  条件闭环后由 M15 退出条件收敛。
+  条件闭环后由 M15 退出条件收敛。同日 PR
+  [#42](https://github.com/Linductor-alkaid/mira/pull/42)（合并提交 `fb34ad4`）CI
+  三轮 36/36 全绿，[M15](m15-eval-harness-and-baseline.md) 退出条件逐项复核后关闭；
+  本项保持未勾选的剩余件：live canary 运行与单独报告（凭据补跑条件已登记）、真实
+  平台组（归 27）、恢复率/成本分布结论（需 canary 与扩样）。
 - [ ] `MNT-202609-30`（Planned）产出 M7 重定义提案与任务迁移映射。依赖：27 的需求报告、
   28 的 profile。验收：逐项映射 `M7-01`–`M7-28` 到保留/缩减/推迟的建议及证据，明确
   release profile、ToolModule/OOP 是否必要、平台等级与退出条件；提交专项 DEC 后再

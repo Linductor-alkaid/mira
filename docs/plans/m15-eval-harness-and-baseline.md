@@ -1,6 +1,8 @@
 # M15：最小任务评估 Harness 与基线轮
 
-> 状态：In Progress
+> 状态：Completed（2026-09-12：PR #42 合入 `fb34ad4`，CI 三轮 36/36 全绿；live
+> canary 与真机组为本里程碑显式非目标，补跑条件已登记——其运行与报告仍归
+> `MNT-202609-29` 收尾）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载阶段 F 后续计划
 > `MNT-202609-29`）
@@ -66,13 +68,16 @@ harness 侧承载。
 
 ## 6. 测试与退出条件
 
-- [ ] harness 进 CI 矩阵（Linux/Windows + sanitizers；Android 编译级），门禁失败
-  即测试失败。
-- [ ] profile §9.1 G1–G6 在全部适用 case×臂组合上通过；§9.2 预算护栏无超出。
-- [ ] 基线轮报告落 `docs/benchmarks/`，含 manifest digest、`dataset_digest`、分层
-  指标、D vs C 配对差异、失败分类与限制。
-- [ ] soak ≥3 轮 RSS 稳态在阈值内（增长 ≤10%）且门禁复验通过。
-- [ ] live canary/真机组的未执行项登记原因、负责人与补跑条件（不标完成）。
+- [x] harness 进 CI 矩阵（Linux/Windows + sanitizers；Android 编译级），门禁失败
+  即测试失败（PR #42 两 pipeline 各 12/12 + master run 12/12）。
+- [x] profile §9.1 G1–G6 在全部适用 case×臂组合上通过；§9.2 预算护栏无超出
+  （170 run 单元，连续三轮一致；本地 + CI Windows/Linux 均 ctest 化）。
+- [x] 基线轮报告落 `docs/benchmarks/`，含 manifest digest、`dataset_digest`、分层
+  指标、D vs C 配对差异、失败分类与限制
+  （[discrete-workflow-eval-v1](../benchmarks/discrete-workflow-eval-v1.md)）。
+- [x] soak 3 轮 RSS 稳态在阈值内（增长 2.0% ≤ 10%）且门禁复验通过。
+- [x] live canary/真机组的未执行项登记原因、负责人与补跑条件（不标完成，见
+  2026-09-12 验证记录限制节）。
 
 ## 7. 验证记录
 
@@ -101,3 +106,19 @@ harness 侧承载。
   Release/quality 门禁由 PR CI 回填后本里程碑方可关闭。
 - L1 配对样本量 1 对/seed，按 DEC-034 决策 3 只报告不判定；恢复率/成本结论待
   soak 扩样与 live canary。
+
+2026-09-12：PR CI 证据回填并关闭。PR
+[#42](https://github.com/Linductor-alkaid/mira/pull/42)（head `c649421`，合并提交
+`fb34ad4`）push pipeline run
+[`34696073181`](https://github.com/Linductor-alkaid/mira/actions/runs/34696073181) 与
+pull_request pipeline run
+[`34696085694`](https://github.com/Linductor-alkaid/mira/actions/runs/34696085694) 各
+12 项，合并提交 master pipeline run
+[`34696797771`](https://github.com/Linductor-alkaid/mira/actions/runs/34696797771) 12
+项，三轮共 36/36 全绿：Linux GCC/Clang（Debug/Release，新目标入 Linux 测试矩阵）、
+Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、
+ASAN/UBSAN/TSAN、quality（clang-tidy + clang-format + docs/sbom/platform-boundary）
+全部通过。首轮修复：无（一次通过）。§6 退出条件逐项复核后关闭本里程碑；M15-01～05
+工作项与本地记录见上一条。遗留（归 `MNT-202609-29` 收尾，不在本里程碑）：live
+canary 运行（凭据补跑条件已登记）、真实平台组（归 27）、fd 句柄计数、恢复率/成本
+分布结论（需 canary 与扩样）。
