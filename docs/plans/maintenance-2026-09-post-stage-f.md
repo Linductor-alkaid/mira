@@ -239,9 +239,12 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   [#43](https://github.com/Linductor-alkaid/mira/pull/43)（合并提交 `5a18df7`）CI
   双事件 24/24 全绿（gcc/clang × Debug/Release、Windows Debug/Release、Android 两
   ABI 交叉编译与 installed-consumer 链接、ASAN/UBSAN/TSAN、quality）；本地证据见
-  第 5 节 2026-09-12 记录。上游面外 4 项 TSAN 发现（batch/executor_manager/
-  lockfree_mpsc/benchmark；旧 pin 同样失败、不在上游 TSAN CI 子集、不属 Mira 使用面）
-  未向上游登记 issue，留待维护者决定，不阻塞本项。
+  第 5 节 2026-09-12 记录。上游面外 4 项 TSAN 发现已于 2026-09-13 向上游登记：
+  [executor#187](https://github.com/Linductor-alkaid/executor/issues/187)（`push_batch_exact`
+  TSAN 构建下空环布局依赖拒绝，含 gdb/布局二分取证）、[executor#186](https://github.com/Linductor-alkaid/executor/issues/186)
+  （`~TaskMonitor` 析构与 `execute_task` 持锁读取竞争）、[executor#185](https://github.com/Linductor-alkaid/executor/issues/185)
+  （`test_lockfree_mpsc` 测试自身竞争）、[executor#188](https://github.com/Linductor-alkaid/executor/issues/188)
+  （benchmark 并行负载偶发，建议 `RUN_SERIAL`）。均不属 Mira 使用面，不阻塞本项。
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
@@ -547,4 +550,17 @@ Windows/Android/Release/quality 由 PR CI 回填。任务保持未勾选。
 限制与剩余：原登记的 Windows/clang/Release、Android x86_64 与 UBSAN 缺口已由 PR
 [#43](https://github.com/Linductor-alkaid/mira/pull/43) CI 回填（push + pull_request
 双事件 24/24 全绿，runs `34704503261`/`34704513454`；合并提交 `5a18df7`）。上游面外
-4 项 TSAN 发现未向上游登记 issue（不影响 Mira，是否上报由维护者决定）。
+4 项 TSAN 发现已于 2026-09-13 登记为
+[executor#185](https://github.com/Linductor-alkaid/executor/issues/185)–[#188](https://github.com/Linductor-alkaid/executor/issues/188)
+（#187 复核时补充了 gdb 与 TU 布局二分取证：拒绝点为 `push_batch_exact` 在空环上的
+reservation 阶段，由测试 TU 布局决定性触发；旧 pin `4fd8e60` 同样存在）。
+
+2026-09-13：`MNT-202609-33` 补充取证。为登记上游反馈重建 TSAN 环境（同第 5 节 2026-09-12
+配置），三项功能失败均复现且定性：`test_batch_integration` 在 TSAN 构建下 5/5 确定性失败
+且 0 条 TSAN 警告；gdb 断点证明容量预检（100 < 1024）与 ObjectPool 100 次 `acquire()`
+全部通过、执行到达 `push_batch_exact` 之后且 `ok=false`、`get_queue_stats()` 全零；以相同
+命令行编译测试文件裁剪版（仅保留第一个 TEST → 通过；保留两个 TEST → 第一个失败）证明
+结果由 TU 二进制布局决定。`test_executor_manager` 读者栈确认为 `ThreadPool::execute_task`
+（thread_pool.cpp:337，持 `TaskMonitor::mutex_`），写侧 `~TaskMonitor` 无锁 clear；
+`~ExecutorManager` 虽先 `shutdown(true)`（`wait_for_completion_ex` 上限 300s），TSAN 仍报
+告该边缺失。结论与 issue 正文一致；Mira 使用面不受影响（Mira TSAN 68/68、0 报告）。
