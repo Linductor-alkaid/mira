@@ -225,7 +225,7 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 
 ### 3.5 依赖维护
 
-- [ ] `MNT-202609-33`（In Progress）将 `third_party/executor` 固定版本从 `4fd8e60`
+- [x] `MNT-202609-33`（Completed）将 `third_party/executor` 固定版本从 `4fd8e60`
   升级到 `e2dc8ca`（上游 18 个提交：停机/提交交错生命周期竞态 UAF 修复 P-001/P-002、
   Windows >64 CPU 处理器组亲和、线程池提交热路径重建 P1、lock-free 池/MPMC 消费侧/
   futex 驻停 worker P2），并完成 Mira 使用面回归取证。依赖：无（独立维护项；旧 pin
@@ -235,14 +235,21 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   测试全量取证（含 TSAN 新旧 pin 对照，不引入新报告）；Mira 门禁（debug/TSAN/ASAN/
   四检查目标/Android 交叉编译预演）通过；锁定信息、SBOM、供应链文档与 DEC-001 引用
   同步；PR CI（Linux×4/Windows×2/Android×2/sanitizers×3/quality）全绿后回填勾选。
+  结果（2026-09-12）：PR
+  [#43](https://github.com/Linductor-alkaid/mira/pull/43)（合并提交 `5a18df7`）CI
+  双事件 24/24 全绿（gcc/clang × Debug/Release、Windows Debug/Release、Android 两
+  ABI 交叉编译与 installed-consumer 链接、ASAN/UBSAN/TSAN、quality）；本地证据见
+  第 5 节 2026-09-12 记录。上游面外 4 项 TSAN 发现（batch/executor_manager/
+  lockfree_mpsc/benchmark；旧 pin 同样失败、不在上游 TSAN CI 子集、不属 Mira 使用面）
+  未向上游登记 issue，留待维护者决定，不阻塞本项。
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
 产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25/24 已完成
 （24 由 M14 承载，PR #38）。2026-09-12 状态：28 完成（profile + DEC-034 冻结），29 的
 设计前置满足转 `Planned`，recorded 基线轮可开工；其真实平台组与 live canary 仍分别等
-27 的外部证据与受控凭据，26 依 25 差异清单与 27 需求推进；33（依赖维护）同日立项并
-完成本地取证，待 PR CI 回填。
+27 的外部证据与受控凭据，26 依 25 差异清单与 27 需求推进；33（依赖维护）同日完成
+（PR #43 CI 24/24 全绿）。
 
 ## 4. Executor、风险与退出条件
 
@@ -537,6 +544,7 @@ Windows/Android/Release/quality 由 PR CI 回填。任务保持未勾选。
   [DEC-001](../decisions/DEC-001-runtime-executor-ownership.md) 版本引用；反馈台账三条
   Resolved 记录为锚定原复现/迁移 commit 的历史证据，不随 pin 前移改写。
 
-限制与剩余：Windows/clang/Release、Android x86_64 与 UBSAN 由 PR CI 回填；上游面外 4 项
-TSAN 发现未向上游登记 issue（不影响 Mira，是否上报由维护者决定）。任务保持未勾选至 CI
-回填。
+限制与剩余：原登记的 Windows/clang/Release、Android x86_64 与 UBSAN 缺口已由 PR
+[#43](https://github.com/Linductor-alkaid/mira/pull/43) CI 回填（push + pull_request
+双事件 24/24 全绿，runs `34704503261`/`34704513454`；合并提交 `5a18df7`）。上游面外
+4 项 TSAN 发现未向上游登记 issue（不影响 Mira，是否上报由维护者决定）。
