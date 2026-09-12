@@ -435,3 +435,24 @@ function(mira_add_m15_eval name source)
 endfunction()
 
 mira_add_m15_eval(mira_m15_eval_profile_harness m15/m15_eval_profile_harness.cpp)
+
+# M16 (DEC-032 Stage A): the long-session Layer 0 baseline harness. A pure
+# deterministic single-threaded driver over StandardContextManager; any
+# pre-frozen G1-G6 gate failure exits non-zero so CI treats the baseline as
+# a regression gate. No model, no async work, no executor tasks.
+function(mira_add_m16_baseline name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m16" TIMEOUT 600)
+endfunction()
+
+mira_add_m16_baseline(mira_m16_long_session_baseline m16/m16_long_session_baseline.cpp)

@@ -1,8 +1,9 @@
 # Mira Context Intelligence 设计（长会话语义上下文管理）
 
-> 状态：Active（方向与契约草案冻结；实现未开始，进入里程碑的门槛见 §12）  
+> 状态：Active（方向与契约草案冻结；Stage A 基线已由 [M16](../plans/m16-context-intelligence-stage-a.md) 交付——
+> [long-session 基线 v1](../benchmarks/context-intelligence-long-session-v1.md)；Layer 1–4 契约草案未实现，进入里程碑的门槛见 §12）  
 > 版本：0.1  
-> 更新日期：2026-09-12  
+> 更新日期：2026-09-13  
 > 负责人：Mira Maintainers  
 > 上位设计：[Context 与 Memory 架构设计](context_and_memory_design.md)、  
 > [Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)  
@@ -322,7 +323,7 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 
 | Stage | 内容 | 门禁 |
 | --- | --- | --- |
-| A | Long-session benchmark 基线（不引入模型） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
+| A | Long-session benchmark 基线（不引入模型）——**已交付**（[M16](../plans/m16-context-intelligence-stage-a.md)，2026-09-13，基线见[long-session v1](../benchmarks/context-intelligence-long-session-v1.md)：token 有界与 N 无关、约束全保留、对话/工具历史稳态全逐出） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
 | B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson | Stage A 基线可重复 |
 | C | `IContextReranker` 对照实验 | Embedding Top-K vs +Reranker 召回/成本数据 |
 | D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理 | 经 `IModelProvider` 配置小模型 |
