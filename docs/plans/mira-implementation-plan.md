@@ -2,8 +2,8 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-12（依据 Issue #39/#25 冻结 Context Intelligence 与视觉 Grounding
-> 方向决策 DEC-032/DEC-033；实现未开始，不改变任何里程碑状态）
+> 更新日期：2026-09-12（`MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；评估 harness
+> 实现与基线运行归 `MNT-202609-29`，能力未运行不构成指标结论）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -105,7 +105,11 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    `BUG-20260909-002`（修订提案待立项）；26 依证据推进 Library/Run/App Model
    跨进程持久化。
 3. P1 `MNT-202609-27`–`30`：回收 miracle 真机/Provider 证据，建立任务评估基线，形成
-   M7 重定义提案；外部证据缺失项保持未完成。
+   M7 重定义提案；外部证据缺失项保持未完成。28 已于 2026-09-12 完成——
+   [最小评估 Profile](../design/discrete_workflow_eval_profile.md) 与
+   [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) 冻结四臂对照、17 case、
+   指标口径与跑前阈值，29 的 recorded 基线轮据此可开工（真实平台组与 live canary
+   仍分别等 27 证据与受控凭据）。
 4. P2 `MNT-202609-31`–`32`：Procedure 检索消费者、语义召回与 retention 按实际需求立项。
 5. 方向登记（2026-09-12，实现未开始）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
    （长会话上下文管理）与 [Issue #25](https://github.com/Linductor-alkaid/mira/issues/25)
@@ -299,6 +303,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
 | [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；实现未开始） | 新里程碑（暂定，Stage A 依赖 `MNT-202609-28`） |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
+| [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
