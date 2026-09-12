@@ -221,6 +221,8 @@ CI runner 不支持真机、网络、sanitizer 或权限时，job 明确 skip/fa
 
 - [项目管理与文档规范](../project/project_management_and_documentation.md)
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
+- [离散动作与 Workflow 最小评估 Profile](discrete_workflow_eval_profile.md)（本文的
+  首个 profile 实例，[DEC-034](../decisions/DEC-034-minimal-eval-profile.md) 冻结）
 - [本地感知与任务模型](local_perception_and_task_models.md)
 - [实时控制层](realtime_control_design.md)
 - [Context 与 Memory](context_and_memory_design.md)

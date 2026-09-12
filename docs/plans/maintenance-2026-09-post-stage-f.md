@@ -172,16 +172,25 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   [图像传输维护计划](maintenance-2026-09-transport-and-image-media.md)、
   [决策修复维护计划](maintenance-2026-09-decision-compile-repair.md)，以其为验收源；
   此项统一索引，不重复计算完成数。
-- [ ] `MNT-202609-28`（Planned）定义当前离散动作 + Workflow 范围的最小 Eval profile。
+- [x] `MNT-202609-28`（Completed）定义当前离散动作 + Workflow 范围的最小 Eval profile。
   依赖：M8–M13 契约、[评估设计](../design/evaluation_and_benchmark_design.md)。验收：
   固定 case/fixture/baseline digest、失败分类、重复样本方法与预算，覆盖直接 Agent、
   Strict Workflow、恢复编排、启用/禁用 lesson 四种对照；指标包含任务成功率、恢复率、
   模型调用/token/cost、尾延迟、人工介入、重复副作用、内存/句柄与 shutdown 时间。
   阈值在跑结果前冻结；不得沿用已取消的 ONNX/realtime 准入要求。
-- [ ] `MNT-202609-29`（Proposed）实现并运行最小任务评估与 soak。依赖：28 冻结；恢复
-  组依赖 24，真实平台组依赖 27。验收：公共 API 驱动、recorded 回归确定、live canary
-  单独报告、所有适用 fault/cancel/Takeover/rejection/shutdown 场景有结果；学习收益
-  依据对照与分布报告，不能凭命中一条 lesson 宣称成功率或成本改善。
+  结果（2026-09-12）：产出
+  [离散动作与 Workflow 最小评估 Profile](../design/discrete_workflow_eval_profile.md)
+  （v1.0）与 [DEC-034](../decisions/DEC-034-minimal-eval-profile.md)。四臂对照、
+  17 个 EvalCase（R/W/L/F 四家族 + 臂适用矩阵）、七类失败闭集、seed 方法与预算护栏、
+  指标来源映射与跑前冻结阈值（硬门禁 G1–G6、绝对护栏、基线锚定回归规则、学习增益只
+  报告不判定）逐项落实；能力缺口（lesson 细粒度开关、内存/句柄与 shutdown 计量、
+  A 臂无 lesson 组合）如实声明并由 29 承载。证据见第 5 节 2026-09-12 记录。
+- [ ] `MNT-202609-29`（Planned）实现并运行最小任务评估与 soak。依赖：28 冻结（已完成，
+  [profile](../design/discrete_workflow_eval_profile.md) + DEC-034）；恢复组依赖 24
+  （已完成）；真实平台组依赖 27（仍 Blocked，该组保持未完成）。验收：公共 API 驱动、
+  recorded 回归确定、live canary 单独报告、所有适用 fault/cancel/Takeover/rejection/
+  shutdown 场景有结果；学习收益依据对照与分布报告，不能凭命中一条 lesson 宣称成功率
+  或成本改善。实现规范与阈值以 profile v1.0 为准。
 - [ ] `MNT-202609-30`（Planned）产出 M7 重定义提案与任务迁移映射。依赖：27 的需求报告、
   28 的 profile。验收：逐项映射 `M7-01`–`M7-28` 到保留/缩减/推迟的建议及证据，明确
   release profile、ToolModule/OOP 是否必要、平台等级与退出条件；提交专项 DEC 后再
@@ -204,7 +213,9 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
 产品范围决策，也不把缺少外部证据的任务置为已就绪。2026-09-10 状态：22/23/25/24 已完成
-（24 由 M14 承载，PR #38），28 为下一项可独立开工的设计任务。
+（24 由 M14 承载，PR #38）。2026-09-12 状态：28 完成（profile + DEC-034 冻结），29 的
+设计前置满足转 `Planned`，recorded 基线轮可开工；其真实平台组与 live canary 仍分别等
+27 的外部证据与受控凭据，26 依 25 差异清单与 27 需求推进。
 
 ## 4. Executor、风险与退出条件
 
@@ -222,8 +233,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 - [x] 22 完成并恢复 M8–M13 的适用跨平台验收（PR #35，`8a5bd53`，run 34353919141
   12/12；两 ABI 编译全部 Workflow 源文件并完成安装包 consumer 交叉链接；六个里程碑
   与平台矩阵已回填；设备运行明确不在本项范围）。
-- [x] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录（23/25/24 已完成，
-  24 由 M14 承载并关闭；28 未开工，为下一项可独立开工的设计任务）。
+- [x] 23/25/28 产物齐全，后续实现已获正式里程碑或有理由的延期记录（23/25/24/28 已完成，
+  24 由 M14 承载并关闭；28 产出 profile 与 DEC-034，29 据此转 `Planned`）。
 - [ ] 27 外部证据归档；30 完成 M7 范围决策及任务映射。
 - [ ] 本计划内 Proposed 实现项已正式迁移或通过决策明确取消/推迟，不能因文档更新完成
   而将整个维护计划关闭。
@@ -392,3 +403,24 @@ CTest；两方向能力均未实现，设计内代码片段标注为契约草案
 （Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、ASAN/UBSAN/TSAN 与
 quality（clang-tidy 18 + clang-format + docs/sbom/platform-boundary 检查）全部通过，
 零修复复验。本地 master 已同步至合并提交，工作分支（本地与远端）已删除。
+
+2026-09-12：`MNT-202609-28` 完成（基线 `9fac585`，仅文档变更，工作树干净）。产出
+[离散动作与 Workflow 最小评估 Profile](../design/discrete_workflow_eval_profile.md)
+（v1.0）与 [DEC-034](../decisions/DEC-034-minimal-eval-profile.md)（Accepted）。设计前
+对能力边界做代码级核实：`AgentLoop` 公开面（`run`/`LoopOutcome`/`AgentLoopConfig`
+预算、`ModelDoneVerifier` 仅测试用）、`WorkflowRuntime` 公开面（Strict/Recoverable
+policy、`set_learning_context` 缺省 NoOp 语义）、`WorkflowRecoveryOrchestrator` 预算
+配置与 `WorkflowRecoveryAttempted` 载荷、`ModelUsage`/`BudgetLedger` 计量、事件闭集与
+monotonic 双时钟、`SimulatorEnvironment` 可编程 fixture 与 `executed_inputs()` 回读、
+m9/m13/m14 fixture 旋钮。据此冻结：四臂对照（A 臂无 lesson 组合、C 臂以不装 learning
+context 实现 no-memory，均如实声明而非新增契约）；17 case 四家族 + 臂适用矩阵；七类
+失败闭集；seed {0,1,2} + seed-0 重复的确定性与串行执行；指标来源映射（内存/句柄仅
+Linux `/proc`、shutdown 时长 harness 墙钟，运行时无计量为已声明缺口，归 29）；跑前
+冻结阈值（G1–G6 零容忍、五项绝对护栏、基线锚定回归规则、学习增益只报告不判定）；
+显式排除 M5/M6 已取消的 ONNX/realtime 准入维度。同步：`MNT-202609-29` 转 `Planned`
+（设计前置满足，recorded 基线轮可开工；真实平台组仍等 27）、本计划推进注记与退出条件
+括注更新、评估设计 §15 与总计划 §4.1/§5 增加交叉引用。验证（Ubuntu 24.04 x86_64、
+Python 3.14）：`python3 tools/check_docs.py .` 通过；新增/修改 Markdown 逐文件检查唯一
+一级标题、标题层级、代码围栏与相对链接通过；`git diff --check` 无空白问题。限制：本轮
+无代码变更，未执行 C++ 构建/CTest；profile 是规范冻结，评估能力本身未实现、未运行，
+任何成功率/恢复率/成本结论须待 29 产出；PR CI（quality 含 docs 门禁）结果合并后回填。
