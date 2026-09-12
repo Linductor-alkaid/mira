@@ -2,7 +2,8 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-10（M14 恢复编排交付关闭：PR #38，DEC-031 落地）
+> 更新日期：2026-09-12（依据 Issue #39/#25 冻结 Context Intelligence 与视觉 Grounding
+> 方向决策 DEC-032/DEC-033；实现未开始，不改变任何里程碑状态）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -106,6 +107,17 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
 3. P1 `MNT-202609-27`–`30`：回收 miracle 真机/Provider 证据，建立任务评估基线，形成
    M7 重定义提案；外部证据缺失项保持未完成。
 4. P2 `MNT-202609-31`–`32`：Procedure 检索消费者、语义召回与 retention 按实际需求立项。
+5. 方向登记（2026-09-12，实现未开始）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
+   （长会话上下文管理）与 [Issue #25](https://github.com/Linductor-alkaid/mira/issues/25)
+   （Android 混合视觉 grounding）的架构改动方案已结合现状评审并冻结为
+   [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)（
+   [Context Intelligence 设计](../design/context_intelligence_design.md)）与
+   [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)（
+   [视觉 Grounding 设计](../design/visual_grounding_design.md)）。两者均只冻结方向与
+   目标契约：#39 的 Stage A 基线依赖 `MNT-202609-28` profile，其检索层为
+   `MNT-202609-31/32` 提供架构框架；#25 的实现以 `MNT-202609-27` 真机证据为
+   `MNT-202609-30` M7 重定义的直接输入。里程碑文件在进入 `Planned` 前创建，不预分配
+   编号。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
@@ -223,6 +235,25 @@ platform-boundary 检查）全部 24 项通过（两轮修复后复验：MSVC �
 平台 Adapter 契约验证与 M7 重定义、阶段 F 显式非目标中的 Procedure 索引/失败检索
 向量腿/Agent 采纳 lesson 的编排）按证据另行立项，不设隐式关键路径。
 
+2026-09-12，维护者依据开放 issue 复核两条长期能力需求并冻结架构方向（维护者指示：
+阅读 issue、结合项目实际更新架构）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
+（Context Intelligence / 长会话上下文管理）经现状核对（Layer 0 确定性压缩已由 M4 的
+`StandardContextManager` 交付；检索三腿齐备但 embedding 供给方缺失；无会话级语义固化）
+冻结为 [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 与
+[Context Intelligence 设计](../design/context_intelligence_design.md)；
+[Issue #25](https://github.com/Linductor-alkaid/mira/issues/25)（Android 混合视觉
+grounding）经现状核对（Observation 契约已预留 `PerceptionEvidence`/`ElementRef` 占位、
+坐标变换链与 accessibility 全链已交付、pipeline 无 perception 挂钩且无推理依赖）冻结为
+[DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) 与
+[视觉 Grounding 设计](../design/visual_grounding_design.md)，并显式遵守 DEC-011 的
+demo 证据重入门禁（`MNT-202609-27/30`）。同日同步的文档：
+[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
+（v0.3）、[Context 与 Memory 架构设计](../design/context_and_memory_design.md)（v0.5）、
+[Observation、坐标与 Android Host ABI 设计](../design/observation_coordinate_android_host.md)
+（v1.1）、[本地感知与任务模型设计](../design/local_perception_and_task_models.md)
+（假设记录注记，v1.2）与[阶段 F 后续维护计划](maintenance-2026-09-post-stage-f.md)。
+本变更仅涉及文档；未新增实现、测试或能力声明，全部里程碑状态不变。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -263,6 +294,8 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md) | Memory 四类组织与 Workflow 学习契约（阶段 F） | Accepted | M13 |
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
+| [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；实现未开始） | 新里程碑（暂定，Stage A 依赖 `MNT-202609-28`） |
+| [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

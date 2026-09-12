@@ -1,10 +1,13 @@
 # Mira Observation、坐标与 Android Host ABI 设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1  
+> 更新日期：2026-09-12  
 > 适用范围：Observation Pipeline、屏幕/UI 结构、本地感知证据、输入坐标和 Android Host/NDK 边界  
-> 上位决策：[DEC-005](../decisions/DEC-005-observation-coordinate-host-boundary.md)
+> 上位决策：[DEC-005](../decisions/DEC-005-observation-coordinate-host-boundary.md)  
+> 扩展方向：感知证据占位（`PerceptionEvidence`/`ElementRef`）的填充与屏幕变化事件推送
+> ABI 演进见[视觉 Grounding 设计](visual_grounding_design.md)
+> （[DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)）；本文坐标与 ABI v1 语义不变
 
 ## 1. 目标
 

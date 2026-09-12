@@ -5,7 +5,7 @@
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M8–M13 已合入的实现；跨平台验收缺口见下文
 > 建议发布点：先恢复 Workflow learning alpha 验收，再按 demo 证据定义下一发布点
-> 更新日期：2026-09-10
+> 更新日期：2026-09-12
 
 ## 1. 目标与边界
 
@@ -166,6 +166,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   `mira.host.tree.v1`、转码后图像请求、决策编译修复同任务复验，以及旋转/前后台/
   权限撤销/Takeover 输入释放/宿主销毁；补充 A–F 组合任务与跨重启需求，记录 Mira 与
   miracle commit、设备/API、Provider/model、样本数、失败归因、成本和成功率。
+  报告中的 VLM 坐标定位失败语料同时是 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
+  视觉 grounding 方向的直接需求证据（2026-09-12 登记）。
   原未结项保留在 [Host ABI 维护计划](maintenance-2026-09-host-abi-feedback.md)、
   [图像传输维护计划](maintenance-2026-09-transport-and-image-media.md)、
   [决策修复维护计划](maintenance-2026-09-decision-compile-repair.md)，以其为验收源；
@@ -184,6 +186,8 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   28 的 profile。验收：逐项映射 `M7-01`–`M7-28` 到保留/缩减/推迟的建议及证据，明确
   release profile、ToolModule/OOP 是否必要、平台等级与退出条件；提交专项 DEC 后再
   修改 M7 范围，原项在批准迁移前保持未勾选。
+  [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)（视觉 grounding，
+  Issue #25）已冻结目标契约并显式以本项为实现入口；其里程碑范围随本项提案一并裁决。
 
 ### 3.4 P2：由消费者与失败语料驱动的扩展
 
@@ -193,6 +197,9 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
 - [ ] `MNT-202609-32`（Proposed）评估失败检索向量腿与 retention 扩展。依赖：25/29 的
   持久化与召回基线、真实失败语料。先测 exact+FTS 的漏召回/误召回、成本与延迟，再决策
   是否实现；任何实现需验证 ACL、版本漂移、删除传播和回退。无收益证据时保留现有方案。
+  2026-09-12 起，31/32 的检索语义在 [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)
+  Context Intelligence 框架（[专项设计](../design/context_intelligence_design.md)）内
+  立项；两项的证据条件不变，不因方向冻结自动就绪。
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
@@ -353,3 +360,24 @@ Linux GCC/Clang（Debug/Release）、Windows MSVC（Debug/Release）、Android �
 事件关联键逐条断言；越权 patch 确定性拒绝、参数投影缺省无值、rationale 不入事件；
 取消/接管/迟到响应/预算/shutdown 矩阵闭合，终态不复活。[M14](m14-recovery-orchestration.md)
 退出条件逐项复核后关闭。真实 Provider 与设备运行证据仍归 27；恢复收益声明待 29 对照。
+
+2026-09-12：维护者指示「阅读 issue、分析需求与架构改动方案、结合项目实际更新架构」，
+据此评审两个开放 issue 并冻结方向决策（本轮仅文档变更，无实现）。范围：新增
+[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 与
+[Context Intelligence 设计](../design/context_intelligence_design.md)（Issue #39，
+现状核对：Layer 0 已由 M4 `StandardContextManager` 交付、检索三腿齐备但 embedding
+供给方缺失、无会话级语义固化）；新增 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
+与[视觉 Grounding 设计](../design/visual_grounding_design.md)（Issue #25，现状核对：
+`PerceptionEvidence`/`ElementRef{Ocr,Detector,Fused}` 占位已预留、坐标变换链与
+accessibility 全链已交付、`ObservationPipeline` 无 perception 挂钩且仓库无推理依赖）；
+同步架构设计 v0.3、Context 设计 v0.5、Observation/Host 设计 v1.1、M5 假设记录注记
+v1.2、总计划 §4.1/§4.2/§5 与本计划 27/30/31/32 交叉引用。依据：DEC-011（#25 实现重入
+以 27 证据经 30 立项，不重开 M5/M6）、DEC-005/DEC-013（#25 契约基座）、DEC-016/DEC-029/
+DEC-030（#39 会话与记忆基座）、RULE-07/08/09。验证（Ubuntu 24.04.4 x86_64、
+Python 3.14.6）：`python3 tools/check_docs.py .` 通过（"Markdown links and fences:
+OK"）；10 个改动文件逐文件检查唯一一级标题、代码围栏配对与相对链接可达通过；
+`git diff --check` 仅报告新增/改动设计文档头部元数据行的行尾双空格——与既有设计文档
+blockquote 硬换行惯例一致（已提交文件同模式），无其他空白问题。限制：无代码变更，
+未执行 C++ 构建/
+CTest；两方向能力均未实现，设计内代码片段标注为契约草案；28/27 证据条件与全部里程碑
+状态不变；PR CI（quality 含 docs 门禁）结果合并后回填。
