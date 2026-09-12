@@ -82,6 +82,10 @@ ONNX/realtime 准入要求。
 - `MNT-202609-29` 验收时以本 profile 为规范核对：公共 API 驱动、recorded 回归确定、
   live canary 单独报告、fault/cancel/Takeover/rejection/shutdown 场景覆盖、学习收益
   依据对照与分布报告。
+- 2026-09-12 实现期细化（不改阈值与 case 集）：profile §9.1 G4 的规范化明确覆盖
+  32/64 位 hex token 与 UUID 形态（内容摘要内嵌随机标识的级联），workflow 臂因
+  双并发生产者按有向多重集比较（首轮基线实证交错顺序可交换；内容/缺失/多余仍
+  失败）。该细化随 profile 文件同步更新。
 - 本决策自身的修订（阈值调整、case 集变更、新增对照维度）须更新 profile 文件并链接
   本记录，基线记录保留原 digest 不回溯改写。
 

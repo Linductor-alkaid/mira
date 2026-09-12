@@ -189,12 +189,17 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   指标来源映射与跑前冻结阈值（硬门禁 G1–G6、绝对护栏、基线锚定回归规则、学习增益只
   报告不判定）逐项落实；能力缺口（lesson 细粒度开关、内存/句柄与 shutdown 计量、
   A 臂无 lesson 组合）如实声明并由 29 承载。证据见第 5 节 2026-09-12 记录。
-- [ ] `MNT-202609-29`（Planned）实现并运行最小任务评估与 soak。依赖：28 冻结（已完成，
-  [profile](../design/discrete_workflow_eval_profile.md) + DEC-034）；恢复组依赖 24
-  （已完成）；真实平台组依赖 27（仍 Blocked，该组保持未完成）。验收：公共 API 驱动、
-  recorded 回归确定、live canary 单独报告、所有适用 fault/cancel/Takeover/rejection/
-  shutdown 场景有结果；学习收益依据对照与分布报告，不能凭命中一条 lesson 宣称成功率
-  或成本改善。实现规范与阈值以 profile v1.0 为准。
+- [ ] `MNT-202609-29`（In Progress）实现并运行最小任务评估与 soak。依赖：28 冻结
+  （已完成）；恢复组依赖 24（已完成）；真实平台组依赖 27（仍缺，该组保持未完成）。
+  验收：公共 API 驱动、recorded 回归确定、live canary 单独报告、所有适用
+  fault/cancel/Takeover/rejection/shutdown 场景有结果；学习收益依据对照与分布报告，
+  不能凭命中一条 lesson 宣称成功率或成本改善。实现规范与阈值以 profile v1.0 为准。
+  进度（2026-09-12）：已按 §1 规则立项 [M15](m15-eval-harness-and-baseline.md)
+  承载——harness、四臂 17 case、G1–G6 门禁、recorded 首轮基线与 soak 已本地交付
+  全绿（69/69 ctest + 三 sanitizer + format/boundary/docs），基线登记
+  [discrete-workflow-eval-v1](../benchmarks/discrete-workflow-eval-v1.md)；任务保持
+  未勾选，待 PR CI（Release/Windows/quality/Android）回填与 live canary/真机补跑
+  条件闭环后由 M15 退出条件收敛。
 - [ ] `MNT-202609-30`（Planned）产出 M7 重定义提案与任务迁移映射。依赖：27 的需求报告、
   28 的 profile。验收：逐项映射 `M7-01`–`M7-28` 到保留/缩减/推迟的建议及证据，明确
   release profile、ToolModule/OOP 是否必要、平台等级与退出条件；提交专项 DEC 后再
@@ -468,3 +473,17 @@ mira 公开契约或 Executor 问题，无需 mira 侧台账登记。**剩余未
 需求、以及含样本数/成本/成功率的统一汇总报告（当前真实任务 n=2，不足以支撑统计）。
 补跑条件已具备（设备在线、宿主可构建）；29 的 live canary 亦可复用该受控 Provider
 profile。Owner：Mira Maintainers（汇总）+ miracle 维护者（执行）。
+
+2026-09-12：`MNT-202609-29` 实现开工并完成本地首轮（详见 [M15 验证记录]
+(m15-eval-harness-and-baseline.md)）。新增 `tests/m15/m15_eval_profile_harness.cpp`
+（独立目标入 ctest）：四臂对照经公共 API 驱动、17 case 四家族 + 臂适用矩阵、
+seed {0,1,2} + seed-0 三重复、事件指标（尾延迟/token/介入/重复副作用）、G1–G6
+门禁与 profile §9.2 预算护栏、JSON 报告与 `dataset_digest`、`--soak` 模式（RSS
+稳态，Linux `/proc`）。recorded 首轮 170 run 单元全绿（连续三轮一致），soak 3 轮
+RSS 增长 2.0%，基线与首轮发现登记于
+[discrete-workflow-eval-v1](../benchmarks/discrete-workflow-eval-v1.md)；G4 口径随
+实现发现细化（workflow 臂双并发生产者按有向多重集比较；profile §9.1 与 DEC-034
+已同步修订）。本地：debug ctest 69/69、ASAN/UBSAN/TSAN（`setarch -R`）m15 通过、
+format/platform-boundary/docs 门禁通过。限制：live canary 未执行（凭据未配置，
+补跑条件已登记）、真实平台组归 27、fd 句柄计数未实现（句柄项仅 soak RSS 覆盖）、
+Windows/Android/Release/quality 由 PR CI 回填。任务保持未勾选。

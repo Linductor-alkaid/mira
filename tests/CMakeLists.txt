@@ -412,3 +412,26 @@ function(mira_add_m14_test name source)
 endfunction()
 
 mira_add_m14_test(mira_m14_recovery_test m14/m14_recovery_test.cpp)
+
+# M15 (MNT-202609-29, DEC-034): the minimal eval profile harness. The
+# recorded round doubles as a regression gate: any G1-G6 or budget failure
+# exits non-zero. Links the state store for the D-arm SQLite learning
+# context (same shape as the M13 persistence test).
+function(mira_add_m15_eval name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter Mira::state_store
+        executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m15" TIMEOUT 900)
+endfunction()
+
+mira_add_m15_eval(mira_m15_eval_profile_harness m15/m15_eval_profile_harness.cpp)

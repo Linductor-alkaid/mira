@@ -219,10 +219,15 @@ token 与成本的计量口径以 `UsageQuality` 如实分层：recorded 脚本�
 - **G4** recorded 确定性：同 manifest 同 seed 的重复运行，经规范化的指标与事件序列
   逐位一致。规范化规则：剥离时间戳；随机生成的 `Id128` 标识（`EventId`/`TaskId`/
   `WorkflowRunId`/`ModelRequestId`/`WorkflowPatchId` 等，`Id128::generate` 使用
-  `std::random_device`）按首次出现顺序映射为位置序号；会话/任务/事件顺序号、
-  `run_epoch`/`run_patch_epoch`、内容 digest 字段与全部载荷枚举/计数保留原值参与比较
-  （Memory 侧 `MemoryId`/`MutationId` 为确定性派生，不参与映射）。任何差异为 harness
-  或被评系统缺陷，不是噪声。
+  `std::random_device`）及其内容摘要级联（如 `profile_digest`，即 32/64 位 hex
+  token 与 8-4-4-4-12 UUID 形态）按首次出现顺序映射为位置序号——等值性与不等性
+  均保留；会话/任务/事件顺序号、`run_epoch`/`run_patch_epoch`、固定内容 digest
+  与全部载荷枚举/计数保留原值参与比较（Memory 侧 `MemoryId`/`MutationId` 为
+  确定性派生，不参与映射）。单生产者路径（Agent 臂）按严格位序比较；workflow 臂
+  存在两个并发事件生产者（驱动 worker 与编排器审计发射，2026-09-12 基线轮实证
+  其相对交错顺序可交换），按有向多重集比较——内容漂移、缺失或多余事件仍然失败。
+  跨生产者相对顺序不是契约，事件消费者必须按关联键而非位置重建状态。规范内
+  任何差异为 harness 或被评系统缺陷，不是噪声。
 - **G5** 事件链完整：每 run 可按关联键（`run_id`/`task_id`/`model_request_id`/
   `patch_id`/`decision_digest`/recovery `ordinal`）重建全链路。
 - **G6** 事件与日志无凭据、无 `rationale`、无 API key 类载荷（既有脱敏纪律的回归断言）。
