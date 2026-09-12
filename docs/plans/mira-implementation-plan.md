@@ -252,7 +252,10 @@ demo 证据重入门禁（`MNT-202609-27/30`）。同日同步的文档：
 [Observation、坐标与 Android Host ABI 设计](../design/observation_coordinate_android_host.md)
 （v1.1）、[本地感知与任务模型设计](../design/local_perception_and_task_models.md)
 （假设记录注记，v1.2）与[阶段 F 后续维护计划](maintenance-2026-09-post-stage-f.md)。
-本变更仅涉及文档；未新增实现、测试或能力声明，全部里程碑状态不变。
+本变更仅涉及文档；未新增实现、测试或能力声明，全部里程碑状态不变。交付经 PR
+[#40](https://github.com/Linductor-alkaid/mira/pull/40)（合并提交 `c8b41bf`，两
+pipeline 24/24 全绿）合入，CI 证据见[阶段 F 后续维护计划](maintenance-2026-09-post-stage-f.md)
+验证记录。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02

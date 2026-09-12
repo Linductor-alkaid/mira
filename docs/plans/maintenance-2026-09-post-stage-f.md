@@ -380,4 +380,15 @@ OK"）；10 个改动文件逐文件检查唯一一级标题、代码围栏配�
 blockquote 硬换行惯例一致（已提交文件同模式），无其他空白问题。限制：无代码变更，
 未执行 C++ 构建/
 CTest；两方向能力均未实现，设计内代码片段标注为契约草案；28/27 证据条件与全部里程碑
-状态不变；PR CI（quality 含 docs 门禁）结果合并后回填。
+状态不变。
+
+2026-09-12：PR CI 证据回填。PR
+[#40](https://github.com/Linductor-alkaid/mira/pull/40)（head `67d38c9`，合并提交
+`c8b41bf`）push pipeline run
+[`34686235300`](https://github.com/Linductor-alkaid/mira/actions/runs/34686235300)
+与 pull_request pipeline run
+[`34686244497`](https://github.com/Linductor-alkaid/mira/actions/runs/34686244497)
+各 12 项共 24/24 全绿：Linux GCC/Clang（Debug/Release）、Windows MSVC
+（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、ASAN/UBSAN/TSAN 与
+quality（clang-tidy 18 + clang-format + docs/sbom/platform-boundary 检查）全部通过，
+零修复复验。本地 master 已同步至合并提交，工作分支（本地与远端）已删除。
