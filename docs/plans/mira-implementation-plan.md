@@ -3,7 +3,12 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-14（DEC-032 Stage D 由 [M19](m19-context-intelligence-stage-d.md)
-> 承载并本地交付：Layer 3 `ISemanticConsolidator` 契约、`ProviderSemanticConsolidator`
+> 承载并交付关闭：Layer 3 `ISemanticConsolidator` 契约与 `IModelProvider` 供给
+> 参考固化器、`ConversationCheckpoint` 五元组提交、固化管线评估 D1–D5 首轮
+> 全绿（provenance 零违例、标记/跨会话零泄漏、提交纪律全通过），基准登记于
+> [context-intelligence-consolidation-v1](../benchmarks/context-intelligence-consolidation-v1.md)，
+> PR #47 三轮 CI（clang 捕获、chrono 平台转换、RNG 顺序两处修复后）
+> head 双 pipeline 24/24 全绿。同日早前：Stage C 由 [M18](m18-context-intelligence-stage-c.md)Layer 3 `ISemanticConsolidator` 契约、`ProviderSemanticConsolidator`
 > 经 `IModelProvider` 供给、`ConversationCheckpoint` 五元组提交与 store、checkpoint →
 > Layer 0 候选转换、supervisor Deferrable 路由；固化管线评估 D1–D5 首轮全绿（provenance
 > 零违例、标记/跨会话零泄漏、提交纪律全通过），基准登记于
@@ -99,7 +104,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | Completed |
 | [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | Completed |
 | [M18](m18-context-intelligence-stage-c.md) | Context Intelligence Stage C——Layer 2 重排对照（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextReranker` 契约、确定性参考重排器、reranker 缺席/失败降级、B/C 列对照数据；无模型） | M17（检索评估 v1 B 列基线可重复）；DEC-032 §5.3 | Stage D 固化对照的方法学锚点（非发布物） | Completed |
-| [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | In Progress |
+| [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -393,9 +398,19 @@ D1–D5 全绿：约束/决策/线索召回与语句 precision 均 1.0（204/204
 [context-intelligence-consolidation-v1](../benchmarks/context-intelligence-consolidation-v1.md)。
 本地门禁：debug ctest 76/76、ASAN/UBSAN/TSAN m19 通过零报告、format/docs/
 platform-boundary/sbom 四检查通过、miniconda clang-tidy 18.1.8 预检库源
-（一处 `performance-move-const-arg` 已修复）。限制：脚本化供给方下指标为管线
-行为非语义质量声明（`RULE-10`）；真实小模型与 AgentLoop 集成待后续；
-Windows/Android/Release/quality 由 PR CI 回填后 M19 关闭。
+（一处 `performance-move-const-arg` 已修复）。
+
+2026-09-14：PR CI 证据回填并关闭。PR
+[#47](https://github.com/Linductor-alkaid/mira/pull/47)（head `a2c4c0d`，合并提交
+`ba46767`）push 与 pull_request pipeline run
+[`34772280749`](https://github.com/Linductor-alkaid/mira/actions/runs/34772280749)/
+[`34772282466`](https://github.com/Linductor-alkaid/mira/actions/runs/34772282466)
+各 12 项全部通过（Linux GCC/Clang Debug/Release、Windows MSVC、Android 两 ABI、
+ASAN/UBSAN/TSAN、quality），第三轮全绿——前两轮分别修复 clang
+`-Wunused-lambda-capture`、NDK/MSVC `chrono` duration 显式转换、噪声条目
+RNG 抽取顺序歧义（数据集 digest 重新钉定，实现代码零变更）。Stage D 关闭后，
+DEC-032 下一阶段为 Stage E（miracle 真机评估，前置 `MNT-202609-27` 证据通道，
+当前 Blocked）；Stage F（提示压缩实验）归后续立项。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02

@@ -1,6 +1,8 @@
 # M19：Context Intelligence Stage D——Layer 3 语义固化（ConversationCheckpoint）
 
-> 状态：In Progress
+> 状态：Completed（2026-09-14：PR #47 合入 `ba46767`，三轮 CI——第三轮
+> 全绿——head 双 pipeline 24/24 全绿；真实小模型与 AgentLoop 集成为显式
+> 非目标，归供应链复核与 DEC-002 评审通道）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 第 8 条 Stage D）
@@ -8,7 +10,7 @@
 > [Context Intelligence 设计](../design/context_intelligence_design.md)
 > §5.4/§6/§7/§8 已冻结
 > 建议发布点：非发布物；产出固化管线行为基线（实验矩阵 D 列方法学锚点）
-> 更新日期：2026-09-14
+> 更新日期：2026-09-14（关闭）
 
 ## 1. 目标
 
@@ -169,8 +171,8 @@ presented token）、各类语句计数、偏好候选计数、植入项分布�
   目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check` 通过。
 - [x] 文档同步完成（§5 `M19-07` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
-  记录并关闭本里程碑。
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+  记录并关闭本里程碑（PR #47 三轮：第三轮 head 双 pipeline 24/24）。
 
 ## 8. 验证记录
 
@@ -226,3 +228,18 @@ presented token）、各类语句计数、偏好候选计数、植入项分布�
   （实现代码零变更；植入结构、供给方规则、门禁与全部聚合指标与首轮逐项
   一致，[基准报告](../benchmarks/context-intelligence-consolidation-v1.md)
   已同步口径注记）。修复轮本机复验：debug ctest 76/76、TSAN m19 零报告。
+
+2026-09-14：PR CI 证据回填并关闭。PR
+[#47](https://github.com/Linductor-alkaid/mira/pull/47)（head `a2c4c0d`，合并提交
+`ba46767`）push pipeline run
+[`34772280749`](https://github.com/Linductor-alkaid/mira/actions/runs/34772280749)
+与 pull_request pipeline run
+[`34772282466`](https://github.com/Linductor-alkaid/mira/actions/runs/34772282466)
+各 12 项全部通过：Linux GCC/Clang（Debug/Release，两 m19 目标入 Linux 测试
+矩阵）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、
+ASAN/UBSAN/TSAN、quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）。§7 退出条件逐项复核后关闭本里程碑。遗留（显式非目标，
+不阻塞关闭）：真实固化小模型（设计 §14 候选清单，经供应链复核后以
+`IModelProvider` profile 接入并重测语义指标）、AgentLoop `build_request` 集成
+（DEC-002 评审）、`ContextIntelligenceService` 编排与 Stage E 真机评估
+（`MNT-202609-27` 证据通道）。
