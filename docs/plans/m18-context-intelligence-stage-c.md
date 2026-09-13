@@ -1,7 +1,8 @@
 # M18：Context Intelligence Stage C——Layer 2 重排对照实验
 
-> 状态：In Progress（2026-09-13 立项；profile 与门禁先于任何正式评估运行冻结；
-> 本地实现与首轮对照评估已完成，PR CI 回填后关闭）
+> 状态：Completed（2026-09-13：PR #46 合入 `7aaae31`，三轮 CI——首轮一次通过——
+> head 双 pipeline 24/24 与合并提交 master run 12/12 全绿；真实 reranker 模型与
+> AgentLoop 集成为显式非目标，归供应链复核通道与后续里程碑）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 第 8 条 Stage C）
@@ -128,15 +129,16 @@ minmax(检索分)`（集合内 min-max，全等时取 0.5），默认权重 0.60
   失败非零退出）；首轮报告落
   `../benchmarks/context-intelligence-rerank-v1.md`（环境、命令、B/C 两列
   摘要、uplift、限制）。
-- [ ] 本地门禁：debug 全量 ctest、ASAN/UBSAN/TSAN m18 目标零报告、
+- [x] 本地门禁：debug 全量 ctest 74/74、ASAN/UBSAN/TSAN m18 目标零报告、
   `format-check`/`docs-check`/`platform-boundary-check`/`sbom-check` 通过。
-- [ ] 文档同步完成（§5 `M18-06` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
-  记录并关闭本里程碑。
+- [x] 文档同步完成（§5 `M18-06` 清单；与实现同一变更提交）。
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+  记录并关闭本里程碑（PR #46 三轮：head 双 pipeline 24/24、master run 12/12）。
 
 ## 8. 验证记录
 
-2026-09-13：`M18-01`～`M18-05` 本地实现与首轮对照评估（分支待提交）。
+2026-09-13：`M18-01`～`M18-05` 本地实现与首轮对照评估（分支
+`feat/m18-context-intelligence-stage-c`）。
 
 - **交付**：`include/mira/context_rerank.hpp` + `src/context/context_rerank.cpp`
   （入 `mira_core`）——Layer 2 全部契约与 `TokenOverlapContextReranker`
@@ -161,3 +163,20 @@ minmax(检索分)`（集合内 min-max，全等时取 0.5），默认权重 0.60
 - **限制与未执行项**：确定性供给方下 uplift 为管线行为方向非语义声明
   （`RULE-10`）；真实 reranker 模型、AgentLoop 集成、Stage D 固化为显式非目标；
   Windows/Android/Release/quality 由 PR CI 回填后本里程碑方可关闭（`M18-06`）。
+
+2026-09-13：PR CI 证据回填并关闭。PR
+[#46](https://github.com/Linductor-alkaid/mira/pull/46)（head `8b122c2`，合并提交
+`7aaae31`）push pipeline run
+[`34763228402`](https://github.com/Linductor-alkaid/mira/actions/runs/34763228402) 与
+pull_request pipeline run
+[`34763231930`](https://github.com/Linductor-alkaid/mira/actions/runs/34763231930) 各
+12 项，合并提交 master pipeline run
+[`34764028390`](https://github.com/Linductor-alkaid/mira/actions/runs/34764028390) 12
+项全部通过：Linux GCC/Clang（Debug/Release，两 m18 目标入 Linux 测试矩阵）、
+Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、
+ASAN/UBSAN/TSAN、quality（clang-tidy 18 + clang-format + docs/sbom/
+platform-boundary 检查）。首轮 CI 一次通过，无修复轮次。§7 退出条件逐项复核后
+关闭本里程碑。遗留（显式非目标，不阻塞关闭）：真实 reranker 模型（multilingual
+MiniLM cross-encoder / BGE 家族小型量化，设计 §14 候选清单；供应链复核后接入并
+重测语义 uplift）、AgentLoop `build_request` 集成（DEC-002 评审）、Stage D
+语义固化（依设计 §12 新建里程碑承载）。

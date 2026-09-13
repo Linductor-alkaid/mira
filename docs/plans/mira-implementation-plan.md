@@ -3,10 +3,11 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-13（DEC-032 Stage C 由 [M18](m18-context-intelligence-stage-c.md)
-> 承载并完成本地交付：Layer 2 `IContextReranker` 契约与确定性参考重排器、
-> B/C 列对照 C1–C4 首轮全绿（混合轮 MRR uplift +0.0139），基准登记于
-> [context-intelligence-rerank-v1](../benchmarks/context-intelligence-rerank-v1.md)；
-> PR CI 回填后关闭。同日早前：Stage B 由 [M17](m17-context-intelligence-stage-b.md)
+> 承载并交付关闭：Layer 2 `IContextReranker` 契约与确定性参考重排器、B/C 列对照
+> C1–C4 首轮全绿（混合轮 MRR uplift +0.0139），基准登记于
+> [context-intelligence-rerank-v1](../benchmarks/context-intelligence-rerank-v1.md)，
+> PR #46 三轮 CI head 双 pipeline 24/24 + master run 12/12。同日早前：Stage B 由
+> [M17](m17-context-intelligence-stage-b.md)
 > 承载并交付关闭：Layer 1 检索召回契约与参考索引、检索评估 R1–R4 首轮全绿，
 > PR #45 三轮 CI（两轮 tidy 修复后）head 双 pipeline 24/24 + master run 12/12；
 > Stage C 门槛以检索评估 v1 的 B 列基线为起点。同日早前：Stage A 由 [M16](m16-context-intelligence-stage-a.md)
@@ -347,6 +348,17 @@ Recall@10 = 1.0，混合轮 MRR uplift +0.0139（0.9861 → 1.0000，F1 重排�
 platform-boundary/sbom 四检查通过。限制：确定性供给方下 uplift 为管线行为方向
 非语义声明；真实 reranker 模型与 AgentLoop 集成待后续。Windows/Android/Release/
 quality 由 PR CI 回填后 M18 关闭。
+
+2026-09-13：PR CI 证据回填并关闭。PR
+[#46](https://github.com/Linductor-alkaid/mira/pull/46)（head `8b122c2`，合并提交
+`7aaae31`）push 与 pull_request pipeline run
+[`34763228402`](https://github.com/Linductor-alkaid/mira/actions/runs/34763228402)/
+[`34763231930`](https://github.com/Linductor-alkaid/mira/actions/runs/34763231930)
+各 12 项、合并提交 master pipeline run
+[`34764028390`](https://github.com/Linductor-alkaid/mira/actions/runs/34764028390)
+12 项全部通过，首轮 CI 一次通过。Stage C 关闭后，DEC-032 下一阶段为 Stage D
+（`ISemanticConsolidator` + `ConversationCheckpoint`，经 `IModelProvider` 配置
+小模型），进入实现前依设计 §12 新建里程碑文件。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
