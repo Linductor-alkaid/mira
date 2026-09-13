@@ -334,6 +334,17 @@ ContextMemorySupervisor::schedule_context_retrieval(IContextRetriever &retriever
         });
 }
 
+std::future<Result<std::vector<RankedContextItem>>>
+ContextMemorySupervisor::schedule_context_rerank(IContextReranker &reranker, ContextQuery query,
+                                                 std::vector<ContextCandidate> candidates) {
+    return submit<std::vector<RankedContextItem>>(
+        "context_rerank", SupervisedOpClass::Interactive,
+        [&reranker, query = std::move(query),
+         candidates = std::move(candidates)](SupervisorToken) -> Result<std::vector<RankedContextItem>> {
+            return reranker.rerank(query, candidates);
+        });
+}
+
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(

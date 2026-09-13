@@ -2,7 +2,11 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-13（DEC-032 Stage B 由 [M17](m17-context-intelligence-stage-b.md)
+> 更新日期：2026-09-13（DEC-032 Stage C 由 [M18](m18-context-intelligence-stage-c.md)
+> 承载并完成本地交付：Layer 2 `IContextReranker` 契约与确定性参考重排器、
+> B/C 列对照 C1–C4 首轮全绿（混合轮 MRR uplift +0.0139），基准登记于
+> [context-intelligence-rerank-v1](../benchmarks/context-intelligence-rerank-v1.md)；
+> PR CI 回填后关闭。同日早前：Stage B 由 [M17](m17-context-intelligence-stage-b.md)
 > 承载并交付关闭：Layer 1 检索召回契约与参考索引、检索评估 R1–R4 首轮全绿，
 > PR #45 三轮 CI（两轮 tidy 修复后）head 双 pipeline 24/24 + master run 12/12；
 > Stage C 门槛以检索评估 v1 的 B 列基线为起点。同日早前：Stage A 由 [M16](m16-context-intelligence-stage-a.md)
@@ -87,6 +91,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M15](m15-eval-harness-and-baseline.md) | 最小评估 Harness 与基线轮（[DEC-034](../decisions/DEC-034-minimal-eval-profile.md)：四臂对照、17 case、G1–G6 门禁、recorded 基线与 soak） | M14；`MNT-202609-28` 冻结 | Workflow learning alpha 验收的评估基线 | Completed |
 | [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | Completed |
 | [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | Completed |
+| [M18](m18-context-intelligence-stage-c.md) | Context Intelligence Stage C——Layer 2 重排对照（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextReranker` 契约、确定性参考重排器、reranker 缺席/失败降级、B/C 列对照数据；无模型） | M17（检索评估 v1 B 列基线可重复）；DEC-032 §5.3 | Stage D 固化对照的方法学锚点（非发布物） | In Progress |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -325,6 +330,24 @@ debug ctest 72/72、ASAN/UBSAN/TSAN m17 通过零报告、format/docs/platform-b
 sbom 四检查通过。限制：token-hash 指标为管线行为基线非语义质量声明；真实 embedder
 供给方与 Stage C 对照待后续。Windows/Android/Release/quality 由 PR CI 回填后 M17 关闭。
 
+2026-09-13（第三次），同一授权模式推进 DEC-032 Stage C。前置核对：M17 已关闭且其
+检索评估 v1 B 列基线满足 Stage C 门槛，据此新增里程碑
+[M18](m18-context-intelligence-stage-c.md) 承载 Layer 2 重排对照（profile 与门禁
+C1–C4 跑前冻结）。交付：`include/mira/context_rerank.hpp`（`IContextReranker`、
+`RankedContextItem`、`ContextRerankConfig`/`ContextRerankWeights`、确定性参考重排器
+`TokenOverlapContextReranker`——查询 token 覆盖 F1 + `exact_terms` 加成，
+min-max 融合默认 0.60/0.40，全等集合归一 0.5）；`src/context/context_rerank.cpp`
+（入 `mira_core`）；`ContextMemorySupervisor::schedule_context_rerank`（Interactive）；
+重排失败返回错误、调用方降级检索序 Top-K（设计 §8）。对照评估 harness 复用 M17
+冻结数据集（digest 断言锚定）与 token-hash 供给方，首轮 C1–C4 全绿：B/C 两列
+Recall@10 = 1.0，混合轮 MRR uplift +0.0139（0.9861 → 1.0000，F1 重排压回 hash
+噪声干扰），ACL 零泄漏，跨进程报告字节级一致；登记于
+[context-intelligence-rerank-v1](../benchmarks/context-intelligence-rerank-v1.md)。
+本地门禁：debug ctest 74/74、ASAN/UBSAN/TSAN m18 通过零报告、format/docs/
+platform-boundary/sbom 四检查通过。限制：确定性供给方下 uplift 为管线行为方向
+非语义声明；真实 reranker 模型与 AgentLoop 集成待后续。Windows/Android/Release/
+quality 由 PR CI 回填后 M18 关闭。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -365,7 +388,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md) | Memory 四类组织与 Workflow 学习契约（阶段 F） | Accepted | M13 |
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
-| [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Layer 2–4 未开始） | M16（Stage A）；M17（Stage B）；Stage C–F 逐阶段另行立项 |
+| [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Stage C Layer 2 重排由 [M18](m18-context-intelligence-stage-c.md) 承载，Layer 3–4 未开始） | M16（Stage A）；M17（Stage B）；M18（Stage C）；Stage D–F 逐阶段另行立项 |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 

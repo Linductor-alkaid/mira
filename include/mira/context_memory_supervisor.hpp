@@ -2,6 +2,7 @@
 
 #include <mira/core_contracts.hpp>
 #include <mira/context_retrieval.hpp>
+#include <mira/context_rerank.hpp>
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
@@ -124,6 +125,13 @@ class ContextMemorySupervisor final {
     [[nodiscard]] std::future<Result<ContextRetrievalResult>>
     schedule_context_retrieval(IContextRetriever &retriever, ContextQuery query,
                                RetrievalBudget budget);
+    // Layer 2 rerank (M18): Interactive class; a reranker failure degrades to
+    // the retrieval order at the call site, so errors resolve the future
+    // instead of blocking. The future must be consumed like every other
+    // wrapper.
+    [[nodiscard]] std::future<Result<std::vector<RankedContextItem>>>
+    schedule_context_rerank(IContextReranker &reranker, ContextQuery query,
+                            std::vector<ContextCandidate> candidates);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
     [[nodiscard]] std::future<Result<ErasureResult>>

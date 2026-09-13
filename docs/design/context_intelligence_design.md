@@ -45,7 +45,7 @@ Consolidate（语义固化）与可选 Compress（提示压缩）四层能力，
 | --- | --- | --- |
 | Layer 0 Reduce | 已交付 | `StandardContextManager`（P0–P5 分区、水位、引用替换、图片/工具 schema 预算、最小执行集、审计与 `selection_digest`） |
 | Layer 1 Retrieve | 已交付（M17）+ 既有半有面 | `context_retrieval.hpp`：`IContextEmbedder`（外部供给契约，Core 无实现）/`IContextRetriever`/`InMemoryContextIndex` 参考索引，覆盖 Conversation 段/Episode/Lesson 三类资产、确定性会话切分、候选→ContextItem 转换与 supervisor 路由；`IMemory::query` 三腿仍覆盖 `MemoryRecord`（耐久路径） |
-| Layer 2 Rerank | 半有 | `RetrievalWeights` 固定线性加权与多样性约束；无独立 Reranker 接口与模型重排 |
+| Layer 2 Rerank | 已交付（M18，确定性参考） | `context_rerank.hpp`：`IContextReranker` 契约 + `TokenOverlapContextReranker` 参考实现（F1 + exact 加成、min-max 融合），supervisor 路由与降级；模型重排经供应链复核后另行接入 |
 | Layer 3 Consolidate | 对象错位 | `MemoryConsolidator` 是 Event -> 长期记忆写入管线；无会话级语义固化，无 `ConversationCheckpoint` |
 | Layer 4 Compress | 缺 | 仅结构化引用/压缩 marker；无提示压缩接口 |
 
@@ -336,7 +336,7 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 | --- | --- | --- |
 | A | Long-session benchmark 基线（不引入模型）——**已交付**（[M16](../plans/m16-context-intelligence-stage-a.md)，2026-09-13，基线见[long-session v1](../benchmarks/context-intelligence-long-session-v1.md)：token 有界与 N 无关、约束全保留、对话/工具历史稳态全逐出） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
 | B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson——**已交付**（[M17](../plans/m17-context-intelligence-stage-b.md)，2026-09-13，基线见[检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)：R1–R4 全绿、ACL 零泄漏、降级路径召回不损失） | Stage A 基线可重复 |
-| C | `IContextReranker` 对照实验 | Embedding Top-K vs +Reranker 召回/成本数据 |
+| C | `IContextReranker` 对照实验——**已交付**（[M18](../plans/m18-context-intelligence-stage-c.md)，2026-09-13，对照见[重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)：C1–C4 全绿、混合轮 MRR uplift +0.0139、ACL 零泄漏；确定性供给方口径） | 检索评估 v1 B 列基线 |
 | D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理 | 经 `IModelProvider` 配置小模型 |
 | E | miracle 真机评估 | `MNT-202609-27` 证据通道 |
 | F | 提示压缩实验 | 只有 token 收益不以任务成功率/约束召回为代价才进正式 Runtime |
