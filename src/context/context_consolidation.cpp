@@ -222,8 +222,8 @@ Result<void> ConversationCheckpoint::validate() const {
         return consolidation_error(ErrorCode::InvalidArgument,
                                    "conversation checkpoint confidence must be within [0,1]");
     }
-    const auto validate_statements = [this](const std::vector<ConversationStatement> &statements,
-                                            std::string_view section) -> Result<void> {
+    const auto validate_statements = [](const std::vector<ConversationStatement> &statements,
+                                        std::string_view section) -> Result<void> {
         if (statements.size() > 1'024) {
             return consolidation_error(ErrorCode::InvalidArgument,
                                        "checkpoint section " + std::string(section) +
