@@ -1,7 +1,9 @@
 # M17：Context Intelligence Stage B——Layer 1 检索召回
 
-> 状态：In Progress（2026-09-13 依「依设计与计划推进下一步开发」授权立项并实施，
-> 与 M8–M16 同一授权模式；Stage A 基线可重复性由 M16 G5/跨进程复验证据满足）
+> 状态：Completed（2026-09-13：PR #45 合入 `e721d4c`，三轮 CI——前两轮各一处
+> clang-tidy 违例修复后——head 双 pipeline 24/24 与合并提交 master run 12/12
+> 全绿；真实 embedder 供给方与 AgentLoop 集成为显式非目标，归 Stage C+ 与
+> 供应链复核通道）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 第 8 条 Stage B）
@@ -105,9 +107,10 @@ tokens_estimate 分布。失败处置同 M16 §4：实现缺陷登记 `BUG-YYYYM
   必须消费）与 shutdown 后提交拒绝测试。
 - [x] `M17-07` 契约/集成测试矩阵（§7）与检索评估 harness（R1–R4、JSON 报告、
   `dataset_digest`）、本地全门禁。
-- [ ] `M17-08` 文档同步与 CI 取证：总计划索引与注记、设计 §3/§5.2/§12 状态、
+- [x] `M17-08` 文档同步与 CI 取证：总计划索引与注记、设计 §3/§5.2/§12 状态、
   README 能力表、API 手册（`context-memory.md` 与模块地图）、基准报告登记；
-  PR CI 全绿后回填关闭。
+  PR CI 全绿后回填关闭（PR #45 head 双 pipeline 24/24 + master run 12/12，
+  见验证记录）。
 
 ## 6. 风险与阻塞
 
@@ -137,8 +140,8 @@ tokens_estimate 分布。失败处置同 M16 §4：实现缺陷登记 `BUG-YYYYM
 - [x] 本地门禁：debug 全量 ctest 72/72、ASAN/UBSAN/TSAN m17 目标零报告、
   `format-check`/`docs-check`/`platform-boundary-check`/`sbom-check` 通过。
 - [x] 文档同步完成（§5 `M17-08` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
-  记录并关闭本里程碑。
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+  记录并关闭本里程碑（PR #45 三轮：head 双 pipeline 24/24、master run 12/12）。
 
 ## 8. 验证记录
 
@@ -172,3 +175,24 @@ tokens_estimate 分布。失败处置同 M16 §4：实现缺陷登记 `BUG-YYYYM
   Windows/Android/Release/quality 由 PR CI 回填后本里程碑方可关闭（`M17-08`）。
 - **首轮发现**：见基线报告 §4（降级路径 MRR 反超——hash 供给方噪声特性，Stage C
   对照直接输入；exact 腿零命中属评估设计预期）。无门禁失败，无阈值修订。
+
+2026-09-13：PR CI 证据回填并关闭。PR
+[#45](https://github.com/Linductor-alkaid/mira/pull/45)（head `0971ace`，合并提交
+`e721d4c`）push pipeline run
+[`34743189129`](https://github.com/Linductor-alkaid/mira/actions/runs/34743189129) 与
+pull_request pipeline run
+[`34743190775`](https://github.com/Linductor-alkaid/mira/actions/runs/34743190775) 各
+12 项，合并提交 master pipeline run
+[`34743920149`](https://github.com/Linductor-alkaid/mira/actions/runs/34743920149) 12
+项全部通过：Linux GCC/Clang（Debug/Release，两 m17 目标入 Linux 测试矩阵）、
+Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级，本机已用
+同版本 NDK 预演 CI 目标集双 ABI 通过）、ASAN/UBSAN/TSAN、quality（clang-tidy 18 +
+clang-format + docs/sbom/platform-boundary 检查）。三轮迭代：首轮 quality 两处
+clang-tidy 违例（`performance-move-const-arg`、`bugprone-branch-clone`，提交
+`6bb668c` 修复）、次轮一处（`performance-no-automatic-move`，提交 `0971ace` 修复，
+并发现本机 miniconda clang-tidy 18.1.8 可预检——后续轮次可用）、第三轮零违例全绿。
+§7 退出条件逐项复核后关闭本里程碑。遗留（显式非目标，不阻塞关闭）：真实 embedder
+供给方（供应链复核后接入并重测语义指标）、AgentLoop `build_request` 集成（DEC-002
+评审）、向量索引持久化与 ANN（按证据立项）。Stage C 入口门槛「Embedding Top-K vs
++Reranker 召回/成本数据」以[检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)
+B 列基线为对照起点，进入实现前依设计 §12 创建里程碑文件。

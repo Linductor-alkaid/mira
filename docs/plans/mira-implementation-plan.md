@@ -3,8 +3,9 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-13（DEC-032 Stage B 由 [M17](m17-context-intelligence-stage-b.md)
-> 承载：Layer 1 检索召回契约与参考索引交付，检索评估 R1–R4 首轮全绿；CI 取证
-> 回填后关闭。同日早前：Stage A 由 [M16](m16-context-intelligence-stage-a.md)
+> 承载并交付关闭：Layer 1 检索召回契约与参考索引、检索评估 R1–R4 首轮全绿，
+> PR #45 三轮 CI（两轮 tidy 修复后）head 双 pipeline 24/24 + master run 12/12；
+> Stage C 门槛以检索评估 v1 的 B 列基线为起点。同日早前：Stage A 由 [M16](m16-context-intelligence-stage-a.md)
 > 交付关闭——long-session 基线首轮 G1–G6 全绿，PR #44 三轮 CI 36/36。此前：
 > `MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；`MNT-202609-33` 升级 Executor
 > pin 至 `e2dc8ca`，PR CI 24/24 全绿后完成）
@@ -85,7 +86,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M14](m14-recovery-orchestration.md) | Workflow 恢复编排（[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)：`WaitingAgent` 到 resume 的有界恢复闭环、恢复决策模型请求、`WorkflowRecoveryAttempted` 审计） | M13（`MNT-202609-24` 立项） | Workflow recovery alpha | Completed |
 | [M15](m15-eval-harness-and-baseline.md) | 最小评估 Harness 与基线轮（[DEC-034](../decisions/DEC-034-minimal-eval-profile.md)：四臂对照、17 case、G1–G6 门禁、recorded 基线与 soak） | M14；`MNT-202609-28` 冻结 | Workflow learning alpha 验收的评估基线 | Completed |
 | [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | Completed |
-| [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | In Progress |
+| [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
