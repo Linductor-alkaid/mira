@@ -2,9 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-13（DEC-032 Stage A 立项 [M16](m16-context-intelligence-stage-a.md)
-> 并本地交付 long-session 基线首轮：G1–G6 全绿，debug 70/70 与三 sanitizer 通过；
-> PR CI 回填后关闭。此前：`MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；
+> 更新日期：2026-09-13（DEC-032 Stage A 由 [M16](m16-context-intelligence-stage-a.md)
+> 承载并交付关闭：long-session 基线首轮 G1–G6 全绿，PR #44 三轮 CI 36/36；
+> Stage B 门槛已具备。此前：`MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；
 > `MNT-202609-33` 升级 Executor pin 至 `e2dc8ca`，PR CI 24/24 全绿后完成）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
@@ -82,7 +82,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M13](m13-memory-and-learning-loop.md) | Memory 与学习闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 F：四类记忆组织、Episode/Lesson 学习契约、失败检索、恢复复用） | M11、M12（阶段 D/E） | Workflow learning alpha | Completed |
 | [M14](m14-recovery-orchestration.md) | Workflow 恢复编排（[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)：`WaitingAgent` 到 resume 的有界恢复闭环、恢复决策模型请求、`WorkflowRecoveryAttempted` 审计） | M13（`MNT-202609-24` 立项） | Workflow recovery alpha | Completed |
 | [M15](m15-eval-harness-and-baseline.md) | 最小评估 Harness 与基线轮（[DEC-034](../decisions/DEC-034-minimal-eval-profile.md)：四臂对照、17 case、G1–G6 门禁、recorded 基线与 soak） | M14；`MNT-202609-28` 冻结 | Workflow learning alpha 验收的评估基线 | Completed |
-| [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | In Progress |
+| [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 

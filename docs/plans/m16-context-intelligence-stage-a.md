@@ -1,7 +1,8 @@
 # M16：Context Intelligence Stage A——long-session 基线
 
-> 状态：In Progress（2026-09-13 依总计划 §4.1 第 6 条方向登记与既有「依设计与计划
-> 推进下一步开发」授权模式立项实施，与 M8–M15 同源）
+> 状态：Completed（2026-09-13：PR #44 合入 `70163b3`，CI 三轮 36/36 全绿；
+> miracle 派生负载回放与语义指标为显式非目标，补跑条件已登记——归
+> `MNT-202609-27` 语料与 Stage B+ 里程碑）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) 第 8 条 Stage A）
@@ -111,8 +112,9 @@ replaced/compressed 计数、`checkpoint_recommended` 率、最小执行集 toke
 - [x] `M16-04` 基线轮运行与登记：首轮正式运行、报告落
   [context-intelligence-long-session-v1](../benchmarks/context-intelligence-long-session-v1.md)
   （环境、命令、摘要、限制与补跑条件）。
-- [ ] `M16-05` 文档同步与 CI 取证：总计划索引与方向登记注记、设计状态注记、
-  README 能力表；PR CI（Linux/Windows/sanitizers/quality）全绿后回填关闭。
+- [x] `M16-05` 文档同步与 CI 取证：总计划索引与方向登记注记、设计状态注记、
+  README 能力表；PR CI（Linux/Windows/sanitizers/quality）全绿后回填关闭
+  （PR #44 两事件 24/24 + master run 12/12，见验证记录）。
 
 ## 6. 风险与阻塞
 
@@ -136,7 +138,8 @@ replaced/compressed 计数、`checkpoint_recommended` 率、最小执行集 toke
   （[context-intelligence-long-session-v1](../benchmarks/context-intelligence-long-session-v1.md)）。
 - [x] 文档同步完成（总计划 §4 里程碑索引与 §4.1 第 6 条注记、设计 §12 Stage A
   状态、README 能力表；与实现同一变更提交）。
-- [ ] PR CI 全绿后回填验证记录并关闭本里程碑。
+- [x] PR CI 全绿后回填验证记录并关闭本里程碑（PR #44 两 pipeline 各 12 项 + 合并
+  提交 master run 12 项，三轮 36/36 全绿，见下条记录）。
 
 ## 8. 验证记录
 
@@ -168,3 +171,20 @@ replaced/compressed 计数、`checkpoint_recommended` 率、最小执行集 toke
 - **首轮发现**：见基线报告 §4（有界性闭合、连续性损失量化、约束线性计费、
   checkpoint 水位稳态空转——Stage D 固化触发设计输入、P3 不老化注记）。无门禁
   失败，无阈值修订。
+
+2026-09-13：PR CI 证据回填并关闭。PR
+[#44](https://github.com/Linductor-alkaid/mira/pull/44)（head `0072a74`，合并提交
+`70163b3`）push pipeline run
+[`34708719263`](https://github.com/Linductor-alkaid/mira/actions/runs/34708719263) 与
+pull_request pipeline run
+[`34708730336`](https://github.com/Linductor-alkaid/mira/actions/runs/34708730336) 各
+12 项，合并提交 master pipeline run
+[`34709814381`](https://github.com/Linductor-alkaid/mira/actions/runs/34709814381) 12
+项，三轮共 36/36 全绿：Linux GCC/Clang（Debug/Release，新目标入 Linux 测试矩阵）、
+Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK 编译级）、
+ASAN/UBSAN/TSAN、quality（clang-tidy + clang-format + docs/sbom/platform-boundary）
+全部通过，零修复复验。§7 退出条件逐项复核后关闭本里程碑。遗留（显式非目标，
+不阻塞关闭）：miracle 派生负载回放（等 27 语料，补跑条件在基线报告 §5）、
+Constraint Recall 等语义指标（Stage B+ 冻结）、本地 master 已同步至合并提交，工作
+分支（本地与远端）已删除。Stage B 入口门槛「Stage A 基线可重复」已具备，进入
+实现前依设计 §12 创建里程碑文件。
