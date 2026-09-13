@@ -201,11 +201,8 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                     ErrorCode::Internal, "supervised operation failed with an exception"));
             }
             bool degraded = false;
-            if constexpr (std::is_same_v<T, MemoryQueryResult>) {
-                if (outcome.has_value()) {
-                    degraded = outcome.value().quality.degraded;
-                }
-            } else if constexpr (std::is_same_v<T, ContextRetrievalResult>) {
+            if constexpr (std::is_same_v<T, MemoryQueryResult> ||
+                          std::is_same_v<T, ContextRetrievalResult>) {
                 if (outcome.has_value()) {
                     degraded = outcome.value().quality.degraded;
                 }

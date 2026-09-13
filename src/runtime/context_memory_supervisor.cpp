@@ -329,7 +329,7 @@ ContextMemorySupervisor::schedule_context_retrieval(IContextRetriever &retriever
     return submit<ContextRetrievalResult>(
         "context_retrieval", SupervisedOpClass::Interactive,
         [&retriever, query = std::move(query),
-         budget = std::move(budget)](SupervisorToken) -> Result<ContextRetrievalResult> {
+         budget](SupervisorToken) -> Result<ContextRetrievalResult> {
             return retriever.retrieve(query, budget);
         });
 }
