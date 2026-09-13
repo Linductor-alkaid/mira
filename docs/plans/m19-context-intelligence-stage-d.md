@@ -83,7 +83,8 @@ Memory 的人工审批管线（沿用 `MemoryConsolidator` 既有纪律，转换
 会话前缀，提交整体替换旧 checkpoint。ground truth = 植入条目及其 `EventId`；
 跨会话违例按「已提交语句引用事件均属于本会话段」逐语句审计。
 数据集以 `dataset_digest` 断言锚定（口径同 M17/M18）：
-`31758a94b646e96f4a2ea133c1dec9d4bc0d62541d09b20d8ed941ebd4fd9866`（首轮运行钉定）。
+`a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f`（首轮钉定，
+复跑修复 RNG 顺序歧义后更新，见 §8 首条）。
 
 **固化供给方（评估与契约测试用，确定性）**：脚本化 `IModelProvider`——按冻结
 规则从编号转录中识别 `constraint:`/`decision:`/`thread:`/`preference:` 条目
@@ -209,3 +210,19 @@ presented token）、各类语句计数、偏好候选计数、植入项分布�
   质量声明（`RULE-10`）；真实小模型、AgentLoop 集成、`ContextIntelligenceService`
   编排、Stage E 真机评估为显式非目标；Windows/Android/Release/quality 由 PR CI
   回填后本里程碑方可关闭（`M19-07`）。
+
+2026-09-14：PR CI（[#47](https://github.com/Linductor-alkaid/mira/pull/47)）两轮
+修复后复验。
+
+- 第一轮：Linux clang 报 `-Wunused-lambda-capture`（`validate_statements`
+  的未使用 `this` 捕获，GCC 不告警）——移除捕获；Android NDK libc++ 与 MSVC
+  报 `chrono` 时钟 duration 隐式转换拒绝——`timestamp_from_nanos` 改为对
+  `system_clock::duration`/`steady_clock::duration` 显式 `duration_cast`
+  （本机同版本 NDK 两 ABI 交叉编译预演通过后推送）。
+- 第二轮：clang 的 `mira_m19_consolidation_eval` 报 dataset digest mismatch
+  （GCC 全绿）——定位为噪声条目两次 `rare_token` 抽取在同一表达式内、求值
+  顺序未指定导致数据集跨编译器分叉；改为顺序语句，digest 重新钉定
+  `31758a94…` → `a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f`
+  （实现代码零变更；植入结构、供给方规则、门禁与全部聚合指标与首轮逐项
+  一致，[基准报告](../benchmarks/context-intelligence-consolidation-v1.md)
+  已同步口径注记）。修复轮本机复验：debug ctest 76/76、TSAN m19 零报告。

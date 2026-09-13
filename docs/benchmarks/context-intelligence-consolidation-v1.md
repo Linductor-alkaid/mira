@@ -13,7 +13,7 @@
 这是 [M19](../plans/m19-context-intelligence-stage-d.md) 产出的 Layer 3 语义固化
 首轮评估：冻结合成会话数据集（12 会话 × 40 条 `ConversationEntry`，每会话植入
 6 约束 / 4 决策 / 4 未决线索 / 3 偏好候选 / 2 敏感标记条目；`dataset_digest`
-`31758a94b646e96f4a2ea133c1dec9d4bc0d62541d09b20d8ed941ebd4fd9866`，评估内断言
+`a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f`，评估内断言
 digest 相等后运行），经 `segment_conversation` 切分为单一前缀段，交给
 `ProviderSemanticConsolidator` 走完整 ModelRequest → infer → 严格 JSON 解析 →
 provenance 绑定 → 五元组提交管线。固化"模型"为脚本化确定性 `IModelProvider`
@@ -25,7 +25,11 @@ provenance 绑定 → 五元组提交管线。固化"模型"为脚本化确定�
 ## 2. 方法与环境
 
 - Harness：`tests/m19/m19_consolidation_eval.cpp`（M19-06），数据集 digest
-  断言锚定；门禁 D1–D5（M19 §4，跑前冻结）。
+  断言锚定；门禁 D1–D5（M19 §4，跑前冻结）。口径修订一次：首轮钉定后 PR CI
+  的 clang 轮发现噪声条目的两次 RNG 抽取在同一表达式内求值顺序未指定
+  （GCC/clang 数据集分叉），改为顺序语句并以确定性口径重新钉定 digest
+  （`31758a94…` → `a828a2ae…`）；植入结构、供给方规则与全部门禁不变，
+  重跑聚合与首轮逐项一致。
 - 轮次：混合轮（供给方正常）、降级轮（供给方在首个会话提交一次后持续失败）、
   重复轮（确定性对照）；混合轮附加陈旧水位与终态迟到候选的提交纪律探测。
 - 环境：Ubuntu 24.04.4 x86_64、Intel Core Ultra 5 225H、GCC 13.3.0、CMake

@@ -43,7 +43,7 @@ struct FrozenConfig final {
     // Pinned after the first frozen run; the harness asserts equality so the
     // dataset is checked, not assumed (same discipline as M17/M18).
     std::string dataset_digest =
-        "31758a94b646e96f4a2ea133c1dec9d4bc0d62541d09b20d8ed941ebd4fd9866";
+        "a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f";
 };
 
 [[nodiscard]] std::string digest_hex(const Sha256Digest &digest) {
@@ -167,7 +167,12 @@ struct Dataset final {
             kinds.push_back(PlantedKind::Noise);
         }
         while (texts.size() < config.entries_per_session) {
-            texts.push_back("noise " + rare_token(local) + " " + rare_token(local));
+            // Two rng draws must be sequenced statements: expression-level
+            // evaluation order of the two rare_token(local) calls is
+            // unspecified and would fork the dataset between compilers.
+            const std::string first_token = rare_token(local);
+            const std::string second_token = rare_token(local);
+            texts.push_back("noise " + first_token + " " + second_token);
             kinds.push_back(PlantedKind::Noise);
         }
 
