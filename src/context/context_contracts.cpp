@@ -600,6 +600,10 @@ std::string context_domain_code_name(ContextDomainCode code) {
         return "ToolPairingBroken";
     case ContextDomainCode::SchemaUnsupported:
         return "SchemaUnsupported";
+    case ContextDomainCode::ScopeDenied:
+        return "ScopeDenied";
+    case ContextDomainCode::ForbiddenContent:
+        return "ForbiddenContent";
     }
     return "Unknown";
 }
@@ -618,6 +622,10 @@ Error make_context_error(ContextDomainCode code, std::string safe_message, bool 
         error.code = ErrorCode::InvalidArgument;
     } else if (code == ContextDomainCode::TokenCountUnavailable) {
         error.code = ErrorCode::Unavailable;
+    } else if (code == ContextDomainCode::ScopeDenied) {
+        error.code = ErrorCode::PermissionDenied;
+    } else if (code == ContextDomainCode::ForbiddenContent) {
+        error.code = ErrorCode::SafetyRejected;
     }
     error.domain = "mira.context";
     error.domain_code = static_cast<std::int32_t>(code);

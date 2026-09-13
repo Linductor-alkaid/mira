@@ -46,6 +46,7 @@ user_message_entry(const EventEnvelope &envelope) {
     entry.recorded_at = envelope.timestamp;
     entry.text = *text->as_string();
     entry.origin = envelope.event_id;
+    entry.session_sequence = envelope.session_sequence;
     return entry;
 }
 
@@ -69,6 +70,7 @@ user_message_entry(const EventEnvelope &envelope) {
     entry.recorded_at = envelope.timestamp;
     entry.text = text.str();
     entry.origin = envelope.event_id;
+    entry.session_sequence = envelope.session_sequence;
     return entry;
 }
 

@@ -2,10 +2,12 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-13（DEC-032 Stage A 由 [M16](m16-context-intelligence-stage-a.md)
-> 承载并交付关闭：long-session 基线首轮 G1–G6 全绿，PR #44 三轮 CI 36/36；
-> Stage B 门槛已具备。此前：`MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；
-> `MNT-202609-33` 升级 Executor pin 至 `e2dc8ca`，PR CI 24/24 全绿后完成）
+> 更新日期：2026-09-13（DEC-032 Stage B 由 [M17](m17-context-intelligence-stage-b.md)
+> 承载：Layer 1 检索召回契约与参考索引交付，检索评估 R1–R4 首轮全绿；CI 取证
+> 回填后关闭。同日早前：Stage A 由 [M16](m16-context-intelligence-stage-a.md)
+> 交付关闭——long-session 基线首轮 G1–G6 全绿，PR #44 三轮 CI 36/36。此前：
+> `MNT-202609-28` 冻结最小评估 Profile 与 DEC-034；`MNT-202609-33` 升级 Executor
+> pin 至 `e2dc8ca`，PR CI 24/24 全绿后完成）
 > 设计依据：[Mira Runtime 设计](../design/mira_runtime_design.md)、[Context 与 Memory 设计](../design/context_and_memory_design.md)、
 > [LLM API 协议设计](../design/llm-api-protocol-design.md)、[Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
 
@@ -83,6 +85,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M14](m14-recovery-orchestration.md) | Workflow 恢复编排（[DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md)：`WaitingAgent` 到 resume 的有界恢复闭环、恢复决策模型请求、`WorkflowRecoveryAttempted` 审计） | M13（`MNT-202609-24` 立项） | Workflow recovery alpha | Completed |
 | [M15](m15-eval-harness-and-baseline.md) | 最小评估 Harness 与基线轮（[DEC-034](../decisions/DEC-034-minimal-eval-profile.md)：四臂对照、17 case、G1–G6 门禁、recorded 基线与 soak） | M14；`MNT-202609-28` 冻结 | Workflow learning alpha 验收的评估基线 | Completed |
 | [M16](m16-context-intelligence-stage-a.md) | Context Intelligence Stage A——long-session 基线（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：Layer 0 有界性与选择/丢弃审计基线，不引入模型） | M4；DEC-032 冻结；`MNT-202609-28` profile 纪律 | Stage B–F 对照基线（非发布物） | Completed |
+| [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | In Progress |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -298,6 +301,29 @@ sbom 四检查通过；同进程与跨进程确定性复验一致。限制：mir
 语料补跑；token 为保守上界非 Provider 实计数；Windows/Android/Release/quality 由
 PR CI 回填后 M16 关闭。本轮无公开契约变更。
 
+2026-09-13（第二次），维护者指示「依设计与计划推进下一步开发」（与 M8–M16 同一授权
+模式）。经计划核对：Stage A 已关闭且其 G5 确定性证据满足 Stage B 前置门槛，据此新增
+里程碑 [M17](m17-context-intelligence-stage-b.md) 承载 DEC-032 Stage B——Layer 1 检索
+召回。交付：`include/mira/context_retrieval.hpp`（`IContextEmbedder` 外部供给契约、
+`IContextRetriever`、`ContextIndexAsset` 三类资产模型、`ContextQuery`/`RetrievalBudget`/
+`ContextCandidate`、候选 JSON `mira.context.candidate.v1`）；`InMemoryContextIndex`
+参考索引（exact 逐字子串强制过滤 + 词法 token 覆盖率 + 有界线性 cosine 三腿混合，
+`MemoryQueryQuality` 逐腿降级、ACL 默认拒绝、deadline 部分结果、水位前进使旧
+embedding 失效、禁止标记 fail-closed、token packing）；`segment_conversation()`
+确定性窗口切分（`ConversationEntry` 增补 `session_sequence` 回填，加法式契约变更）；
+`context_item_from_candidate()` 使检索候选以 P4 `RetrievedMemory` 进入
+`StandardContextManager` 准入；`ContextMemorySupervisor::schedule_context_retrieval`
+（Interactive）承载 Executor 路由。无模型、无 ANN、无向量持久化、无 AgentLoop 集成
+（显式非目标）。检索评估 harness（48 锚定查询 × 528 资产确定性数据集，token-hash
+确定性供给方）首轮 R1–R4 全绿：Recall@10 = 1.0（48/48）、MRR 0.986（降级路径 1.000）、
+ACL 零泄漏、跨进程报告字节级一致；登记于
+[context-intelligence-retrieval-v1](../benchmarks/context-intelligence-retrieval-v1.md)
+（`dataset_digest`
+`ffc59f6d0a0a375a6e8730906219339900b616ed1f861b274c437515a367649e`）。本地门禁：
+debug ctest 72/72、ASAN/UBSAN/TSAN m17 通过零报告、format/docs/platform-boundary/
+sbom 四检查通过。限制：token-hash 指标为管线行为基线非语义质量声明；真实 embedder
+供给方与 Stage C 对照待后续。Windows/Android/Release/quality 由 PR CI 回填后 M17 关闭。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -338,7 +364,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md) | Memory 四类组织与 Workflow 学习契约（阶段 F） | Accepted | M13 |
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
-| [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线已由 [M16](m16-context-intelligence-stage-a.md) 交付，Layer 1–4 未开始） | M16（Stage A）；Stage B–F 逐阶段另行立项 |
+| [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Layer 2–4 未开始） | M16（Stage A）；M17（Stage B）；Stage C–F 逐阶段另行立项 |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 

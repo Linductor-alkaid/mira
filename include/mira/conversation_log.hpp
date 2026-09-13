@@ -14,13 +14,16 @@ namespace mira {
 
 // One user-visible line of the session conversation. The event store remains
 // the only source of truth (RULE-07); this view is a rebuildable projection,
-// never a second store.
+// never a second store. `session_sequence` echoes the source envelope's
+// sequence so downstream projections (e.g. M17 conversation segmentation) can
+// stamp rebuild watermarks without re-reading the store.
 struct ConversationEntry final {
     enum class Kind : std::uint8_t { UserMessage, LoopOutcome };
     Kind kind = Kind::UserMessage;
     Timestamp recorded_at;
     std::string text;
     EventId origin;
+    SessionSequence session_sequence = 0;
 };
 
 // Rebuilds the conversation view for one session from `UserMessageInjected`

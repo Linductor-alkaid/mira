@@ -84,6 +84,7 @@ add_library(mira_core
     src/runtime/context_memory_supervisor.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
+    src/context/context_retrieval.cpp
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
     src/observation/coordinate_transform.cpp

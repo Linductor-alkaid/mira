@@ -28,12 +28,15 @@ Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M
 | 四类记忆域、Episode/Lesson、失败检索 | 实现已交付（M13），Android 设备运行待补 | [阶段 F 计划](docs/plans/m13-memory-and-learning-loop.md) |
 | `WaitingAgent` 恢复编排（模型决策修复 + `WorkflowRecoveryAttempted` 审计） | 实现已交付（M14，DEC-031），Android 设备运行与真实 Provider 证据待补 | [M14 计划](docs/plans/m14-recovery-orchestration.md)、[恢复编排设计](docs/design/workflow_recovery_orchestration_design.md) |
 | 离散动作 + Workflow 最小评估 Harness（四臂对照、17 case、G1–G6 门禁、soak） | recorded 基线已交付（M15，DEC-034）；live canary 与真实平台组待补跑 | [评估基线 v1](docs/benchmarks/discrete-workflow-eval-v1.md) |
-| long-session 上下文有界性基线（Layer 0，无模型） | Stage A 基线已交付（M16，DEC-032）；Layer 1–4 未开始 | [long-session 基线 v1](docs/benchmarks/context-intelligence-long-session-v1.md) |
+| long-session 上下文有界性基线（Layer 0，无模型） | Stage A 基线已交付（M16，DEC-032） | [long-session 基线 v1](docs/benchmarks/context-intelligence-long-session-v1.md) |
+| Layer 1 检索召回（`IContextEmbedder`/`IContextRetriever`，Conversation/Episode/Lesson） | 契约与参考索引已交付（M17，DEC-032 Stage B）；真实 embedder 供给方与 AgentLoop 集成待后续 | [检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) |
 
 下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：回收 miracle
 真机/Provider 证据、补跑 live canary 与恢复率/成本分布、依证据推进持久化与 M7
-重定义；Context Intelligence（DEC-032）以 [M16 基线](docs/plans/m16-context-intelligence-stage-a.md)
-为 Stage B 起点按阶段推进。
+重定义；Context Intelligence（DEC-032）Stage A/B 已由
+[M16](docs/plans/m16-context-intelligence-stage-a.md) 与
+[M17](docs/plans/m17-context-intelligence-stage-b.md) 交付，Stage C（重排对照）依据
+[检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) 的 B 列基线推进。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求

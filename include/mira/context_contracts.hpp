@@ -259,6 +259,10 @@ enum class ContextDomainCode : std::int32_t {
     TokenCountUnavailable = 5,
     ToolPairingBroken = 6,
     SchemaUnsupported = 7,
+    // Layer 1 retrieval (M17): deny-by-default ACL rejection and content
+    // that must never enter the retrieval index.
+    ScopeDenied = 8,
+    ForbiddenContent = 9,
 };
 
 [[nodiscard]] std::string context_domain_code_name(ContextDomainCode code);

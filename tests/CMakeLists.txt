@@ -456,3 +456,25 @@ function(mira_add_m16_baseline name source)
 endfunction()
 
 mira_add_m16_baseline(mira_m16_long_session_baseline m16/m16_long_session_baseline.cpp)
+
+# M17 (DEC-032 Stage B): Layer 1 retrieval contracts and the in-memory
+# reference index; the contract suite also exercises the supervisor routing
+# (shutdown rejection) so it links the executor. The eval harness runs the
+# frozen retrieval dataset with R1-R4 gates and exits non-zero on failure.
+function(mira_add_m17_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m17" TIMEOUT 120)
+endfunction()
+
+mira_add_m17_test(mira_m17_context_retrieval_test m17/m17_context_retrieval_test.cpp)
+mira_add_m17_test(mira_m17_retrieval_eval m17/m17_retrieval_eval.cpp)

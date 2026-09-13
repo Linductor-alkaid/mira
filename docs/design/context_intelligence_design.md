@@ -1,8 +1,10 @@
 # Mira Context Intelligence 设计（长会话语义上下文管理）
 
 > 状态：Active（方向与契约草案冻结；Stage A 基线已由 [M16](../plans/m16-context-intelligence-stage-a.md) 交付——
-> [long-session 基线 v1](../benchmarks/context-intelligence-long-session-v1.md)；Layer 1–4 契约草案未实现，进入里程碑的门槛见 §12）  
-> 版本：0.1  
+> [long-session 基线 v1](../benchmarks/context-intelligence-long-session-v1.md)；Stage B
+> Layer 1 契约与参考索引已由 [M17](../plans/m17-context-intelligence-stage-b.md) 交付——
+> [检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)；Layer 2–4 契约草案未实现，进入里程碑的门槛见 §12）  
+> 版本：0.2  
 > 更新日期：2026-09-13  
 > 负责人：Mira Maintainers  
 > 上位设计：[Context 与 Memory 架构设计](context_and_memory_design.md)、  
@@ -42,7 +44,7 @@ Consolidate（语义固化）与可选 Compress（提示压缩）四层能力，
 | 层 | 现状 | 承载组件 |
 | --- | --- | --- |
 | Layer 0 Reduce | 已交付 | `StandardContextManager`（P0–P5 分区、水位、引用替换、图片/工具 schema 预算、最小执行集、审计与 `selection_digest`） |
-| Layer 1 Retrieve | 半有 | `IMemory::query` 三腿混合检索（FTS/exact/embedding），但仅覆盖 `MemoryRecord`；embedding 只能外部供给（`MemoryQuery::query_embedding`、`SqliteMemoryStore::index_embedding`），无 embedder；有界线性 cosine 扫描 |
+| Layer 1 Retrieve | 已交付（M17）+ 既有半有面 | `context_retrieval.hpp`：`IContextEmbedder`（外部供给契约，Core 无实现）/`IContextRetriever`/`InMemoryContextIndex` 参考索引，覆盖 Conversation 段/Episode/Lesson 三类资产、确定性会话切分、候选→ContextItem 转换与 supervisor 路由；`IMemory::query` 三腿仍覆盖 `MemoryRecord`（耐久路径） |
 | Layer 2 Rerank | 半有 | `RetrievalWeights` 固定线性加权与多样性约束；无独立 Reranker 接口与模型重排 |
 | Layer 3 Consolidate | 对象错位 | `MemoryConsolidator` 是 Event -> 长期记忆写入管线；无会话级语义固化，无 `ConversationCheckpoint` |
 | Layer 4 Compress | 缺 | 仅结构化引用/压缩 marker；无提示压缩接口 |
@@ -110,6 +112,15 @@ Conversation/Events -> Semantic Consolidator -> ConversationCheckpoint + Long-te
 `ContextRequest`，由现有 Phase 1–5 管线统一选择。
 
 ### 5.2 Layer 1 — 检索召回（IContextRetriever / IContextEmbedder）
+
+> 2026-09-13 起已实现（[M17](../plans/m17-context-intelligence-stage-b.md)，
+> `include/mira/context_retrieval.hpp` 为规范面）。与下方草案的差异：`embed` 以
+> 单一 `ContextEmbeddingInput` 承载输入（宿主路由时取消语义经 supervisor/调用方
+> 上下文表达）；索引对象以 `ContextIndexAsset`（text + session/scope ACL +
+> provenance + `through_event_sequence` 水位）抽象三类资产，Episode/Lesson 的
+> 声明面转换复用 DEC-029 净化文本；向量腿沿用有界线性扫描与
+> `MemoryQueryQuality` 逐腿降级语义；评估基线见
+> [检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)。
 
 职责：对 Cold History 建立 semantic index，按当前 Goal + Task + 近期用户消息的查询
 召回 Top-K 候选。**只保证 recall，不负责排序终局**。
@@ -324,7 +335,7 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 | Stage | 内容 | 门禁 |
 | --- | --- | --- |
 | A | Long-session benchmark 基线（不引入模型）——**已交付**（[M16](../plans/m16-context-intelligence-stage-a.md)，2026-09-13，基线见[long-session v1](../benchmarks/context-intelligence-long-session-v1.md)：token 有界与 N 无关、约束全保留、对话/工具历史稳态全逐出） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
-| B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson | Stage A 基线可重复 |
+| B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson——**已交付**（[M17](../plans/m17-context-intelligence-stage-b.md)，2026-09-13，基线见[检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)：R1–R4 全绿、ACL 零泄漏、降级路径召回不损失） | Stage A 基线可重复 |
 | C | `IContextReranker` 对照实验 | Embedding Top-K vs +Reranker 召回/成本数据 |
 | D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理 | 经 `IModelProvider` 配置小模型 |
 | E | miracle 真机评估 | `MNT-202609-27` 证据通道 |
