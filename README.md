@@ -31,14 +31,16 @@ Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M
 | long-session 上下文有界性基线（Layer 0，无模型） | Stage A 基线已交付（M16，DEC-032） | [long-session 基线 v1](docs/benchmarks/context-intelligence-long-session-v1.md) |
 | Layer 1 检索召回（`IContextEmbedder`/`IContextRetriever`，Conversation/Episode/Lesson） | 契约与参考索引已交付（M17，DEC-032 Stage B）；真实 embedder 供给方与 AgentLoop 集成待后续 | [检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) |
 | Layer 2 重排对照（`IContextReranker` + 确定性参考重排器） | 契约与参考实现已交付（M18，DEC-032 Stage C）；模型重排经供应链复核后接入 | [重排对照 v1](docs/benchmarks/context-intelligence-rerank-v1.md) |
+| Layer 3 语义固化（`ISemanticConsolidator` → `ConversationCheckpoint`，经 `IModelProvider` 供给、五元组提交与终态幂等） | 契约与参考固化器已交付（M19，DEC-032 Stage D）；真实小模型经供应链复核后接入 | [固化管线评估 v1](docs/benchmarks/context-intelligence-consolidation-v1.md) |
 
 下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：回收 miracle
 真机/Provider 证据、补跑 live canary 与恢复率/成本分布、依证据推进持久化与 M7
-重定义；Context Intelligence（DEC-032）Stage A/B 已由
-[M16](docs/plans/m16-context-intelligence-stage-a.md) 与
-[M17](docs/plans/m17-context-intelligence-stage-b.md) 交付，Stage C（重排对照）由
-[M18](docs/plans/m18-context-intelligence-stage-c.md) 承载并已完成本地交付，Stage D
-（语义固化）待立项。
+重定义；Context Intelligence（DEC-032）Stage A/B/C 已由
+[M16](docs/plans/m16-context-intelligence-stage-a.md)、
+[M17](docs/plans/m17-context-intelligence-stage-b.md) 与
+[M18](docs/plans/m18-context-intelligence-stage-c.md) 交付，Stage D（Layer 3 语义
+固化）由 [M19](docs/plans/m19-context-intelligence-stage-d.md) 承载并已完成本地
+交付，Stage E（真机评估）待 `MNT-202609-27` 证据通道。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求

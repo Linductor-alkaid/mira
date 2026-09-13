@@ -263,6 +263,18 @@ struct ConversationSegmentationOptions final {
     [[nodiscard]] Result<void> validate() const;
 };
 
+// One window entry with its provenance, added in M19 so Layer 3 consolidation
+// can bind model citations back to source events (additive change; the joined
+// `text` and flattened `source_events` are unchanged and remain the retrieval
+// surface). `text` mirrors the exact line carried in the segment text,
+// including the "[truncated]" marker for oversized entries, so the whole
+// segment stays bounded (RULE-08).
+struct ConversationSegmentEntry final {
+    std::string text;
+    EventId origin;
+    SessionSequence session_sequence = 0;
+};
+
 struct ConversationSegment final {
     SessionId session;
     std::size_t first_entry = 0;
@@ -270,6 +282,9 @@ struct ConversationSegment final {
     std::string text;
     std::vector<EventId> source_events;
     SessionSequence through_sequence = 0;
+    // Per-entry view aligned with [first_entry, first_entry + entry_count);
+    // size() == entry_count for segments produced by segment_conversation().
+    std::vector<ConversationSegmentEntry> entries;
     // Deterministic identity (session + first entry sequence + count), so
     // re-segmenting the same log re-registers the same assets.
     ContextAssetId asset_id;

@@ -500,3 +500,27 @@ endfunction()
 
 mira_add_m18_test(mira_m18_context_rerank_test m18/m18_context_rerank_test.cpp)
 mira_add_m18_test(mira_m18_rerank_eval m18/m18_rerank_eval.cpp)
+
+
+# M19 (DEC-032 Stage D): Layer 3 semantic consolidation — checkpoint
+# contracts, the model-backed reference consolidator, the commit pipeline
+# (five-tuple validation, terminal idempotency) and the supervisor Deferrable
+# routing. The eval harness runs the frozen consolidation dataset with gates
+# D1-D5 and exits non-zero on failure.
+function(mira_add_m19_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m19" TIMEOUT 120)
+endfunction()
+
+mira_add_m19_test(mira_m19_context_consolidation_test m19/m19_context_consolidation_test.cpp)
+mira_add_m19_test(mira_m19_consolidation_eval m19/m19_consolidation_eval.cpp)

@@ -131,6 +131,40 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
 - 对照证据：[重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)
   （C1–C4 门禁；确定性供给方口径，非语义质量声明）。
 
+## context_consolidation.hpp：Layer 3 语义固化（M19，DEC-032 Stage D）
+
+会话级语义固化：把跨多条消息才成立的约束、决策、未决线索与偏好候选固化为
+`ConversationCheckpoint`——与 `TaskCheckpoint` 并列的 Warm 投影，只经 Layer 0
+准入进入模型请求，语义层无准入权（DEC-032 §2）：
+
+- `ISemanticConsolidator::consolidate(segment, options)`：把会话前缀段固化为
+  checkpoint 候选；失败表示「无新投影」，调用方保留既有 checkpoint，不返回
+  部分结果（设计 §8）。`ConversationSegment.entries`（M19 加法式增补）承载
+  逐条目 provenance。
+- `ProviderSemanticConsolidator` 参考固化器（经注入 `IModelProvider`，不绑定
+  主模型，Core 无模型）：编号转录 + `StrictJsonSchema` 固化 schema 请求；模型
+  输出逐语句重新验证——语句/来源计数与字节上界（RULE-08）、`forbidden_markers`/
+  `injection_markers` 过滤、置信度下限、引用越界即整条丢弃（不产生 fabricated
+  provenance，RULE-09）；deadline 与取消探针经 `ConsolidationOptions` 透传。
+- `ConversationCheckpoint`：五元组（`session_id / task_id / task_epoch /
+  environment_epoch / through_event_sequence`）、四类语句 + provenance 并集 +
+  `generated_by`；`projection_digest()` 排除叙事摘要与置信度（与
+  `TaskCheckpoint::narrative_summary` 同纪律）；JSON 契约
+  `mira.context.checkpoint.v1`（DEC-002 版本纪律）。
+- `commit_conversation_checkpoint`：终态幂等（会话/任务终态后迟到结果丢弃）→
+  五元组校验（任一不匹配丢弃候选、保留旧 checkpoint）→ 幂等 NoOp（同水位同
+  digest）→ 同水位异 digest fail-closed 冲突 → 提交；`IConversationCheckpointStore`
+  参考实现内存有界保留、水位回退拒绝（RULE-07：可重建投影）。
+- `context_items_from_checkpoint()`：语句到 Layer 0 候选的纯转换——约束 → P1
+  `UserConstraint`、摘要/决策/线索 → P3 `CheckpointSummary`，authority 恒为
+  `UntrustedExternalData`（模型媒介派生投影，不得自我提升为 policy）；偏好候选
+  不转换，归 `MemoryConsolidator` 人工审批管线。
+- `ContextMemorySupervisor::schedule_context_consolidation(consolidator, segment,
+  options)`（Deferrable，设计 §7）承载 Executor 路由；取消探针经 supervisor 注入，
+  shutdown 在途取消以 `Cancelled` 错误 resolve，`begin_shutdown()` 后提交被拒绝。
+- 评估证据：[固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)
+  （D1–D5 门禁；脚本化供给方口径，非语义质量声明）。
+
 ## stateful_replay.hpp：AnalysisReplay
 
 只读分析回放：`AnalysisReplay(events, checkpoints, memory, artifacts).inspect(task,
