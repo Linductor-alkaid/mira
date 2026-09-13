@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mira/core_contracts.hpp>
+#include <mira/context_retrieval.hpp>
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
@@ -118,6 +119,11 @@ class ContextMemorySupervisor final {
                         CheckpointTrigger trigger, Timestamp now);
     [[nodiscard]] std::future<Result<MemoryQueryResult>>
     schedule_memory_query(IMemory &memory, MemoryQuery query);
+    // Layer 1 retrieval (M17): Interactive class with the query's soft
+    // deadline; the future must be consumed like every other wrapper.
+    [[nodiscard]] std::future<Result<ContextRetrievalResult>>
+    schedule_context_retrieval(IContextRetriever &retriever, ContextQuery query,
+                               RetrievalBudget budget);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
     [[nodiscard]] std::future<Result<ErasureResult>>
@@ -195,7 +201,8 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                     ErrorCode::Internal, "supervised operation failed with an exception"));
             }
             bool degraded = false;
-            if constexpr (std::is_same_v<T, MemoryQueryResult>) {
+            if constexpr (std::is_same_v<T, MemoryQueryResult> ||
+                          std::is_same_v<T, ContextRetrievalResult>) {
                 if (outcome.has_value()) {
                     degraded = outcome.value().quality.degraded;
                 }

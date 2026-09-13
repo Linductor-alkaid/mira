@@ -323,6 +323,17 @@ ContextMemorySupervisor::schedule_memory_query(IMemory &memory, MemoryQuery quer
         [&memory, query = std::move(query)](SupervisorToken) { return memory.query(query); });
 }
 
+std::future<Result<ContextRetrievalResult>>
+ContextMemorySupervisor::schedule_context_retrieval(IContextRetriever &retriever,
+                                                    ContextQuery query, RetrievalBudget budget) {
+    return submit<ContextRetrievalResult>(
+        "context_retrieval", SupervisedOpClass::Interactive,
+        [&retriever, query = std::move(query),
+         budget](SupervisorToken) -> Result<ContextRetrievalResult> {
+            return retriever.retrieve(query, budget);
+        });
+}
+
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(

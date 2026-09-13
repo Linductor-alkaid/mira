@@ -1,9 +1,10 @@
 # Context 与 Memory
 
 > 头文件：`mira/context_contracts.hpp`、`mira/context_manager.hpp`、
-> `mira/memory_contracts.hpp`、`mira/sqlite_memory_store.hpp`、
-> `mira/memory_consolidation.hpp`、`mira/provider_continuation.hpp`、
-> `mira/context_memory_supervisor.hpp`、`mira/stateful_replay.hpp`
+> `mira/context_retrieval.hpp`、`mira/memory_contracts.hpp`、
+> `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
+> `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
+> `mira/stateful_replay.hpp`
 
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
@@ -80,6 +81,36 @@ Context/Memory 操作的 Executor 监督者（M4-16）：
   按固定顺序停 producer、结算 Critical、回收 worker；`SupervisorToken` 是可移植的
   取消令牌。
 - 完整示例见 [`examples/stateful_agent_consumer.cpp`](../../examples/stateful_agent_consumer.cpp)。
+
+## context_retrieval.hpp：Layer 1 检索召回（M17，DEC-032 Stage B）
+
+Cold History 重新进入模型请求的召回通道；只负责候选，排序终局归 Stage C 重排、
+token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入权）：
+
+- `ContextIndexAsset`/`ContextAssetKind`：可索引对象覆盖三类资产——DEC-016 会话
+  投影的窗口段（`segment_conversation()` 确定性切分，文本有界、provenance 透传、
+  确定性资产 id 支持幂等重建）与 DEC-029 Episode/Lesson 声明面（净化标识符文本）。
+  会话资产持有 session、学习资产持有 MemoryScope——ACL 恰好一方，默认拒绝。
+- `IContextEmbedder`（外部供给契约，Core 无实现）+ `ContextEmbedding`
+  （向量 + profile id）：向量供给沿用 `MemoryQuery::query_embedding` /
+  `index_embedding` 语义——embedder 是供给方不是存储权威；供给失败只降级向量腿。
+- `IContextRetriever::retrieve(ContextQuery, RetrievalBudget)`：
+  `InMemoryContextIndex` 参考实现为进程内三腿混合——exact（逐字子串、强制过滤）、
+  词法（token 覆盖率，FTS5 的进程内替身；耐久部署仍走 `IMemory` 三腿）、向量
+  （有界线性 cosine 扫描）。`MemoryQueryQuality` 复用：逐腿运行/降级、
+  `index_lag`、`deadline_exceeded` 部分结果；查询与预算带 `top_k`/`token_budget`/
+  `deadline`/`max_vector_scan` 上界（RULE-08）。
+- 失效与重建（RULE-07）：索引是可重建投影——同一资产 id 水位前进使旧 embedding
+  失效（`index_lag` 上升直至重供给）；同水位内容变化、水位回退、禁止标记
+  （`ContextIndexPolicy.forbidden_markers`，与 `ConsolidationPolicy` 同源）一律
+  fail-closed 拒绝注册。
+- `context_item_from_candidate()`：候选到 P4 `RetrievedMemory` `ContextItem` 的纯
+  转换（authority 恒为 `RetrievedMemory`，RULE-09），随后由
+  `StandardContextManager` 统一裁决。
+- `ContextMemorySupervisor::schedule_context_retrieval(retriever, query, budget)`
+  （Interactive）承载 Executor 路由；`begin_shutdown()` 后提交被拒绝。
+- 候选 JSON 契约 `mira.context.candidate.v1`（`context_candidate_to_json`/
+  `from_json`，DEC-002 版本纪律）。
 
 ## stateful_replay.hpp：AnalysisReplay
 
