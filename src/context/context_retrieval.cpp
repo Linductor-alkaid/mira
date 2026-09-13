@@ -263,7 +263,7 @@ class InMemoryContextIndex::Impl final {
         : policy_(std::move(policy)), weights_(weights) {}
 
     [[nodiscard]] Result<void> upsert_asset(const ContextIndexAsset &asset) {
-        const auto valid = asset.validate(policy_);
+        auto valid = asset.validate(policy_);
         if (!valid) {
             return valid;
         }
