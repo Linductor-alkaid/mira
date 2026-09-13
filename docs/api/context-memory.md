@@ -112,6 +112,25 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
 - 候选 JSON 契约 `mira.context.candidate.v1`（`context_candidate_to_json`/
   `from_json`，DEC-002 版本纪律）。
 
+## context_rerank.hpp：Layer 2 重排（M18，DEC-032 Stage C）
+
+检索 Top-K（30~100）到模型请求候选（5~20）的可选收敛层；只重排/截断，不扩大
+成员资格、不触存储、不改 Layer 0 准入权威：
+
+- `IContextReranker::rerank(query, candidates)`：返回
+  `RankedContextItem`（候选原样携带 + `rerank_score`/`fused_score`/`retrieval_rank`），
+  截断到 `ContextRerankConfig::max_output`（默认 20）；空输入闭合空结果；错误
+  表示「重排不可用」，调用方按设计降级为检索序 Top-K，无部分输出。
+- `TokenOverlapContextReranker` 确定性参考实现（无模型）：查询/候选文本按
+  Layer 1 同款 `[a-z0-9_]` 分词，重排分为查询 token 覆盖 F1 加 `exact_terms`
+  逐条 verbatim 加成；`ContextRerankWeights`（默认 0.60/0.40）做集合内 min-max
+  融合（全等集合取 0.5），同分保持检索序——融合不整替 Layer 1 排名语义。
+  真实 cross-encoder 模型经供应链复核后作为宿主注入实现接入，Core 不携带。
+- `ContextMemorySupervisor::schedule_context_rerank(reranker, query, candidates)`
+  （Interactive）承载 Executor 路由；`begin_shutdown()` 后提交被拒绝。
+- 对照证据：[重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)
+  （C1–C4 门禁；确定性供给方口径，非语义质量声明）。
+
 ## stateful_replay.hpp：AnalysisReplay
 
 只读分析回放：`AnalysisReplay(events, checkpoints, memory, artifacts).inspect(task,
