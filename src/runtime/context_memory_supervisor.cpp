@@ -345,6 +345,24 @@ ContextMemorySupervisor::schedule_context_rerank(IContextReranker &reranker, Con
         });
 }
 
+std::future<Result<ConversationCheckpoint>>
+ContextMemorySupervisor::schedule_context_consolidation(ISemanticConsolidator &consolidator,
+                                                        ConversationSegment segment,
+                                                        ConsolidationOptions options) {
+    return submit<ConversationCheckpoint>(
+        "context_consolidation", SupervisedOpClass::Deferrable,
+        [&consolidator, segment = std::move(segment),
+         options = std::move(options)](SupervisorToken token) mutable
+        -> Result<ConversationCheckpoint> {
+            // The supervisor's stop flag becomes the cooperative cancellation
+            // probe the consolidator honors (design §7); the five-tuple
+            // commit validation stays the backstop for results that slip
+            // past cancellation.
+            options.cancellation_requested = [token]() { return token.stop_requested(); };
+            return consolidator.consolidate(segment, options);
+        });
+}
+
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(

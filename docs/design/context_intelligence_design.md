@@ -3,9 +3,14 @@
 > 状态：Active（方向与契约草案冻结；Stage A 基线已由 [M16](../plans/m16-context-intelligence-stage-a.md) 交付——
 > [long-session 基线 v1](../benchmarks/context-intelligence-long-session-v1.md)；Stage B
 > Layer 1 契约与参考索引已由 [M17](../plans/m17-context-intelligence-stage-b.md) 交付——
-> [检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)；Layer 2–4 契约草案未实现，进入里程碑的门槛见 §12）  
-> 版本：0.2  
-> 更新日期：2026-09-13  
+> [检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)；Stage C
+> Layer 2 契约与参考重排器已由 [M18](../plans/m18-context-intelligence-stage-c.md) 交付——
+> [重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)；Stage D
+> Layer 3 契约与模型供给参考固化器已由 [M19](../plans/m19-context-intelligence-stage-d.md) 交付——
+> [固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)；
+> Layer 4 契约草案未实现，进入里程碑的门槛见 §12）  
+> 版本：0.3  
+> 更新日期：2026-09-14  
 > 负责人：Mira Maintainers  
 > 上位设计：[Context 与 Memory 架构设计](context_and_memory_design.md)、  
 > [Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)  
@@ -46,7 +51,7 @@ Consolidate（语义固化）与可选 Compress（提示压缩）四层能力，
 | Layer 0 Reduce | 已交付 | `StandardContextManager`（P0–P5 分区、水位、引用替换、图片/工具 schema 预算、最小执行集、审计与 `selection_digest`） |
 | Layer 1 Retrieve | 已交付（M17）+ 既有半有面 | `context_retrieval.hpp`：`IContextEmbedder`（外部供给契约，Core 无实现）/`IContextRetriever`/`InMemoryContextIndex` 参考索引，覆盖 Conversation 段/Episode/Lesson 三类资产、确定性会话切分、候选→ContextItem 转换与 supervisor 路由；`IMemory::query` 三腿仍覆盖 `MemoryRecord`（耐久路径） |
 | Layer 2 Rerank | 已交付（M18，确定性参考） | `context_rerank.hpp`：`IContextReranker` 契约 + `TokenOverlapContextReranker` 参考实现（F1 + exact 加成、min-max 融合），supervisor 路由与降级；模型重排经供应链复核后另行接入 |
-| Layer 3 Consolidate | 对象错位 | `MemoryConsolidator` 是 Event -> 长期记忆写入管线；无会话级语义固化，无 `ConversationCheckpoint` |
+| Layer 3 Consolidate | 已交付（M19，经 IModelProvider 供给）+ 既有管线不变 | `context_consolidation.hpp`：`ISemanticConsolidator` 契约、`ProviderSemanticConsolidator`（编号转录 + 严格 JSON schema + provenance fail-closed + 标记过滤）、`ConversationCheckpoint` 五元组提交与 store、checkpoint → Layer 0 候选转换、supervisor Deferrable 路由；`MemoryConsolidator`（Event -> 长期记忆）与 Preference 人工审批管线保持不变 |
 | Layer 4 Compress | 缺 | 仅结构化引用/压缩 marker；无提示压缩接口 |
 
 会话侧投影现状：`build_conversation_view`（`UserMessageInjected` + `LoopSettled` 重建，
@@ -175,6 +180,17 @@ public:
 ```
 
 ### 5.4 Layer 3 — 语义固化（ISemanticConsolidator -> ConversationCheckpoint）
+
+> 2026-09-14 起已实现（[M19](../plans/m19-context-intelligence-stage-d.md)，
+> `include/mira/context_consolidation.hpp` 为规范面）。与下方草案的差异：
+> 四类语句统一为 `ConversationStatement`（约束/决策/线索/偏好别名），
+> `source_events` 绑定由转录编号引用在输出侧 fail-closed 完成；固化输出走
+> 编号转录 + `StrictJsonSchema` 请求，模型 profile 记入 `generated_by`；
+> `ConversationCheckpoint` 携带五元组并以 `commit_conversation_checkpoint`
+> （终态幂等、水位单调、同水位冲突 fail-closed）提交进
+> `IConversationCheckpointStore`；`ConsolidationOptions` 承载有界、标记过滤、
+> deadline 与取消探针；评估基线见
+> [固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)。
 
 会话中跨多条消息才成立的信息（约束、决策、未决线索、偏好候选）由 consolidator 固化
 为结构化状态。固化模型经 `IModelProvider` 配置（主模型 / 廉价云模型 / 本地小模型 /
@@ -337,7 +353,7 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 | A | Long-session benchmark 基线（不引入模型）——**已交付**（[M16](../plans/m16-context-intelligence-stage-a.md)，2026-09-13，基线见[long-session v1](../benchmarks/context-intelligence-long-session-v1.md)：token 有界与 N 无关、约束全保留、对话/工具历史稳态全逐出） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
 | B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson——**已交付**（[M17](../plans/m17-context-intelligence-stage-b.md)，2026-09-13，基线见[检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)：R1–R4 全绿、ACL 零泄漏、降级路径召回不损失） | Stage A 基线可重复 |
 | C | `IContextReranker` 对照实验——**已交付**（[M18](../plans/m18-context-intelligence-stage-c.md)，2026-09-13，对照见[重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)：C1–C4 全绿、混合轮 MRR uplift +0.0139、ACL 零泄漏；确定性供给方口径） | 检索评估 v1 B 列基线 |
-| D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理 | 经 `IModelProvider` 配置小模型 |
+| D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理——**已交付**（[M19](../plans/m19-context-intelligence-stage-d.md)，2026-09-14，基线见[固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)：D1–D5 全绿、provenance 零违例、标记/跨会话零泄漏、提交纪律全通过；脚本化供给方口径，真实小模型归供应链复核通道） | 经 `IModelProvider` 配置小模型 |
 | E | miracle 真机评估 | `MNT-202609-27` 证据通道 |
 | F | 提示压缩实验 | 只有 token 收益不以任务成功率/约束召回为代价才进正式 Runtime |
 

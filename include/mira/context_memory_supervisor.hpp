@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mira/core_contracts.hpp>
+#include <mira/context_consolidation.hpp>
 #include <mira/context_retrieval.hpp>
 #include <mira/context_rerank.hpp>
 #include <mira/event_store.hpp>
@@ -132,6 +133,15 @@ class ContextMemorySupervisor final {
     [[nodiscard]] std::future<Result<std::vector<RankedContextItem>>>
     schedule_context_rerank(IContextReranker &reranker, ContextQuery query,
                             std::vector<ContextCandidate> candidates);
+    // Layer 3 consolidation (M19): Deferrable class per design §7 — a model
+    // call without a request-path deadline, where the five-tuple commit
+    // validation is the backstop for late results. The supervisor's
+    // cancellation probe travels inside `options`; cancelled work resolves
+    // its future with a Cancelled error at shutdown. The future must be
+    // consumed like every other wrapper.
+    [[nodiscard]] std::future<Result<ConversationCheckpoint>>
+    schedule_context_consolidation(ISemanticConsolidator &consolidator,
+                                   ConversationSegment segment, ConsolidationOptions options);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
     [[nodiscard]] std::future<Result<ErasureResult>>

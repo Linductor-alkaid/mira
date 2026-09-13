@@ -699,6 +699,7 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
     std::size_t consumed = 0;
     std::string text;
     std::vector<EventId> source_events;
+    std::vector<ConversationSegmentEntry> window_entries;
     SessionSequence through = 0;
 
     const auto close_window = [&]() {
@@ -711,6 +712,7 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         segment.entry_count = consumed;
         segment.text = text;
         segment.source_events = std::move(source_events);
+        segment.entries = std::move(window_entries);
         segment.through_sequence = through;
         segment.asset_id = context_asset_id_from_seed(
             "mira.conversation.segment|" + session.to_string() + "|" +
@@ -720,6 +722,7 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         consumed = 0;
         text.clear();
         source_events.clear();
+        window_entries.clear();
         through = 0;
     };
 
@@ -731,12 +734,16 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
             if (consumed > 0) {
                 close_window();
             }
+            const std::string truncated_line =
+                line.substr(0, options.max_segment_bytes) + "\n[truncated]";
             ConversationSegment segment;
             segment.session = session;
             segment.first_entry = first_entry;
             segment.entry_count = 1;
-            segment.text = line.substr(0, options.max_segment_bytes) + "\n[truncated]";
+            segment.text = truncated_line;
             segment.source_events = {entry.origin};
+            segment.entries = {ConversationSegmentEntry{truncated_line, entry.origin,
+                                                        entry.session_sequence}};
             segment.through_sequence = entry.session_sequence;
             segment.asset_id = context_asset_id_from_seed(
                 "mira.conversation.segment|" + session.to_string() + "|" +
@@ -753,6 +760,8 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         }
         text += line;
         source_events.push_back(entry.origin);
+        window_entries.push_back(
+            ConversationSegmentEntry{line, entry.origin, entry.session_sequence});
         through = std::max(through, entry.session_sequence);
         ++consumed;
         if (consumed >= options.window_entries) {
