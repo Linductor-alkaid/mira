@@ -371,8 +371,10 @@ ContextMemorySupervisor::schedule_working_context_commit(IWorkingContextStore &s
                                                          WorkingContextMergeOptions options) {
     return submit<WorkingContextCommitOutcome>(
         "working_context_commit", SupervisedOpClass::Deferrable,
-        [&store, checkpoint = std::move(checkpoint), identity, live,
-         options = std::move(options)](SupervisorToken) mutable
+        // WorkingContextMergeOptions is trivially copyable: a plain capture
+        // copy, no move (performance-move-const-arg).
+        [&store, checkpoint = std::move(checkpoint), identity, live, options](
+            SupervisorToken) mutable
         -> Result<WorkingContextCommitOutcome> {
             // Deterministic projection plus monotonic commit in one
             // supervised step (design §8): the store's tuple validation is
