@@ -6,7 +6,9 @@
 > 冻结里程碑：新里程碑（暂定，不预分配编号；Stage A 基线依赖 `MNT-202609-28` 评估 profile）
 > 替代/被替代：无（扩展 [DEC-016](DEC-016-conversation-events-and-user-messages.md) 的会话事件面与
 > Context 设计的确定性压缩层；不改变 [DEC-003](DEC-003-event-sourced-persistence.md)、
-> [DEC-029](DEC-029-memory-domains-and-learning-contracts.md) 已冻结语义）
+> [DEC-029](DEC-029-memory-domains-and-learning-contracts.md) 已冻结语义。
+> 2026-09-14 [DEC-036](DEC-036-consolidation-model-supply.md) 修订第 2/5 条的模型
+> 供给口径，其余不变）
 
 ## 背景与问题
 
@@ -39,7 +41,9 @@ Select/Trim/Reference/Drop 模型扩展为 Reduce/Retrieve/Rerank/Consolidate/Co
    `StandardContextManager` 承担，不调用模型，并保持最终 token/safety admission 权威；
    Layer 1 检索（`IContextRetriever` + `IContextEmbedder`）只负责候选召回；Layer 2
    重排（`IContextReranker`）为可选组件，embedding-only 配置必须可正常运行；Layer 3
-   语义固化（`ISemanticConsolidator`，经 `IModelProvider` 可配置独立小模型）产出
+   语义固化（`ISemanticConsolidator`，经 `IModelProvider` 可配置模型供给；
+   2026-09-14 [DEC-036](DEC-036-consolidation-model-supply.md) 修订：可用源模型即可，
+   含生成原上下文的主模型，不要求专用小模型）产出
    `ConversationCheckpoint`；Layer 4 提示压缩（`IPromptCompressor`）为可选优化，仅
    作用于允许压缩的内容集合。编排方 `ContextIntelligenceService` 只有建议权：其输出
    作为 ContextItem 候选进入 Layer 0，由 `StandardContextManager` 决定实际进入模型的
@@ -58,6 +62,9 @@ Select/Trim/Reference/Drop 模型扩展为 Reduce/Retrieve/Rerank/Consolidate/Co
    `IPromptCompressor` 全部经接口注入；issue #39 列出的候选（bge-small-zh-v1.5、MiniLM
    cross-encoder、Qwen ~0.6B、LLMLingua-2）仅为首轮实验候选，选用前必须经供应链复核
    （许可证、provenance）与本决策第 9 条的 benchmark 证据。Core 不引入推理后端依赖。
+   2026-09-14 [DEC-036](DEC-036-consolidation-model-supply.md) 修订：固化/压缩/Curator
+   直接使用既有 Provider 已配置的可用源模型（含主模型）即可，不新增供应链项；
+   本地小模型候选降级为宿主可选的成本优化。
 6. **检索对象扩展到会话与学习资产**。Layer 1 的索引对象从 MemoryRecord 扩展到
    Conversation 段、WorkflowEpisodeRecord 与 WorkflowRecoveryLesson（DEC-029 资产）；
    embedding 供给复用 `MemoryQuery::query_embedding` / `index_embedding` 的外部供给

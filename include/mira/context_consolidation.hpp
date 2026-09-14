@@ -36,9 +36,11 @@ namespace mira {
 // segment are dropped (no fabricated provenance), and all outputs are
 // bounded (RULE-08).
 //
-// The consolidation model is configured through `IModelProvider` (main
-// model, cheap cloud model or local small model — DEC-032 §5); Core ships
-// the request/response adapter below, never a model or inference backend.
+// The consolidation model is configured through `IModelProvider`; any
+// available source model works, including the model that produced the
+// original context — no dedicated small model is required (DEC-032 §5 as
+// revised by DEC-036). Core ships the request/response adapter below, never
+// a model or inference backend.
 // ---------------------------------------------------------------------------
 
 // One consolidated statement. All four checkpoint sections share this shape;

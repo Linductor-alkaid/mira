@@ -193,8 +193,9 @@ public:
 > [固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)。
 
 会话中跨多条消息才成立的信息（约束、决策、未决线索、偏好候选）由 consolidator 固化
-为结构化状态。固化模型经 `IModelProvider` 配置（主模型 / 廉价云模型 / 本地小模型 /
-专用模型皆可），不绑定 Agent 主模型。
+为结构化状态。固化模型经 `IModelProvider` 配置，直接调用当前可用的源模型即可——
+包括生成原输出上下文的主模型；不要求专用小模型（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)，
+2026-09-14 修订，本地小模型降级为宿主可选的成本优化）。Core 不绑定模型。
 
 ```cpp
 // 契约草案（未实现）
@@ -353,7 +354,7 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 | A | Long-session benchmark 基线（不引入模型）——**已交付**（[M16](../plans/m16-context-intelligence-stage-a.md)，2026-09-13，基线见[long-session v1](../benchmarks/context-intelligence-long-session-v1.md)：token 有界与 N 无关、约束全保留、对话/工具历史稳态全逐出） | 依赖 `MNT-202609-28` profile；产出 token 趋势与选择/丢弃审计基线 |
 | B | `IContextEmbedder`/`IContextRetriever`，先覆盖 Conversation/Episode/Lesson——**已交付**（[M17](../plans/m17-context-intelligence-stage-b.md)，2026-09-13，基线见[检索评估 v1](../benchmarks/context-intelligence-retrieval-v1.md)：R1–R4 全绿、ACL 零泄漏、降级路径召回不损失） | Stage A 基线可重复 |
 | C | `IContextReranker` 对照实验——**已交付**（[M18](../plans/m18-context-intelligence-stage-c.md)，2026-09-13，对照见[重排对照 v1](../benchmarks/context-intelligence-rerank-v1.md)：C1–C4 全绿、混合轮 MRR uplift +0.0139、ACL 零泄漏；确定性供给方口径） | 检索评估 v1 B 列基线 |
-| D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理——**已交付**（[M19](../plans/m19-context-intelligence-stage-d.md)，2026-09-14，基线见[固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)：D1–D5 全绿、provenance 零违例、标记/跨会话零泄漏、提交纪律全通过；脚本化供给方口径，真实小模型归供应链复核通道） | 经 `IModelProvider` 配置小模型 |
+| D | `ISemanticConsolidator` + `ConversationCheckpoint` + provenance + 冲突处理——**已交付**（[M19](../plans/m19-context-intelligence-stage-d.md)，2026-09-14，基线见[固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)：D1–D5 全绿、provenance 零违例、标记/跨会话零泄漏、提交纪律全通过；脚本化供给方口径，真实模型轮按 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) 走可用源模型） | 经 `IModelProvider` 配置可用源模型（含主模型；DEC-036 修订，不要求专用小模型） |
 | E | miracle 真机评估 | `MNT-202609-27` 证据通道 |
 | F | 提示压缩实验 | 只有 token 收益不以任务成功率/约束召回为代价才进正式 Runtime |
 
@@ -367,18 +368,22 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 | A | 无 | 无 | 无 | 无 |
 | B | Embedding | 无 | 无 | 无 |
 | C | Embedding | 有 | 无 | 无 |
-| D | Embedding | 有 | 小模型 | 无 |
-| E | Embedding | 有 | 小模型 | LLMLingua 类 |
+| D | Embedding | 有 | 可用源模型（含主模型） | 无 |
+| E | Embedding | 有 | 可用源模型（含主模型） | LLMLingua 类 |
 
 对照指标：任务成功率、上下文 token、检索召回、约束保持、模型调用数、延迟、成本、RAM、
 人工介入次数。
 
 ## 14. 候选技术与供应链
 
+> 2026-09-14 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) 修订：固化
+> 不再要求专用小模型，直接使用既有 Provider 已配置的可用源模型（含生成原上下文的
+> 主模型），不新增供应链项。下述本地小模型候选降级为宿主可选的成本优化。
+
 首轮候选（**未选定**；选用前经许可证与 provenance 复核并登记
 [直接依赖与许可证](../supply-chain/direct-dependencies.md)）：embedding `BAAI/bge-small-zh-v1.5`
 （issue #39 主张 MIT、约 24M 参数，需复核）；reranker multilingual MiniLM cross-encoder
-或 BGE reranker 家族的小型量化方案；固化 Qwen ~0.6B 级或既有 Provider 廉价模型；
+或 BGE reranker 家族的小型量化方案；固化本地小模型（可选优化，见上注）；
 压缩 LLMLingua-2 类。任何候选不得成为 Mira ABI/API 的一部分。
 
 ## 15. 关联文档
