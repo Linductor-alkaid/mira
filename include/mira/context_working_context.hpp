@@ -32,8 +32,11 @@ namespace mira {
 // (M19), it enters only through the Layer 0 candidate conversion below, and
 // every item carries UntrustedExternalData authority (RULE-09 — semantic
 // components provide candidates, the deterministic Layer 0 keeps admission).
-// Stage W1 ships no model and no incremental merge: those arrive with
-// `IContextCurator` in Stage W2 behind the same commit pipeline.
+// Stage W1 shipped the snapshot without a model: `working_context_from_checkpoint`
+// deterministically projects the three checkpoint sections. Since Stage W2
+// (schema 1.1) the model-mediated `IContextCurator` (see
+// <mira/context_curator.hpp>) produces the full eight-section snapshot behind
+// the same commit pipeline.
 // ---------------------------------------------------------------------------
 
 // One projected state statement. Mirrors `ConversationStatement` because in
@@ -49,6 +52,15 @@ struct WorkingContextItem final {
 using WorkingContextConstraint = WorkingContextItem; // e.g. "never deploy on Fridays"
 using WorkingContextDecision = WorkingContextItem;   // e.g. "batch provider, because X failed"
 using WorkingContextOpenIssue = WorkingContextItem;  // e.g. "tenant quota still unanswered"
+// Stage W2 (schema 1.1, DEC-035/design §4.1): sections only the Curator can
+// fill — the W1 deterministic projection leaves them empty. `goal` stays
+// deliberately absent: the authoritative task frame lives in Layer 0 P1
+// (design §4.1), a model-mediated restatement would duplicate authority.
+using WorkingContextActiveTask = WorkingContextItem;    // e.g. "finish the tenant onboarding flow"
+using WorkingContextVerifiedFact = WorkingContextItem;  // e.g. "staging accepts the v2 payload"
+using WorkingContextFailedAttempt = WorkingContextItem; // e.g. "retry loop hit rate limit twice"
+using WorkingContextImportantRef = WorkingContextItem;  // e.g. "tenant quota thread in ticket 482"
+using WorkingContextNextAction = WorkingContextItem;    // e.g. "ask user about the deploy window"
 
 // Deterministic snapshot identity: the same five-tuple always yields the same
 // id, so rebuilding the projection for the same conversation prefix re-derives
@@ -76,7 +88,10 @@ struct WorkingContextSnapshotId final {
     std::string_view seed);
 
 [[nodiscard]] constexpr SchemaVersion working_context_schema_current() noexcept {
-    return {1, 0};
+    // 1.1 (Stage W2): additive minor — five Curator-filled sections and the
+    // `generated_by` model annotation joined the three W1 sections; 1.0
+    // payloads stay readable (DEC-002, design §4.1).
+    return {1, 1};
 }
 
 // Bounds for the deterministic projection (documented defaults, not a frozen
@@ -108,13 +123,25 @@ struct WorkingContextSnapshot final {
     std::uint64_t task_epoch = 0;
     std::uint64_t environment_epoch = 0;
     std::uint64_t through_event_sequence = 0;
-    // The committed checkpoint(s) this snapshot was projected from; the
-    // recovery path re-projects from these (design §10).
+    // The committed checkpoint(s) this snapshot was projected or curated
+    // from; the recovery path re-projects from these (design §10). Curated
+    // snapshots accumulate the chain of their inputs (bounded to the most
+    // recent 64, the absolute validate() bound).
     std::vector<ConversationCheckpointId> source_checkpoints;
     Timestamp created_at;
+    // Model profile that curated this snapshot; nil for the deterministic
+    // W1 projection (DEC-036: `generated_by` records the actual model).
+    ModelProfileId generated_by;
     std::vector<WorkingContextConstraint> constraints;
     std::vector<WorkingContextDecision> decisions;
     std::vector<WorkingContextOpenIssue> open_issues;
+    // Stage W2 sections (schema 1.1): empty on the deterministic projection,
+    // Curator-filled from schema 1.1 on.
+    std::vector<WorkingContextActiveTask> active_tasks;
+    std::vector<WorkingContextVerifiedFact> verified_facts;
+    std::vector<WorkingContextFailedAttempt> failed_attempts;
+    std::vector<WorkingContextImportantRef> important_refs;
+    std::vector<WorkingContextNextAction> next_actions;
 
     [[nodiscard]] Result<void> validate() const;
     // Canonical digest over authoritative fields; excludes id and created_at
@@ -240,14 +267,16 @@ commit_working_context(IWorkingContextStore &store, const WorkingContextSnapshot
 
 // Converts snapshot statements into ordinary `ContextItem` candidates for the
 // Layer 0 pipeline (design §7 — the snapshot never self-admits): constraints
-// become P1 `UserConstraint` items, decisions and open issues become P3
-// `CheckpointSummary` items. All items carry `UntrustedExternalData` authority
+// become P1 `UserConstraint` items, every other section (decisions, open
+// issues and the Stage W2 Curator sections) becomes P3 `CheckpointSummary`
+// items. All items carry `UntrustedExternalData` authority
 // (model-mediated derived projection, RULE-09), their source event provenance,
 // the statement's own `source_sequence` and the snapshot's epoch stamping so
 // stale projections stay detectable by the existing stale-build checks. Item
-// ids derive deterministically from the snapshot id in their own seed space,
-// so checkpoint items and snapshot items never collide when a host audits
-// both projections side by side.
+// ids derive deterministically from the snapshot id in their own seed space
+// with a per-section tag, so checkpoint items and snapshot items — and the
+// snapshot sections among themselves — never collide when a host audits the
+// projections side by side.
 [[nodiscard]] std::vector<ContextItem>
 context_items_from_working_context(const WorkingContextSnapshot &snapshot);
 

@@ -2,6 +2,7 @@
 
 #include <mira/core_contracts.hpp>
 #include <mira/context_consolidation.hpp>
+#include <mira/context_curator.hpp>
 #include <mira/context_retrieval.hpp>
 #include <mira/context_rerank.hpp>
 #include <mira/context_working_context.hpp>
@@ -153,6 +154,22 @@ class ContextMemorySupervisor final {
     schedule_working_context_commit(IWorkingContextStore &store, ConversationCheckpoint checkpoint,
                                     WorkingContextIdentity identity, WorkingContextCommitState live,
                                     WorkingContextMergeOptions options);
+    // Working Context curation (M21, Stage W2): the model-mediated curator
+    // behind the same Deferrable route semantics as the deterministic commit
+    // above (curator design §8) — curation plus monotonic commit in one
+    // supervised step. The supervisor's stop flag travels inside `options`
+    // as the cooperative cancellation probe; shutdown rejects new work and
+    // resolves cancelled in-flight futures with a Cancelled error. A curator
+    // failure resolves the future with that error and commits nothing: the
+    // caller keeps the previous snapshot and closes requests as before
+    // (design §9). The future must be consumed like every other wrapper.
+    [[nodiscard]] std::future<Result<WorkingContextCommitOutcome>>
+    schedule_working_context_curate(IContextCurator &curator, IWorkingContextStore &store,
+                                    std::optional<WorkingContextSnapshot> previous,
+                                    ConversationCheckpoint checkpoint,
+                                    std::vector<ConversationSegmentEntry> recent_events,
+                                    WorkingContextCommitState live,
+                                    ContextCurationOptions options);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
     [[nodiscard]] std::future<Result<ErasureResult>>

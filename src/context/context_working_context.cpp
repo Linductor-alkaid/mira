@@ -239,6 +239,21 @@ Result<void> WorkingContextSnapshot::validate() const {
     if (const auto result = validate_items(open_issues, "open_issues"); !result) {
         return result;
     }
+    if (const auto result = validate_items(active_tasks, "active_tasks"); !result) {
+        return result;
+    }
+    if (const auto result = validate_items(verified_facts, "verified_facts"); !result) {
+        return result;
+    }
+    if (const auto result = validate_items(failed_attempts, "failed_attempts"); !result) {
+        return result;
+    }
+    if (const auto result = validate_items(important_refs, "important_refs"); !result) {
+        return result;
+    }
+    if (const auto result = validate_items(next_actions, "next_actions"); !result) {
+        return result;
+    }
     return Result<void>{};
 }
 
@@ -254,9 +269,15 @@ Hash WorkingContextSnapshot::state_digest() const {
     object.emplace_back("through_event_sequence",
                         static_cast<std::int64_t>(through_event_sequence));
     object.emplace_back("source_checkpoints", snapshot_id_list_to_json(source_checkpoints));
+    object.emplace_back("generated_by", generated_by.to_string());
     object.emplace_back("constraints", items_to_json(constraints));
     object.emplace_back("decisions", items_to_json(decisions));
     object.emplace_back("open_issues", items_to_json(open_issues));
+    object.emplace_back("active_tasks", items_to_json(active_tasks));
+    object.emplace_back("verified_facts", items_to_json(verified_facts));
+    object.emplace_back("failed_attempts", items_to_json(failed_attempts));
+    object.emplace_back("important_refs", items_to_json(important_refs));
+    object.emplace_back("next_actions", items_to_json(next_actions));
     return canonical_json_digest(JsonValue(std::move(object)));
 }
 
@@ -277,9 +298,15 @@ JsonValue working_context_to_json(const WorkingContextSnapshot &snapshot) {
     object.emplace_back("source_checkpoints", snapshot_id_list_to_json(snapshot.source_checkpoints));
     object.emplace_back("created_at", wall_nanos(snapshot.created_at));
     object.emplace_back("created_at_monotonic", monotonic_nanos(snapshot.created_at));
+    object.emplace_back("generated_by", snapshot.generated_by.to_string());
     object.emplace_back("constraints", items_to_json(snapshot.constraints));
     object.emplace_back("decisions", items_to_json(snapshot.decisions));
     object.emplace_back("open_issues", items_to_json(snapshot.open_issues));
+    object.emplace_back("active_tasks", items_to_json(snapshot.active_tasks));
+    object.emplace_back("verified_facts", items_to_json(snapshot.verified_facts));
+    object.emplace_back("failed_attempts", items_to_json(snapshot.failed_attempts));
+    object.emplace_back("important_refs", items_to_json(snapshot.important_refs));
+    object.emplace_back("next_actions", items_to_json(snapshot.next_actions));
     return JsonValue(std::move(object));
 }
 
@@ -335,6 +362,22 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
             parse_id_field("task_id", snapshot.task_id, "working context snapshot task is malformed");
         !result) {
         return result.error();
+    }
+    // Optional since schema 1.0 payloads predate the Curator annotation: a
+    // nil generated_by is valid (deterministic projection); a malformed
+    // value is not.
+    if (const auto *generated = json.find("generated_by"); generated != nullptr) {
+        const auto *text = generated->as_string();
+        if (text == nullptr) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context snapshot generator profile is malformed");
+        }
+        const auto parsed = ModelProfileId::parse(*text);
+        if (!parsed) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context snapshot generator profile is malformed");
+        }
+        snapshot.generated_by = *parsed;
     }
     const auto parse_uint_field = [&json](const char *key, std::uint64_t &target,
                                           const char *message) -> Result<void> {
@@ -418,6 +461,41 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
             return items.error();
         }
         snapshot.open_issues = std::move(items).value();
+    }
+    if (const auto *active_tasks = json.find("active_tasks"); active_tasks != nullptr) {
+        auto items = items_from_json(*active_tasks, "active_tasks");
+        if (!items) {
+            return items.error();
+        }
+        snapshot.active_tasks = std::move(items).value();
+    }
+    if (const auto *verified_facts = json.find("verified_facts"); verified_facts != nullptr) {
+        auto items = items_from_json(*verified_facts, "verified_facts");
+        if (!items) {
+            return items.error();
+        }
+        snapshot.verified_facts = std::move(items).value();
+    }
+    if (const auto *failed_attempts = json.find("failed_attempts"); failed_attempts != nullptr) {
+        auto items = items_from_json(*failed_attempts, "failed_attempts");
+        if (!items) {
+            return items.error();
+        }
+        snapshot.failed_attempts = std::move(items).value();
+    }
+    if (const auto *important_refs = json.find("important_refs"); important_refs != nullptr) {
+        auto items = items_from_json(*important_refs, "important_refs");
+        if (!items) {
+            return items.error();
+        }
+        snapshot.important_refs = std::move(items).value();
+    }
+    if (const auto *next_actions = json.find("next_actions"); next_actions != nullptr) {
+        auto items = items_from_json(*next_actions, "next_actions");
+        if (!items) {
+            return items.error();
+        }
+        snapshot.next_actions = std::move(items).value();
     }
     if (const auto valid = snapshot.validate(); !valid) {
         return valid.error();
@@ -779,6 +857,21 @@ context_items_from_working_context(const WorkingContextSnapshot &snapshot) {
     }
     for (const auto &item : snapshot.open_issues) {
         push_item(item, ContextItemKind::CheckpointSummary, "issue");
+    }
+    for (const auto &item : snapshot.active_tasks) {
+        push_item(item, ContextItemKind::CheckpointSummary, "active_task");
+    }
+    for (const auto &item : snapshot.verified_facts) {
+        push_item(item, ContextItemKind::CheckpointSummary, "verified_fact");
+    }
+    for (const auto &item : snapshot.failed_attempts) {
+        push_item(item, ContextItemKind::CheckpointSummary, "failed_attempt");
+    }
+    for (const auto &item : snapshot.important_refs) {
+        push_item(item, ContextItemKind::CheckpointSummary, "important_ref");
+    }
+    for (const auto &item : snapshot.next_actions) {
+        push_item(item, ContextItemKind::CheckpointSummary, "next_action");
     }
     return items;
 }

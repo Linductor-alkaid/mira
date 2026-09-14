@@ -4,7 +4,7 @@
 > `mira/context_retrieval.hpp`、`mira/memory_contracts.hpp`、
 > `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
-> `mira/stateful_replay.hpp`
+> `mira/stateful_replay.hpp`、`mira/context_curator.hpp`
 
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
@@ -202,6 +202,46 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
 - 评估证据：
   [working-context 评估 v1](../benchmarks/context-intelligence-working-context-v1.md)
   （W1-G1–G6 门禁；确定性投影口径，不声明 token 收益或语义质量）。
+
+## context_curator.hpp：Working Context Curator（M21，DEC-035 Stage W2）
+
+模型介导的快照维护者（issue #48 方向的 Stage W2；M20 快照契约经加法式 schema
+minor 升级到 1.1——新增 `active_tasks` / `verified_facts` / `failed_attempts` /
+`important_refs` / `next_actions` 五个 Curator 填充 section 与 `generated_by`
+标注，v1.0 载荷继续可读，`goal` 刻意缺席以免复述 Layer 0 P1 任务帧）：
+
+- `IContextCurator::curate(previous, checkpoint, recent_events, options)`：以
+  「previous snapshot + 新提交 checkpoint + recent events」为输入产出下一快照
+  候选；失败表示「无新投影」，调用方保留已存快照（设计 §9）。`previous` 为
+  nullptr 表示新身份链（epoch 失效后）；recent events 不得越过 checkpoint
+  水位（候选水位恒等于 checkpoint 水位，同水位不同输入由提交管线冲突分支
+  fail-closed 兜底）。
+- `ProviderContextCurator` 参考实现（经注入 `IModelProvider`；DEC-036 口径：
+  任意可用源模型，含主 Agent 模型，Core 无模型）：三段编号转录
+  （`prev:` / `ckpt:` / `event:` 行格式；checkpoint 偏好语句刻意不入转录，归
+  Memory 审批管线）+ `StrictJsonSchema` 输出契约
+  （`working_context_curation_output_schema()`，根 `confidence` + 八 section）；
+  模型输出逐条重新验证——内容/来源上界（RULE-08）、标记过滤、置信度下限、
+  引用越界即整条丢弃（RULE-09）；**退化防护**：previous 非空而候选绑定条目
+  零 previous 引用时整体拒绝（`degenerate-merge`），富快照不被无 supersede
+  纪律的输出覆盖。
+- 增量 merge 语义是**指令契约 + 机械校验**：保留 / supersede / 冲突保留由模型
+  经引用表达（provenance 随引用继承、`source_sequence` 取被引用输入最小值），
+  运行时不执行编辑策略；候选经 `commit_working_context` 既有提交管线落库，
+  同水位 digest 冲突保持 fail-closed。
+- 候选身份与 W1 同公式（五元组种子派生 id）；`source_checkpoints` 累积链
+  （保序去重、保留最近 64）；`generated_by` 记录实际模型 profile。
+- `context_items_from_working_context()` 扩展：constraints → P1
+  `UserConstraint`，其余七 section → P3 `CheckpointSummary`，条目 id 的
+  section 标签互异（不引入新 `ContextItemKind`）。
+- `ContextMemorySupervisor::schedule_working_context_curate(curator, store,
+  previous, checkpoint, recent_events, live, options)`（Deferrable，设计 §8）：
+  curation + 单调提交在一个受监督步骤内完成；取消探针经 supervisor 注入，
+  Curator 失败不提交、future 以错误 resolve；`begin_shutdown()` 后提交被拒绝。
+- 评估证据：
+  [working-context curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)
+  （W2-G1–G6 门禁；脚本化确定性供给方口径，语义质量与 token 收益声明归真实
+  模型轮与 Stage E，RULE-10）。
 
 ## stateful_replay.hpp：AnalysisReplay
 
