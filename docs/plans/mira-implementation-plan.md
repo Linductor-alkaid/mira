@@ -109,7 +109,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M18](m18-context-intelligence-stage-c.md) | Context Intelligence Stage C——Layer 2 重排对照（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextReranker` 契约、确定性参考重排器、reranker 缺席/失败降级、B/C 列对照数据；无模型） | M17（检索评估 v1 B 列基线可重复）；DEC-032 §5.3 | Stage D 固化对照的方法学锚点（非发布物） | Completed |
 | [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | Completed |
 | [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | Completed |
-| [M21](m21-context-curator-stage-w2.md) | Context Curator Stage W2——`IContextCurator` 契约与模型供给参考实现（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：快照 schema 1.1 加法扩展（五 Curator section + `generated_by`）、previous+checkpoint+recent events 增量 curation、provenance 绑定与退化防护、`ProviderContextCurator` 经 `IModelProvider` 供给（DEC-036 口径）、Supervisor Deferrable 路由） | M20；[Context Curator 设计](../design/context_curator_design.md) §4.2/§6/§13 与 M21 §4 冻结 | Stage W3 自动触发的输入形态锚点（非发布物） | In Progress |
+| [M21](m21-context-curator-stage-w2.md) | Context Curator Stage W2——`IContextCurator` 契约与模型供给参考实现（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：快照 schema 1.1 加法扩展（五 Curator section + `generated_by`）、previous+checkpoint+recent events 增量 curation、provenance 绑定与退化防护、`ProviderContextCurator` 经 `IModelProvider` 供给（DEC-036 口径）、Supervisor Deferrable 路由） | M20；[Context Curator 设计](../design/context_curator_design.md) §4.2/§6/§13 与 M21 §4 冻结 | Stage W3 自动触发的输入形态锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -513,6 +513,19 @@ platform-boundary/sbom 四检查通过、clang-tidy 18.1.8 预检全部三个被
 通过。限制与未执行项：脚本化确定性供给方口径，非语义质量声明（`RULE-10`）；
 真实模型接入与对照指标归真实模型轮/Stage E；W3–W5 为显式非目标；
 Windows/Release/quality 由 PR CI 回填后 M21 方可关闭（`M21-06`）。
+
+2026-09-15：M21 PR CI 证据回填并关闭。PR
+[#53](https://github.com/Linductor-alkaid/mira/pull/53)（head `0ad7218`，合并
+提交 `6b7e377`）push 与 pull_request pipeline run
+[`34884298162`](https://github.com/Linductor-alkaid/mira/actions/runs/34884298162)/
+[`34884341364`](https://github.com/Linductor-alkaid/mira/actions/runs/34884341364)
+各 12 项首轮全部通过（Linux GCC/Clang Debug/Release、Windows MSVC
+Debug/Release、Android 两 ABI 编译级、ASAN/UBSAN/TSAN、quality），无需修复轮。
+Stage W2 关闭后，DEC-035 下一阶段为 Stage W3（Supervisor 自动触发：
+watermark / event count / task boundary、coalescing、forced flush，进入实现前
+新建里程碑文件并冻结触发策略；门禁为 W2 关闭与快照链在长会话基线上可复现）；
+DEC-032 Stage E（miracle 真机评估）保持 Blocked 等 `MNT-202609-27` 证据通道，
+DEC-037 Stage T1 可按常规授权另行立项。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02

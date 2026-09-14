@@ -1,6 +1,8 @@
 # M21：Context Curator Stage W2——IContextCurator 契约与模型供给参考实现
 
-> 状态：Planned（2026-09-15 立项；profile 与门禁 W2-G1–G6 跑前冻结，见 §4）
+> 状态：Completed（2026-09-15：PR #53 合入 `6b7e377`，首轮 CI 双 pipeline
+> 24/24 全绿；真实模型接入与 issue #48 对照指标为显式非目标，归真实模型轮与
+> Stage E 证据通道；自动触发归 Stage W3）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 第 4 条
@@ -204,9 +206,9 @@ provenance 并集大小、`source_checkpoints` 链长、store 环深、提交/�
   Curator 失败不提交）。
 - [x] `M21-05` 契约/集成测试矩阵（§7）与评估 harness（W2-G1–G6、JSON 报告、
   dataset digest 锚定）、本地全门禁。
-- [ ] `M21-06` 文档同步（总计划索引与注记、Context Curator 设计实现注记、
-  README 能力表、API 手册、基准报告、关联决策链接）与实现同批变更；CI 取证待
-  PR 全绿后回填关闭。
+- [x] `M21-06` 文档同步（总计划索引与注记、Context Curator 设计实现注记、
+  README 能力表、API 手册、基准报告、关联决策链接）与实现同批变更；CI 取证
+  已回填（PR #53）。
 
 ## 6. 风险与阻塞
 
@@ -244,8 +246,8 @@ provenance 并集大小、`source_checkpoints` 链长、store 环深、提交/�
   `sbom-check` 通过、clang-tidy 预检覆盖全部被修改库源编译单元、本机 NDK
   两 ABI 交叉编译预演通过。
 - [ ] 文档同步完成（§5 `M21-06` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
-  记录并关闭本里程碑。
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+  记录并关闭本里程碑（PR #53 首轮双 pipeline 24/24）。
 
 ## 8. 验证记录
 
@@ -303,3 +305,21 @@ Independent-Verification-Agent 独立完成并复验）。
   （W3）、Memory promotion（W4）、subagent fork/merge（W5）为显式非目标；
   Windows/Android 编译级/Release/quality 由 PR CI 回填后本里程碑方可关闭
   （`M21-06`）。
+
+2026-09-15：PR CI（[#53](https://github.com/Linductor-alkaid/mira/pull/53)）
+首轮全绿，无需修复轮。
+
+- PR [#53](https://github.com/Linductor-alkaid/mira/pull/53)（head `0ad7218`，
+  合并提交 `6b7e377`）push pipeline run
+  [`34884298162`](https://github.com/Linductor-alkaid/mira/actions/runs/34884298162)
+  与 pull_request pipeline run
+  [`34884341364`](https://github.com/Linductor-alkaid/mira/actions/runs/34884341364)
+  各 12 项全部通过：Linux GCC/Clang（Debug/Release，两 m21 目标入 Linux 测试
+  矩阵）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK
+  编译级）、ASAN/UBSAN/TSAN、quality（clang-tidy 18 + clang-format +
+  docs/sbom/platform-boundary 检查）。§7 退出条件逐项复核后关闭本里程碑。
+  遗留（显式非目标，不阻塞关闭）：真实模型接入与 issue #48 对照指标
+  （Continuation correctness / Constraint retention / Failed-attempt
+  recurrence，A/B/C 三臂冻结数据集；归真实模型轮与 DEC-032 Stage E，
+  `MNT-202609-27` 证据通道，DEC-036 已解除供给门禁）；Supervisor 自动触发
+  与 coalescing（Stage W3）、Memory promotion（W4）、subagent fork/merge（W5）。
