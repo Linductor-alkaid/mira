@@ -59,7 +59,9 @@ Memory / Layer 0 的边界如何划定，以及如何与 DEC-032 的 Stage E/F �
 - 不修改 `StandardContextManager`、Layer 0 既有语义、M19 checkpoint 契约。
 - 不引入新持久化格式；W1 store 为 volatile 可重建投影（RULE-07）。
 - 不接入真实模型（供应链复核通道，与 DEC-032 §14 同源）；无真机证据
-  （Stage E，`MNT-202609-27` 通道）。
+  （Stage E，`MNT-202609-27` 通道）。2026-09-14 注：W2 起模型供给按
+  [DEC-036](DEC-036-consolidation-model-supply.md) 口径——可用源模型即可（含主
+  Agent 模型），不要求专用小模型，"小模型供给通道"不再是 W2 门禁。
 - 不声明 token 收益或任务成功率：W1 评估对象是确定性管线行为（RULE-10）。
 
 ## 备选方案

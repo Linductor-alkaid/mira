@@ -183,7 +183,9 @@ checkpoint，敏感内容过滤在固化阶段强制（M19 D3 门禁），与
 `previous snapshot + new checkpoint + recent events` 为输入产出 candidate，
 经 §5.2 同一提交管线落库。模型边界复用 M19 已验证的范式：StrictJsonSchema、
 编号输入、provenance 绑定（引用越界丢弃）、deadline/cancellation、有界输出、
-fail-closed 解析。宿主经 `IModelProvider` 注入独立小模型，Core 不绑定模型。
+fail-closed 解析。宿主经 `IModelProvider` 注入当前可用的源模型即可——包括生成
+原输出上下文的主模型；不要求专用小模型（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)，
+2026-09-14 修订），Core 不绑定模型。
 
 ## 7. Layer 0 准入路径
 
@@ -277,7 +279,7 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 | Stage | 内容 | 门禁 |
 | --- | --- | --- |
 | W1 | `WorkingContextSnapshot` 确定性契约（store、水位、digest、epoch、provenance、Layer 0 转换、恢复）——无模型，**已交付**（[M20](../plans/m20-working-context-stage-w1.md)，2026-09-14，基线见[working-context v1](../benchmarks/context-intelligence-working-context-v1.md)：W1-G1–G6 全绿、恢复 12/12 幂等重建、跨进程报告字节级一致） | M19 关闭（已满足）；设计/决策冻结 |
-| W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入） | W1 关闭；固化小模型供给通道（与 DEC-032 §14 供应链复核同一通道） |
+| W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入） | W1 关闭；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项） |
 | W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退 | W2 关闭；快照链在长会话基线上可复现 |
 | W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律 | W2 关闭；Working Context 与长期 Memory 边界测试冻结 |
 | W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy | W4 关闭；多 Agent 工作流场景冻结 |
@@ -287,10 +289,12 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 
 ## 14. 候选技术与供应链
 
-W2 Curator 模型候选与 DEC-032 §14 同源同通道（Qwen ~0.6B 级或既有 Provider
-廉价模型；许可证与 provenance 复核后方可接入，登记
-[直接依赖与许可证](../supply-chain/direct-dependencies.md)）。任何候选不得成为
-Mira ABI/API 的一部分。W1 无新依赖。
+> 2026-09-14 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) 修订：W2
+> Curator 不要求专用小模型，直接使用既有 Provider 已配置的可用源模型（含生成原输出
+> 上下文的主模型），不新增供应链项；本地小模型（Qwen ~0.6B 级等）降级为宿主可选的
+> 成本优化，若引入新的捆绑模型仍按 DEC-032 §14 供应链复核并登记
+> [直接依赖与许可证](../supply-chain/direct-dependencies.md)。任何候选不得成为
+> Mira ABI/API 的一部分。W1 无新依赖。
 
 ## 15. 关联文档
 

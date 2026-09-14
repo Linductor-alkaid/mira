@@ -19,8 +19,9 @@ digest 相等后运行），经 `segment_conversation` 切分为单一前缀段�
 provenance 绑定 → 五元组提交管线。固化"模型"为脚本化确定性 `IModelProvider`
 （按冻结规则从编号转录中抽取标记条目并引用条目号）。与 M17/M18 相同，全部指标
 度量**管线行为**（provenance 绑定、标记/ACL 过滤、提交纪律、确定性），不是语义
-固化质量——真实 Constraint Recall/Precision、矛盾率、幻觉率需真实小模型证据
-（DEC-032 §5/§9，供应链复核通道）。
+固化质量——真实 Constraint Recall/Precision、矛盾率、幻觉率需真实模型证据
+（DEC-032 §5/§9；2026-09-14 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md)
+修订：可用源模型即可，含主模型，不要求专用小模型）。
 
 ## 2. 方法与环境
 
@@ -59,8 +60,9 @@ provenance 绑定 → 五元组提交管线。固化"模型"为脚本化确定�
   既有状态——Stage D 声明的管线行为边界全部得到量化。
 - 限制：固化供给方为确定性抽取脚本而非真实模型——recall/precision 为管线行为
   上限，不得外推语义固化质量、真实小模型延迟或真机成本（`RULE-10`）。
-- Stage E/F 使用口径：真实小模型（设计 §14 候选清单，经 `IModelProvider`
-  配置）接入后须以本 harness + miracle 派生会话重测语义指标并另行登记；
+- Stage E/F 使用口径：真实模型（2026-09-14 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md)
+  修订：经 `IModelProvider` 配置的可用源模型，含主模型；设计 §14 候选清单仅为宿主
+  可选优化）接入后须以本 harness + miracle 派生会话重测语义指标并另行登记；
   `ContextIntelligenceService` 编排与 AgentLoop 集成归后续里程碑。
 
 ## 5. 补跑与后续条件
@@ -70,5 +72,6 @@ provenance 绑定 → 五元组提交管线。固化"模型"为脚本化确定�
   失败非零退出；报告 JSON 经 argv[1] 落盘，跨进程 `cmp` 一致）。
 - CI：`mira_m19_consolidation_eval` 入 Linux 测试与 sanitizer 矩阵（Android 为
   编译级门禁既有范围）；Windows/Release/quality 由 PR CI 回填（M19-07）。
-- 真实固化模型接入后的重测：供应链复核（DEC-032 §14）+ 本 harness + miracle
-  派生会话对照后另行登记（归 `MNT-202609-27` 语料通道）。
+- 真实固化模型接入后的重测：模型供给按 [DEC-036](../decisions/DEC-036-consolidation-model-supply.md)
+  口径（可用源模型即可；如引入新的捆绑模型仍走 DEC-032 §14 供应链复核）+
+  本 harness + miracle 派生会话对照后另行登记（归 `MNT-202609-27` 语料通道）。
