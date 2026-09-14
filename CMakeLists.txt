@@ -87,6 +87,7 @@ add_library(mira_core
     src/context/context_retrieval.cpp
     src/context/context_rerank.cpp
     src/context/context_consolidation.cpp
+    src/context/context_working_context.cpp
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
     src/observation/coordinate_transform.cpp

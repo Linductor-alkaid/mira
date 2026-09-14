@@ -2,17 +2,19 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-14（DEC-032 Stage D 由 [M19](m19-context-intelligence-stage-d.md)
+> 更新日期：2026-09-14（DEC-035 Stage W1 由 [M20](m20-working-context-stage-w1.md)
+> 承载并本地交付：`WorkingContextSnapshot` 确定性契约、checkpoint → snapshot
+> 投影、五元组提交与 store、Layer 0 候选转换、supervisor Deferrable 路由；
+> working-context 评估 W1-G1–G6 首轮全绿（投影保真、身份/水位绑定、提交纪律、
+> epoch 链隔离、恢复重建、跨进程确定性），基准登记于
+> [context-intelligence-working-context-v1](../benchmarks/context-intelligence-working-context-v1.md)，
+> CI 取证待 PR 回填后关闭。同日早前：Stage D 由 [M19](m19-context-intelligence-stage-d.md)
 > 承载并交付关闭：Layer 3 `ISemanticConsolidator` 契约与 `IModelProvider` 供给
 > 参考固化器、`ConversationCheckpoint` 五元组提交、固化管线评估 D1–D5 首轮
 > 全绿（provenance 零违例、标记/跨会话零泄漏、提交纪律全通过），基准登记于
 > [context-intelligence-consolidation-v1](../benchmarks/context-intelligence-consolidation-v1.md)，
 > PR #47 三轮 CI（clang 捕获、chrono 平台转换、RNG 顺序两处修复后）
-> head 双 pipeline 24/24 全绿。同日早前：Stage C 由 [M18](m18-context-intelligence-stage-c.md)Layer 3 `ISemanticConsolidator` 契约、`ProviderSemanticConsolidator`
-> 经 `IModelProvider` 供给、`ConversationCheckpoint` 五元组提交与 store、checkpoint →
-> Layer 0 候选转换、supervisor Deferrable 路由；固化管线评估 D1–D5 首轮全绿（provenance
-> 零违例、标记/跨会话零泄漏、提交纪律全通过），基准登记于
-> [context-intelligence-consolidation-v1](../benchmarks/context-intelligence-consolidation-v1.md)。
+> head 双 pipeline 24/24 全绿。
 > 同日早前（2026-09-13）：Stage C 由 [M18](m18-context-intelligence-stage-c.md)
 > 承载并交付关闭：Layer 2 `IContextReranker` 契约与确定性参考重排器、B/C 列对照
 > C1–C4 首轮全绿（混合轮 MRR uplift +0.0139），基准登记于
@@ -105,6 +107,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | Completed |
 | [M18](m18-context-intelligence-stage-c.md) | Context Intelligence Stage C——Layer 2 重排对照（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextReranker` 契约、确定性参考重排器、reranker 缺席/失败降级、B/C 列对照数据；无模型） | M17（检索评估 v1 B 列基线可重复）；DEC-032 §5.3 | Stage D 固化对照的方法学锚点（非发布物） | Completed |
 | [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | Completed |
+| [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | In Progress |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -412,6 +415,39 @@ RNG 抽取顺序歧义（数据集 digest 重新钉定，实现代码零变更�
 DEC-032 下一阶段为 Stage E（miracle 真机评估，前置 `MNT-202609-27` 证据通道，
 当前 Blocked）；Stage F（提示压缩实验）归后续立项。
 
+2026-09-14，维护者指示「依设计与计划推进下一步开发」（与 M8–M19 同一授权模式）。
+经计划核对：Stage E 仍被 `MNT-202609-27` 外部证据通道阻塞，Stage D 之后无内部
+阻塞的入口是当日新登记的方向 issue
+[#48](https://github.com/Linductor-alkaid/mira/issues/48)（Context Curator /
+Working Context）。据此冻结
+[Context Curator 设计](../design/context_curator_design.md)与
+[DEC-035](../decisions/DEC-035-context-curator-working-context.md)（阶段名
+W1–W5，不占用 DEC-032 Stage E/F 编号），并新增里程碑
+[M20](m20-working-context-stage-w1.md) 承载 Stage W1——`WorkingContextSnapshot`
+确定性契约（无模型；profile 与门禁 W1-G1–G6 跑前冻结）。交付：
+`include/mira/context_working_context.hpp`（`WorkingContextItem` 三 section
+快照契约、确定性 id 与 `state_digest`、`WorkingContextMergeOptions` 有界配置、
+`working_context_from_checkpoint` 全有或全无投影、`IWorkingContextStore`/
+`InMemoryWorkingContextStore`（水位单调、有界保留环、epoch 新链）、
+`commit_working_context`（终态幂等、五元组校验、幂等 NoOp、同水位冲突
+fail-closed）、`context_items_from_working_context`（约束 → P1 `UserConstraint`、
+决策/未决 → P3 `CheckpointSummary`、`UntrustedExternalData` authority、id 空间
+与 checkpoint 条目分离））；`src/context/context_working_context.cpp`（入
+`mira_core`）；`ContextMemorySupervisor::schedule_working_context_commit`
+（Deferrable、shutdown 拒绝）。无 Curator 模型、无增量 merge、无自动触发
+（W2–W3 显式非目标）。working-context 评估 harness（12 会话 × 5 checkpoint
+链确定性数据集、digest `ed81befb…` 锚定）首轮 W1-G1–G6 全绿：60/60 链提交、
+840 条目投影保真零违例、重放 12/12 NoOp、同水位冲突/陈旧/身份不匹配/终态迟到
+100% 丢弃且存储不变、epoch 新链 12/12 提交且旧链可回查、恢复 12/12 幂等重建、
+跨进程报告字节级一致；登记于
+[context-intelligence-working-context-v1](../benchmarks/context-intelligence-working-context-v1.md)。
+本地门禁：debug ctest 78/78（原 76 + 本里程碑 2 目标）、ASAN/UBSAN/TSAN
+（`setarch -R`）m20 两目标零报告、format/docs/platform-boundary/sbom 四检查
+通过、miniconda clang-tidy 18.1.8 预检库源零违例、本机同版本 NDK 两 ABI
+交叉编译预演通过。限制与未执行项：确定性投影口径非语义质量声明（`RULE-10`）；
+W2–W5、真实模型与真机评估为显式非目标；Windows/Release/quality 由 PR CI
+回填后 M20 方可关闭（`M20-07`）。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -453,6 +489,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
 | [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Stage C Layer 2 重排由 [M18](m18-context-intelligence-stage-c.md) 交付，Stage D Layer 3 固化由 [M19](m19-context-intelligence-stage-d.md) 承载，Layer 4 未开始） | M16（Stage A）；M17（Stage B）；M18（Stage C）；M19（Stage D）；Stage E–F 逐阶段另行立项 |
+| [DEC-035](../decisions/DEC-035-context-curator-working-context.md) | Context Curator 与 Working Context（Issue #48；`WorkingContextSnapshot` 状态投影 + `IContextCurator` 方向，Stage W1–W5） | Accepted（方向；Stage W1 由 [M20](m20-working-context-stage-w1.md) 交付，W2–W5 逐阶段另行立项） | M20（Stage W1）；W2–W5 逐阶段另行立项 |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 
