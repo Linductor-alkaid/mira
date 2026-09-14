@@ -85,7 +85,7 @@ Workflow Run
 | Observation Pipeline、截图与结构化 UI、坐标与 Android Host ABI | M2 已交付 | 复用；为 App Model 与感知层级提供输入 |
 | Context/Memory、EventStore 事实源、Checkpoint、Replay | M1/M4 已交付 | 复用；Memory 按第 10 节演进，EventStore 保持事实源 |
 | Tool Registry / 模组体系（ITool/ToolModule，[DEC-009](../decisions/DEC-009-tool-module-boundary.md)） | **未实现**；现有的是 DEC-015 的最小 BuiltIn 执行边界（无 manifest/签名/隔离） | 模组体系随 M7 重定义落地，届时吸纳 BuiltIn 边界 |
-| 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义；OCR/检测的目标契约已由 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) 冻结（实现不开始） |
+| 本地 OCR/CV/ONNX、连续控制 | M5/M6 按 DEC-011 终止 | 是否及以何范围回归由 demo 证据重定义；OCR/检测的目标契约已由 [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) 冻结（实现不开始）；高频条件策略方向已由 [DEC-037](../decisions/DEC-037-temporal-policy.md) 冻结（实现未开始，真机感知/连续控制阶段仍受 DEC-011 门禁） |
 | Workflow Compiler/Runtime、App Model、Navigation Planner、对话 patch | M8–M12 分阶段范围已实现；Android 模块构建证据待补 | 宿主编排、资产持久化与真实 UI 消费验证仍有后续项，见第 16 节 |
 | Memory 四类域、Episode/Lesson 与失败检索 | M13 分阶段范围已实现；Android 模块构建证据待补 | 提供 `relevant_lessons`；Agent 采纳与执行经验的编排、Procedure 索引尚待立项 |
 
@@ -870,12 +870,14 @@ Procedure 索引由[阶段 F 后续计划](../plans/maintenance-2026-09-post-sta
   [DEC-009](../decisions/DEC-009-tool-module-boundary.md)、
   [DEC-011](../decisions/DEC-011-demo-first-external-validation.md)、
   [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)、
-  [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
+  [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)、
+  [DEC-037](../decisions/DEC-037-temporal-policy.md)
 - 现行规范：[Mira Runtime 设计](mira_runtime_design.md)、
   [核心公共契约与状态机](core_contracts_and_state_machine.md)、
   [Context 与 Memory 架构设计](context_and_memory_design.md)、
   [Context Intelligence 设计](context_intelligence_design.md)、
   [视觉 Grounding 设计](visual_grounding_design.md)、
+  [Temporal Policy 设计](temporal_policy_design.md)、
   [工具模组设计](tool_module_design.md)
 - 计划：[Mira 实施总计划](../plans/mira-implementation-plan.md)
 - 规范：[项目管理与文档规范](../project/project_management_and_documentation.md)、

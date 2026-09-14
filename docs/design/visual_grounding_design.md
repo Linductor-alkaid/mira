@@ -215,6 +215,8 @@ ncnn；FP32/FP16/INT8（按支持情况）。指标体系并入[评估与基准�
 ## 15. 关联文档
 
 - [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
+- [Temporal Policy 设计](temporal_policy_design.md)（本管线结构化输出之上的时序
+  状态与 Temporal Cache 扩展）
 - [Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)
 - [Observation、坐标与 Android Host ABI 设计](observation_coordinate_android_host.md)
 - [本地感知与任务 ONNX 模型设计](local_perception_and_task_models.md)（假设记录）
