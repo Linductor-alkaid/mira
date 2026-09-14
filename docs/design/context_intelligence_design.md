@@ -384,6 +384,8 @@ Deferrable（含索引重建与预备固化）-> 有界等待 Critical -> 消费
 ## 15. 关联文档
 
 - [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)
+- [Context Curator 设计](context_curator_design.md)（Stage D 之后的 Working
+  Context 方向，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）
 - [Context 与 Memory 架构设计](context_and_memory_design.md)（Layer 0 与检索/固化的
   既有语义）
 - [Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)

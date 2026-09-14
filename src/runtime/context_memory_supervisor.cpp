@@ -363,6 +363,33 @@ ContextMemorySupervisor::schedule_context_consolidation(ISemanticConsolidator &c
         });
 }
 
+std::future<Result<WorkingContextCommitOutcome>>
+ContextMemorySupervisor::schedule_working_context_commit(IWorkingContextStore &store,
+                                                         ConversationCheckpoint checkpoint,
+                                                         WorkingContextIdentity identity,
+                                                         WorkingContextCommitState live,
+                                                         WorkingContextMergeOptions options) {
+    return submit<WorkingContextCommitOutcome>(
+        "working_context_commit", SupervisedOpClass::Deferrable,
+        // WorkingContextMergeOptions is trivially copyable: a plain capture
+        // copy, no move (performance-move-const-arg).
+        [&store, checkpoint = std::move(checkpoint), identity, live, options](
+            SupervisorToken) mutable
+        -> Result<WorkingContextCommitOutcome> {
+            // Deterministic projection plus monotonic commit in one
+            // supervised step (design §8): the store's tuple validation is
+            // the backstop for late or replayed results, so the pure merge
+            // needs no extra cancellation plumbing. Stage W2 replaces the
+            // projection with a model-mediated curator behind this same
+            // route, keeping the shutdown semantics unchanged.
+            auto candidate = working_context_from_checkpoint(checkpoint, identity, options);
+            if (!candidate) {
+                return candidate.error();
+            }
+            return commit_working_context(store, candidate.value(), live);
+        });
+}
+
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(

@@ -32,6 +32,7 @@ Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M
 | Layer 1 检索召回（`IContextEmbedder`/`IContextRetriever`，Conversation/Episode/Lesson） | 契约与参考索引已交付（M17，DEC-032 Stage B）；真实 embedder 供给方与 AgentLoop 集成待后续 | [检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) |
 | Layer 2 重排对照（`IContextReranker` + 确定性参考重排器） | 契约与参考实现已交付（M18，DEC-032 Stage C）；模型重排经供应链复核后接入 | [重排对照 v1](docs/benchmarks/context-intelligence-rerank-v1.md) |
 | Layer 3 语义固化（`ISemanticConsolidator` → `ConversationCheckpoint`，经 `IModelProvider` 供给、五元组提交与终态幂等） | 契约与参考固化器已交付（M19，DEC-032 Stage D）；真实小模型经供应链复核后接入 | [固化管线评估 v1](docs/benchmarks/context-intelligence-consolidation-v1.md) |
+| Working Context 快照（`WorkingContextSnapshot` 确定性契约：水位、digest、epoch 失效、终态幂等、Layer 0 转换、恢复） | Stage W1 契约与确定性管线已交付（M20，DEC-035）；`IContextCurator` 模型维护者归 Stage W2 | [working-context 评估 v1](docs/benchmarks/context-intelligence-working-context-v1.md) |
 
 下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：回收 miracle
 真机/Provider 证据、补跑 live canary 与恢复率/成本分布、依证据推进持久化与 M7
@@ -40,7 +41,10 @@ Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M
 [M17](docs/plans/m17-context-intelligence-stage-b.md) 与
 [M18](docs/plans/m18-context-intelligence-stage-c.md) 交付，Stage D（Layer 3 语义
 固化）由 [M19](docs/plans/m19-context-intelligence-stage-d.md) 承载并已完成本地
-交付，Stage E（真机评估）待 `MNT-202609-27` 证据通道。
+交付；Context Curator 方向（[DEC-035](docs/decisions/DEC-035-context-curator-working-context.md)，
+issue #48）Stage W1（`WorkingContextSnapshot` 确定性契约）由
+[M20](docs/plans/m20-working-context-stage-w1.md) 承载并已完成本地交付；
+Stage E（真机评估）待 `MNT-202609-27` 证据通道。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求

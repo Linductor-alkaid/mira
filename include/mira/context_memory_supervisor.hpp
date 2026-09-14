@@ -4,6 +4,7 @@
 #include <mira/context_consolidation.hpp>
 #include <mira/context_retrieval.hpp>
 #include <mira/context_rerank.hpp>
+#include <mira/context_working_context.hpp>
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
@@ -142,6 +143,16 @@ class ContextMemorySupervisor final {
     [[nodiscard]] std::future<Result<ConversationCheckpoint>>
     schedule_context_consolidation(ISemanticConsolidator &consolidator,
                                    ConversationSegment segment, ConsolidationOptions options);
+    // Working Context commit (M20, Stage W1): Deferrable class per the
+    // curator design §8 — the snapshot chain refreshes opportunistically and
+    // Stage W2 swaps the deterministic projection for a model-mediated
+    // curator behind this same route, so shutdown semantics stay unchanged.
+    // Deterministic projection + monotonic commit in one supervised step;
+    // the future must be consumed like every other wrapper.
+    [[nodiscard]] std::future<Result<WorkingContextCommitOutcome>>
+    schedule_working_context_commit(IWorkingContextStore &store, ConversationCheckpoint checkpoint,
+                                    WorkingContextIdentity identity, WorkingContextCommitState live,
+                                    WorkingContextMergeOptions options);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
     [[nodiscard]] std::future<Result<ErasureResult>>

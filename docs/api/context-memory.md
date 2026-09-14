@@ -165,6 +165,44 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
 - 评估证据：[固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)
   （D1–D5 门禁；脚本化供给方口径，非语义质量声明）。
 
+## context_working_context.hpp：Working Context 快照（M20，DEC-035 Stage W1）
+
+任务/会话导向的当前状态视图（issue #48 方向的 Stage W1，无模型）：从已提交
+`ConversationCheckpoint` 确定性导出的 `WorkingContextSnapshot`——可重建投影
+（RULE-07），只经 Layer 0 准入进入模型请求，语义层无准入权：
+
+- `working_context_from_checkpoint(checkpoint, identity, options)`：纯确定性
+  投影——checkpoint 的约束/决策/未决线索逐条携带 provenance、真实时序与
+  confidence 映射进快照三 section；`identity` 必须与 checkpoint 自身五元组
+  戳一致；边界（section 计数、单条字节、provenance 上限）任一超限整体拒绝，
+  全有或全无，不产生部分快照（RULE-08）。标记过滤不在投影重复执行：输入是
+  已提交 checkpoint（M19 固化阶段强制）。
+- `WorkingContextSnapshot`：身份五元组 + 确定性派生 id（同输入重导出同 id，
+  RULE-07）+ `state_digest()`（排除 id 与 `created_at`，重建时间不影响身份）
+  + `source_checkpoints` 溯源；JSON 契约 `mira.working_context.snapshot.v1`
+  （DEC-002 版本纪律）。
+- `commit_working_context(store, candidate, live)`：终态幂等（会话/任务终态后
+  迟到快照丢弃）→ 五元组校验（任一不匹配丢弃候选、保留已存快照）→ 幂等
+  NoOp（同水位同 digest）→ 同水位异 digest fail-closed 冲突（W2 Curator
+  非确定性行为的兜底）→ 提交；`IWorkingContextStore` 参考实现会话内水位单调、
+  有界保留环，epoch 变化开启新身份链、旧链仍可按水位回查（快照条目携带
+  epoch 标注，Layer 0 stale-build 可检测）。
+- `context_items_from_working_context()`：快照到 Layer 0 候选的纯转换——约束
+  → P1 `UserConstraint`、决策/未决 → P3 `CheckpointSummary`，authority 恒为
+  `UntrustedExternalData`（RULE-09，不得自我提升为 policy）；条目 id 由快照
+  id 确定性派生且与 checkpoint 条目空间分离（双投影并存可审计）；宿主应择一
+  喂给 Layer 0。
+- 恢复 = 幂等重导出：空 store 上从最近已提交 checkpoint 重新投影，id 与
+  digest 逐字节一致（设计 §10；W1 无持久化格式，volatile store 与 checkpoint
+  store 同档）。
+- `ContextMemorySupervisor::schedule_working_context_commit(store, checkpoint,
+  identity, live, options)`（Deferrable，设计 §8）：确定性投影 + 单调提交在
+  一个受监督步骤内完成；Stage W2 将模型介导的 Curator 换到同一路由后方，
+  shutdown 语义不变；`begin_shutdown()` 后提交被拒绝。
+- 评估证据：
+  [working-context 评估 v1](../benchmarks/context-intelligence-working-context-v1.md)
+  （W1-G1–G6 门禁；确定性投影口径，不声明 token 收益或语义质量）。
+
 ## stateful_replay.hpp：AnalysisReplay
 
 只读分析回放：`AnalysisReplay(events, checkpoints, memory, artifacts).inspect(task,

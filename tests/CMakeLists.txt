@@ -524,3 +524,26 @@ endfunction()
 
 mira_add_m19_test(mira_m19_context_consolidation_test m19/m19_context_consolidation_test.cpp)
 mira_add_m19_test(mira_m19_consolidation_eval m19/m19_consolidation_eval.cpp)
+
+# M20 (DEC-035 Stage W1): WorkingContextSnapshot — deterministic projection
+# from committed checkpoints, the monotonic commit pipeline (five-tuple
+# validation, terminal idempotency, same-watermark conflict fail-closed) and
+# the supervisor Deferrable routing. The eval harness runs the frozen
+# checkpoint-chain dataset with gates W1-G1..G6 and exits non-zero on failure.
+function(mira_add_m20_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m20" TIMEOUT 120)
+endfunction()
+
+mira_add_m20_test(mira_m20_working_context_test m20/m20_working_context_test.cpp)
+mira_add_m20_test(mira_m20_working_context_eval m20/m20_working_context_eval.cpp)
