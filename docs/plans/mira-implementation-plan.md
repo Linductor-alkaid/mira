@@ -174,7 +174,13 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    （`MNT-202609-27` 证据）；Mirador 为外部视觉供给候选，Core 不引入源依赖。
    同日 DEC-036（[修订记录](../decisions/DEC-036-consolidation-model-supply.md)）
    将固化/Curator 模型供给改为可用源模型口径，解除 Stage W2/Stage D 真实模型轮的
-   "小模型供应链复核"等待项。
+   "小模型供应链复核"等待项。两轮文档分别经
+   [PR #51](https://github.com/Linductor-alkaid/mira/pull/51)（head `890f5e6`，merge
+   `52cf75c`）与 [PR #52](https://github.com/Linductor-alkaid/mira/pull/52)（head
+   `f84eb60`，merge `a76c509`）合并：PR CI 双 pipeline 各 12 项全绿（#51：push run
+   `34863847977` / pull_request run `34863881245`；#52：push run `34863847436` /
+   pull_request run `34863920581`），master 合并提交 run `34867064691` 与
+   `34867146055` 均 success。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
