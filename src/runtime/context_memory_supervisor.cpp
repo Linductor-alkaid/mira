@@ -390,6 +390,33 @@ ContextMemorySupervisor::schedule_working_context_commit(IWorkingContextStore &s
         });
 }
 
+std::future<Result<WorkingContextCommitOutcome>>
+ContextMemorySupervisor::schedule_working_context_curate(
+    IContextCurator &curator, IWorkingContextStore &store,
+    std::optional<WorkingContextSnapshot> previous, ConversationCheckpoint checkpoint,
+    std::vector<ConversationSegmentEntry> recent_events, WorkingContextCommitState live,
+    ContextCurationOptions options) {
+    return submit<WorkingContextCommitOutcome>(
+        "working_context_curate", SupervisedOpClass::Deferrable,
+        [&curator, &store, previous = std::move(previous), checkpoint = std::move(checkpoint),
+         events = std::move(recent_events), live,
+         options = std::move(options)](SupervisorToken token) mutable
+        -> Result<WorkingContextCommitOutcome> {
+            // The supervisor's stop flag becomes the cooperative cancellation
+            // probe the curator honors (design §8); the store's commit
+            // validation stays the backstop for results that slip past
+            // cancellation. A curator failure leaves the store untouched —
+            // the caller keeps the previous snapshot (design §9).
+            options.cancellation_requested = [token]() { return token.stop_requested(); };
+            auto candidate = curator.curate(previous ? &previous.value() : nullptr, checkpoint,
+                                            events, options);
+            if (!candidate) {
+                return candidate.error();
+            }
+            return commit_working_context(store, candidate.value(), live);
+        });
+}
+
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
     return submit<MemoryMutationResult>(

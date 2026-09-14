@@ -1,11 +1,14 @@
 # Mira Context Curator 与 Working Context 设计（可执行工作状态的持续维护）
 
-> 状态：Active（方向与 Stage W1 契约冻结；W1 确定性基础设施已由
+> 状态：Active（方向与 Stage W1/W2 契约冻结；W1 确定性基础设施已由
 > [M20](../plans/m20-working-context-stage-w1.md) 承载并本地交付——
 > [working-context 评估 v1](../benchmarks/context-intelligence-working-context-v1.md)；
-> W2–W5 进入里程碑的门槛见 §13）
-> 版本：0.1
-> 更新日期：2026-09-14
+> W2 `IContextCurator` 契约与模型供给参考实现已由
+> [M21](../plans/m21-context-curator-stage-w2.md) 承载并本地交付——
+> [curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)；
+> W3–W5 进入里程碑的门槛见 §13）
+> 版本：0.2
+> 更新日期：2026-09-15
 > 负责人：Mira Maintainers
 > 上位设计：[Context Intelligence 设计](context_intelligence_design.md)、
 > [Context 与 Memory 架构设计](context_and_memory_design.md)
@@ -101,6 +104,10 @@ W1 只冻结上列三个 section——它们恰好是 `ConversationCheckpoint` �
 `goal / active_tasks / verified_facts / failed_attempts / important_refs /
 next_actions` 需要 Curator 语义判断才能填充，在 W2 随 `IContextCurator` 以
 **加法式 schema minor 升级**引入；提前定义无人填充的空 section 属于投机 API。
+（2026-09-15 实现注记：W2 已按此升级——`mira.working_context.snapshot` schema
+1.1 新增 `active_tasks` / `verified_facts` / `failed_attempts` /
+`important_refs` / `next_actions` 五个 section 与 `generated_by` 标注，v1.0
+载荷保持可读；[M21](../plans/m21-context-curator-stage-w2.md) §4.2。）
 
 **刻意偏离 issue 草案的一点**：快照不含 `goal`。当前 Goal 是 Layer 0 P1 的确定性
 任务帧内容（`ContextItemKind::Goal`，权威来源为 Runtime），快照若复述会制造重复
@@ -179,13 +186,19 @@ RULE-08 边界（section 计数、单条字节、条目总数上限，超限整�
 checkpoint，敏感内容过滤在固化阶段强制（M19 D3 门禁），与
 `context_items_from_checkpoint` 信任已提交投影的边界一致。
 
-**W2（后续，模型供给）**：`IContextCurator` 以
+**W2（M21 已交付，模型供给）**：`IContextCurator` 以
 `previous snapshot + new checkpoint + recent events` 为输入产出 candidate，
 经 §5.2 同一提交管线落库。模型边界复用 M19 已验证的范式：StrictJsonSchema、
 编号输入、provenance 绑定（引用越界丢弃）、deadline/cancellation、有界输出、
 fail-closed 解析。宿主经 `IModelProvider` 注入当前可用的源模型即可——包括生成
 原输出上下文的主模型；不要求专用小模型（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)，
-2026-09-14 修订），Core 不绑定模型。
+2026-09-14 修订），Core 不绑定模型。（实现注记：增量 merge 语义在
+[M21 §4.1](../plans/m21-context-curator-stage-w2.md) 冻结为"指令契约 +
+机械校验"——保留 / supersede / 冲突保留由模型经三段编号转录
+（`prev:` / `ckpt:` / `event:` 行格式，checkpoint 偏好语句不入转录）的引用
+表达，运行时只做 provenance 绑定、上界与标记校验；另冻结**退化防护**：
+previous 非空而候选零 previous 引用时整体拒绝（`degenerate-merge`），
+recent events 越水位在调用前拒绝。）
 
 ## 7. Layer 0 准入路径
 
@@ -279,7 +292,7 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 | Stage | 内容 | 门禁 |
 | --- | --- | --- |
 | W1 | `WorkingContextSnapshot` 确定性契约（store、水位、digest、epoch、provenance、Layer 0 转换、恢复）——无模型，**已交付**（[M20](../plans/m20-working-context-stage-w1.md)，2026-09-14，基线见[working-context v1](../benchmarks/context-intelligence-working-context-v1.md)：W1-G1–G6 全绿、恢复 12/12 幂等重建、跨进程报告字节级一致） | M19 关闭（已满足）；设计/决策冻结 |
-| W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入） | W1 关闭；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项） |
+| W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入）——**已交付**（[M21](../plans/m21-context-curator-stage-w2.md)，2026-09-15，基线见[curation v1](../benchmarks/context-intelligence-working-context-curation-v1.md)：W2-G1–G6 全绿、脚本化确定性供给方口径） | W1 关闭（已满足）；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项）（已满足） |
 | W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退 | W2 关闭；快照链在长会话基线上可复现 |
 | W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律 | W2 关闭；Working Context 与长期 Memory 边界测试冻结 |
 | W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy | W4 关闭；多 Agent 工作流场景冻结 |

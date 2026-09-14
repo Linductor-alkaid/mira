@@ -4,7 +4,8 @@
 > 日期：2026-09-14
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)
-> 关联计划：[M20](../plans/m20-working-context-stage-w1.md)（Stage W1）
+> 关联计划：[M20](../plans/m20-working-context-stage-w1.md)（Stage W1）、
+> [M21](../plans/m21-context-curator-stage-w2.md)（Stage W2）
 > 上位决策：[DEC-032](DEC-032-context-intelligence-layered-context.md)
 
 ## 背景与问题
@@ -107,6 +108,7 @@ Memory / Layer 0 的边界如何划定，以及如何与 DEC-032 的 Stage E/F �
 
 - [Context Curator 与 Working Context 设计](../design/context_curator_design.md)
 - [M20：WorkingContextSnapshot 确定性契约（Stage W1）](../plans/m20-working-context-stage-w1.md)
+- [M21：IContextCurator 契约与模型供给参考实现（Stage W2）](../plans/m21-context-curator-stage-w2.md)
 - [DEC-032](DEC-032-context-intelligence-layered-context.md)、
   [M19](../plans/m19-context-intelligence-stage-d.md)（五元组提交纪律与
   Provider 语义组件范式的来源）
