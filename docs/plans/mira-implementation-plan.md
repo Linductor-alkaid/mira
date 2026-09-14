@@ -164,6 +164,17 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    [M16](m16-context-intelligence-stage-a.md) 并本地交付首轮基线（详见 §4.2 当日
    记录）；Stage B 的门槛「Stage A 基线可重复」已具备，进入实现前仍须创建里程碑
    文件。DEC-033 状态不变（等 27 证据）。
+7. 方向登记（2026-09-14，实现未开始）：[Issue #50](https://github.com/Linductor-alkaid/mira/issues/50)
+   （Temporal Policy——从连续感知中学习并固化高频条件策略）冻结为
+   [DEC-037](../decisions/DEC-037-temporal-policy.md)（
+   [Temporal Policy 设计](../design/temporal_policy_design.md)）。只冻结方向与目标
+   契约：Stage T1（`TemporalHistory`/`ReactiveRule` 契约与条件策略 Runtime 确定性
+   闭环，纯 Core 无平台依赖）可按常规授权立项，进入实现前新建里程碑文件；
+   Stage T2/T3（真机感知）与 T6（连续控制注入）受 DEC-011 门禁
+   （`MNT-202609-27` 证据）；Mirador 为外部视觉供给候选，Core 不引入源依赖。
+   同日 DEC-036（[修订记录](../decisions/DEC-036-consolidation-model-supply.md)）
+   将固化/Curator 模型供给改为可用源模型口径，解除 Stage W2/Stage D 真实模型轮的
+   "小模型供应链复核"等待项。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
