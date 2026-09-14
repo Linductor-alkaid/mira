@@ -7,8 +7,9 @@
 > 投影、五元组提交与 store、Layer 0 候选转换、supervisor Deferrable 路由；
 > working-context 评估 W1-G1–G6 首轮全绿（投影保真、身份/水位绑定、提交纪律、
 > epoch 链隔离、恢复重建、跨进程确定性），基准登记于
-> [context-intelligence-working-context-v1](../benchmarks/context-intelligence-working-context-v1.md)，
-> CI 取证待 PR 回填后关闭。同日早前：Stage D 由 [M19](m19-context-intelligence-stage-d.md)
+> [context-intelligence-working-context-v1](../benchmarks/context-intelligence-working-context-v1.md)；
+> PR #49 两轮 CI（tidy 平凡拷贝移动一处修复后）head 双 pipeline 24/24 全绿，
+> 里程碑已关闭。同日早前：Stage D 由 [M19](m19-context-intelligence-stage-d.md)
 > 承载并交付关闭：Layer 3 `ISemanticConsolidator` 契约与 `IModelProvider` 供给
 > 参考固化器、`ConversationCheckpoint` 五元组提交、固化管线评估 D1–D5 首轮
 > 全绿（provenance 零违例、标记/跨会话零泄漏、提交纪律全通过），基准登记于
@@ -107,7 +108,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M17](m17-context-intelligence-stage-b.md) | Context Intelligence Stage B——Layer 1 检索召回（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextEmbedder`/`IContextRetriever`，覆盖 Conversation/Episode/Lesson；无模型、无 ANN、无持久化） | M16（Stage A 基线可重复）；DEC-032 §5.2 | Stage C reranker 对照的 B 列基线（非发布物） | Completed |
 | [M18](m18-context-intelligence-stage-c.md) | Context Intelligence Stage C——Layer 2 重排对照（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`IContextReranker` 契约、确定性参考重排器、reranker 缺席/失败降级、B/C 列对照数据；无模型） | M17（检索评估 v1 B 列基线可重复）；DEC-032 §5.3 | Stage D 固化对照的方法学锚点（非发布物） | Completed |
 | [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | Completed |
-| [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | In Progress |
+| [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -448,6 +449,20 @@ fail-closed）、`context_items_from_working_context`（约束 → P1 `UserConst
 W2–W5、真实模型与真机评估为显式非目标；Windows/Release/quality 由 PR CI
 回填后 M20 方可关闭（`M20-07`）。
 
+2026-09-14：PR CI 证据回填并关闭。PR
+[#49](https://github.com/Linductor-alkaid/mira/pull/49)（head `bf4e100`，合并提交
+`48f4781`）push 与 pull_request pipeline run
+[`34848824021`](https://github.com/Linductor-alkaid/mira/actions/runs/34848824021)/
+[`34848828495`](https://github.com/Linductor-alkaid/mira/actions/runs/34848828495)
+各 12 项全部通过（Linux GCC/Clang Debug/Release、Windows MSVC、Android 两 ABI、
+ASAN/UBSAN/TSAN、quality），第二轮全绿——第一轮修复 CI quality 报
+`performance-move-const-arg`（lambda init-capture 对平凡可拷贝的
+`WorkingContextMergeOptions` 使用 `std::move`；M19 同型违例，本机 tidy 预检
+此后纳入全部被修改库源编译单元）。Stage W1 关闭后，DEC-035 下一阶段为
+Stage W2（`IContextCurator` 契约与模型供给参考实现，进入实现前须依设计 §13
+新建里程碑文件并冻结增量 merge 语义；模型候选经供应链复核通道）；DEC-032
+Stage E（miracle 真机评估）保持 Blocked 等 `MNT-202609-27` 证据通道。
+
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段
 文档。`Planned` 仅表示范围和验收方式已明确，不表示前置已满足或实现已开始。M3 已于 2026-09-02
 完成跨平台 TLS、upload fixture 与 MiniMax-M3 Responses 分能力互操作验收；支持声明严格限于兼容性
@@ -489,7 +504,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md) | 学习闭环运行时语义（阶段 F） | Accepted | M13 |
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
 | [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Stage C Layer 2 重排由 [M18](m18-context-intelligence-stage-c.md) 交付，Stage D Layer 3 固化由 [M19](m19-context-intelligence-stage-d.md) 承载，Layer 4 未开始） | M16（Stage A）；M17（Stage B）；M18（Stage C）；M19（Stage D）；Stage E–F 逐阶段另行立项 |
-| [DEC-035](../decisions/DEC-035-context-curator-working-context.md) | Context Curator 与 Working Context（Issue #48；`WorkingContextSnapshot` 状态投影 + `IContextCurator` 方向，Stage W1–W5） | Accepted（方向；Stage W1 由 [M20](m20-working-context-stage-w1.md) 交付，W2–W5 逐阶段另行立项） | M20（Stage W1）；W2–W5 逐阶段另行立项 |
+| [DEC-035](../decisions/DEC-035-context-curator-working-context.md) | Context Curator 与 Working Context（Issue #48；`WorkingContextSnapshot` 状态投影 + `IContextCurator` 方向，Stage W1–W5） | Accepted（方向；Stage W1 由 [M20](m20-working-context-stage-w1.md) 交付，W2–W5 逐阶段另行立项） | M20（Stage W1，已完成）；W2–W5 逐阶段另行立项 |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 

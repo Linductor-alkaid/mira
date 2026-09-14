@@ -1,6 +1,8 @@
 # M20：Context Curator Stage W1——WorkingContextSnapshot 确定性契约
 
-> 状态：In Progress（2026-09-14 立项并进入实现）
+> 状态：Completed（2026-09-14：PR #49 合入 `48f4781`，两轮 CI——第二轮
+> 首轮全绿——head 双 pipeline 24/24 全绿；`IContextCurator` 模型供给与
+> AgentLoop 集成为显式非目标，归 Stage W2 与供应链复核通道）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 第 4 条 Stage W1）
@@ -155,8 +157,8 @@ merge 整体拒绝、0 提交）。
   目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check` 通过。
 - [x] 文档同步完成（§5 `M20-07` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
-  记录并关闭本里程碑。
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+  记录并关闭本里程碑（PR #49 两轮：第二轮 head 双 pipeline 24/24）。
 
 ## 8. 验证记录
 
@@ -194,3 +196,27 @@ merge 整体拒绝、0 提交）。
   自动触发、Memory promotion、subagent fork/merge（W2–W5）与 Stage E 真机
   评估（`MNT-202609-27` 通道）为显式非目标；Windows/Android 编译级/Release/
   quality 由 PR CI 回填后本里程碑方可关闭（`M20-07`）。
+
+2026-09-14：PR CI（[#49](https://github.com/Linductor-alkaid/mira/pull/49)）
+一轮修复后复验。
+
+- 第一轮：CI quality（clang-tidy 18）报库源
+  `context_memory_supervisor.cpp` 的 `performance-move-const-arg`——lambda
+  init-capture 对平凡可拷贝的 `WorkingContextMergeOptions` 使用 `std::move`
+  无效果（M19 同型违例；本机 tidy 预检只覆盖了新增源文件，漏了被修改的
+  supervisor 编译单元）。修复为按值捕获并保留非平凡 checkpoint 的移动；
+  修复后本机对两个被修改编译单元复验 tidy 零违例、debug ctest m20 全绿。
+- 第二轮：CI 全绿。PR
+  [#49](https://github.com/Linductor-alkaid/mira/pull/49)（head `bf4e100`，
+  合并提交 `48f4781`）push pipeline run
+  [`34848824021`](https://github.com/Linductor-alkaid/mira/actions/runs/34848824021)
+  与 pull_request pipeline run
+  [`34848828495`](https://github.com/Linductor-alkaid/mira/actions/runs/34848828495)
+  各 12 项全部通过：Linux GCC/Clang（Debug/Release，两 m20 目标入 Linux 测试
+  矩阵）、Windows MSVC（Debug/Release）、Android arm64-v8a 与 x86_64（NDK
+  编译级）、ASAN/UBSAN/TSAN、quality（clang-tidy 18 + clang-format +
+  docs/sbom/platform-boundary 检查）。§7 退出条件逐项复核后关闭本里程碑。
+  遗留（显式非目标，不阻塞关闭）：`IContextCurator` 契约与模型供给参考实现、
+  previous-snapshot 增量 merge（Stage W2，供应链复核通道）、Supervisor 自动
+  触发与 coalescing（W3）、Memory promotion（W4）、subagent fork/merge（W5）、
+  DEC-032 Stage E 真机评估（`MNT-202609-27` 证据通道）。
