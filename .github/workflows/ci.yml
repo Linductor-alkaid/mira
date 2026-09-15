@@ -72,15 +72,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: android-actions/setup-android@v3
+      # android-actions/setup-android@v3 removed: its internal sdkmanager
+      # update started failing repo-wide ("Failed to find package 'tools'",
+      # Google dropped the obsolete package from the manifest). Hosted
+      # ubuntu-24.04 runners already ship the SDK; resolve its sdkmanager
+      # explicitly and install what this job needs.
       - name: Install Android build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build
       - name: Install Android NDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-24" "ndk;${ANDROID_NDK_VERSION}"
-          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          sdkmanager_bin="$(command -v sdkmanager || true)"
+          if [ -z "${sdkmanager_bin}" ]; then
+            sdkmanager_bin="$(find "${android_sdk_root}/cmdline-tools" -type f -name sdkmanager -path '*/bin/*' | sort | tail -n 1)"
+          fi
+          yes | "${sdkmanager_bin}" --licenses >/dev/null || true
+          "${sdkmanager_bin}" "platforms;android-24" "ndk;${ANDROID_NDK_VERSION}"
           echo "ANDROID_NDK_HOME=${android_sdk_root}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
       - name: Configure Android ${{ matrix.preset }}
         run: cmake --preset ${{ matrix.preset }}
