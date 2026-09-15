@@ -2,7 +2,14 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-14（DEC-035 Stage W1 由 [M20](m20-working-context-stage-w1.md)
+> 更新日期：2026-09-15（[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)/
+> [#56](https://github.com/Linductor-alkaid/mira/issues/56) 的架构缺口评审冻结为四份
+> 方向决策：[DEC-038](../decisions/DEC-038-unified-behavior-trace.md)（统一 Behavior
+> Trace）、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md)（MCP 工具模组
+> 准入，部分修订 DEC-009）、[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)
+> （Tool 稳定引用与 Skill 层级）、[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
+> （会话 World State 投影）；全部只冻结方向与边界，实现未开始，见 §4.1 方向登记。
+> 此前 2026-09-14：DEC-035 Stage W1 由 [M20](m20-working-context-stage-w1.md)
 > 承载并本地交付：`WorkingContextSnapshot` 确定性契约、checkpoint → snapshot
 > 投影、五元组提交与 store、Layer 0 候选转换、supervisor Deferrable 路由；
 > working-context 评估 W1-G1–G6 首轮全绿（投影保真、身份/水位绑定、提交纪律、
@@ -183,6 +190,24 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    `34863847977` / pull_request run `34863881245`；#52：push run `34863847436` /
    pull_request run `34863920581`），master 合并提交 run `34867064691` 与
    `34867146055` 均 success。
+8. 方向登记（2026-09-15，实现未开始）：[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)
+   （多模块扩张暴露的中间语义层缺口）与 [Issue #56](https://github.com/Linductor-alkaid/mira/issues/56)
+   （Tool/MCP 到 Workflow 的统一可编辑行为模型）经现状评审冻结为四份方向决策：
+   [DEC-038](../decisions/DEC-038-unified-behavior-trace.md)（统一 Behavior Trace：
+   L0 事件/L1 语义行为/L2 narrative 三层投影，承接 DEC-026 §4 的轨迹抽取非目标，
+   服务 #56 轨迹编译、Context 压缩与失败分析）；[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md)
+   （MCP 工具模组准入：MCP Tool 以 `ToolModule` 身份在部署/初始化时注册，部分修订
+   DEC-009 备选方案第 5 条，运行中热插拔否决不变，实现前置 M7 重定义）；
+   [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)（Tool 稳定逻辑
+   引用、Workflow 兼容状态投影 `Runnable/Degraded/Invalid`、Skill=暴露为 Tool 的
+   Workflow）；[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
+   （会话 World State 投影：从事件确定性重建的当前环境认知，Context/Recovery/
+   导航共享消费）。评审同时确认：Authority（DEC-004/DEC-021 §4）与 Capability
+   协商（DEC-009）的既有设计已覆盖两 issue 的相应主张，不新建第二套机制；
+   Execution Router 不作为独立控制平面（通道选择由双平面切换 + Tool 通道承担）。
+   四份决策只冻结方向与边界：L1/L2 schema、引用语法、World State 更新算子等
+   契约随首阶段里程碑冻结，里程碑文件在进入 `Planned` 前创建，不预分配编号；
+   DEC-039/040 的实现前置是 M7 重定义（`MNT-202609-30`）。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
@@ -607,6 +632,12 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-035](../decisions/DEC-035-context-curator-working-context.md) | Context Curator 与 Working Context（Issue #48；`WorkingContextSnapshot` 状态投影 + `IContextCurator` 方向，Stage W1–W5） | Accepted（方向；Stage W1 由 [M20](m20-working-context-stage-w1.md) 交付，W2–W5 逐阶段另行立项） | M20（Stage W1，已完成）；W2–W5 逐阶段另行立项 |
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
+| [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) | 语义固化与 Working Context 的模型供给口径（可用源模型，不要求专用小模型；部分修订 DEC-032/DEC-035） | Accepted | M17–M20（历史证据保留，不追溯改写） |
+| [DEC-037](../decisions/DEC-037-temporal-policy.md) | Temporal Policy——高频条件策略的经验固化方向（Issue #50；统一 Policy 抽象，Stage T1–T6） | Accepted（方向；实现未开始；T2/T3/T6 受 DEC-011 门禁） | Stage T1 逐阶段另行立项 |
+| [DEC-038](../decisions/DEC-038-unified-behavior-trace.md) | 统一 Behavior Trace——执行轨迹的三层语义投影（Issue #55/#56；L0 事件/L1 语义行为/L2 narrative，承接 DEC-026 §4 轨迹抽取非目标） | Accepted（方向；实现未开始） | 首阶段另行立项 |
+| [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义（`MNT-202609-30`，暂定） |
+| [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；实现未开始） | 首阶段另行立项 |
+| [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
