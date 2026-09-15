@@ -207,7 +207,13 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    Execution Router 不作为独立控制平面（通道选择由双平面切换 + Tool 通道承担）。
    四份决策只冻结方向与边界：L1/L2 schema、引用语法、World State 更新算子等
    契约随首阶段里程碑冻结，里程碑文件在进入 `Planned` 前创建，不预分配编号；
-   DEC-039/040 的实现前置是 M7 重定义（`MNT-202609-30`）。
+   DEC-039/040 的实现前置是 M7 重定义（`MNT-202609-30`）。本轮文档经
+   [PR #57](https://github.com/Linductor-alkaid/mira/pull/57)（head `0347c78`，
+   merge `636097d`）合并：PR CI 双 pipeline 各 12 项全绿（push run
+   `34976647137` / pull_request run `34976681350`），master 合并提交 run
+   `34979069488` success；合并前独立核验 336 个仓库内链接 0 断链、
+   `docs-check`（116 文件 / 1547 相对链接）/`format-check`/`platform-boundary-check`/
+   `sbom-check` 四项目标全绿。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
