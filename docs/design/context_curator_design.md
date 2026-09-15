@@ -232,7 +232,12 @@ W1 的 merge 本身是纯函数，Deferrable 分类依据是：快照链刷新�
 统一路由使 W2 替换实现时不改变 shutdown 语义。
 
 自动触发（token watermark、event count、task boundary、coalescing、forced
-flush）归 W3，不在 W1 范围。
+flush）归 W3，不在 W1 范围。（2026-09-15 实现注记：W3 触发语义在
+[M22 §4](../plans/m22-working-context-stage-w3.md) 冻结——"token watermark"
+细化为**会话对话序列水位距离**，请求体量预算留在 `ContextCurationOptions`
+既有上界，不引入 tokenizer 依赖；event count 轴为宿主上报的执行事件增量，
+与对话序列正交；频率预算由阈值 + coalescing 承担。触发为宿主上报信号的
+确定性策略，全部工作仍经本节 Deferrable 路由，无隐藏后台循环。）
 
 ## 9. 故障与降级
 
@@ -293,7 +298,7 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 | --- | --- | --- |
 | W1 | `WorkingContextSnapshot` 确定性契约（store、水位、digest、epoch、provenance、Layer 0 转换、恢复）——无模型，**已交付**（[M20](../plans/m20-working-context-stage-w1.md)，2026-09-14，基线见[working-context v1](../benchmarks/context-intelligence-working-context-v1.md)：W1-G1–G6 全绿、恢复 12/12 幂等重建、跨进程报告字节级一致） | M19 关闭（已满足）；设计/决策冻结 |
 | W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入）——**已交付**（[M21](../plans/m21-context-curator-stage-w2.md)，2026-09-15，基线见[curation v1](../benchmarks/context-intelligence-working-context-curation-v1.md)：W2-G1–G6 全绿、脚本化确定性供给方口径） | W1 关闭（已满足）；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项）（已满足） |
-| W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退 | W2 关闭；快照链在长会话基线上可复现 |
+| W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退——由 [M22](../plans/m22-working-context-stage-w3.md) 承载（2026-09-15 立项，触发策略随其 §4 跑前冻结） | W2 关闭（已满足）；快照链在长会话基线上可复现（已满足，[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)） |
 | W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律 | W2 关闭；Working Context 与长期 Memory 边界测试冻结 |
 | W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy | W4 关闭；多 Agent 工作流场景冻结 |
 

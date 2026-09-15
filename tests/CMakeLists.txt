@@ -571,3 +571,27 @@ endfunction()
 
 mira_add_m21_test(mira_m21_context_curator_test m21/m21_context_curator_test.cpp)
 mira_add_m21_test(mira_m21_curator_eval m21/m21_curator_eval.cpp)
+
+# M22 (DEC-035 Stage W3): the supervisor-driven automatic Working Context
+# refresh — trigger policy (watermark / event-count axes), per-session-chain
+# coalescing, the task-boundary forced flush and the failure fallback, all
+# routed through the existing supervisor Deferrable curation route. The eval
+# harness runs the frozen auto-trigger dataset with gates W3-G1..G6 and exits
+# non-zero on failure.
+function(mira_add_m22_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m22" TIMEOUT 120)
+endfunction()
+
+mira_add_m22_test(mira_m22_auto_trigger_test m22/m22_auto_trigger_test.cpp)
+mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)

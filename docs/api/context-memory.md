@@ -243,6 +243,45 @@ minor 升级到 1.1——新增 `active_tasks` / `verified_facts` / `failed_atte
   （W2-G1–G6 门禁；脚本化确定性供给方口径，语义质量与 token 收益声明归真实
   模型轮与 Stage E，RULE-10）。
 
+## context_working_context_auto.hpp：Working Context 自动触发（M22，DEC-035 Stage W3）
+
+Supervisor 驱动的快照链自动维护（issue #48 方向的 Stage W3）：宿主上报信号，
+协调器按冻结策略决定「现在刷新 / 等待 / 吸收进在途刷新」，工作仍全部经
+`schedule_working_context_curate` 既有 Deferrable 路由——无隐藏后台循环，
+每会话链至多一个在途 policy 刷新：
+
+- `evaluate_working_context_trigger(policy, last_attempt, events, current)`：
+  纯策略函数——watermark 轴（输入 checkpoint 水位与上次尝试的距离 ≥
+  `watermark_interval`，设计 §8 的"token watermark"按序列水位实现，请求体量
+  预算留在 `ContextCurationOptions`）优先，其次 event count 轴（宿主上报的
+  执行事件增量 ≥ `event_count_interval`）。
+- `WorkingContextAutoCurator::on_signal(session, input)`：落账就绪在途 →
+  在途则吸收（coalescing，不排队副本）→ 评估策略；燃点还需 checkpoint
+  未落库（`through_event_sequence > settled_watermark`，同水位重 curate
+  要么 NoOp 要么冲突，均不制造）。checkpoint 空窗期距离与事件增量继续
+  累计，新 checkpoint 一到即追燃。返回 `shared_future`，调用方与协调器各持
+  一份（协调器副本用于后续 drain 落账）。
+- `flush(session, input)`：task boundary 屏障——有界排干在途（预算 = curation
+  deadline），对未落库 checkpoint 无视阈值强制燃；已覆盖边界立即以
+  `IdempotentNoOp`（reason `auto-refresh-current`）resolve，零 curator 调用。
+  宿主须先等待其 future 再翻转 session/task terminal；终态后迟到结果按
+  提交纪律丢弃，不重激活。
+- 失败回退（设计 §9）：curator 失败 future 以错误 resolve、store 不动、阈值
+  已在燃点重臂（无紧重试）；下次阈值越过重试，成功后 `consecutive_failures`
+  归零。不做确定性投影自动回退（同水位混源必然冲突且会静默丢失五个 Curator
+  section）；宿主如需 W1 兜底可显式走 `schedule_working_context_commit`。
+- 拒绝路径：信号会话与 checkpoint 会话不一致 → `InvalidArgument`；超过
+  `max_tracked_sessions` → `ResourceExhausted`（均为已 resolve 的错误
+  future，必须消费）。构造期校验 policy 与 curation options（失败抛
+  `std::invalid_argument`，同 Supervisor 约定）。
+- 观测：`session_view()`（in_flight / last_attempt / settled / 事件累计 /
+  失败连击）与 `stats()`（信号、吸收、燃点分列、forced、NoOp、disposition、
+  错误计数）；`drain()` 供宿主显式落账；析构执行总预算 2×deadline 的有界
+  drain。
+- 评估证据：
+  [auto-trigger 评估 v1](../benchmarks/context-intelligence-working-context-auto-trigger-v1.md)
+  （W3-G1–G6 门禁；脚本化确定性供给方口径，RULE-10）。
+
 ## stateful_replay.hpp：AnalysisReplay
 
 只读分析回放：`AnalysisReplay(events, checkpoints, memory, artifacts).inspect(task,
