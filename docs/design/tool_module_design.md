@@ -438,7 +438,10 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 - 模组间依赖与组合（module A 扩展 module B）首期不做，仅 `conflicts_with`。
 - `wire_name` 跨模组命名规范（前缀约定 vs 全局命名机构）留待 TM2 细化。
 - `HostProvided` attestation 为暂定默认值（负责人：Mira Maintainers，最迟 M7 冻结）。
-- 远端模组分发与 MCP 式动态发现明确不在 v1；如引入需新 DEC。
+- 远端模组分发与 MCP 式动态发现明确不在 v1；如引入需新 DEC。（2026-09-15 注记：
+  「部署与初始化时注册的 MCP Tool 来源」方向已由
+  [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) 冻结，实现前置为
+  M7 重定义；运行中动态发现与热插拔的否决不变，v1 范围不变。）
 
 ## 18. 关联文档
 
