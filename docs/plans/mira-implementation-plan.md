@@ -110,7 +110,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M19](m19-context-intelligence-stage-d.md) | Context Intelligence Stage D——Layer 3 语义固化（[DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md)：`ISemanticConsolidator` + `ConversationCheckpoint`、`IModelProvider` 供给参考固化器、provenance fail-closed、五元组提交与终态幂等、冲突优先级落地；无真实模型） | M16/M17/M18；DEC-032 §5.4/§6/§12 | Stage E 真机评估的方法学锚点（非发布物） | Completed |
 | [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | Completed |
 | [M21](m21-context-curator-stage-w2.md) | Context Curator Stage W2——`IContextCurator` 契约与模型供给参考实现（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：快照 schema 1.1 加法扩展（五 Curator section + `generated_by`）、previous+checkpoint+recent events 增量 curation、provenance 绑定与退化防护、`ProviderContextCurator` 经 `IModelProvider` 供给（DEC-036 口径）、Supervisor Deferrable 路由） | M20；[Context Curator 设计](../design/context_curator_design.md) §4.2/§6/§13 与 M21 §4 冻结 | Stage W3 自动触发的输入形态锚点（非发布物） | Completed |
-| [M22](m22-working-context-stage-w3.md) | Context Curator Stage W3——Supervisor 自动触发（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：`WorkingContextTriggerPolicy` 双轴触发策略（序列水位 + 执行事件增量）、`WorkingContextAutoCurator` 每会话链 coalescing、task boundary forced flush、失败回退；全部经既有 Deferrable 路由，无隐藏后台循环） | M21；快照链长会话基线可复现（[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)）；[Context Curator 设计](../design/context_curator_design.md) §8/§13 与 M22 §4 冻结 | Stage W4 Memory promotion 与 Stage E 评估矩阵的输入形态锚点（非发布物） | In Progress |
+| [M22](m22-working-context-stage-w3.md) | Context Curator Stage W3——Supervisor 自动触发（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：`WorkingContextTriggerPolicy` 双轴触发策略（序列水位 + 执行事件增量）、`WorkingContextAutoCurator` 每会话链 coalescing、task boundary forced flush、失败回退；全部经既有 Deferrable 路由，无隐藏后台循环） | M21；快照链长会话基线可复现（[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)）；[Context Curator 设计](../design/context_curator_design.md) §8/§13 与 M22 §4 冻结 | Stage W4 Memory promotion 与 Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -526,6 +526,41 @@ Stage W2 关闭后，DEC-035 下一阶段为 Stage W3（Supervisor 自动触发�
 watermark / event count / task boundary、coalescing、forced flush，进入实现前
 新建里程碑文件并冻结触发策略；门禁为 W2 关闭与快照链在长会话基线上可复现）；
 DEC-032 Stage E（miracle 真机评估）保持 Blocked 等 `MNT-202609-27` 证据通道，
+DEC-037 Stage T1 可按常规授权另行立项。
+
+2026-09-15，同一授权模式下创建 [M22](m22-working-context-stage-w3.md) 承载
+DEC-035 Stage W3——Supervisor 自动触发（两项进入门禁复核通过：W2 由 M21
+关闭；快照链长会话基线可复现由 curation 评估 v1 恢复 60/60 字节一致取证）。
+交付：`include/mira/context_working_context_auto.hpp` +
+`src/context/context_working_context_auto.cpp`——`WorkingContextTriggerPolicy` /
+`evaluate_working_context_trigger` 双轴纯策略（序列水位距离优先、宿主上报
+执行事件增量其次；设计 §8 "token watermark" 细化为序列水位，体量预算留在
+M21 options）、`WorkingContextAutoCurator`（每会话链 coalescing、unsettled
+闸门杜绝同水位重 curate、task boundary forced flush 有界排干 +
+`auto-refresh-current` 短路、失败回退燃点重臂无紧重试、previous 取 store
+latest 且 epoch 新链隔离、共享 future 双副本、析构 2×deadline 有界 drain）；
+全部 curation 经既有 `schedule_working_context_curate` Deferrable 路由，无
+隐藏后台循环。测试 `tests/m22/`（契约 16 用例 + auto-trigger eval harness，
+label `integration;m22`；测试的编写、运行与 sanitizer 取证由
+Independent-Verification-Agent 独立完成并复验，期间发现并修复燃点
+`shared_future` 二次 `share()` 空句柄缺陷）。auto-trigger 评估 harness
+（8 会话 × 40 信号冻结数据集，digest `6f2ab2e5…1535` 锚定）首轮 W3-G1–G6
+全绿：640 次信号判定、206 次燃点与纯函数预测零失配（watermark 72 /
+event count 31）、coalescing 吸收 24/24 零重复调度、forced 16/16 提交、
+五类失败 40/40 正确回退、重放 103/103 快照字节一致；登记于
+[auto-trigger 评估 v1](../benchmarks/context-intelligence-working-context-auto-trigger-v1.md)。
+本地门禁：debug 全量 ctest **82/82**（原 80 + 本里程碑 2 目标）、
+ASAN/UBSAN/TSAN m22 两目标零报告、format/docs/platform-boundary/sbom 四
+检查通过、clang-tidy 18.1.8 预检被改库源零违例、本机 NDK r26.3 两 ABI
+交叉编译预演通过。PR [#54](https://github.com/Linductor-alkaid/mira/pull/54)
+首轮 CI 中 android 四任务因 `android-actions/setup-android@v3` 在 runner
+镜像上持续损坏（"Failed to find package 'tools'"）失败，`62b7a04` 移除该
+action 改用 runner 预装 sdkmanager 后，两 pipeline 各 12 项全绿
+（push [`34932243071`](https://github.com/Linductor-alkaid/mira/actions/runs/34932243071)
+/ pull_request [`34932244666`](https://github.com/Linductor-alkaid/mira/actions/runs/34932244666)），
+合入 `8630f19` 并关闭 M22。DEC-035 下一阶段为 Stage W4（Memory Promotion，
+经 `MemoryConsolidator` 既有纪律，进入实现前新建里程碑文件并冻结边界
+测试）；DEC-032 Stage E 保持 Blocked 等 `MNT-202609-27` 证据通道，
 DEC-037 Stage T1 可按常规授权另行立项。
 
 M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、退出条件和验证记录已拆入各自阶段

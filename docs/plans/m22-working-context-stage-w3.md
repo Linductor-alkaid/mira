@@ -1,7 +1,8 @@
 # M22：Working Context Stage W3——Supervisor 自动触发（watermark / event count / task boundary、coalescing、forced flush、失败回退）
 
-> 状态：In Progress（2026-09-15 立项；维护者指示「依设计与计划推进下一步开发」，
-> 与 M8–M21 同一授权模式）
+> 状态：Completed（2026-09-15：PR #54 合入 `8630f19`，CI 双 pipeline
+> 24/24 全绿；真实模型接入与 issue #48 对照指标为显式非目标，归真实模型轮与
+> Stage E 证据通道；Memory promotion 归 Stage W4）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 第 4 条
@@ -233,8 +234,8 @@ store 逐字节不变、无紧重试、下次越过重试成功并重置）；pr
   `../benchmarks/context-intelligence-working-context-auto-trigger-v1.md`。
 - [x] `M22-05` 文档同步（总计划索引与注记、Context Curator 设计 §8/§13 实现
   注记、README 能力表、API 手册、关联决策链接）与实现同批变更。
-- [ ] `M22-06` 本地全门禁与 PR CI（Linux/Windows/Android/sanitizers/quality）
-  取证回填。（本地部分已完成，见 §8；PR CI 待回填）
+- [x] `M22-06` 本地全门禁与 PR CI（Linux/Windows/Android/sanitizers/quality）
+  取证回填。
 
 ## 6. 风险与阻塞
 
@@ -269,7 +270,7 @@ store 逐字节不变、无紧重试、下次越过重试成功并重置）；pr
   `sbom-check` 通过、clang-tidy 预检覆盖全部被修改库源编译单元、本机 NDK
   两 ABI 交叉编译预演通过。
 - [x] 文档同步完成（§5 `M22-05` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
+- [x] PR CI（Linux/Windows/Android 编译级/sanitizers/quality）全绿后回填验证
   记录并关闭本里程碑。
 
 ## 8. 验证记录
@@ -333,3 +334,29 @@ Independent-Verification-Agent 独立完成并复验）。
   协调器多会话且多闸门同时阻塞时，Executor 有限 worker 使后续被接纳任务
   推迟执行——预期排队行为，宿主不应长时间阻塞 `curate`。Windows/Android
   编译级/Release/quality 由 PR CI 回填后本里程碑方可关闭（`M22-06`）。
+
+2026-09-15：PR CI（[#54](https://github.com/Linductor-alkaid/mira/pull/54)）
+全绿并关闭本里程碑。
+
+- 首轮 run（head `1d48e3e`，push
+  [`34930374544`](https://github.com/Linductor-alkaid/mira/actions/runs/34930374544)
+  / pull_request
+  [`34930393935`](https://github.com/Linductor-alkaid/mira/actions/runs/34930393935)）：
+  Linux GCC/Clang（Debug/Release，两 m22 目标入 Linux 测试矩阵）、Windows
+  MSVC（Debug/Release）、ASAN/UBSAN/TSAN、quality 共 20/20 通过；android 四
+  任务在 `android-actions/setup-android@v3` 内部失败（其 sdkmanager 更新以
+  "Failed to find package 'tools'" 退出 1——Google 已从清单移除废弃包，属
+  runner 镜像侧持续损坏，与代码无关，本机 NDK r26.3 预演同日通过）。
+- 处置：commit `62b7a04` 移除该 action，改为显式解析 runner 预装 SDK 的
+  sdkmanager 并直接安装 `platforms;android-24` + 固定版本 NDK（与
+  `ANDROID_NDK_VERSION` 既有固定一致）。修复后 run（head `62b7a04`，push
+  [`34932243071`](https://github.com/Linductor-alkaid/mira/actions/runs/34932243071)
+  / pull_request
+  [`34932244666`](https://github.com/Linductor-alkaid/mira/actions/runs/34932244666)）
+  两 pipeline 各 12 项全部通过（android arm64-v8a/x86_64 编译级 +
+  installed-consumer 交叉链接 4/4）。PR #54 合入 `8630f19`，§7 退出条件逐项
+  复核后关闭本里程碑。
+- 遗留（显式非目标，不阻塞关闭）：真实模型接入与 issue #48 对照指标（归
+  真实模型轮与 DEC-032 Stage E，`MNT-202609-27` 证据通道）；Memory
+  promotion（Stage W4）、subagent fork/merge（Stage W5）；运行时 Agent Loop
+  接线（宿主集成示例）。
