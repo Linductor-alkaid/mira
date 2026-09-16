@@ -204,14 +204,14 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   三轮 36/36 全绿，[M15](m15-eval-harness-and-baseline.md) 退出条件逐项复核后关闭；
   本项保持未勾选的剩余件：live canary 运行与单独报告（凭据补跑条件已登记）、真实
   平台组（归 27）、恢复率/成本分布结论（需 canary 与扩样）。
-- [ ] `MNT-202609-30`（Planned）产出 M7 重定义提案与任务迁移映射。依赖：27 的需求报告、
+- [x] `MNT-202609-30`（Completed）产出 M7 重定义提案与任务迁移映射。依赖：27 的需求报告、
   28 的 profile。验收：逐项映射 `M7-01`–`M7-28` 到保留/缩减/推迟的建议及证据，明确
   release profile、ToolModule/OOP 是否必要、平台等级与退出条件；提交专项 DEC 后再
   修改 M7 范围，原项在批准迁移前保持未勾选。
   [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)（视觉 grounding，
   Issue #25）已冻结目标契约并显式以本项为实现入口；其里程碑范围随本项提案一并裁决。
-  进度（2026-09-16）：提案经专项决策
-  [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 交付——M7 收敛为
+  交付（2026-09-16）：提案经专项决策
+  [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 批准——M7 收敛为
   [DEC-009](../decisions/DEC-009-tool-module-boundary.md) Tool 模组体系分阶段落地
   （TM0 契约与协商 → TM1 Registry 生命周期 → TM2 LLM 暴露投影，后续衔接
   [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与
@@ -221,8 +221,11 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   里程碑仍随证据另行立项。[M7 文件](m7-tools-evaluation-platform-v1.md) 已按映射
   重写并转 `Planned`，TM0 工作项（`M7-TM0-01`–`05`）与门禁（`M7-TM0-G1`–`G6`）
   跑前冻结。依赖调整：27 的需求报告不再是本项前置（提案改以 DEC-039/040 的实现
-  前置为驱动），27 对真实平台项的证据供给角色不变。本项保持未勾选，待 PR CI 与
-  回填证据闭环后关闭。
+  前置为驱动），27 对真实平台项的证据供给角色不变。同日 TM0 随
+  [PR #58](https://github.com/Linductor-alkaid/mira/pull/58)（merge `f2d2077`，
+  双 pipeline 各 12 项首轮全绿，master 合并提交 run `35127320798` success）交付
+  关闭（证据见 [M7 验证记录](m7-tools-evaluation-platform-v1.md)），本项按验收
+  关闭。
 
 ### 3.4 P2：由消费者与失败语料驱动的扩展
 

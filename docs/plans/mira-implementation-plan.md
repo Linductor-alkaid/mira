@@ -236,6 +236,21 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    不被本重定义解锁。M7 状态 `Blocked` -> `Planned`；TM0 工作项
    （`M7-TM0-01`–`05`）与门禁（`M7-TM0-G1`–`G6`）在
    [M7 文件](m7-tools-evaluation-platform-v1.md) 跑前冻结并进入实施。
+   同日 TM0 交付关闭：`include/mira/tool_module.hpp` + `src/tool/tool_module.cpp`
+   （CapabilityCatalog 13 条受治理词表、`env.*` 派生纯函数、
+   `mira.tool_module.manifest.v1` fail-closed 校验、`negotiate_modules` 确定性
+   协商）；`tests/m7/` 契约测试与 minimal-consumer 闭包由 Independent-
+   Verification-Agent 独立验证（本地 84/84 + 三 sanitizer 零报告 + golden 跨
+   进程字节一致 + NDK 两 ABI 预演；实现期修复 schema 拒绝 domain 归一与两处
+   clang-tidy move 违例）。PR
+   [#58](https://github.com/Linductor-alkaid/mira/pull/58)（head `8e2dd62`，
+   merge `f2d2077`）双 pipeline 各 12 项首轮全绿（push run
+   [`35125359147`](https://github.com/Linductor-alkaid/mira/actions/runs/35125359147)
+   / pull_request run
+   [`35125364698`](https://github.com/Linductor-alkaid/mira/actions/runs/35125364698)），
+   master 合并提交 run
+   [`35127320798`](https://github.com/Linductor-alkaid/mira/actions/runs/35127320798)
+   success；`M7-TM0-01`–`05` 与 `M7-TM0-G1`–`G6` 关闭，下一阶段为 TM1。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。

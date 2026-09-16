@@ -71,30 +71,33 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 
 ## 4. 工作项
 
-### 4.1 TM0：契约与协商（本轮实施）
+### 4.1 TM0：契约与协商（2026-09-16 交付关闭）
 
-- [ ] `M7-TM0-01` 冻结并实现 `CapabilityCatalog`：核心词表固定收录设计 §4.2 的
-  九个 `env.*` 能力与设计 §4.1 示例的 `host.*`/`tool.*` 基础设施能力，条目含
-  kind（Boolean/Counted）与单行说明；目录 digest 确定；目录外 capability 一律
-  fail closed。
-- [ ] `M7-TM0-02` 实现 `derive_environment_capabilities` 纯函数：设计 §4.2 映射
+- [x] `M7-TM0-01` 冻结并实现 `CapabilityCatalog`：核心词表固定收录设计 §4.2 的
+  九个 `env.*` 能力与设计 §4.1 示例的 `host.*`/`tool.*` 基础设施能力（共 13 条，
+  `env.perception.sources` 为 Counted），条目含 kind 与单行说明；目录 digest
+  确定；目录外 capability 一律 fail closed。
+- [x] `M7-TM0-02` 实现 `derive_environment_capabilities` 纯函数：设计 §4.2 映射
   表逐字段派生（`perception_sources >= 1` → `env.perception.sources`；质量字段
-  不进入目录）；同输入同输出。
-- [ ] `M7-TM0-03` 冻结并实现 ToolModule manifest 契约 `mira.tool_module.manifest.v1`
+  不进入目录）；同输入同输出，输出排序。
+- [x] `M7-TM0-03` 冻结并实现 ToolModule manifest 契约 `mira.tool_module.manifest.v1`
   与校验：schema_version、module_id 字符集与长度、SemanticVersion、origin
   （built_in/host_provided/out_of_process）、成员工具模组内唯一、参数/结果 schema
-  过 `gate_schema_subset` 同源子集校验、能力引用全部在目录内、聚合资源上限有界、
-  `min_mira_module_abi` 上限；canonical manifest digest；任何失败整组拒绝，
-  不产生部分状态。签名字段作为不透明字符串保留，验证归 TM1。
-- [ ] `M7-TM0-04` 实现 `negotiate_modules` 纯函数：Active snapshot ×
+  过 `gate_schema_subset` 同源子集校验（拒绝错误归一 `mira.tool_module` domain）、
+  能力引用全部在目录内、聚合资源上限有界、`min_mira_module_abi` 上限；canonical
+  manifest digest 与输入键序/空白无关；任何失败整组拒绝，不产生部分状态。签名
+  字段作为不透明字符串保留，验证归 TM1。
+- [x] `M7-TM0-04` 实现 `negotiate_modules` 纯函数：Active snapshot ×
   `EnvironmentCapabilities` × catalog → 逐模组 `Available`/`Unavailable`（附
-  missing 清单）/`Conflict`/`Revoked` 结论；缺失能力、未知能力、跨模组成员
-  wire 名冲突整组不可用（fail closed，不降级为部分成员可用）；输出按 module_id
-  排序确定；协商 digest 同输入同输出；不执行 I/O、不读时钟。ToolId 级全局唯一
+  missing 清单）/`Conflict`/`Revoked` 结论；缺失能力、未知能力（目录外词表即使
+  环境宣称也不可用）、跨模组成员 wire 名冲突、重复 module_id 输入整组不可用或
+  Conflict（fail closed，不降级为部分成员可用）；输出按 module_id 排序且与输入
+  顺序无关；协商 digest 同输入同输出；不执行 I/O、不读时钟。ToolId 级全局唯一
   随 TM2 身份分配落地，TM0 以成员 wire 名跨模组唯一为协商门禁。
-- [ ] `M7-TM0-05` fake 模组与 fail-closed 契约测试矩阵：覆盖 G1–G5 全部门禁与
-  设计 §16 的 manifest 校验矩阵、协商 golden、fail-closed 负向；跨进程协商
-  digest 一致。
+- [x] `M7-TM0-05` fake 模组与 fail-closed 契约测试矩阵：`tests/m7/
+  m7_tool_module_test.cpp` 覆盖 G1–G5 全部门禁与设计 §16 的 manifest 校验矩阵
+  （29 例负向）、协商 golden、fail-closed 负向；`--report` 跨进程协商 digest
+  逐字节一致。
 
 ### 4.2 TM1：Registry 生命周期（后续轮，实施前冻结细项）
 
@@ -124,22 +127,27 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   §验证方式：引用解析矩阵、兼容状态投影、`Invalid` 准入拒绝、Skill 生命周期、
   Procedure 索引投影）。
 
-## 5. TM0 门禁（2026-09-16 跑前冻结）
+## 5. TM0 门禁（2026-09-16 跑前冻结；同日交付取证）
 
-- [ ] `M7-TM0-G1` 目录与派生 golden：核心词表 digest 固定且与设计 §4.2 条目一
+- [x] `M7-TM0-G1` 目录与派生 golden：核心词表 digest 固定且与设计 §4.2 条目一
   一对应；`EnvironmentCapabilities` 布尔字段全组合 × `perception_sources`
-  多取值的派生结果与期望集一致；目录外 ID 查询 fail closed。
-- [ ] `M7-TM0-G2` manifest fail-closed 矩阵：缺字段、坏 `module_id`、坏版本、
+  多取值的派生结果与期望集一致（2^8 布尔组合 × {0,1,3} = 768 组合，与测试内
+  独立手写映射逐一比对）；目录外 ID 查询 fail closed。
+- [x] `M7-TM0-G2` manifest fail-closed 矩阵：缺字段、坏 `module_id`、坏版本、
   非法 origin、未知 capability、模组内重名、schema 超子集/超限、资源上限缺失
-  或越界、ABI 超限各有负向用例；全部整组拒绝且无部分状态。
-- [ ] `M7-TM0-G3` 协商 fail-closed：缺失能力 → `Unavailable` 附完整 missing
+  或越界、ABI 超限各有负向用例（29 例）；全部整组拒绝且无部分状态，拒绝错误
+  domain 统一为 `mira.tool_module`。
+- [x] `M7-TM0-G3` 协商 fail-closed：缺失能力 → `Unavailable` 附完整 missing
   清单；跨模组 wire 名冲突 → 双方 `Conflict`；revoked 输入 → `Revoked`；输出
-  按 module_id 排序且与输入构造顺序无关。
-- [ ] `M7-TM0-G4` 确定性：同输入同协商 digest；golden 协商报告 digest 跨进程
-  断言一致（无时钟、无随机、canonical JSON）。
-- [ ] `M7-TM0-G5` 有界性：模组数、成员数、能力数、清单字节数上限生效，越界
+  按 module_id 排序且与输入构造顺序无关（打乱输入结果与 digest 不变）。
+- [x] `M7-TM0-G4` 确定性：同输入同协商 digest；golden 协商报告 digest 跨进程
+  断言一致（`--report` 两次运行 cmp 逐字节一致，报告 md5
+  `0b25496af889d106e5ecbfcb9b874d45`；无时钟、无随机、canonical JSON）。
+- [x] `M7-TM0-G5` 有界性：模组数、成员数、能力数、清单字节数上限生效，越界
   明确拒绝（`RULE-08`）；空 Active 集与全不可用路径行为有定义。
-- [ ] `M7-TM0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含并链接。
+- [x] `M7-TM0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含并链接
+  （`examples/minimal_consumer.cpp` 追加 TM0 闭包段并注册
+  `mira_minimal_consumer_test` 进入 ctest；补齐该 consumer 此前未注册的缺口）。
 
 ## 6. Executor 路由与关闭
 
@@ -205,3 +213,33 @@ Tool module alpha（分阶段锚点）；原 `M7-01`–`M7-28` 按 DEC-042 §4 �
 （保留/缩减/推迟），推迟项保持 `MNT-202609-27` 证据门禁或待未来发布立项。状态
 `Blocked` → `Planned`；TM0 工作项（`M7-TM0-01`–`05`）与门禁（`M7-TM0-G1`–`G6`）
 跑前冻结，TM0 进入实施。
+
+2026-09-16：TM0 交付关闭。交付 `include/mira/tool_module.hpp` +
+`src/tool/tool_module.cpp`（入 `mira_core`）：`CapabilityCatalog` 13 条核心词表
+与目录 digest、`derive_environment_capabilities` 派生纯函数、
+`mira.tool_module.manifest.v1` fail-closed 解析（schema 子集同源校验、目录内
+能力引用、origin 信任字段、资源上限、ABI 上限、canonical digest）与
+`negotiate_modules` 确定性协商（Unavailable/Conflict fail-closed、排序无关、
+同输入同 digest、无 I/O 无时钟）。测试 `tests/m7/m7_tool_module_test.cpp`
+（label `contract`，门禁 `M7-TM0-G1`–`G6`；测试的编写、运行与 sanitizer 取证
+由 Independent-Verification-Agent 独立完成）与 `examples/minimal_consumer.cpp`
+TM0 闭包段（补注册 `mira_minimal_consumer_test`）。本地门禁：全量 ctest
+**84/84**、ASAN/UBSAN/TSAN m7 目标零报告（`setarch -R`）、format/docs/
+platform-boundary/sbom 四检查通过、clang-tidy 18.1.8 预检库源零违例、本机 NDK
+r26.3 两 ABI（arm64-v8a/x86_64）交叉编译 `mira_core`+`mira_workflow` 通过且
+`negotiate_modules` 符号在库。实现期修复两处（均经 IVA 发现/复验）：schema
+子集拒绝错误 domain 归一为 `mira.tool_module`；两处 clang-tidy
+`performance-move-const-arg`（平凡可拷贝 `SemanticVersion` 的 `std::move`）。
+附带修复：本文件一处预先存在的坏链（`DEC-040` 链接缺 `../decisions/` 前缀）；
+`mira_minimal_consumer` 此前从未注册 ctest 的缺口。
+PR [#58](https://github.com/Linductor-alkaid/mira/pull/58)（head `8e2dd62`，
+merge `f2d2077`）双 pipeline 各 12 项首轮全绿（push run
+[`35125359147`](https://github.com/Linductor-alkaid/mira/actions/runs/35125359147) /
+pull_request run
+[`35125364698`](https://github.com/Linductor-alkaid/mira/actions/runs/35125364698)），
+master 合并提交 run
+[`35127320798`](https://github.com/Linductor-alkaid/mira/actions/runs/35127320798)
+success。限制与未执行项：签名字段的密码学验证、Registry 状态机与暴露投影分别
+归 TM1/TM2（实施前在 §4.2/§4.3 冻结细项）；脚本化确定性口径非语义质量声明
+（`RULE-10`）；TSAN 仅覆盖纯计算路径（TM0 无并发）。TM0 关闭后下一阶段为
+TM1（Registry 生命周期）。
