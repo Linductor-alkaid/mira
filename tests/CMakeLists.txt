@@ -595,3 +595,12 @@ endfunction()
 
 mira_add_m22_test(mira_m22_auto_trigger_test m22/m22_auto_trigger_test.cpp)
 mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)
+
+# ---------------------------------------------------------------------------
+# M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability
+# catalog, fail-closed manifest parsing and deterministic negotiation. Pure
+# computation over caller-supplied data; gates M7-TM0-G1..G5 live in the test,
+# G6 in examples/minimal_consumer.cpp.
+# ---------------------------------------------------------------------------
+
+mira_add_test(mira_m7_tool_module_test m7/m7_tool_module_test.cpp contract)

@@ -210,6 +210,19 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   修改 M7 范围，原项在批准迁移前保持未勾选。
   [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)（视觉 grounding，
   Issue #25）已冻结目标契约并显式以本项为实现入口；其里程碑范围随本项提案一并裁决。
+  进度（2026-09-16）：提案经专项决策
+  [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 交付——M7 收敛为
+  [DEC-009](../decisions/DEC-009-tool-module-boundary.md) Tool 模组体系分阶段落地
+  （TM0 契约与协商 → TM1 Registry 生命周期 → TM2 LLM 暴露投影，后续衔接
+  [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与
+  [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/Skill），
+  `M7-01`–`M7-28` 迁移映射见 DEC-042 §4：真实平台（原 M7-18–22）与 v1.0 发布门禁
+  （原 M7-23–28）保持推迟，`MNT-202609-27` 证据门禁不变；DEC-033 不被解锁，其
+  里程碑仍随证据另行立项。[M7 文件](m7-tools-evaluation-platform-v1.md) 已按映射
+  重写并转 `Planned`，TM0 工作项（`M7-TM0-01`–`05`）与门禁（`M7-TM0-G1`–`G6`）
+  跑前冻结。依赖调整：27 的需求报告不再是本项前置（提案改以 DEC-039/040 的实现
+  前置为驱动），27 对真实平台项的证据供给角色不变。本项保持未勾选，待 PR CI 与
+  回填证据闭环后关闭。
 
 ### 3.4 P2：由消费者与失败语料驱动的扩展
 

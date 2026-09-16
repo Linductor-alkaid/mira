@@ -1,8 +1,10 @@
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/runtime_baseline.hpp>
+#include <mira/tool_module.hpp>
 #include <mira/version.hpp>
 
 #include <chrono>
+#include <vector>
 
 int main() {
     mira::adapters::simulator::SimulatorEnvironment environment{
@@ -38,5 +40,23 @@ int main() {
         return 5;
     }
     runtime.finish_shutdown();
-    return result.code == mira::BaselineResultCode::Applied ? 0 : 6;
+    const int baseline_status = result.code == mira::BaselineResultCode::Applied ? 0 : 6;
+    if (baseline_status != 0) {
+        return baseline_status;
+    }
+
+    // M7-TM0-G6 consumer closure: the new public tool module header must be
+    // includable and linkable from a minimal external consumer.
+    const mira::CapabilityCatalog &catalog = mira::CapabilityCatalog::core();
+    const mira::CapabilityDescriptor *capability = catalog.find("env.screen.capture");
+    if (capability == nullptr || capability->kind != mira::CapabilityKind::Boolean) {
+        return 7;
+    }
+    const std::vector<mira::ModuleSnapshot> active;
+    const mira::ModuleNegotiationResult negotiation =
+        mira::negotiate_modules(active, mira::EnvironmentCapabilities{}, catalog);
+    if (!negotiation.modules.empty()) {
+        return 7;
+    }
+    return 0;
 }

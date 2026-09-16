@@ -120,6 +120,7 @@ add_library(mira_core
     src/model/tool_executor.cpp
     src/model/conversation_log.cpp
     src/model/agent_loop.cpp
+    src/tool/tool_module.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 
@@ -390,6 +391,12 @@ add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
 target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
 mira_enable_warnings(mira_minimal_consumer)
 mira_enable_sanitizers(mira_minimal_consumer)
+# M7-TM0-G6: the minimal consumer exercises the tool module contract closure
+# (exit code 7 on failure) alongside its baseline smoke path.
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_minimal_consumer_test COMMAND mira_minimal_consumer)
+    set_tests_properties(mira_minimal_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
+endif()
 
 # Stateful agent beta example (M4-18): durable stores are in-tree targets.
 add_executable(mira_stateful_consumer examples/stateful_agent_consumer.cpp)

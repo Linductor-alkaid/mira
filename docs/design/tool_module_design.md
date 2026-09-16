@@ -418,6 +418,10 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 | TM4 | policy 绑定：ModelPackage `bindings.tool_modules`、越权 ToolIntent 门禁与测试 | M5 policy candidate / M6 |
 
 落地时在对应里程碑文件中立稳定编号工作项；本表不替代里程碑计划。
+2026-09-16：落地载体为 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
+重定义后的 [M7](../plans/m7-tools-evaluation-platform-v1.md)（TM0–TM2 进入常规交
+付节奏）；TM0 随 M7 首轮交付，TM3 的 Android HostProvided 模组与 TM4 的 policy
+绑定保持 DEC-011 证据门禁（DEC-042 不解锁）。
 
 ## 16. 测试策略
 

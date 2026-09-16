@@ -2,7 +2,15 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-15（[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)/
+> 更新日期：2026-09-16（`MNT-202609-30` 的 M7 重定义提案经
+> [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 批准：M7 收敛为
+> [DEC-009](../decisions/DEC-009-tool-module-boundary.md) Tool 模组体系分阶段
+> 落地（TM0 契约与协商 → TM1 Registry 生命周期 → TM2 LLM 暴露投影，后续衔接
+> [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与
+> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/
+> Skill），状态 `Blocked` -> `Planned`，原 `M7-01`–`M7-28` 按 DEC-042 迁移映射
+> 处置，TM0 工作项与门禁跑前冻结并进入实施，见 §4.1 第 9 条。）
+> 此前 2026-09-15（[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)/
 > [#56](https://github.com/Linductor-alkaid/mira/issues/56) 的架构缺口评审冻结为四份
 > 方向决策：[DEC-038](../decisions/DEC-038-unified-behavior-trace.md)（统一 Behavior
 > Trace）、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md)（MCP 工具模组
@@ -102,7 +110,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
-| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）、Tool 隔离、评估体系、生产加固和跨平台验证（范围与前置待重定义） | M4、M5、M6（待重定义） | v1.0（待重定义） | Blocked |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2；后续衔接 [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/Skill；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
@@ -214,6 +222,20 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    `34979069488` success；合并前独立核验 336 个仓库内链接 0 断链、
    `docs-check`（116 文件 / 1547 相对链接）/`format-check`/`platform-boundary-check`/
    `sbom-check` 四项目标全绿。
+
+9. M7 重定义落地入口（2026-09-16）：`MNT-202609-30` 的 M7 重定义提案经专项决策
+   [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 批准：M7 收敛为
+   [DEC-009](../decisions/DEC-009-tool-module-boundary.md) Tool 模组体系分阶段
+   落地（TM0 契约与协商 → TM1 Registry 生命周期 → TM2 LLM 暴露投影，后续衔接
+   [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与
+   [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/
+   Skill 的实现阶段），前置改为 M4 + DEC-042，建议发布点改为 Tool module alpha
+   （分阶段锚点，非发布物）；原 `M7-01`–`M7-28` 按 DEC-042 §4 迁移映射处置——
+   真实平台（原 M7-18–22）与 v1.0 发布门禁（原 M7-23–28）保持推迟，
+   `MNT-202609-27` 证据门禁不变，[DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md)
+   不被本重定义解锁。M7 状态 `Blocked` -> `Planned`；TM0 工作项
+   （`M7-TM0-01`–`05`）与门禁（`M7-TM0-G1`–`G6`）在
+   [M7 文件](m7-tools-evaluation-platform-v1.md) 跑前冻结并进入实施。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
@@ -636,14 +658,15 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-031](../decisions/DEC-031-agent-recovery-orchestration.md) | Agent Harness 恢复编排运行时语义（阶段 F 后续） | Accepted | M14 |
 | [DEC-032](../decisions/DEC-032-context-intelligence-layered-context.md) | Context Intelligence 分层上下文管理（Issue #39；Reduce/Retrieve/Rerank/Consolidate/Compress，Hot/Warm/Cold） | Accepted（方向；Stage A 基线由 [M16](m16-context-intelligence-stage-a.md) 交付，Stage B Layer 1 由 [M17](m17-context-intelligence-stage-b.md) 交付，Stage C Layer 2 重排由 [M18](m18-context-intelligence-stage-c.md) 交付，Stage D Layer 3 固化由 [M19](m19-context-intelligence-stage-d.md) 承载，Layer 4 未开始） | M16（Stage A）；M17（Stage B）；M18（Stage C）；M19（Stage D）；Stage E–F 逐阶段另行立项 |
 | [DEC-035](../decisions/DEC-035-context-curator-working-context.md) | Context Curator 与 Working Context（Issue #48；`WorkingContextSnapshot` 状态投影 + `IContextCurator` 方向，Stage W1–W5） | Accepted（方向；Stage W1 由 [M20](m20-working-context-stage-w1.md) 交付，W2–W5 逐阶段另行立项） | M20（Stage W1，已完成）；W2–W5 逐阶段另行立项 |
-| [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | M7 重定义（`MNT-202609-30`，暂定） |
+| [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | 保持 `MNT-202609-27` 证据门禁（DEC-042 不解锁；随证据另行立项） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 | [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) | 语义固化与 Working Context 的模型供给口径（可用源模型，不要求专用小模型；部分修订 DEC-032/DEC-035） | Accepted | M17–M20（历史证据保留，不追溯改写） |
 | [DEC-037](../decisions/DEC-037-temporal-policy.md) | Temporal Policy——高频条件策略的经验固化方向（Issue #50；统一 Policy 抽象，Stage T1–T6） | Accepted（方向；实现未开始；T2/T3/T6 受 DEC-011 门禁） | Stage T1 逐阶段另行立项 |
 | [DEC-038](../decisions/DEC-038-unified-behavior-trace.md) | 统一 Behavior Trace——执行轨迹的三层语义投影（Issue #55/#56；L0 事件/L1 语义行为/L2 narrative，承接 DEC-026 §4 轨迹抽取非目标） | Accepted（方向；实现未开始） | 首阶段另行立项 |
-| [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义（`MNT-202609-30`，暂定） |
-| [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；实现未开始） | 首阶段另行立项 |
+| [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义已由 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 完成；实现随 M7 的 MCP 阶段（TM0–TM2 之后）立项 |
+| [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；实现未开始） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |
 | [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；实现未开始） | 首阶段另行立项 |
+| [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
