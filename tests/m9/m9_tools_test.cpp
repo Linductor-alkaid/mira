@@ -68,19 +68,18 @@ int four_operations_round_trip_through_the_registry() {
     auto workflow = fixture.make_workflow();
 
     for (auto &registration : workflow->operation_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                     registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
     // patch_workflow stays schema-only until stage C.
     MIRA_CHECK(workflow->operation_tool_registrations().size() == 5);
 
     // A runnable library version: DryRunPassed with evidence (W-04).
     auto definition = base_definition("tool-channel");
-    definition.steps = {tool_step("counter", std::nullopt),
-                        tool_step("gate", std::nullopt)};
-    const auto digest = workflow->publish_workflow(
-        definition, "m9-test", "stage B tool channel", WorkflowValidationResult::DryRunPassed,
-        digest_string("m9-evidence"));
+    definition.steps = {tool_step("counter", std::nullopt), tool_step("gate", std::nullopt)};
+    const auto digest = workflow->publish_workflow(definition, "m9-test", "stage B tool channel",
+                                                   WorkflowValidationResult::DryRunPassed,
+                                                   digest_string("m9-evidence"));
     MIRA_CHECK(digest.has_value());
 
     const auto context = plain_loop_context();
@@ -90,7 +89,8 @@ int four_operations_round_trip_through_the_registry() {
     MIRA_CHECK(started.has_value());
     auto start_record = fixture.registry_->execute(started.value(), context);
     MIRA_CHECK(start_record.has_value() && !start_record.value().failed);
-    const auto run_id = WorkflowRunId::parse(*start_record.value().result.find("run_id")->as_string());
+    const auto run_id =
+        WorkflowRunId::parse(*start_record.value().result.find("run_id")->as_string());
     MIRA_CHECK(run_id.has_value());
     const std::string start_state = *start_record.value().result.find("state")->as_string();
     MIRA_CHECK(start_state == "running" || start_state == "created");
@@ -126,8 +126,8 @@ int library_gate_and_error_envelopes() {
     MIRA_CHECK(register_registration(*fixture.registry_, counter.registration()));
     auto workflow = fixture.make_workflow();
     for (auto &registration : workflow->operation_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                     registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
 
     auto definition = base_definition("gate-flow");
@@ -152,10 +152,10 @@ int library_gate_and_error_envelopes() {
 
     // Unknown digests and malformed arguments fail closed through the same
     // boundary.
-    const auto unknown = proposal_for(
-        *fixture.registry_, "run_workflow",
-        run_arguments(definition.workflow_id, digest_string("m9-evidence"),
-                      JsonValue{JsonValue::Object{}}));
+    const auto unknown =
+        proposal_for(*fixture.registry_, "run_workflow",
+                     run_arguments(definition.workflow_id, digest_string("m9-evidence"),
+                                   JsonValue{JsonValue::Object{}}));
     MIRA_CHECK(unknown.has_value());
     auto unknown_record = fixture.registry_->execute(unknown.value(), context);
     MIRA_CHECK(unknown_record.has_value() && unknown_record.value().failed);
@@ -173,15 +173,16 @@ int library_gate_and_error_envelopes() {
     // identical content would keep resolving to the earlier NotValidated
     // record (records are immutable; digests are content identities).
     definition.steps.push_back(tool_step("counter", std::nullopt));
-    const auto validated = workflow->publish_workflow(
-        definition, "m9-test", "dry run passed", WorkflowValidationResult::DryRunPassed,
-        digest_string("m9-evidence"));
+    const auto validated = workflow->publish_workflow(definition, "m9-test", "dry run passed",
+                                                      WorkflowValidationResult::DryRunPassed,
+                                                      digest_string("m9-evidence"));
     MIRA_CHECK(validated.has_value());
     const auto created = workflow->create_run(definition.workflow_id, validated.value(),
                                               JsonValue{JsonValue::Object{}}, std::nullopt);
     MIRA_CHECK(created.has_value());
-    const auto cancel = proposal_for(*fixture.registry_, "cancel_workflow",
-                                     control_arguments(definition.workflow_id, created.value().run_id));
+    const auto cancel =
+        proposal_for(*fixture.registry_, "cancel_workflow",
+                     control_arguments(definition.workflow_id, created.value().run_id));
     MIRA_CHECK(cancel.has_value());
     auto first = fixture.registry_->execute(cancel.value(), context);
     MIRA_CHECK(first.has_value() && !first.value().failed);
@@ -205,19 +206,17 @@ int model_initiated_run_workflow_end_to_end() {
     for (const auto &registration : registrations) {
         if (registration.spec.wire_name == "run_workflow") {
             run_spec = registration.spec;
-            MIRA_CHECK(
-                fixture.registry_->register_tool(registration.spec, registration.handler));
+            MIRA_CHECK(fixture.registry_->register_tool(registration.spec, registration.handler));
         }
     }
     MIRA_CHECK(!run_spec.wire_name.empty());
 
     // A runnable version the model can start.
     auto definition = base_definition("model-flow");
-    definition.steps = {tool_step("counter", std::nullopt),
-                        tool_step("counter", std::nullopt)};
-    const auto digest = workflow->publish_workflow(
-        definition, "m9-test", "model initiated", WorkflowValidationResult::DryRunPassed,
-        digest_string("m9-evidence"));
+    definition.steps = {tool_step("counter", std::nullopt), tool_step("counter", std::nullopt)};
+    const auto digest = workflow->publish_workflow(definition, "m9-test", "model initiated",
+                                                   WorkflowValidationResult::DryRunPassed,
+                                                   digest_string("m9-evidence"));
     MIRA_CHECK(digest.has_value());
 
     // Agent harness assembly (M3 pattern): gateway + scripted provider.
@@ -252,8 +251,9 @@ int model_initiated_run_workflow_end_to_end() {
     loop_context.task = spec.task_id;
     loop_context.started_at = Timestamp::now();
     ModelDoneVerifier verifier;
-    auto future = fixture.executor_.submit_auto(
-        [&loop, &spec, &loop_context, &verifier] { return loop.run(spec, loop_context, verifier); });
+    auto future = fixture.executor_.submit_auto([&loop, &spec, &loop_context, &verifier] {
+        return loop.run(spec, loop_context, verifier);
+    });
     const auto loop_result = future.get();
     MIRA_CHECK(loop_result.has_value());
     MIRA_CHECK(loop_result.value().outcome == LoopOutcome::Completed);

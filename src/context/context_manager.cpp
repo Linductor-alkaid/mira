@@ -670,9 +670,8 @@ Result<PreparedModelContext> StandardContextManager::prepare(const ContextReques
                 break;
             }
             auto &eval = evals[*victim];
-            const std::uint64_t compressed =
-                marker_tokens(*counter_, eval.item, request.profile_id,
-                              compressed_text(eval.item), eval.tokens);
+            const std::uint64_t compressed = marker_tokens(*counter_, eval.item, request.profile_id,
+                                                           compressed_text(eval.item), eval.tokens);
             running -= eval.tokens > compressed ? eval.tokens - compressed : 0;
             eval.tokens = compressed;
             eval.compressed = true;

@@ -70,17 +70,17 @@ constexpr std::size_t kParameterDigestHexBytes = 16;
         for (const auto &[key, value] : *parameters.as_object()) {
             JsonValue::Object entry;
             entry.emplace_back("type", json_kind_name(value));
-            entry.emplace_back(
-                "digest", digest_string(canonical_json_string(value)).to_string().substr(
-                              0, kParameterDigestHexBytes));
+            entry.emplace_back("digest", digest_string(canonical_json_string(value))
+                                             .to_string()
+                                             .substr(0, kParameterDigestHexBytes));
             projection.emplace_back(key, JsonValue{std::move(entry)});
         }
     } else if (!parameters.is_null()) {
         JsonValue::Object entry;
         entry.emplace_back("type", json_kind_name(parameters));
-        entry.emplace_back(
-            "digest", digest_string(canonical_json_string(parameters)).to_string().substr(
-                          0, kParameterDigestHexBytes));
+        entry.emplace_back("digest", digest_string(canonical_json_string(parameters))
+                                         .to_string()
+                                         .substr(0, kParameterDigestHexBytes));
         projection.emplace_back("parameters", JsonValue{std::move(entry)});
     }
     return JsonValue{std::move(projection)};
@@ -111,8 +111,8 @@ constexpr std::size_t kParameterDigestHexBytes = 16;
     }
     if (!parse.violations.empty()) {
         const auto &first = parse.violations.front();
-        return bounded_violation("schema violation at " + first.path + " (" + first.keyword +
-                                 ": " + first.message + ")");
+        return bounded_violation("schema violation at " + first.path + " (" + first.keyword + ": " +
+                                 first.message + ")");
     }
     return "decision output malformed";
 }
@@ -134,9 +134,8 @@ constexpr std::size_t kParameterDigestHexBytes = 16;
 // moved on. Returns nullopt when the run is still WaitingAgent at the
 // expected epoch; the caller updates the expected epoch from its own
 // successful submissions (patch application advances it legitimately).
-[[nodiscard]] std::optional<std::string> recheck_run(WorkflowRuntime &runtime,
-                                                     const WorkflowRunId &run_id,
-                                                     std::uint64_t expected_epoch) {
+[[nodiscard]] std::optional<std::string>
+recheck_run(WorkflowRuntime &runtime, const WorkflowRunId &run_id, std::uint64_t expected_epoch) {
     const auto snapshot = runtime.run_snapshot(run_id);
     if (!snapshot.has_value()) {
         return std::string{"run-state-changed"};
@@ -167,8 +166,8 @@ constexpr std::size_t kParameterDigestHexBytes = 16;
     WorkflowRecoveryDecision decision;
     decision.action = parsed_action.value();
     const auto *entries = value.find("patch_entries");
-    const bool has_entries = entries != nullptr && entries->is_array() &&
-                             !entries->as_array()->empty();
+    const bool has_entries =
+        entries != nullptr && entries->is_array() && !entries->as_array()->empty();
     if (decision.action == WorkflowRecoveryDecisionAction::PatchAndResume) {
         if (!has_entries) {
             return recovery_error(ErrorCode::InvalidModelOutput,
@@ -347,8 +346,7 @@ JsonSchema workflow_recovery_decision_schema() {
 WorkflowRecoveryOrchestrator::WorkflowRecoveryOrchestrator(executor::Executor &executor,
                                                            WorkflowRuntime &runtime,
                                                            MiraRuntime &control,
-                                                           ModelGateway &gateway,
-                                                           SessionId session,
+                                                           ModelGateway &gateway, SessionId session,
                                                            WorkflowRecoveryConfig config)
     : executor_(executor), runtime_(runtime), control_(control), gateway_(gateway),
       session_(session), config_(config), runtime_id_(RuntimeId::generate()),
@@ -376,9 +374,7 @@ void WorkflowRecoveryOrchestrator::set_hooks(WorkflowRecoveryHooks hooks) {
     hooks_ = std::move(hooks);
 }
 
-bool WorkflowRecoveryOrchestrator::shut_down() const noexcept {
-    return shut_down_.load();
-}
+bool WorkflowRecoveryOrchestrator::shut_down() const noexcept { return shut_down_.load(); }
 
 Result<WorkflowRecoveryAttempt>
 WorkflowRecoveryOrchestrator::attempt_recovery(const WorkflowRunId &run_id) {
@@ -391,8 +387,7 @@ Result<void> WorkflowRecoveryOrchestrator::start_recovery(const WorkflowRunId &r
     {
         std::lock_guard lock(mutex_);
         if (!accepting_ || shut_down_.load()) {
-            return recovery_error(ErrorCode::Unavailable,
-                                  "recovery orchestrator is shutting down");
+            return recovery_error(ErrorCode::Unavailable, "recovery orchestrator is shutting down");
         }
         const auto tracked = tracking_.find(run_id);
         if (tracked != tracking_.end() &&
@@ -407,8 +402,8 @@ Result<void> WorkflowRecoveryOrchestrator::start_recovery(const WorkflowRunId &r
     }
     std::shared_future<Result<WorkflowRecoveryAttempt>> shared;
     try {
-        auto future = executor_.submit_auto(
-            [this, run_id, cancel] { return run_pipeline(run_id, cancel); });
+        auto future =
+            executor_.submit_auto([this, run_id, cancel] { return run_pipeline(run_id, cancel); });
         shared = future.share();
     } catch (const std::exception &exception) {
         return recovery_error(ErrorCode::ResourceExhausted, exception.what(), true);
@@ -480,9 +475,9 @@ WorkflowRecoveryShutdownReport WorkflowRecoveryOrchestrator::shutdown() {
     // Bounded drain: one attempt chains at most 1 + max_decision_repairs
     // model calls, each bounded by the request deadline; the margin covers
     // decision execution and settlement.
-    const auto budget = config_.model_call_deadline *
-                            static_cast<long long>(2 + config_.max_decision_repairs) +
-                        std::chrono::seconds(2);
+    const auto budget =
+        config_.model_call_deadline * static_cast<long long>(2 + config_.max_decision_repairs) +
+        std::chrono::seconds(2);
     const auto drain_deadline = std::chrono::steady_clock::now() + budget;
     for (auto &future : pending) {
         const auto remaining = drain_deadline - std::chrono::steady_clock::now();
@@ -554,8 +549,7 @@ WorkflowRecoveryOrchestrator::admit(const WorkflowRunId &run_id, WorkflowRunStat
     {
         std::lock_guard lock(mutex_);
         const auto tracked = tracking_.find(run_id);
-        const std::uint32_t existing =
-            tracked == tracking_.end() ? 0U : tracked->second.ordinal;
+        const std::uint32_t existing = tracked == tracking_.end() ? 0U : tracked->second.ordinal;
         if (!accepting_ || shut_down_.load()) {
             settled_rejection(WorkflowRecoveryOutcome::Aborted, "shutdown", existing);
             return admission;
@@ -570,8 +564,8 @@ WorkflowRecoveryOrchestrator::admit(const WorkflowRunId &run_id, WorkflowRunStat
         }
         if (tracked != tracking_.end() &&
             tracked->second.attempts_used >= config_.max_attempts_per_run) {
-            settled_rejection(WorkflowRecoveryOutcome::DeferredToHost,
-                              "attempt-budget-exhausted", existing);
+            settled_rejection(WorkflowRecoveryOutcome::DeferredToHost, "attempt-budget-exhausted",
+                              existing);
             return admission;
         }
         if (tracked == tracking_.end() && tracking_.size() >= config_.max_tracked_runs) {
@@ -666,9 +660,10 @@ void WorkflowRecoveryOrchestrator::notify_hooks(const WorkflowRecoveryAttempt &a
     }
 }
 
-JsonValue WorkflowRecoveryOrchestrator::assemble_context(
-    const WorkflowAgentContinuation &continuation, std::uint32_t &offered, std::uint32_t &stale,
-    std::uint32_t &unparseable, std::uint32_t &kept) {
+JsonValue
+WorkflowRecoveryOrchestrator::assemble_context(const WorkflowAgentContinuation &continuation,
+                                               std::uint32_t &offered, std::uint32_t &stale,
+                                               std::uint32_t &unparseable, std::uint32_t &kept) {
     JsonValue::Object context;
     context.emplace_back("run_id", continuation.run_id.to_string());
     context.emplace_back("workflow_id", continuation.workflow_id.to_string());
@@ -704,8 +699,8 @@ JsonValue WorkflowRecoveryOrchestrator::assemble_context(
         JsonValue::Object decision;
         decision.emplace_back("decision_id",
                               continuation.pending_decision->decision_id.to_string());
-        decision.emplace_back(
-            "payload_digest", continuation.pending_decision->payload_digest.to_string());
+        decision.emplace_back("payload_digest",
+                              continuation.pending_decision->payload_digest.to_string());
         context.emplace_back("pending_decision", JsonValue{std::move(decision)});
     } else {
         context.emplace_back("pending_decision", JsonValue{nullptr});
@@ -719,9 +714,9 @@ JsonValue WorkflowRecoveryOrchestrator::assemble_context(
             std::lock_guard lock(mutex_);
             projector = hooks_.project_parameters;
         }
-        projected = projector != nullptr ? projector(continuation.effective_parameters)
-                                         : default_project_parameters(
-                                               continuation.effective_parameters);
+        projected = projector != nullptr
+                        ? projector(continuation.effective_parameters)
+                        : default_project_parameters(continuation.effective_parameters);
     }
     context.emplace_back("parameters", std::move(projected));
     // Lesson three-layer filtering (DEC-031 §4): parse fail closed, drop
@@ -773,8 +768,9 @@ JsonValue WorkflowRecoveryOrchestrator::assemble_context(
     return JsonValue{std::move(context)};
 }
 
-Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
-    const WorkflowRunId &run_id, const std::shared_ptr<std::atomic_bool> &cancel) {
+Result<WorkflowRecoveryAttempt>
+WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
+                                           const std::shared_ptr<std::atomic_bool> &cancel) {
     WorkflowRecoveryAttempt attempt;
     attempt.run_id = run_id;
 
@@ -961,8 +957,8 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                 // --- Stage 6: decision execution (design §4.6) ---------------
                 switch (decision.value().action) {
                 case WorkflowRecoveryDecisionAction::NeedUser:
-                    return settle(WorkflowRecoveryOutcome::DeferredToHost,
-                                  "decision-need-user", carrier);
+                    return settle(WorkflowRecoveryOutcome::DeferredToHost, "decision-need-user",
+                                  carrier);
                 case WorkflowRecoveryDecisionAction::Resume: {
                     if (const auto abort = abort_reason(shut_down_.load(), *cancel)) {
                         return settle(WorkflowRecoveryOutcome::Aborted, *abort, carrier);
@@ -975,8 +971,7 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                         if (const auto abort = abort_reason(shut_down_.load(), *cancel)) {
                             return settle(WorkflowRecoveryOutcome::Aborted, *abort, carrier);
                         }
-                        return settle(WorkflowRecoveryOutcome::Aborted, "resume-rejected",
-                                      carrier);
+                        return settle(WorkflowRecoveryOutcome::Aborted, "resume-rejected", carrier);
                     }
                     return settle(WorkflowRecoveryOutcome::ResumedWithoutPatch, std::string{},
                                   carrier);
@@ -990,8 +985,7 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                         return settle(WorkflowRecoveryOutcome::Aborted, "run-state-changed",
                                       carrier);
                     }
-                    return settle(WorkflowRecoveryOutcome::CancelRequested, std::string{},
-                                  carrier);
+                    return settle(WorkflowRecoveryOutcome::CancelRequested, std::string{}, carrier);
                 }
                 case WorkflowRecoveryDecisionAction::PatchAndResume:
                     if (const auto abort = abort_reason(shut_down_.load(), *cancel)) {
@@ -1010,8 +1004,7 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                             if (const auto abort = abort_reason(shut_down_.load(), *cancel)) {
                                 return settle(WorkflowRecoveryOutcome::Aborted, *abort, carrier);
                             }
-                            if (const auto drift =
-                                    recheck_run(runtime_, run_id, expected_epoch)) {
+                            if (const auto drift = recheck_run(runtime_, run_id, expected_epoch)) {
                                 return settle(WorkflowRecoveryOutcome::Aborted, *drift, carrier);
                             }
                             const auto resumed = runtime_.resume_run(run_id);
@@ -1020,11 +1013,11 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                                     return settle(WorkflowRecoveryOutcome::Aborted, *abort,
                                                   carrier);
                                 }
-                                return settle(WorkflowRecoveryOutcome::Aborted,
-                                              "resume-rejected", carrier);
+                                return settle(WorkflowRecoveryOutcome::Aborted, "resume-rejected",
+                                              carrier);
                             }
-                            return settle(WorkflowRecoveryOutcome::PatchedAndResumed,
-                                          std::string{}, carrier);
+                            return settle(WorkflowRecoveryOutcome::PatchedAndResumed, std::string{},
+                                          carrier);
                         }
                         // Patch rejected: repair round on the shared budget,
                         // then defer (design §4.6).
@@ -1038,17 +1031,15 @@ Result<WorkflowRecoveryAttempt> WorkflowRecoveryOrchestrator::run_pipeline(
                         }
                         ++repairs_used;
                         request = make_repair_request(
-                            std::move(request),
-                            bounded_violation("runtime rejected the patch: " +
-                                              patched.error().safe_message));
+                            std::move(request), bounded_violation("runtime rejected the patch: " +
+                                                                  patched.error().safe_message));
                         continue;
                     }
                 }
             }
             // Semantic validation failed: repairable violation.
             if (repairs_used >= config_.max_decision_repairs) {
-                return settle(WorkflowRecoveryOutcome::DeferredToHost, "decision-invalid",
-                              carrier);
+                return settle(WorkflowRecoveryOutcome::DeferredToHost, "decision-invalid", carrier);
             }
             ++repairs_used;
             request = make_repair_request(std::move(request),

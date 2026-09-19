@@ -167,17 +167,17 @@ struct ToolModuleManifest final {
 // capped so a hostile or sloppy manifest is rejected, not absorbed. These are
 // validation constants, not runtime execution budgets.
 struct ToolModuleLimits final {
-    std::size_t max_manifest_bytes = 256 * 1024;   // canonical serialization size.
+    std::size_t max_manifest_bytes = 256 * 1024; // canonical serialization size.
     std::size_t max_module_id_bytes = 128;
     std::size_t max_name_bytes = 128;
     std::size_t max_description_bytes = 4 * 1024;
     std::size_t max_signer_bytes = 256;
     std::size_t max_signature_bytes = 4 * 1024;
-    std::size_t max_label_bytes = 256;             // data access entries, conflict ids.
+    std::size_t max_label_bytes = 256; // data access entries, conflict ids.
     std::size_t max_tools = 256;
-    std::size_t max_capabilities = 64;             // per capability list.
+    std::size_t max_capabilities = 64; // per capability list.
     std::size_t max_conflicts = 64;
-    std::size_t max_data_access_entries = 64;      // per direction.
+    std::size_t max_data_access_entries = 64; // per direction.
     std::uint32_t max_concurrent_invocations = 1024;
     std::uint64_t max_result_bytes = 64ull * 1024 * 1024;
 };
@@ -258,9 +258,9 @@ struct ModuleNegotiationResult final {
 // is sorted by module_id and independent of input order; the same inputs
 // always produce the same result and digest. No I/O, no clock, no
 // randomness.
-[[nodiscard]] ModuleNegotiationResult
-negotiate_modules(std::span<const ModuleSnapshot> active,
-                  const EnvironmentCapabilities &environment, const CapabilityCatalog &catalog);
+[[nodiscard]] ModuleNegotiationResult negotiate_modules(std::span<const ModuleSnapshot> active,
+                                                        const EnvironmentCapabilities &environment,
+                                                        const CapabilityCatalog &catalog);
 
 // Canonical JSON projection of a negotiation result (module digest/version,
 // status, missing list, conflict partner); the digest input for reproducible

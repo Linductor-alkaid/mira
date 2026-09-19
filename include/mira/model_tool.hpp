@@ -80,7 +80,8 @@ build_tool_result_input(ProtocolDialect dialect, std::span<const ToolExecutionRe
 
 // Derives the stable operation ID for one tool call.
 [[nodiscard]] OperationId derive_tool_operation_id(const ModelRequestId &request_id,
-                                                  const ProviderToolCallId &call_id,
-                                                  const ToolId &tool_id, const Hash &arguments_digest);
+                                                   const ProviderToolCallId &call_id,
+                                                   const ToolId &tool_id,
+                                                   const Hash &arguments_digest);
 
 } // namespace mira

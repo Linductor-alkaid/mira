@@ -84,8 +84,9 @@ int bitemporal_as_of_and_checkpoint_view() {
 
     TaskEventLog log(runtime, session, task);
     log.add("TaskGoalSet", JsonValue::Object{{"statement", "inspect the lab"}});
-    log.add("TaskConstraintAdded",
-            JsonValue::Object{{"key", "safety"}, {"requirement", "wear goggles"}, {"safety", true}});
+    log.add(
+        "TaskConstraintAdded",
+        JsonValue::Object{{"key", "safety"}, {"requirement", "wear goggles"}, {"safety", true}});
     const auto action = ActionId::generate();
     log.add_pipe("ActionDispatchStarted",
                  action.to_string() + "|" + task.to_string() + "|1|1|tap|ui|node-1|screen",
@@ -116,9 +117,9 @@ int bitemporal_as_of_and_checkpoint_view() {
     MIRA_CHECK(writer_result.value().write("calibration note", 17).has_value());
     auto committed = fixture.artifacts.commit(writer_result.value());
     MIRA_CHECK(committed.has_value());
-    with_evidence.evidence = ArtifactRef{committed.value().id, committed.value().digest,
-                                         committed.value().byte_size, committed.value().media_type,
-                                         committed.value().sensitivity};
+    with_evidence.evidence =
+        ArtifactRef{committed.value().id, committed.value().digest, committed.value().byte_size,
+                    committed.value().media_type, committed.value().sensitivity};
     MIRA_CHECK(fixture.memory_store->apply(add_mutation(with_evidence)).has_value());
 
     AnalysisReplay replay(fixture.events, fixture.checkpoint_store.get(),
@@ -173,9 +174,9 @@ int deleted_artifact_degrades_explicitly() {
     MIRA_CHECK(writer_result.value().write("log book", 8).has_value());
     auto committed = fixture.artifacts.commit(writer_result.value());
     MIRA_CHECK(committed.has_value());
-    referenced.evidence = ArtifactRef{committed.value().id, committed.value().digest,
-                                      committed.value().byte_size, committed.value().media_type,
-                                      committed.value().sensitivity};
+    referenced.evidence =
+        ArtifactRef{committed.value().id, committed.value().digest, committed.value().byte_size,
+                    committed.value().media_type, committed.value().sensitivity};
     MIRA_CHECK(fixture.memory_store->apply(add_mutation(referenced)).has_value());
 
     // Erase the artifact out from under the memory reference: the replay

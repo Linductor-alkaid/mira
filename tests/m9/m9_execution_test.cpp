@@ -95,10 +95,9 @@ int bounded_loop_exits_through_precondition() {
     auto definition = base_definition("loop-exit");
     auto head = tool_step("counter", std::nullopt, {}, true);
     // Exit once the counter reports at least three dispatches.
-    auto control =
-        control_step(head.id, 8,
-                     step_result_predicate(head.id, WorkflowPredicateOp::Lt,
-                                          JsonValue{static_cast<std::int64_t>(3)}));
+    auto control = control_step(head.id, 8,
+                                step_result_predicate(head.id, WorkflowPredicateOp::Lt,
+                                                      JsonValue{static_cast<std::int64_t>(3)}));
     definition.steps = {head, control};
 
     const auto created =
@@ -145,15 +144,14 @@ int dry_run_plans_without_dispatch() {
     const auto probe = tool_step("actor", std::nullopt);
     definition.steps = {
         probe,
-        tool_step("actor", step_result_predicate(probe.id, WorkflowPredicateOp::Eq,
-                                                 JsonValue{"sent"})),
-        verify_step(
-            step_result_predicate(probe.id, WorkflowPredicateOp::Eq, JsonValue{"sent"})),
+        tool_step("actor",
+                  step_result_predicate(probe.id, WorkflowPredicateOp::Eq, JsonValue{"sent"})),
+        verify_step(step_result_predicate(probe.id, WorkflowPredicateOp::Eq, JsonValue{"sent"})),
         navigate_step("ChatPage"),
     };
 
-    const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
-                                              WorkflowPolicy::DryRun);
+    const auto created =
+        workflow->create_run(definition, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(created.has_value());
     const auto result = workflow->execute_run(created.value().run_id, drive_context());
     MIRA_CHECK(result.has_value());
@@ -182,8 +180,8 @@ int dry_run_evaluable_predicates_are_enforced() {
                   parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"other"})),
     };
 
-    const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
-                                              WorkflowPolicy::DryRun);
+    const auto created =
+        workflow->create_run(definition, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(created.has_value());
     const auto result = workflow->execute_run(created.value().run_id, drive_context());
     MIRA_CHECK(result.has_value());
@@ -255,8 +253,8 @@ int admission_fails_closed() {
     // admission.
     auto navigating = base_definition("nav");
     navigating.steps = {navigate_step("Home")};
-    const auto strict_nav = workflow->create_run(navigating, JsonValue{JsonValue::Object{}},
-                                                 WorkflowPolicy::Strict);
+    const auto strict_nav =
+        workflow->create_run(navigating, JsonValue{JsonValue::Object{}}, WorkflowPolicy::Strict);
     MIRA_CHECK(!strict_nav.has_value());
     MIRA_CHECK(strict_nav.error().code == ErrorCode::UnsupportedCapability);
 
@@ -307,8 +305,8 @@ int admission_fails_closed() {
     hook.mode = WorkflowRecoveryHook::Mode::AgentEscalation;
     with_hook.recovery = hook;
     escalating.steps = {with_hook};
-    const auto escalated = workflow->create_run(escalating, JsonValue{JsonValue::Object{}},
-                                                WorkflowPolicy::DryRun);
+    const auto escalated =
+        workflow->create_run(escalating, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(!escalated.has_value());
     MIRA_CHECK(escalated.error().code == ErrorCode::InvalidArgument);
     return 0;
@@ -410,8 +408,8 @@ int side_effect_retry_observes_first() {
     hook.mode = WorkflowRecoveryHook::Mode::Retry;
     hook.max_retries = 2;
     auto head = tool_step("actor", std::nullopt, hook, false, 3);
-    head.verification =
-        step_result_predicate(head.id, WorkflowPredicateOp::Ge, JsonValue{static_cast<std::int64_t>(1)});
+    head.verification = step_result_predicate(head.id, WorkflowPredicateOp::Ge,
+                                              JsonValue{static_cast<std::int64_t>(1)});
 
     auto definition = base_definition("retry-observe");
     definition.steps = {head};
@@ -437,13 +435,12 @@ int verify_not_evaluable_fails_closed() {
     // The ghost step is skipped, so its step_result never exists: Strict
     // fails the referencing verification closed instead of passing it.
     auto ghost = tool_step("counter", std::nullopt);
-    ghost.precondition =
-        parameter_predicate("mode", WorkflowPredicateOp::Ne, JsonValue{"skip"});
+    ghost.precondition = parameter_predicate("mode", WorkflowPredicateOp::Ne, JsonValue{"skip"});
     auto definition = base_definition("not-evaluable");
     definition.steps = {
         ghost,
-        tool_step("counter", step_result_predicate(ghost.id, WorkflowPredicateOp::Eq,
-                                                   JsonValue{"sent"})),
+        tool_step("counter",
+                  step_result_predicate(ghost.id, WorkflowPredicateOp::Eq, JsonValue{"sent"})),
     };
     const auto created = workflow->create_run(
         definition, JsonValue{JsonValue::Object{{"mode", JsonValue{"skip"}}}}, std::nullopt);

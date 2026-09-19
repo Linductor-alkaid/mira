@@ -136,9 +136,9 @@ int limits_fail_closed() {
     MIRA_CHECK(steps_position != std::string::npos);
     std::string bulk;
     for (int index = 0; index < 40; ++index) {
-        bulk += R"({"step_id": "4444444444444444444444444444)" +
-                std::to_string(1000 + index) + R"(", "kind": "verify", "verification": )"
-                + R"({"signal": "run_parameter:copies", "op": "ge", "value": 1}},)";
+        bulk += R"({"step_id": "4444444444444444444444444444)" + std::to_string(1000 + index) +
+                R"(", "kind": "verify", "verification": )" +
+                R"({"signal": "run_parameter:copies", "op": "ge", "value": 1}},)";
     }
     many.insert(steps_position + std::string("\"steps\": [").size(), bulk);
     WorkflowLimits step_cap;
@@ -154,12 +154,10 @@ int limits_fail_closed() {
     WorkflowDefinition deep_definition = base.value();
     JsonValue layer{JsonValue::Object{{"leaf", JsonValue{true}}}};
     for (int index = 0; index < 14; ++index) {
-        layer = JsonValue{JsonValue::Object{
-            {"layer_" + std::to_string(index), layer}}};
+        layer = JsonValue{JsonValue::Object{{"layer_" + std::to_string(index), layer}}};
     }
     deep_definition.steps[0].arguments = layer;
-    auto deep_result =
-        workflow_definition_from_json(workflow_definition_to_json(deep_definition));
+    auto deep_result = workflow_definition_from_json(workflow_definition_to_json(deep_definition));
     MIRA_CHECK(!deep_result.has_value());
     MIRA_CHECK(deep_result.error().code == ErrorCode::ResourceExhausted);
     return 0;
@@ -175,12 +173,10 @@ int binding_is_deterministic() {
     auto bound = bind_workflow_parameters(parsed.value(), input);
     MIRA_CHECK(bound.has_value());
     const auto *contact = bound.value().values.find("contact");
-    MIRA_CHECK(contact != nullptr && contact->as_string() &&
-               *contact->as_string() == "zhang san");
+    MIRA_CHECK(contact != nullptr && contact->as_string() && *contact->as_string() == "zhang san");
     // Default applied for the untouched parameter.
     const auto *channel = bound.value().values.find("channel");
-    MIRA_CHECK(channel != nullptr && channel->as_string() &&
-               *channel->as_string() == "wechat");
+    MIRA_CHECK(channel != nullptr && channel->as_string() && *channel->as_string() == "wechat");
     // Digest stability: same input, same digest.
     auto again = bind_workflow_parameters(parsed.value(), input);
     MIRA_CHECK(again.has_value() && again.value().digest == bound.value().digest);
@@ -227,7 +223,8 @@ int binding_is_deterministic() {
                static_cast<std::int32_t>(WorkflowBindError::ConstraintViolated));
 
     // Non-object input.
-    MIRA_CHECK(!bind_workflow_parameters(parsed.value(), JsonValue{JsonValue::Array{}}).has_value());
+    MIRA_CHECK(
+        !bind_workflow_parameters(parsed.value(), JsonValue{JsonValue::Array{}}).has_value());
 
     // Optional without a value stays unset and references to it fail closed.
     JsonValue only_contact{JsonValue::Object{}};
@@ -263,8 +260,7 @@ int parameter_references_resolve_and_fail_closed() {
     const auto *text = resolved.value().find("text");
     MIRA_CHECK(text != nullptr && text->as_string() && *text->as_string() == "li si");
     const auto *channel = resolved.value().find("channel");
-    MIRA_CHECK(channel != nullptr && channel->as_string() &&
-               *channel->as_string() == "wechat");
+    MIRA_CHECK(channel != nullptr && channel->as_string() && *channel->as_string() == "wechat");
 
     // Unknown parameter reference.
     JsonValue arguments{JsonValue::Object{}};
@@ -276,9 +272,8 @@ int parameter_references_resolve_and_fail_closed() {
 
     // Extra members inside the reference object fail closed.
     JsonValue extra{JsonValue::Object{}};
-    extra.set("x", JsonValue{JsonValue::Object{
-                       {"$param", JsonValue{std::string("contact")}},
-                       {"$other", JsonValue{std::string("contact")}}}});
+    extra.set("x", JsonValue{JsonValue::Object{{"$param", JsonValue{std::string("contact")}},
+                                               {"$other", JsonValue{std::string("contact")}}}});
     MIRA_CHECK(!resolve_step_arguments(bound.value(), extra).has_value());
 
     // Unbound optional parameter (no value, no default) fails closed.
@@ -360,7 +355,8 @@ int control_flow_and_recovery_are_structurally_validated() {
     MIRA_CHECK(steps_end != std::string::npos);
     std::string control_step = R"(,
             {"step_id": "55555555555555555555555555555555", "kind": "control",
-             "jump_to": ")" + std::string{kStepC} + R"(", "max_iterations": 4})";
+             "jump_to": ")" + std::string{kStepC} +
+                               R"(", "max_iterations": 4})";
     text.insert(steps_end, control_step);
     MIRA_CHECK(!parse_workflow_definition(text).has_value());
 
@@ -381,13 +377,14 @@ int control_flow_and_recovery_are_structurally_validated() {
     std::string forward = legal;
     const auto step_b = forward.find("\"step_id\": \"" + std::string{kStepB} + "\"");
     MIRA_CHECK(step_b != std::string::npos);
-    forward.insert(step_b + std::string("\"step_id\": \"").size() +
-                       std::string{kStepB}.size() + std::string("\"").size(),
+    forward.insert(step_b + std::string("\"step_id\": \"").size() + std::string{kStepB}.size() +
+                       std::string("\"").size(),
                    ", \"loop_head\": true");
     const auto steps_start = forward.find("\"steps\": [");
     MIRA_CHECK(steps_start != std::string::npos);
     std::string early_control = R"( {"step_id": "77777777777777777777777777777777",
-            "kind": "control", "jump_to": ")" + std::string{kStepB} + R"(", "max_iterations": 2},)";
+            "kind": "control", "jump_to": ")" +
+                                std::string{kStepB} + R"(", "max_iterations": 2},)";
     forward.insert(steps_start + std::string("\"steps\": [").size(), early_control);
     MIRA_CHECK(!parse_workflow_definition(forward).has_value());
 

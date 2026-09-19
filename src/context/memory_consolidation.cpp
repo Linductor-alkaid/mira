@@ -15,8 +15,8 @@ namespace {
     std::string lower;
     lower.reserve(text.size());
     for (const char character : text) {
-        lower += static_cast<char>(
-            character >= 'A' && character <= 'Z' ? character - 'A' + 'a' : character);
+        lower += static_cast<char>(character >= 'A' && character <= 'Z' ? character - 'A' + 'a'
+                                                                        : character);
     }
     for (const auto &marker : markers) {
         if (lower.find(marker) != std::string::npos) {
@@ -58,8 +58,8 @@ parse_verified_fact(const EventEnvelope &event) {
     std::string lower;
     lower.reserve(text.size());
     for (const char character : text) {
-        lower += static_cast<char>(
-            character >= 'A' && character <= 'Z' ? character - 'A' + 'a' : character);
+        lower += static_cast<char>(character >= 'A' && character <= 'Z' ? character - 'A' + 'a'
+                                                                        : character);
     }
     return lower;
 }
@@ -93,11 +93,10 @@ Result<void> ConsolidationPolicy::validate() const {
 }
 
 std::size_t ConsolidationReport::count_of(CandidateDisposition disposition) const {
-    return static_cast<std::size_t>(
-        std::count_if(entries.begin(), entries.end(),
-                      [disposition](const ConsolidationEntry &entry) {
-                          return entry.disposition == disposition;
-                      }));
+    return static_cast<std::size_t>(std::count_if(entries.begin(), entries.end(),
+                                                  [disposition](const ConsolidationEntry &entry) {
+                                                      return entry.disposition == disposition;
+                                                  }));
 }
 
 MemoryConsolidator::MemoryConsolidator(ConsolidationPolicy policy, IConsolidationModel *model)
@@ -118,7 +117,7 @@ MemoryConsolidator::extract_deterministic(std::span<const EventEnvelope> events,
             record.kind = scope.kind == MemoryScopeKind::Application
                               ? MemoryKind::ApplicationFact
                               : (scope.kind == MemoryScopeKind::User ? MemoryKind::Preference
-                                                                      : MemoryKind::EnvironmentFact);
+                                                                     : MemoryKind::EnvironmentFact);
             record.statement = fact->first + "=" + fact->second;
             record.validity.valid_from = event_wall(event);
             record.recorded_at = event_wall(event);
@@ -231,9 +230,9 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
         // their key prefix matches ("volume=..." vs "volume=..."), so a new
         // value supersedes the old record instead of duplicating it.
         const auto separator = proposed.statement.find('=');
-        const std::string conflict_term =
-            separator == std::string::npos ? proposed.statement
-                                           : proposed.statement.substr(0, separator + 1);
+        const std::string conflict_term = separator == std::string::npos
+                                              ? proposed.statement
+                                              : proposed.statement.substr(0, separator + 1);
         MemoryQuery conflict_query;
         conflict_query.scopes = {scope};
         conflict_query.kinds = std::vector<MemoryKind>{proposed.kind};
@@ -276,17 +275,17 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
         }
 
         // 5. High-risk kinds wait for human approval before apply().
-        const bool needs_approval = std::find(policy_.approval_required_kinds.begin(),
-                                              policy_.approval_required_kinds.end(),
-                                              proposed.kind) !=
-                                    policy_.approval_required_kinds.end();
+        const bool needs_approval =
+            std::find(policy_.approval_required_kinds.begin(),
+                      policy_.approval_required_kinds.end(),
+                      proposed.kind) != policy_.approval_required_kinds.end();
         if (needs_approval && candidate.reason != MutationReasonCode::HumanCorrection) {
             MemoryMutation mutation;
             mutation.id = entry.mutation;
             mutation.scope = scope;
             mutation.proposed = proposed;
             mutation.evidence =
-                    candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
+                candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
             mutation.reason = candidate.reason;
             if (conflict.has_value()) {
                 mutation.type = MemoryMutationType::Supersede;
@@ -315,8 +314,7 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
         mutation.id = entry.mutation;
         mutation.scope = scope;
         mutation.proposed = proposed;
-        mutation.evidence =
-                    candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
+        mutation.evidence = candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
         mutation.reason = candidate.reason;
         if (conflict.has_value()) {
             mutation.type = MemoryMutationType::Supersede;
@@ -352,7 +350,7 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
 }
 
 Result<MemoryMutationResult> MemoryConsolidator::apply_pending(IMemory &memory,
-                                                              const MemoryMutation &mutation) {
+                                                               const MemoryMutation &mutation) {
     return memory.apply(mutation);
 }
 

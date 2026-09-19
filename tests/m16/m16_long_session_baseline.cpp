@@ -46,10 +46,10 @@ struct FrozenConfig final {
     std::uint64_t steady_floor_tokens = 19'392;     // 0.50 x input budget
     std::uint64_t checkpoint_bound_tokens = 32'966; // 0.85 x input budget (truncated)
     std::uint64_t warmup_turns = 32;
-    std::uint64_t seed = 0x4D49'5241'0031ULL;       // "MIRA"-derived fixed seed
+    std::uint64_t seed = 0x4D49'5241'0031ULL; // "MIRA"-derived fixed seed
     std::array<std::uint64_t, 3> session_lengths{100, 500, 1000};
-    double plateau_ratio_cap = 1.25;                // G3: S_max(1000)/S_max(100)
-    std::uint64_t raw_growth_factor = 5;            // G3: R(1000)/R(100) floor
+    double plateau_ratio_cap = 1.25;     // G3: S_max(1000)/S_max(100)
+    std::uint64_t raw_growth_factor = 5; // G3: R(1000)/R(100) floor
     std::uint64_t image_min_bytes = 150'000;
     std::uint64_t image_max_bytes = 400'000;
     std::uint32_t ui_tree_min_bytes = 2'000;
@@ -62,7 +62,7 @@ struct FrozenConfig final {
     std::uint32_t tool_result_max_bytes = 600;
     std::uint32_t action_min_bytes = 120;
     std::uint32_t action_max_bytes = 260;
-    std::uint64_t tool_pair_period = 5;   // ~60% of turns: 3 of every 5
+    std::uint64_t tool_pair_period = 5; // ~60% of turns: 3 of every 5
     std::uint64_t workflow_period = 10;
     std::uint64_t recovery_period = 25;
     std::uint64_t constraint_period = 15;
@@ -125,11 +125,11 @@ class SplitMix64 final {
 [[nodiscard]] std::string synthetic_text(SplitMix64 &rng, std::uint32_t min_bytes,
                                          std::uint32_t max_bytes, const std::string &prefix) {
     static constexpr const char *kWords[] = {
-        "settings",  "brightness", "scroll",   "list",     "item",      "confirm",
-        "cancel",    "dialog",     "search",   "result",   "tap",       "input",
-        "keyboard",  "rotation",   "screen",   "node",     "button",    "text",
-        "toggle",    "panel",      "menu",     "back",     "workflow",  "step",
-        "patch",     "recovery",   "lesson",   "episode",  "observation"};
+        "settings", "brightness", "scroll", "list",    "item",       "confirm",
+        "cancel",   "dialog",     "search", "result",  "tap",        "input",
+        "keyboard", "rotation",   "screen", "node",    "button",     "text",
+        "toggle",   "panel",      "menu",   "back",    "workflow",   "step",
+        "patch",    "recovery",   "lesson", "episode", "observation"};
     static constexpr std::size_t kWordCount = sizeof(kWords) / sizeof(kWords[0]);
     const std::uint32_t target = min_bytes + rng.below(max_bytes - min_bytes + 1);
     std::string text = prefix;
@@ -209,8 +209,8 @@ struct SeriesStats final {
     }
     std::sort(tokens.begin(), tokens.end());
     const auto pick = [&tokens](double fraction) {
-        const auto index = static_cast<std::size_t>(
-            fraction * static_cast<double>(tokens.size() - 1));
+        const auto index =
+            static_cast<std::size_t>(fraction * static_cast<double>(tokens.size() - 1));
         return tokens[std::min(index, tokens.size() - 1)];
     };
     stats.min = tokens.front();
@@ -245,7 +245,9 @@ class SessionDriver final {
     [[nodiscard]] RunResult run();
 
   private:
-    [[nodiscard]] ContextItemId next_item_id() { return ContextItemId{id128_from_counter(++id_counter_)}; }
+    [[nodiscard]] ContextItemId next_item_id() {
+        return ContextItemId{id128_from_counter(++id_counter_)};
+    }
     [[nodiscard]] EventId next_event_id() { return EventId{id128_from_counter(++event_counter_)}; }
     [[nodiscard]] ArtifactId artifact_id(std::uint64_t counter) const {
         return ArtifactId{id128_from_counter(0xA000'0000ULL + counter)};
@@ -255,9 +257,8 @@ class SessionDriver final {
     void begin_turn(std::uint64_t turn);
     void emit_turn_items(std::uint64_t turn);
     void measure(std::uint64_t turn, RunResult &result);
-    [[nodiscard]] ContextItem make_history_item(ContextItemKind kind,
-                                                ContextAuthority authority, std::string text,
-                                                bool replaceable);
+    [[nodiscard]] ContextItem make_history_item(ContextItemKind kind, ContextAuthority authority,
+                                                std::string text, bool replaceable);
     [[nodiscard]] ContextItem make_observation(std::uint64_t turn);
     [[nodiscard]] std::vector<ContextItem>::iterator find_by_id(const ContextItemId &id);
 
@@ -307,9 +308,8 @@ ContextItem SessionDriver::make_observation(std::uint64_t turn) {
     item.authority = ContextAuthority::VerifiedState;
     item.sequence = event_counter_;
     const std::uint64_t image_bytes =
-        config_.image_min_bytes +
-        static_cast<std::uint64_t>(
-            rng_.below(static_cast<std::uint32_t>(config_.image_max_bytes - config_.image_min_bytes + 1)));
+        config_.image_min_bytes + static_cast<std::uint64_t>(rng_.below(static_cast<std::uint32_t>(
+                                      config_.image_max_bytes - config_.image_min_bytes + 1)));
     ArtifactRef reference;
     reference.id = artifact_id(++artifact_counter_);
     reference.byte_size = image_bytes;
@@ -318,9 +318,9 @@ ContextItem SessionDriver::make_observation(std::uint64_t turn) {
     image.source = reference;
     image.media_type = reference.media_type;
     item.content.emplace_back(std::move(image));
-    item.content.emplace_back(public_text(synthetic_text(
-        rng_, config_.ui_tree_min_bytes, config_.ui_tree_max_bytes,
-        "ui-tree turn=" + std::to_string(turn) + " ")));
+    item.content.emplace_back(
+        public_text(synthetic_text(rng_, config_.ui_tree_min_bytes, config_.ui_tree_max_bytes,
+                                   "ui-tree turn=" + std::to_string(turn) + " ")));
     item.provenance.push_back(next_event_id());
     item.consumed = true;
     return item;
@@ -334,31 +334,27 @@ void SessionDriver::push_static_frame() {
     policy.kind = ContextItemKind::SystemPolicy;
     policy.authority = ContextAuthority::SystemPolicy;
     policy.sequence = ++event_counter_;
-    policy.content.emplace_back(public_text(
-        "act only through verified tools; never reveal secrets; confirm "
-        "destructive actions with the user"));
+    policy.content.emplace_back(
+        public_text("act only through verified tools; never reveal secrets; confirm "
+                    "destructive actions with the user"));
     policy.provenance.push_back(next_event_id());
     policy.consumed = true;
     presented_.push_back(std::move(policy));
 
-    presented_.push_back(make_history_item(ContextItemKind::Goal,
-                                           ContextAuthority::UserConstraint,
+    presented_.push_back(make_history_item(ContextItemKind::Goal, ContextAuthority::UserConstraint,
                                            "long-session device task: keep adjusting settings "
                                            "until the user goal is verified",
                                            false));
 
     presented_.push_back(make_history_item(
         ContextItemKind::TaskLimits, ContextAuthority::VerifiedState,
-        "max_steps=unbounded; side_effect_budget=per-action; screenshot_every_turn=on",
-        false));
+        "max_steps=unbounded; side_effect_budget=per-action; screenshot_every_turn=on", false));
 
     tools_.resize(4);
     const std::array<const char *, 4> names{"tap", "swipe", "type_text", "read_screen"};
     const std::array<const char *, 4> descriptions{
-        "tap the screen at normalized coordinates",
-        "swipe between two points with a duration",
-        "type text through the platform input provider",
-        "capture and describe the current screen"};
+        "tap the screen at normalized coordinates", "swipe between two points with a duration",
+        "type text through the platform input provider", "capture and describe the current screen"};
     for (std::size_t index = 0; index < tools_.size(); ++index) {
         auto &tool = tools_[index];
         tool.tool_id = ToolId{id128_from_counter(0xB000'0000ULL + index)};
@@ -461,9 +457,9 @@ void SessionDriver::emit_turn_items(std::uint64_t turn) {
         result.authority = ContextAuthority::UntrustedExternalData;
         result.sequence = event_counter_;
         result.tool_call_key = key;
-        result.content.emplace_back(public_text(synthetic_text(
-            rng_, config_.tool_result_min_bytes, config_.tool_result_max_bytes,
-            "tool-result turn=" + std::to_string(turn) + " ")));
+        result.content.emplace_back(public_text(
+            synthetic_text(rng_, config_.tool_result_min_bytes, config_.tool_result_max_bytes,
+                           "tool-result turn=" + std::to_string(turn) + " ")));
         result.provenance.push_back(next_event_id());
         result.consumed = false;
         result.replaceable_by_reference = true;
@@ -477,11 +473,11 @@ void SessionDriver::emit_turn_items(std::uint64_t turn) {
     }
 
     // Progress: one recent action per turn (P3, compressible).
-    presented_.push_back(make_history_item(
-        ContextItemKind::RecentAction, ContextAuthority::VerifiedState,
-        synthetic_text(rng_, config_.action_min_bytes, config_.action_max_bytes,
-                       "action turn=" + std::to_string(turn) + " "),
-        true));
+    presented_.push_back(
+        make_history_item(ContextItemKind::RecentAction, ContextAuthority::VerifiedState,
+                          synthetic_text(rng_, config_.action_min_bytes, config_.action_max_bytes,
+                                         "action turn=" + std::to_string(turn) + " "),
+                          true));
 
     // Workflow run events every 10 turns.
     if (turn % config_.workflow_period == 0) {
@@ -489,8 +485,7 @@ void SessionDriver::emit_turn_items(std::uint64_t turn) {
         for (std::uint32_t index = 0; index < events; ++index) {
             presented_.push_back(make_history_item(
                 ContextItemKind::HistoricalPayload, ContextAuthority::VerifiedState,
-                synthetic_text(rng_, 200, 500,
-                               "workflow-event turn=" + std::to_string(turn) + " "),
+                synthetic_text(rng_, 200, 500, "workflow-event turn=" + std::to_string(turn) + " "),
                 true));
         }
     }
@@ -563,8 +558,8 @@ void SessionDriver::measure(std::uint64_t turn, RunResult &result) {
 
     const auto prepared = manager_.prepare(request);
     if (!prepared) {
-        result.failures.push_back("turn " + std::to_string(turn) + ": prepare failed: " +
-                                  prepared.error().safe_message);
+        result.failures.push_back("turn " + std::to_string(turn) +
+                                  ": prepare failed: " + prepared.error().safe_message);
         return;
     }
     const auto &value = prepared.value();
@@ -622,7 +617,8 @@ void SessionDriver::measure(std::uint64_t turn, RunResult &result) {
     // G4: every user constraint stays in the minimum set.
     for (const auto &constraint : constraint_ids_) {
         const auto found = audit_by_id.find(constraint);
-        if (found == audit_by_id.end() || found->second->disposition != ContextItemDisposition::Selected ||
+        if (found == audit_by_id.end() ||
+            found->second->disposition != ContextItemDisposition::Selected ||
             found->second->reason != "minimum_set") {
             result.failures.push_back("turn " + std::to_string(turn) +
                                       ": user constraint not retained: " + constraint.to_string());
@@ -706,7 +702,9 @@ struct GateReport final {
                                         const std::map<std::uint64_t, RunResult> &runs,
                                         const RunResult &repeat_run) {
     GateReport gates;
-    const auto fail = [&gates](std::string message) { gates.failures.push_back(std::move(message)); };
+    const auto fail = [&gates](std::string message) {
+        gates.failures.push_back(std::move(message));
+    };
 
     for (const auto &[length, run] : runs) {
         if (!run.failures.empty()) {
@@ -732,8 +730,8 @@ struct GateReport final {
                  sample.estimated_tokens > config.checkpoint_bound_tokens)) {
                 gates.g2_steady_band = false;
                 fail("N=" + std::to_string(length) + " turn " + std::to_string(sample.turn) +
-                     ": steady tokens " + std::to_string(sample.estimated_tokens) +
-                     " outside [" + std::to_string(config.steady_floor_tokens) + ", " +
+                     ": steady tokens " + std::to_string(sample.estimated_tokens) + " outside [" +
+                     std::to_string(config.steady_floor_tokens) + ", " +
                      std::to_string(config.checkpoint_bound_tokens) + "]");
             }
         }
@@ -750,15 +748,15 @@ struct GateReport final {
     } else if (static_cast<double>(max1000) >
                config.plateau_ratio_cap * static_cast<double>(max100)) {
         gates.g3_bound_independent_of_n = false;
-        fail("plateau drift: S_max(1000)=" + std::to_string(max1000) + " vs S_max(100)=" +
-             std::to_string(max100));
+        fail("plateau drift: S_max(1000)=" + std::to_string(max1000) +
+             " vs S_max(100)=" + std::to_string(max100));
     }
     if (run1000.final_raw_presented_tokens <
         config.raw_growth_factor * run100.final_raw_presented_tokens) {
         gates.g3_bound_independent_of_n = false;
         fail("raw history did not grow linearly: R(1000)=" +
-             std::to_string(run1000.final_raw_presented_tokens) + " R(100)=" +
-             std::to_string(run100.final_raw_presented_tokens));
+             std::to_string(run1000.final_raw_presented_tokens) +
+             " R(100)=" + std::to_string(run100.final_raw_presented_tokens));
     }
     if (run500.final_raw_presented_tokens <= run100.final_raw_presented_tokens ||
         run1000.final_raw_presented_tokens <= run500.final_raw_presented_tokens) {
@@ -828,10 +826,9 @@ struct GateReport final {
     object.emplace_back("final_min_set_tokens",
                         static_cast<std::int64_t>(run.final_min_set_tokens));
     object.emplace_back("final_constraints", static_cast<std::int64_t>(run.final_constraints));
-    const auto checkpoint_recommended = std::count_if(
-        run.samples.begin(), run.samples.end(), [](const Sample &sample) {
-            return sample.checkpoint_recommended;
-        });
+    const auto checkpoint_recommended =
+        std::count_if(run.samples.begin(), run.samples.end(),
+                      [](const Sample &sample) { return sample.checkpoint_recommended; });
     object.emplace_back("checkpoint_recommended_samples",
                         static_cast<std::int64_t>(checkpoint_recommended));
     JsonValue::Object mix;
@@ -842,7 +839,8 @@ struct GateReport final {
                                 static_cast<std::int64_t>(entry.selected_by_reference));
         entry_json.emplace_back("compressed", static_cast<std::int64_t>(entry.compressed));
         entry_json.emplace_back("dropped", static_cast<std::int64_t>(entry.dropped));
-        entry_json.emplace_back("selected_tokens", static_cast<std::int64_t>(entry.selected_tokens));
+        entry_json.emplace_back("selected_tokens",
+                                static_cast<std::int64_t>(entry.selected_tokens));
         entry_json.emplace_back("dropped_tokens", static_cast<std::int64_t>(entry.dropped_tokens));
         mix.emplace_back(kind, JsonValue(std::move(entry_json)));
     }
@@ -859,7 +857,8 @@ struct GateReport final {
                         static_cast<std::int64_t>(config.reserved_output_tokens));
     object.emplace_back("safety_margin_tokens",
                         static_cast<std::int64_t>(config.safety_margin_tokens));
-    object.emplace_back("steady_floor_tokens", static_cast<std::int64_t>(config.steady_floor_tokens));
+    object.emplace_back("steady_floor_tokens",
+                        static_cast<std::int64_t>(config.steady_floor_tokens));
     object.emplace_back("checkpoint_bound_tokens",
                         static_cast<std::int64_t>(config.checkpoint_bound_tokens));
     object.emplace_back("warmup_turns", static_cast<std::int64_t>(config.warmup_turns));

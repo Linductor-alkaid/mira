@@ -64,9 +64,9 @@ using SectionItems = std::vector<WorkingContextItem>;
 
 // Fixed section order shared by the transcript rendering, the model output
 // keys and the candidate assembly.
-constexpr const char *kSectionTags[8] = {"constraint", "decision", "issue", "active_task",
-                                         "verified_fact", "failed_attempt", "important_ref",
-                                         "next_action"};
+constexpr const char *kSectionTags[8] = {"constraint",    "decision",      "issue",
+                                         "active_task",   "verified_fact", "failed_attempt",
+                                         "important_ref", "next_action"};
 
 struct PreviousSections final {
     const SectionItems *sections[8];
@@ -153,8 +153,8 @@ build_transcript_entries(const WorkingContextSnapshot *previous,
                                            const std::vector<TranscriptEntry> &entries) {
     std::ostringstream transcript;
     transcript << "Session " << checkpoint.session_id.to_string()
-               << " working context refresh through sequence "
-               << checkpoint.through_event_sequence << "; " << entries.size()
+               << " working context refresh through sequence " << checkpoint.through_event_sequence
+               << "; " << entries.size()
                << " numbered entries (previous snapshot, then new checkpoint, "
                << "then recent events):";
     for (std::size_t index = 0; index < entries.size(); ++index) {
@@ -295,9 +295,10 @@ bind_statement(const RawStatement &raw, const std::vector<TranscriptEntry> &entr
 
 // Parses one output section, binds provenance and enforces the output bound
 // (RULE-08): the first `cap` bound statements win, everything after is dropped.
-[[nodiscard]] Result<SectionItems>
-parse_section(const JsonValue &root, const char *key, const std::vector<TranscriptEntry> &entries,
-              const ContextCurationOptions &options, bool &cites_previous) {
+[[nodiscard]] Result<SectionItems> parse_section(const JsonValue &root, const char *key,
+                                                 const std::vector<TranscriptEntry> &entries,
+                                                 const ContextCurationOptions &options,
+                                                 bool &cites_previous) {
     SectionItems bound;
     const auto *section = root.find(key);
     if (section == nullptr || !section->is_array()) {
@@ -336,8 +337,7 @@ parse_section(const JsonValue &root, const char *key, const std::vector<Transcri
 
 Result<void> ContextCurationOptions::validate() const {
     if (max_items_per_section == 0 || max_items_per_section > 1'024) {
-        return curator_error(ErrorCode::InvalidArgument,
-                             "item bound per section is out of range");
+        return curator_error(ErrorCode::InvalidArgument, "item bound per section is out of range");
     }
     if (max_item_chars < 16 || max_item_chars > 8 * 1024) {
         return curator_error(ErrorCode::InvalidArgument, "item byte bound is out of range");
@@ -349,8 +349,7 @@ Result<void> ContextCurationOptions::validate() const {
         return curator_error(ErrorCode::InvalidArgument, "recent event bound is out of range");
     }
     if (!(min_confidence >= 0.0 && min_confidence <= 1.0)) {
-        return curator_error(ErrorCode::InvalidArgument,
-                             "confidence floor must be within [0,1]");
+        return curator_error(ErrorCode::InvalidArgument, "confidence floor must be within [0,1]");
     }
     if (deadline <= std::chrono::milliseconds::zero()) {
         return curator_error(ErrorCode::InvalidArgument, "curation deadline must be positive");
@@ -360,14 +359,12 @@ Result<void> ContextCurationOptions::validate() const {
     }
     for (const auto &marker : forbidden_markers) {
         if (marker.empty()) {
-            return curator_error(ErrorCode::InvalidArgument,
-                                 "forbidden markers must not be empty");
+            return curator_error(ErrorCode::InvalidArgument, "forbidden markers must not be empty");
         }
     }
     for (const auto &marker : injection_markers) {
         if (marker.empty()) {
-            return curator_error(ErrorCode::InvalidArgument,
-                                 "injection markers must not be empty");
+            return curator_error(ErrorCode::InvalidArgument, "injection markers must not be empty");
         }
     }
     return Result<void>{};
@@ -377,22 +374,21 @@ JsonSchema working_context_curation_output_schema() {
     const JsonValue statement = JsonValue::Object{
         {"type", std::string("object")},
         {"additionalProperties", false},
-        {"required",
-         JsonValue::Array{std::string("content"), std::string("sources"),
-                          std::string("confidence")}},
+        {"required", JsonValue::Array{std::string("content"), std::string("sources"),
+                                      std::string("confidence")}},
         {"properties",
          JsonValue::Object{
              {"content", JsonValue::Object{{"type", std::string("string")}}},
              {"sources",
-              JsonValue::Object{{"type", std::string("array")},
-                                {"items", JsonValue::Object{
-                                              {"type", std::string("integer")},
+              JsonValue::Object{
+                  {"type", std::string("array")},
+                  {"items", JsonValue::Object{{"type", std::string("integer")},
                                               {"minimum", static_cast<std::int64_t>(0)}}}}},
              {"confidence", JsonValue::Object{{"type", std::string("number")}}},
          }},
     };
-    const JsonValue statement_array = JsonValue::Object{
-        {"type", std::string("array")}, {"items", statement}};
+    const JsonValue statement_array =
+        JsonValue::Object{{"type", std::string("array")}, {"items", statement}};
     JsonValue::Object root;
     root.emplace_back("type", std::string("object"));
     root.emplace_back("additionalProperties", false);
@@ -400,8 +396,8 @@ JsonSchema working_context_curation_output_schema() {
                       JsonValue::Array{std::string("confidence"), std::string("constraints"),
                                        std::string("decisions"), std::string("open_issues"),
                                        std::string("active_tasks"), std::string("verified_facts"),
-                                       std::string("failed_attempts"), std::string("important_refs"),
-                                       std::string("next_actions")});
+                                       std::string("failed_attempts"),
+                                       std::string("important_refs"), std::string("next_actions")});
     JsonValue::Object properties;
     properties.emplace_back("confidence", JsonValue::Object{{"type", std::string("number")}});
     for (const char *key :
@@ -419,8 +415,7 @@ JsonSchema working_context_curation_output_schema() {
 // Model-backed reference curator
 // ---------------------------------------------------------------------------
 
-ProviderContextCurator::ProviderContextCurator(IModelProvider &provider)
-    : provider_(provider) {}
+ProviderContextCurator::ProviderContextCurator(IModelProvider &provider) : provider_(provider) {}
 ProviderContextCurator::~ProviderContextCurator() = default;
 
 Result<WorkingContextSnapshot>
@@ -531,8 +526,7 @@ ProviderContextCurator::curate(const WorkingContextSnapshot *previous,
     }
     const ModelResponse &response = inferred.value();
     if (response.status != ModelCompletionStatus::Completed) {
-        return curator_error(ErrorCode::InvalidModelOutput,
-                             "curation model call did not complete");
+        return curator_error(ErrorCode::InvalidModelOutput, "curation model call did not complete");
     }
 
     auto text = response_text(response);
@@ -545,7 +539,8 @@ ProviderContextCurator::curate(const WorkingContextSnapshot *previous,
     }
     const JsonValue &root = parsed.value();
     if (!root.is_object()) {
-        return curator_error(ErrorCode::InvalidModelOutput, "curation output must be a JSON object");
+        return curator_error(ErrorCode::InvalidModelOutput,
+                             "curation output must be a JSON object");
     }
     const auto *confidence = root.find("confidence");
     if (confidence == nullptr || !confidence->is_number()) {
@@ -566,7 +561,7 @@ ProviderContextCurator::curate(const WorkingContextSnapshot *previous,
     bool cites_previous = false;
     std::vector<SectionItems> sections(8);
     static constexpr const char *kOutputKeys[8] = {
-        "constraints", "decisions", "open_issues", "active_tasks",
+        "constraints",    "decisions",       "open_issues",    "active_tasks",
         "verified_facts", "failed_attempts", "important_refs", "next_actions"};
     for (std::size_t section = 0; section < 8; ++section) {
         auto bound = parse_section(root, kOutputKeys[section], entries, options, cites_previous);
@@ -634,11 +629,10 @@ ProviderContextCurator::curate(const WorkingContextSnapshot *previous,
     snapshot.failed_attempts = std::move(sections[5]);
     snapshot.important_refs = std::move(sections[6]);
     snapshot.next_actions = std::move(sections[7]);
-    const std::string seed = checkpoint.session_id.to_string() + "|" +
-                             checkpoint.task_id.to_string() + "|" +
-                             std::to_string(checkpoint.task_epoch) + "|" +
-                             std::to_string(checkpoint.environment_epoch) + "|" +
-                             std::to_string(checkpoint.through_event_sequence);
+    const std::string seed =
+        checkpoint.session_id.to_string() + "|" + checkpoint.task_id.to_string() + "|" +
+        std::to_string(checkpoint.task_epoch) + "|" + std::to_string(checkpoint.environment_epoch) +
+        "|" + std::to_string(checkpoint.through_event_sequence);
     snapshot.id = working_context_snapshot_id_from_seed(seed);
 
     if (const auto valid = snapshot.validate(); !valid) {

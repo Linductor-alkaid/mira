@@ -101,7 +101,9 @@ class JsonValue final {
         return std::get_if<std::string>(&variant_);
     }
     [[nodiscard]] const Array *as_array() const noexcept { return std::get_if<Array>(&variant_); }
-    [[nodiscard]] const Object *as_object() const noexcept { return std::get_if<Object>(&variant_); }
+    [[nodiscard]] const Object *as_object() const noexcept {
+        return std::get_if<Object>(&variant_);
+    }
 
     // Object member lookup; returns nullptr when this is not an object or the
     // key is absent. First match wins; duplicate keys are rejected by the
@@ -164,8 +166,7 @@ struct JsonLimits final {
 
 // Strict RFC 8259 subset parser: rejects duplicate keys, trailing data,
 // NaN/Infinity, invalid UTF-8 and anything beyond the configured limits.
-[[nodiscard]] Result<JsonValue> parse_json(std::string_view text,
-                                           JsonLimits limits = JsonLimits{});
+[[nodiscard]] Result<JsonValue> parse_json(std::string_view text, JsonLimits limits = JsonLimits{});
 
 // Compact serialization used for wire payloads and durable events.
 [[nodiscard]] std::string to_json_string(const JsonValue &value);

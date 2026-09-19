@@ -21,20 +21,20 @@ namespace mira {
 
 // Deterministic compile/induction error codes (DEC-025 §2/§3, DEC-026 §1/§2).
 enum class WorkflowCompileError : std::int32_t {
-    CaptureNotExecuted = 1,      // run is not a Completed, side-effecting run
-    CaptureNotCompleted = 2,     // run is not terminal-Completed
-    CompileInvalidOptions = 3,   // nil target id / empty name / bad policy
-    CompilePolicyNotAllowed = 4, // requested default policy outside the allowed set
+    CaptureNotExecuted = 1,        // run is not a Completed, side-effecting run
+    CaptureNotCompleted = 2,       // run is not terminal-Completed
+    CompileInvalidOptions = 3,     // nil target id / empty name / bad policy
+    CompilePolicyNotAllowed = 4,   // requested default policy outside the allowed set
     CompileToolBindingInvalid = 5, // effective tool_call arguments miss "tool"
     CompileJumpTargetSkipped = 6,  // control jump targets a dropped step
-    PublishDryRunFailed = 7,     // gate drive did not reach Completed
-    InductSkeletonMismatch = 8,  // trajectories are not same-skeleton
-    InductTypeMismatch = 9,      // same leaf with different JSON scalar kinds
-    InductCandidateInvalid = 10, // explicit candidate fails shape rules
-    InductNameConflict = 11,     // name collides with a parameter or candidate
-    InductLeafNotScalar = 12,    // pointer resolves to a non-scalar leaf
-    InductReservedMember = 13,   // pointer targets the reserved "tool" member
-    InductLimitExceeded = 14,    // candidates exceed max_parameters (RULE-08)
+    PublishDryRunFailed = 7,       // gate drive did not reach Completed
+    InductSkeletonMismatch = 8,    // trajectories are not same-skeleton
+    InductTypeMismatch = 9,        // same leaf with different JSON scalar kinds
+    InductCandidateInvalid = 10,   // explicit candidate fails shape rules
+    InductNameConflict = 11,       // name collides with a parameter or candidate
+    InductLeafNotScalar = 12,      // pointer resolves to a non-scalar leaf
+    InductReservedMember = 13,     // pointer targets the reserved "tool" member
+    InductLimitExceeded = 14,      // candidates exceed max_parameters (RULE-08)
 };
 
 [[nodiscard]] Error make_workflow_compile_error(WorkflowCompileError code, std::string detail);
@@ -95,8 +95,8 @@ struct WorkflowCompileOptions final {
 // predicates/hooks/loop structure preserved, deterministic output. The
 // result is a host-editable draft; entering the library goes through
 // WorkflowRuntime::publish_validated.
-[[nodiscard]] Result<WorkflowDefinition>
-compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOptions &options);
+[[nodiscard]] Result<WorkflowDefinition> compile_workflow(const WorkflowTrajectory &trajectory,
+                                                          const WorkflowCompileOptions &options);
 
 // ---------------------------------------------------------------------------
 // Task induction (DEC-026)
@@ -108,7 +108,8 @@ enum class WorkflowCandidateProvenance : std::uint8_t {
     Explicit,   // proposed by the host (or model through the host)
 };
 
-[[nodiscard]] std::string workflow_candidate_provenance_name(WorkflowCandidateProvenance provenance);
+[[nodiscard]] std::string
+workflow_candidate_provenance_name(WorkflowCandidateProvenance provenance);
 [[nodiscard]] Result<WorkflowCandidateProvenance>
 parse_workflow_candidate_provenance(std::string_view name);
 
@@ -117,9 +118,9 @@ parse_workflow_candidate_provenance(std::string_view name);
 // never facts: they are host-editable and reach the library only through the
 // publish gate.
 struct WorkflowParameterCandidate final {
-    std::string name;       // ^[a-z][a-z0-9_]{0,63}$
+    std::string name;           // ^[a-z][a-z0-9_]{0,63}$
     std::size_t step_index = 0; // Index into WorkflowTrajectory::steps.
-    std::string pointer;    // RFC 6901 pointer to the scalar leaf.
+    std::string pointer;        // RFC 6901 pointer to the scalar leaf.
     WorkflowCandidateProvenance provenance = WorkflowCandidateProvenance::Structural;
     // Observed value per input trajectory, anchor (first) first; kept for
     // host review only, not part of the compiled IR.

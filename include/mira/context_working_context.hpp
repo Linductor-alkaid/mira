@@ -1,8 +1,8 @@
 #pragma once
 
+#include <mira/context_consolidation.hpp>
 #include <mira/context_contracts.hpp>
 #include <mira/context_retrieval.hpp>
-#include <mira/context_consolidation.hpp>
 #include <mira/core_contracts.hpp>
 #include <mira/json.hpp>
 
@@ -72,8 +72,7 @@ struct WorkingContextSnapshotId final {
     }
     static std::optional<WorkingContextSnapshotId> parse(std::string_view text) noexcept {
         const auto parsed = Id128::parse(text);
-        return parsed ? std::optional<WorkingContextSnapshotId>(
-                            WorkingContextSnapshotId{*parsed})
+        return parsed ? std::optional<WorkingContextSnapshotId>(WorkingContextSnapshotId{*parsed})
                       : std::nullopt;
     }
     [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }
@@ -84,8 +83,7 @@ struct WorkingContextSnapshotId final {
                                       const WorkingContextSnapshotId &) noexcept = default;
 };
 
-[[nodiscard]] WorkingContextSnapshotId working_context_snapshot_id_from_seed(
-    std::string_view seed);
+[[nodiscard]] WorkingContextSnapshotId working_context_snapshot_id_from_seed(std::string_view seed);
 
 [[nodiscard]] constexpr SchemaVersion working_context_schema_current() noexcept {
     // 1.1 (Stage W2): additive minor — five Curator-filled sections and the
@@ -238,12 +236,11 @@ enum class WorkingContextCommitDisposition : std::uint8_t {
     DiscardedTerminal, // session/task went terminal; late results are dropped
 };
 
-[[nodiscard]] std::string working_context_commit_disposition_name(
-    WorkingContextCommitDisposition disposition);
+[[nodiscard]] std::string
+working_context_commit_disposition_name(WorkingContextCommitDisposition disposition);
 
 struct WorkingContextCommitOutcome final {
-    WorkingContextCommitDisposition disposition =
-        WorkingContextCommitDisposition::DiscardedStale;
+    WorkingContextCommitDisposition disposition = WorkingContextCommitDisposition::DiscardedStale;
     // Stable reason code, e.g. "conflicting-watermark"; free text never
     // reaches the audit surface.
     std::string reason_code;

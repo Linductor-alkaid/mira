@@ -65,10 +65,10 @@ int run(const std::filesystem::path &root) {
     fact.session_id = session;
     fact.task_id = task;
     fact.session_sequence = 1;
-    fact.payload = EventPayload{"TaskFactVerified",
-                                to_json_string(JsonValue::Object{{"key", "locale"},
-                                                                 {"value", "de-DE"}}),
-                                EventClass::State};
+    fact.payload =
+        EventPayload{"TaskFactVerified",
+                     to_json_string(JsonValue::Object{{"key", "locale"}, {"value", "de-DE"}}),
+                     EventClass::State};
     AppendRequest fact_append;
     fact_append.event_id = fact.event_id;
     fact_append.runtime_id = runtime;
@@ -108,8 +108,8 @@ int run(const std::filesystem::path &root) {
         CheckpointCoordinator coordinator(events, *checkpoint_store.value());
         ContextMemorySupervisor supervisor(exec, SupervisorConfig{}, &events, runtime, session);
         auto stored = supervisor
-                          .schedule_checkpoint(coordinator, task, session,
-                                               CheckpointTrigger::Pause, Timestamp::now())
+                          .schedule_checkpoint(coordinator, task, session, CheckpointTrigger::Pause,
+                                               Timestamp::now())
                           .get();
         if (!stored.has_value() || !stored.value().has_value()) {
             std::cerr << "supervised checkpoint failed\n";

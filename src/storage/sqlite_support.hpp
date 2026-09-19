@@ -45,9 +45,7 @@ struct DbOpenOptions final {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #endif
-[[nodiscard]] inline sqlite3_destructor_type transient_copy() noexcept {
-    return SQLITE_TRANSIENT;
-}
+[[nodiscard]] inline sqlite3_destructor_type transient_copy() noexcept { return SQLITE_TRANSIENT; }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -114,7 +112,8 @@ class Transaction final {
 [[nodiscard]] Result<std::int64_t> last_insert_rowid(sqlite3 *database) noexcept;
 
 // store_meta helpers: one row per key, values are plain text.
-[[nodiscard]] Result<std::optional<std::string>> meta_read(sqlite3 *database, const std::string &key);
+[[nodiscard]] Result<std::optional<std::string>> meta_read(sqlite3 *database,
+                                                           const std::string &key);
 [[nodiscard]] Result<void> meta_write(sqlite3 *database, const std::string &key,
                                       const std::string &value);
 
@@ -129,8 +128,7 @@ class Transaction final {
 // cannot rely on std::function's copyable-target requirement.
 class ChannelWork final {
   public:
-    template <typename F>
-    ChannelWork(F fn) : fn_(std::make_unique<Model<F>>(std::move(fn))) {}
+    template <typename F> ChannelWork(F fn) : fn_(std::make_unique<Model<F>>(std::move(fn))) {}
     ChannelWork(ChannelWork &&) noexcept = default;
     ChannelWork &operator=(ChannelWork &&) noexcept = default;
     void operator()(sqlite3 *db) { fn_->invoke(db); }
@@ -140,8 +138,7 @@ class ChannelWork final {
         virtual ~Concept() = default;
         virtual void invoke(sqlite3 *database) = 0;
     };
-    template <typename F>
-    struct Model final : Concept {
+    template <typename F> struct Model final : Concept {
         explicit Model(F callable) : fn(std::move(callable)) {}
         void invoke(sqlite3 *database) override { fn(database); }
         F fn;
@@ -190,8 +187,7 @@ class StoreChannel final {
     // Runs `op` on the writer thread and waits for its result. Rejects with
     // Unavailable after close, ResourceExhausted when the bounded queue is
     // full, InvalidState on worker self-call, DeadlineExceeded on timeout.
-    template <typename T, typename Op>
-    [[nodiscard]] Result<T> run(Op op);
+    template <typename T, typename Op> [[nodiscard]] Result<T> run(Op op);
 
     // Maintenance seam: the worker holds queued work until unpaused. Admission
     // keeps working, so pausing is how tests and maintenance observe the
@@ -238,8 +234,7 @@ template <typename T, typename Op>
 // The operation travels as a template parameter straight into ChannelWork:
 // no std::function hop on this path (avoids its heap-backed storage and the
 // analyzer false positives that come with opaque functor ownership).
-template <typename T, typename Op>
-Result<T> StoreChannel::run(Op op) {
+template <typename T, typename Op> Result<T> StoreChannel::run(Op op) {
     std::promise<Result<T>> promise;
     auto future = promise.get_future();
     {
@@ -272,8 +267,7 @@ Result<T> StoreChannel::run(Op op) {
 }
 
 // Shared error helper for store implementations.
-[[nodiscard]] Error store_error(enum ErrorCode code, std::string domain,
-                                std::int32_t domain_code, std::string message,
-                                bool retryable = false);
+[[nodiscard]] Error store_error(enum ErrorCode code, std::string domain, std::int32_t domain_code,
+                                std::string message, bool retryable = false);
 
 } // namespace mira::storage

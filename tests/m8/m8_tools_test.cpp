@@ -57,9 +57,8 @@ int spec_set_is_frozen_and_subset_clean() {
 }
 
 int control_operations_validate_by_schema() {
-    for (auto operation :
-         {WorkflowOperation::PauseWorkflow, WorkflowOperation::ResumeWorkflow,
-          WorkflowOperation::CancelWorkflow}) {
+    for (auto operation : {WorkflowOperation::PauseWorkflow, WorkflowOperation::ResumeWorkflow,
+                           WorkflowOperation::CancelWorkflow}) {
         MIRA_CHECK(validate_workflow_operation(operation, base_arguments()).has_value());
 
         // Missing run_id fails.
@@ -91,7 +90,8 @@ int run_workflow_validates_shape_not_semantics() {
     // Bad digest hex shape fails.
     JsonValue bad_digest = arguments;
     bad_digest.set("ir_digest", JsonValue{std::string("zz")});
-    MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::RunWorkflow, bad_digest).has_value());
+    MIRA_CHECK(
+        !validate_workflow_operation(WorkflowOperation::RunWorkflow, bad_digest).has_value());
 
     // Policy must name a known member; membership in a specific workflow's
     // allowed set stays a runtime check (documented boundary).
@@ -108,7 +108,8 @@ int run_workflow_validates_shape_not_semantics() {
     parameters.set("parameters", JsonValue{JsonValue::Object{}});
     MIRA_CHECK(validate_workflow_operation(WorkflowOperation::RunWorkflow, parameters).has_value());
     parameters.set("parameters", JsonValue{std::string("contact=li si")});
-    MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::RunWorkflow, parameters).has_value());
+    MIRA_CHECK(
+        !validate_workflow_operation(WorkflowOperation::RunWorkflow, parameters).has_value());
 
     // Missing ir_digest fails.
     JsonValue missing = arguments;
@@ -127,7 +128,8 @@ int patch_entries_follow_the_closed_semantics() {
     JsonValue arguments = base_arguments();
     arguments.set("patch_id", JsonValue{std::string{kPatchId}});
     arguments.set("patch_entries", JsonValue{JsonValue::Array{set_entry}});
-    MIRA_CHECK(validate_workflow_operation(WorkflowOperation::PatchWorkflow, arguments).has_value());
+    MIRA_CHECK(
+        validate_workflow_operation(WorkflowOperation::PatchWorkflow, arguments).has_value());
 
     // Policy switch entries are set-only on the fixed path.
     JsonValue policy_entry{JsonValue::Object{}};
@@ -138,8 +140,8 @@ int patch_entries_follow_the_closed_semantics() {
     JsonValue policy_arguments = base_arguments();
     policy_arguments.set("patch_id", JsonValue{std::string{kPatchId}});
     policy_arguments.set("patch_entries", JsonValue{JsonValue::Array{policy_entry}});
-    MIRA_CHECK(
-        validate_workflow_operation(WorkflowOperation::PatchWorkflow, policy_arguments).has_value());
+    MIRA_CHECK(validate_workflow_operation(WorkflowOperation::PatchWorkflow, policy_arguments)
+                   .has_value());
 
     JsonValue bad_policy_value = policy_entry;
     bad_policy_value.set("value", JsonValue{std::string("fast")});
@@ -147,7 +149,7 @@ int patch_entries_follow_the_closed_semantics() {
     bad_policy_arguments.set("patch_id", JsonValue{std::string{kPatchId}});
     bad_policy_arguments.set("patch_entries", JsonValue{JsonValue::Array{bad_policy_value}});
     MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::PatchWorkflow, bad_policy_arguments)
-                   .has_value());
+                    .has_value());
 
     JsonValue unset_policy = policy_entry;
     unset_policy.set("op", JsonValue{std::string("unset")});
@@ -156,7 +158,7 @@ int patch_entries_follow_the_closed_semantics() {
     unset_arguments.set("patch_id", JsonValue{std::string{kPatchId}});
     unset_arguments.set("patch_entries", JsonValue{JsonValue::Array{unset_policy}});
     MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::PatchWorkflow, unset_arguments)
-                   .has_value());
+                    .has_value());
 
     // Skip applies to step_arguments only.
     JsonValue skip_step{JsonValue::Object{}};
@@ -175,14 +177,14 @@ int patch_entries_follow_the_closed_semantics() {
     skip_param_arguments.set("patch_id", JsonValue{std::string{kPatchId}});
     skip_param_arguments.set("patch_entries", JsonValue{JsonValue::Array{skip_param}});
     MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::PatchWorkflow, skip_param_arguments)
-                   .has_value());
+                    .has_value());
 
     // Empty entry lists fail the schema (minItems 1).
     JsonValue empty_entries = base_arguments();
     empty_entries.set("patch_id", JsonValue{std::string{kPatchId}});
     empty_entries.set("patch_entries", JsonValue{JsonValue::Array{}});
-    MIRA_CHECK(!validate_workflow_operation(WorkflowOperation::PatchWorkflow, empty_entries)
-                   .has_value());
+    MIRA_CHECK(
+        !validate_workflow_operation(WorkflowOperation::PatchWorkflow, empty_entries).has_value());
     return 0;
 }
 

@@ -1,7 +1,8 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1 已交付关闭，下一阶段 TM2 实施前冻结细项）
+> 重定义；TM0/TM1 已交付关闭；TM2 2026-09-19 冻结细项与门禁并交付，PR CI 证据
+> 回填后关闭）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
@@ -135,14 +136,35 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `submit_auto()` 承载，future 必须消费；提交拒绝、任务异常、执行中取消与
   shutdown 转化为明确结果（设计 §10，M7 §6）。
 
-### 4.3 TM2：LLM 暴露投影（后续轮，实施前冻结细项）
+### 4.3 TM2：LLM 暴露投影（2026-09-19 跑前冻结细项，进入实施）
 
-- [ ] `M7-TM2-01` 协商结果 → ToolRegistry view → per-request `ExposedToolSpec`
-  投影；模组级/任务级排除理由记录；`tool_snapshot_digest` 绑定 module digest
-  集合与 ToolSpec digest 集合（DEC-002 加法演进）。
-- [ ] `M7-TM2-02` `wire_name` 跨模组命名规则冻结（设计 §17 开放项收口）。
-- [ ] `M7-TM2-03` Simulator BuiltIn 参考模组、Replay module digest 绑定、与
-  `resolve_tool_calls` 既有 fail-closed 语义的组合测试。
+- [ ] `M7-TM2-01` 投影纯函数 `project_tool_exposure`：以 NegotiationView
+  generation + Active snapshot（成员契约）+ 协商结论 + 任务级选择输入 →
+  per-request `ExposedToolSpec` 集合——ToolId 由 (module_id, module_digest,
+  成员名) 确定性派生（TM2 身份分配落地，跨进程一致，无随机）；wire_name 为
+  成员名原文；`spec_digest` canonical；`ActionRisk != read_only →
+  has_side_effects` 映射；输出按 wire_name 排序。两级排除理由
+  `ToolExclusion`（模组级：Unavailable 附 missing 清单 / Conflict 附对端 /
+  Revoked / ReservedWireName；任务级：TaskPolicy、TaskBudget）。合成
+  `snapshot_digest` 绑定 generation + included module digest 集合 +
+  (tool_id, spec_digest, wire_name) 集合（DEC-002 加法演进：既有
+  `PromptProvenance.tool_snapshot_digest` 字段与非模组纯工具 digest 函数
+  不变，M3 空注册路径语义不变）。版本化 JSON 投影
+  `mira.tool_module.exposure.v1`（脱敏，供事件/Replay/报告）。
+- [ ] `M7-TM2-02` `wire_name` 跨模组命名规则 v1 冻结（设计 §17 开放项收口）：
+  wire 命名空间为扁平集合，成员名原文进入、不做任何自动前缀或改名；跨模组
+  唯一性由协商（TM0 Conflict）与激活（TM1 后激活者拒绝）fail-closed 门禁
+  承载；hosted provider 保留名（`is_known_hosted_tool_name`）冲突整组排除
+  （ReservedWireName），绝不部分暴露或静默改名；命名空间前缀（如
+  `builtin.simulator.env` → `simulator.*`）为非约束性约定，安全性不依赖
+  约定；投影层对漏网重名/重复 ToolId 防御性整组拒绝。
+- [ ] `M7-TM2-03` Simulator BuiltIn 参考模组 `make_simulator_reference_module`
+  （经真实解析器构建，manifest digest 为 golden 常量；含 read_only 与
+  user_visible 两成员、后者要求 `env.input.discrete`）；Replay 绑定
+  `verify_recorded_module_digests`（记录 module digest 集与投影 included
+  集合精确匹配，多/少/错 digest 显式错误）；与 `resolve_tool_calls` 既有
+  fail-closed 语义的组合测试（投影产物入 `ModelRequest.tools` 后正常解析，
+  未暴露名/hosted 名仍拒绝）。
 
 ### 4.4 后续阶段（立项时增补工作项与门禁）
 
@@ -202,11 +224,41 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   包含链接；两事件 payload 为版本化 JSON（`mira.tool_module.lifecycle.v1` /
   `mira.tool_module.negotiation.v1`），字段脱敏（不含 signature 原文与 secret）。
 
+### 5.3 TM2 门禁（2026-09-19 跑前冻结）
+
+- [ ] `M7-TM2-G1` 投影与身份分配：Available 模组成员进入 per-request
+  `ExposedToolSpec`（ToolId 派生确定性跨进程一致；spec_digest canonical；
+  wire_name 为成员名原文；`ActionRisk != read_only → has_side_effects`）；
+  输出按 wire_name 排序；同输入同 snapshot_digest。
+- [ ] `M7-TM2-G2` 两级排除矩阵：模组级（Unavailable 附完整 missing 清单 /
+  Conflict 附对端 / Revoked / ReservedWireName——成员撞 hosted 保留名整组排除，
+  不部分暴露、不改名）；任务级（TaskPolicy 显式排除附调用方理由、TaskBudget
+  预算耗尽按 module_id 序确定性整组排除，模组原子不拆成员）；每条排除含
+  level/reason/module_id/明细。
+- [ ] `M7-TM2-G3` 一致性 fail-closed：active 集与协商结论错配（缺 verdict、
+  module digest 不符、verdict 指向 active 外模组、active 集内重复 module_id、
+  达到投影层的跨模组重名/重复 ToolId）整组拒绝返回错误，无部分投影；空集
+  （无注册模组）投影为空视图且有确定 digest（§14 空 allowlist 兼容）。
+- [ ] `M7-TM2-G4` digest 绑定与确定性：snapshot_digest 绑定 generation +
+  included module digest 集合 + (tool_id, spec_digest, wire_name) 集合；
+  `tool_exposure_to_json` 为版本化 JSON（`mira.tool_module.exposure.v1`，
+  脱敏）；`--report` 跨进程字节一致（无时钟、无随机、canonical JSON）。
+- [ ] `M7-TM2-G5` Simulator 参考模组与 Replay 绑定：参考模组经真实解析器
+  构建且 manifest digest 为 golden 常量；全能力环境协商 Available 且投影
+  两成员（副作用映射正确）；缺 `env.input.discrete` 时模组级 Unavailable
+  附 missing；`verify_recorded_module_digests` 精确匹配通过，多/少/错
+  digest 全部显式拒绝。
+- [ ] `M7-TM2-G6` 组合与 consumer 闭包：投影产物填入 `ModelRequest.tools`
+  后 `resolve_tool_calls` 正常解析（wire_name/tool_id 匹配、digest 通过），
+  未暴露名与 hosted 名 fail closed 语义不变；新公开头可被最小外部 consumer
+  独立包含链接。
+
 ## 6. Executor 路由与关闭
 
 TM0 全部为串行控制面内的同步纯计算（协商有界、无 I/O），不新增异步路径；TM1
-的验证/安装类工作按工具模组设计 §10 以 `submit_auto()` 承载，future 必须消费。
-本里程碑不引入脱离 Executor 生命周期的线程或定时器；能力缺口先登记
+的验证/安装类工作按工具模组设计 §10 以 `submit_auto()` 承载，future 必须消耗；
+TM2 投影同样是串行控制面内的同步纯计算（有界、无 I/O、无时钟），不新增异步
+路径。本里程碑不引入脱离 Executor 生命周期的线程或定时器；能力缺口先登记
 `docs/executor_feedback/ledger.md`。
 
 ## 7. 测试矩阵
@@ -339,4 +391,54 @@ ABI、ASAN/UBSAN/TSAN、quality），master 合并提交 run
 [`35427226722`](https://github.com/Linductor-alkaid/mira/actions/runs/35427226722)
 success（12/12）。`M7-TM1-01`–`03` 与 `M7-TM1-G1`–`G6` 关闭；下一阶段为 TM2
 （LLM 暴露投影，实施前在本文件 §4.3 冻结细项与门禁）。
+
+2026-09-19：TM2 细项冻结并交付。交付 `include/mira/tool_module_exposure.hpp` +
+`src/tool/tool_module_exposure.cpp`（入 `mira_core`）：`project_tool_exposure`
+投影纯函数（active 集与协商结论错配——缺 verdict、digest/version 不符、引用集外
+模组、重复 module_id、漏网重名/重复 ToolId——整组 fail closed 无部分投影；空集
+投影为确定空视图，M3 空 allowlist 兼容）；ToolId 由 (module_id, module_digest,
+成员名) 确定性派生（TM2 身份分配落地）；`ActionRisk != read_only →
+has_side_effects` 映射；两级排除 `ToolExclusion`（模组级 module_unavailable 附
+missing/module_conflict/module_revoked/reserved_wire_name，任务级
+task_policy/task_budget，模组原子不拆成员）；合成 `snapshot_digest` 绑定
+generation + included module digest 集 + (tool_id, spec_digest, wire_name) 三元组
+集（DEC-002 加法演进：`PromptProvenance.tool_snapshot_digest` 字段与非模组
+`tool_snapshot_digest` 纯函数不变）；`tool_exposure_to_json`（
+`mira.tool_module.exposure.v1`，脱敏）；Replay 绑定
+`verify_recorded_module_digests`（集合精确匹配，多/少/错显式拒绝）；Simulator
+BuiltIn 参考模组 `make_simulator_reference_module`（`builtin.simulator.env`，经
+真实解析器构建，manifest digest 为 golden 常量）；`wire_name` 规则 v1 冻结（设计
+§17 收口 + DEC-009 注记：扁平命名空间、成员名原文、唯一性由协商/激活门禁承载、
+hosted 保留名整组排除、前缀为非约束性约定）。
+
+实现期修复两处（均经 Independent-Verification-Agent 独立发现/复验）：
+(1) 既有 TM0 缺陷——`parse_tool_module_manifest` 成员重名检测持有悬垂
+`string_view`（成员名被 move 后栈槽复用，等长 ≤15 字符短名被误判重复），修复为
+拷贝语义并在 TM0 测试矩阵新增回归门（等长短名对/三成员解析成功、真重复相邻与
+间隔位置仍拒绝）；(2) **format 门禁空转缺陷**——`format-check` 目标在 `VERBATIM`
+下 `-DROOT_DIR="..."` 的内嵌引号被字面保留，ROOT_DIR 带引号使 GLOB 匹配零文件、
+检查自 M0 基线（`89d88a6`）起静默通过；修复传参与脚本（零文件 FATAL_ERROR
+防护 + 文件计数输出），并按 CI 口径（clang-format 18.1.8）整树机械重排 142 个
+漂移文件。**更正声明：既往各轮验证记录中"format 检查通过"的证据对 C++ 文件
+为空转结果，不构成格式合规证据；本轮起以修复后门禁（214 文件真实检查）为准，
+历史记录按规范保留不重写。**
+
+测试 `tests/m7/m7_tool_module_exposure_test.cpp`（16 个 gate 函数、约 360 断言，
+label `contract`；测试的编写、运行与 sanitizer 取证由 Independent-Verification-
+Agent 独立完成，共三轮：首轮覆盖 G1–G6 全部通过并发现 TM0 解析器缺陷；次轮
+复验修复并落地回归门与短名 fixture；末轮重排后最终取证）；TM0 测试矩阵同步
+扩至 191 断言；`examples/minimal_consumer.cpp` 追加 TM2 闭包段。本地门禁：全量
+ctest **86/86**（原 85 + 本里程碑 1 目标）、ASAN/UBSAN/TSAN（`setarch -R`）m7
+两测试 + consumer 9 项零报告、format/docs/platform-boundary/sbom 四检查通过
+（format 由修复后门禁真实检查 214 文件；format 重排的"纯机械性"经 IVA 逐文件
+去空白 diff 审计：118 文件去空白逐字节一致，其余差异全部归因于 include 排序与
+本轮已验证代码变更）、clang-tidy 18.1.8 预检两个被改库源零违例、本机 NDK
+r26.3 两 ABI（arm64-v8a/x86_64）交叉编译 `mira_core`+`mira_workflow` 通过且
+TM2 符号在库（重排后重建复验）；TM2 契约报告 `--report` 跨进程与跨四个构建树
+（debug/asan/ubsan/tsan）字节一致（md5
+`a96637323a11eaeea7cd433c0e97e560`），TM0 契约报告 md5 保持
+`0b25496af889d106e5ecbfcb9b874d45` 不变（重排无行为影响佐证）。限制与未执行项：
+"重复派生 ToolId"防御分支无法经公开输入构造触发（需 sha256 前 16 字节碰撞），
+仅静态审查覆盖；executor shutdown 进行中并发窗口未注入竞态测试（与 TM1 一致）；
+Windows/Android 运行与 Release/quality 由 PR CI 回填后 TM2 方可关闭。
 

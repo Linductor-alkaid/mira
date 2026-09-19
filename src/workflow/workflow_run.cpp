@@ -27,10 +27,10 @@ std::string workflow_run_state_name(WorkflowRunState state) {
 }
 
 Result<WorkflowRunState> parse_workflow_run_state(std::string_view name) {
-    for (auto state : {WorkflowRunState::Created, WorkflowRunState::Running,
-                       WorkflowRunState::Paused, WorkflowRunState::WaitingUser,
-                       WorkflowRunState::WaitingAgent, WorkflowRunState::Completed,
-                       WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
+    for (auto state :
+         {WorkflowRunState::Created, WorkflowRunState::Running, WorkflowRunState::Paused,
+          WorkflowRunState::WaitingUser, WorkflowRunState::WaitingAgent,
+          WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
         if (workflow_run_state_name(state) == name) {
             return state;
         }
@@ -183,9 +183,9 @@ admit_workflow_run_completion(const WorkflowRunView &view, std::uint64_t signal_
 
 Result<void> validate_workflow_policy_compatibility(const WorkflowDefinition &definition,
                                                     WorkflowPolicy policy) {
-    const bool allowed = std::any_of(definition.allowed_policies.begin(),
-                                     definition.allowed_policies.end(),
-                                     [&](WorkflowPolicy entry) { return entry == policy; });
+    const bool allowed =
+        std::any_of(definition.allowed_policies.begin(), definition.allowed_policies.end(),
+                    [&](WorkflowPolicy entry) { return entry == policy; });
     if (!allowed) {
         Error error;
         error.code = ErrorCode::InvalidArgument;
@@ -200,8 +200,7 @@ Result<void> validate_workflow_policy_compatibility(const WorkflowDefinition &de
                 Error error;
                 error.code = ErrorCode::InvalidArgument;
                 error.domain = "mira.workflow";
-                error.safe_message =
-                    "agent escalation hook requires an agent-capable policy";
+                error.safe_message = "agent escalation hook requires an agent-capable policy";
                 return error;
             }
         }

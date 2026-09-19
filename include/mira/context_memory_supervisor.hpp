@@ -1,11 +1,11 @@
 #pragma once
 
-#include <mira/core_contracts.hpp>
 #include <mira/context_consolidation.hpp>
 #include <mira/context_curator.hpp>
-#include <mira/context_retrieval.hpp>
 #include <mira/context_rerank.hpp>
+#include <mira/context_retrieval.hpp>
 #include <mira/context_working_context.hpp>
+#include <mira/core_contracts.hpp>
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
@@ -111,9 +111,8 @@ class ContextMemorySupervisor final {
     // operation result, a rejection error, or a Cancelled error when a
     // deferrable operation is cancelled at shutdown.
     template <typename T>
-    [[nodiscard]] std::future<Result<T>>
-    submit(std::string label, SupervisedOpClass op_class,
-           std::function<Result<T>(SupervisorToken)> op);
+    [[nodiscard]] std::future<Result<T>> submit(std::string label, SupervisedOpClass op_class,
+                                                std::function<Result<T>(SupervisorToken)> op);
 
     // Convenience wrappers for the common routing decisions (§5 of the M4
     // plan). All of them are synchronous store/component calls wrapped in
@@ -121,8 +120,8 @@ class ContextMemorySupervisor final {
     [[nodiscard]] std::future<Result<std::optional<TaskCheckpoint>>>
     schedule_checkpoint(CheckpointCoordinator &coordinator, TaskId task, SessionId session,
                         CheckpointTrigger trigger, Timestamp now);
-    [[nodiscard]] std::future<Result<MemoryQueryResult>>
-    schedule_memory_query(IMemory &memory, MemoryQuery query);
+    [[nodiscard]] std::future<Result<MemoryQueryResult>> schedule_memory_query(IMemory &memory,
+                                                                               MemoryQuery query);
     // Layer 1 retrieval (M17): Interactive class with the query's soft
     // deadline; the future must be consumed like every other wrapper.
     [[nodiscard]] std::future<Result<ContextRetrievalResult>>
@@ -142,8 +141,8 @@ class ContextMemorySupervisor final {
     // its future with a Cancelled error at shutdown. The future must be
     // consumed like every other wrapper.
     [[nodiscard]] std::future<Result<ConversationCheckpoint>>
-    schedule_context_consolidation(ISemanticConsolidator &consolidator,
-                                   ConversationSegment segment, ConsolidationOptions options);
+    schedule_context_consolidation(ISemanticConsolidator &consolidator, ConversationSegment segment,
+                                   ConsolidationOptions options);
     // Working Context commit (M20, Stage W1): Deferrable class per the
     // curator design §8 — the snapshot chain refreshes opportunistically and
     // Stage W2 swaps the deterministic projection for a model-mediated
@@ -168,12 +167,11 @@ class ContextMemorySupervisor final {
                                     std::optional<WorkingContextSnapshot> previous,
                                     ConversationCheckpoint checkpoint,
                                     std::vector<ConversationSegmentEntry> recent_events,
-                                    WorkingContextCommitState live,
-                                    ContextCurationOptions options);
+                                    WorkingContextCommitState live, ContextCurationOptions options);
     [[nodiscard]] std::future<Result<MemoryMutationResult>>
     schedule_mutation(IMemory &memory, MemoryMutation mutation);
-    [[nodiscard]] std::future<Result<ErasureResult>>
-    schedule_erasure(IMemory &memory, ErasureRequest request);
+    [[nodiscard]] std::future<Result<ErasureResult>> schedule_erasure(IMemory &memory,
+                                                                      ErasureRequest request);
     [[nodiscard]] std::future<Result<MemoryCompactionResult>>
     schedule_retention_sweep(IMemory &memory, MemoryScope scope);
 
@@ -193,9 +191,8 @@ class ContextMemorySupervisor final {
     // be complete (this ordering is what the shutdown test relies on).
     [[nodiscard]] Result<void> submit_erased(
         const std::string &label, SupervisedOpClass op_class,
-        std::function<void(SupervisorToken,
-                           const std::function<void(bool failed, bool degraded, bool cancelled)>
-                               &settle)> op);
+        std::function<void(SupervisorToken, const std::function<void(bool failed, bool degraded,
+                                                                     bool cancelled)> &settle)> op);
 
     std::unique_ptr<Impl> impl_;
 };
@@ -211,9 +208,9 @@ namespace supervisor_detail {
 } // namespace supervisor_detail
 
 template <typename T>
-std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
-                                                       SupervisedOpClass op_class,
-                                                       std::function<Result<T>(SupervisorToken)> op) {
+std::future<Result<T>>
+ContextMemorySupervisor::submit(std::string label, SupervisedOpClass op_class,
+                                std::function<Result<T>(SupervisorToken)> op) {
     auto promise = std::make_shared<std::promise<Result<T>>>();
     auto future = promise->get_future();
     const auto rejection = submit_erased(
@@ -229,9 +226,8 @@ std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
                     ErrorCode::Cancelled, "deferrable operation cancelled at shutdown")));
                 return;
             }
-            Result<T> outcome =
-                Result<T>(supervisor_detail::make_error(ErrorCode::Internal,
-                                                        "supervised operation produced no outcome"));
+            Result<T> outcome = Result<T>(supervisor_detail::make_error(
+                ErrorCode::Internal, "supervised operation produced no outcome"));
             try {
                 if (op) {
                     outcome = op(token);

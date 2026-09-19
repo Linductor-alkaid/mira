@@ -132,16 +132,15 @@ Result<void> SqliteStoreOptions::validate() const {
 
 JsonValue store_diagnostics_to_json(const StoreDiagnostics &diagnostics) {
     JsonValue::Object object;
+    object.emplace_back("disposition", store_schema_disposition_name(diagnostics.disposition));
     object.emplace_back(
-        "disposition", store_schema_disposition_name(diagnostics.disposition));
-    object.emplace_back("file_schema",
-                        JsonValue::Object{
-                            {"major", static_cast<std::int64_t>(diagnostics.file_schema.major)},
-                            {"minor", static_cast<std::int64_t>(diagnostics.file_schema.minor)}});
-    object.emplace_back("reader_schema",
-                        JsonValue::Object{
-                            {"major", static_cast<std::int64_t>(diagnostics.reader_schema.major)},
-                            {"minor", static_cast<std::int64_t>(diagnostics.reader_schema.minor)}});
+        "file_schema",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(diagnostics.file_schema.major)},
+                          {"minor", static_cast<std::int64_t>(diagnostics.file_schema.minor)}});
+    object.emplace_back(
+        "reader_schema",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(diagnostics.reader_schema.major)},
+                          {"minor", static_cast<std::int64_t>(diagnostics.reader_schema.minor)}});
     object.emplace_back("read_only", diagnostics.read_only);
     object.emplace_back("journal_mode", diagnostics.journal_mode);
     object.emplace_back("page_count", diagnostics.page_count);
@@ -237,9 +236,9 @@ class SqliteCheckpointStore::Impl final {
                       " schema_minor, projection_digest, document FROM task_checkpoints"
                       " WHERE task_id = ?1 AND sequence <= ?2"
                       " ORDER BY sequence DESC, created_at DESC LIMIT 1"
-                : "SELECT task_id, checkpoint_id, sequence, created_at, schema_major,"
-                  " schema_minor, projection_digest, document FROM task_checkpoints"
-                  " WHERE task_id = ?1 ORDER BY sequence DESC, created_at DESC LIMIT 1");
+                    : "SELECT task_id, checkpoint_id, sequence, created_at, schema_major,"
+                      " schema_minor, projection_digest, document FROM task_checkpoints"
+                      " WHERE task_id = ?1 ORDER BY sequence DESC, created_at DESC LIMIT 1");
         if (!query.valid()) {
             return store_open_error(ErrorCode::Internal, "checkpoint query failed to prepare");
         }
@@ -264,8 +263,7 @@ class SqliteCheckpointStore::Impl final {
     std::atomic<bool> read_only_{false};
 };
 
-SqliteCheckpointStore::SqliteCheckpointStore(std::unique_ptr<Impl> impl)
-    : impl_(std::move(impl)) {}
+SqliteCheckpointStore::SqliteCheckpointStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
 Result<std::unique_ptr<SqliteCheckpointStore>>
 SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions options) {
@@ -296,10 +294,9 @@ SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions opt
     const bool fresh = tables.value().empty();
     if (!fresh && std::find(tables.value().begin(), tables.value().end(), "store_meta") ==
                       tables.value().end()) {
-        return store_open_error(
-            ErrorCode::InvalidState,
-            "store file holds an unrecognized schema; refusing to touch it "
-            "(reopen with read_only_diagnostic to inspect)");
+        return store_open_error(ErrorCode::InvalidState,
+                                "store file holds an unrecognized schema; refusing to touch it "
+                                "(reopen with read_only_diagnostic to inspect)");
     }
 
     if (fresh) {
@@ -316,8 +313,8 @@ SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions opt
             if (!kind) {
                 return kind.error();
             }
-            const auto version = storage::meta_write(
-                handle.get(), "schema_version", schema_version_text(kCheckpointStoreSchema));
+            const auto version = storage::meta_write(handle.get(), "schema_version",
+                                                     schema_version_text(kCheckpointStoreSchema));
             if (!version) {
                 return version.error();
             }
@@ -373,8 +370,8 @@ SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions opt
                 return store_open_error(ErrorCode::UnsupportedVersion,
                                         "store schema is too old for this reader");
             }
-            const auto bump = storage::meta_write(
-                handle.get(), "schema_version", schema_version_text(kCheckpointStoreSchema));
+            const auto bump = storage::meta_write(handle.get(), "schema_version",
+                                                  schema_version_text(kCheckpointStoreSchema));
             if (!bump) {
                 return bump.error();
             }
@@ -433,20 +430,19 @@ SqliteCheckpointStore::latest_at_or_before(TaskId task, std::uint64_t max_sequen
 }
 
 Result<std::size_t> SqliteCheckpointStore::count(TaskId task) const {
-    return impl_->channel_->run<std::size_t>(
-        [task](sqlite3 *db) -> Result<std::size_t> {
-            Statement query(db, "SELECT COUNT(*) FROM task_checkpoints WHERE task_id = ?1");
-            if (!query.valid()) {
-                return store_open_error(ErrorCode::Internal, "checkpoint count failed to prepare");
-            }
-            const std::string id = task.to_string();
-            sqlite3_bind_text(query.get(), 1, id.c_str(), -1, storage::transient_copy());
-            const int step = sqlite3_step(query.get());
-            if (step != SQLITE_ROW) {
-                return store_open_error(ErrorCode::Internal, "checkpoint count failed");
-            }
-            return static_cast<std::size_t>(sqlite3_column_int64(query.get(), 0));
-        });
+    return impl_->channel_->run<std::size_t>([task](sqlite3 *db) -> Result<std::size_t> {
+        Statement query(db, "SELECT COUNT(*) FROM task_checkpoints WHERE task_id = ?1");
+        if (!query.valid()) {
+            return store_open_error(ErrorCode::Internal, "checkpoint count failed to prepare");
+        }
+        const std::string id = task.to_string();
+        sqlite3_bind_text(query.get(), 1, id.c_str(), -1, storage::transient_copy());
+        const int step = sqlite3_step(query.get());
+        if (step != SQLITE_ROW) {
+            return store_open_error(ErrorCode::Internal, "checkpoint count failed");
+        }
+        return static_cast<std::size_t>(sqlite3_column_int64(query.get(), 0));
+    });
 }
 
 Result<std::size_t> SqliteCheckpointStore::erase_task(TaskId task, std::string reason) {
@@ -483,10 +479,10 @@ Result<std::size_t> SqliteCheckpointStore::erase_task(TaskId task, std::string r
             if (!log.valid()) {
                 return store_open_error(ErrorCode::Internal, "erasure log failed to prepare");
             }
-            const std::int64_t now = static_cast<std::int64_t>(
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::system_clock::now().time_since_epoch())
-                    .count());
+            const std::int64_t now =
+                static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                              std::chrono::system_clock::now().time_since_epoch())
+                                              .count());
             sqlite3_bind_text(log.get(), 1, id.c_str(), -1, storage::transient_copy());
             sqlite3_bind_text(log.get(), 2, reason.c_str(), -1, storage::transient_copy());
             sqlite3_bind_int64(log.get(), 3, static_cast<std::int64_t>(removed));
@@ -510,12 +506,8 @@ std::size_t SqliteCheckpointStore::pending_requests() const {
     return impl_->channel_->pending_count();
 }
 
-void SqliteCheckpointStore::set_worker_paused(bool paused) {
-    impl_->channel_->set_paused(paused);
-}
+void SqliteCheckpointStore::set_worker_paused(bool paused) { impl_->channel_->set_paused(paused); }
 
-Result<void> SqliteCheckpointStore::close() noexcept {
-    return impl_->channel_->close();
-}
+Result<void> SqliteCheckpointStore::close() noexcept { return impl_->channel_->close(); }
 
 } // namespace mira

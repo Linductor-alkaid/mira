@@ -127,11 +127,10 @@ namespace {
                               std::string{where} + " must be an object");
     }
     for (const auto &member : *object.as_object()) {
-        const bool known =
-            std::any_of(required.begin(), required.end(),
-                        [&](std::string_view key) { return key == member.first; }) ||
-            std::any_of(optional.begin(), optional.end(),
-                        [&](std::string_view key) { return key == member.first; });
+        const bool known = std::any_of(required.begin(), required.end(),
+                                       [&](std::string_view key) { return key == member.first; }) ||
+                           std::any_of(optional.begin(), optional.end(),
+                                       [&](std::string_view key) { return key == member.first; });
         if (!known) {
             return learning_error(WorkflowLearningError::UnknownField,
                                   std::string{where} + ": unknown field '" + member.first + "'");
@@ -139,9 +138,9 @@ namespace {
     }
     for (const auto key : required) {
         if (object.find(key) == nullptr) {
-            return learning_error(WorkflowLearningError::InvalidShape,
-                                  std::string{where} + ": missing field '" + std::string{key} +
-                                      "'");
+            return learning_error(WorkflowLearningError::InvalidShape, std::string{where} +
+                                                                           ": missing field '" +
+                                                                           std::string{key} + "'");
         }
     }
     return Result<void>{};
@@ -173,10 +172,10 @@ namespace {
         return learning_error(WorkflowLearningError::InvalidShape,
                               std::string{where} + ": '" + key + "' must be a string");
     }
-    return member->as_string()->empty() ? learning_error(WorkflowLearningError::InvalidShape,
-                                                          std::string{where} + ": '" + key +
-                                                              "' must be non-empty")
-                                        : Result<std::string>{*member->as_string()};
+    return member->as_string()->empty()
+               ? learning_error(WorkflowLearningError::InvalidShape,
+                                std::string{where} + ": '" + key + "' must be non-empty")
+               : Result<std::string>{*member->as_string()};
 }
 
 [[nodiscard]] Result<std::uint64_t> parse_count_member(const JsonValue &json, const char *key,
@@ -257,9 +256,8 @@ namespace {
 JsonValue failure_signature_to_json(const WorkflowFailureSignature &signature) {
     JsonValue::Object object;
     object.emplace_back("workflow_id", signature.workflow_id);
-    object.emplace_back("step_id", signature.step_id.has_value()
-                                       ? JsonValue{*signature.step_id}
-                                       : JsonValue{});
+    object.emplace_back("step_id", signature.step_id.has_value() ? JsonValue{*signature.step_id}
+                                                                 : JsonValue{});
     object.emplace_back("step_kind", signature.step_kind.has_value()
                                          ? JsonValue{*signature.step_kind}
                                          : JsonValue{});
@@ -267,8 +265,8 @@ JsonValue failure_signature_to_json(const WorkflowFailureSignature &signature) {
     return JsonValue{std::move(object)};
 }
 
-Result<WorkflowFailureSignature>
-failure_signature_from_json(const JsonValue &json, const WorkflowLearningLimits &limits) {
+Result<WorkflowFailureSignature> failure_signature_from_json(const JsonValue &json,
+                                                             const WorkflowLearningLimits &limits) {
     static constexpr std::string_view kRequired[] = {"workflow_id", "reason_code"};
     static constexpr std::string_view kOptional[] = {"step_id", "step_kind"};
     if (auto check = check_keys(json, kRequired, kOptional, "failure signature");
@@ -339,10 +337,10 @@ JsonValue workflow_episode_to_json(const WorkflowEpisodeRecord &episode) {
     return JsonValue{std::move(object)};
 }
 
-Result<WorkflowEpisodeRecord>
-workflow_episode_from_json(const JsonValue &json, const WorkflowLearningLimits &limits) {
+Result<WorkflowEpisodeRecord> workflow_episode_from_json(const JsonValue &json,
+                                                         const WorkflowLearningLimits &limits) {
     static constexpr std::string_view kRequired[] = {
-        "schema_version", "run_id", "workflow_id", "ir_digest", "policy",
+        "schema_version", "run_id",      "workflow_id",         "ir_digest",     "policy",
         "outcome",        "escalations", "checkpoint_handoffs", "recorded_at_ms"};
     static constexpr std::string_view kOptional[] = {"failed_step_id", "failure_reason_code"};
     if (auto check = check_keys(json, kRequired, kOptional, "episode"); !check.has_value()) {
@@ -427,8 +425,7 @@ workflow_episode_from_json(const JsonValue &json, const WorkflowLearningLimits &
         return learning_error(WorkflowLearningError::InvalidShape,
                               "failed episodes require the failure signature fields");
     }
-    for (const auto &[key, target] :
-         std::array<std::pair<const char *, std::uint32_t *>, 2>{
+    for (const auto &[key, target] : std::array<std::pair<const char *, std::uint32_t *>, 2>{
              std::pair{"escalations", &episode.escalations},
              std::pair{"checkpoint_handoffs", &episode.checkpoint_handoffs}}) {
         auto count = parse_count_member(json, key, "episode");
@@ -486,13 +483,11 @@ JsonValue recovery_lesson_to_json(const WorkflowRecoveryLesson &lesson) {
     return JsonValue{std::move(object)};
 }
 
-Result<WorkflowRecoveryLesson>
-recovery_lesson_from_json(const JsonValue &json, const WorkflowLearningLimits &limits) {
-    static constexpr std::string_view kRequired[] = {"schema_version", "lesson_id",    "workflow_id",
-                                                     "ir_digest",      "recovered_run_id",
-                                                     "failure",        "recovery",
-                                                     "resumed_without_patch", "outcome",
-                                                     "recorded_at_ms"};
+Result<WorkflowRecoveryLesson> recovery_lesson_from_json(const JsonValue &json,
+                                                         const WorkflowLearningLimits &limits) {
+    static constexpr std::string_view kRequired[] = {
+        "schema_version", "lesson_id", "workflow_id",           "ir_digest", "recovered_run_id",
+        "failure",        "recovery",  "resumed_without_patch", "outcome",   "recorded_at_ms"};
     if (auto check = check_keys(json, kRequired, {}, "lesson"); !check.has_value()) {
         return check.error();
     }

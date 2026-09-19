@@ -115,7 +115,6 @@ constexpr const char *kSchemaDdl =
         std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
 }
 
-
 [[nodiscard]] std::string scope_key_of(const MemoryScope &scope) {
     std::string key = memory_scope_kind_name(scope.kind);
     key += '|';
@@ -152,7 +151,6 @@ constexpr const char *kSchemaDdl =
     }
     return "unknown";
 }
-
 
 [[nodiscard]] int verification_rank(MemoryVerification verification) {
     switch (verification) {
@@ -265,8 +263,7 @@ Result<void> SqliteMemoryStoreOptions::validate() const {
         return store_error(ErrorCode::InvalidArgument, "store path must not be empty");
     }
     if (max_pending_requests == 0) {
-        return store_error(ErrorCode::InvalidArgument,
-                           "store bounds must be greater than zero");
+        return store_error(ErrorCode::InvalidArgument, "store bounds must be greater than zero");
     }
     if (operation_timeout.count() <= 0 || busy_timeout.count() < 0) {
         return store_error(ErrorCode::InvalidArgument, "store timeouts must be positive");
@@ -317,7 +314,8 @@ class SqliteMemoryStore::Impl final {
         sqlite3_bind_text(insert.get(), 2, scope_key.c_str(), -1, storage::transient_copy());
         sqlite3_bind_text(insert.get(), 3, memory_scope_kind_name(record.scope.kind).c_str(), -1,
                           storage::transient_copy());
-        sqlite3_bind_text(insert.get(), 4, record.scope.subject_id.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(insert.get(), 4, record.scope.subject_id.c_str(), -1,
+                          storage::transient_copy());
         if (record.scope.tenant_id.has_value()) {
             sqlite3_bind_text(insert.get(), 5, record.scope.tenant_id->c_str(), -1,
                               storage::transient_copy());
@@ -358,9 +356,8 @@ class SqliteMemoryStore::Impl final {
         if (sqlite3_step(prune_provenance.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "provenance sync failed");
         }
-        Statement provenance(db,
-                             "INSERT OR IGNORE INTO memory_provenance(record_id, event_id)"
-                             " VALUES(?1, ?2)");
+        Statement provenance(db, "INSERT OR IGNORE INTO memory_provenance(record_id, event_id)"
+                                 " VALUES(?1, ?2)");
         if (!provenance.valid()) {
             return store_error(ErrorCode::Internal, "provenance insert failed to prepare");
         }
@@ -382,8 +379,7 @@ class SqliteMemoryStore::Impl final {
             return store_error(ErrorCode::Internal, "fts sync failed");
         }
         if (record.status == MemoryStatus::Active) {
-            Statement insert_fts(
-                db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
+            Statement insert_fts(db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
             if (!insert_fts.valid()) {
                 return store_error(ErrorCode::Internal, "fts insert failed to prepare");
             }
@@ -429,8 +425,8 @@ class SqliteMemoryStore::Impl final {
         return Result<void>{};
     }
 
-    [[nodiscard]] static Result<std::optional<std::uint64_t>>
-    current_version(sqlite3 *db, const MemoryId &id) {
+    [[nodiscard]] static Result<std::optional<std::uint64_t>> current_version(sqlite3 *db,
+                                                                              const MemoryId &id) {
         Statement query(db, "SELECT version FROM memory_records WHERE id = ?1");
         if (!query.valid()) {
             return store_error(ErrorCode::Internal, "version read failed to prepare");
@@ -449,7 +445,7 @@ class SqliteMemoryStore::Impl final {
     }
 
     [[nodiscard]] static Result<std::optional<MemoryRecord>> read_record(sqlite3 *db,
-                                                                        const MemoryId &id) {
+                                                                         const MemoryId &id) {
         Statement query(
             db, "SELECT id, scope_key, kind, statement, recorded_at, confidence, verification,"
                 " sensitivity_rank, status, evidence, valid_from, document FROM memory_records"
@@ -503,8 +499,8 @@ class SqliteMemoryStore::Impl final {
         indexed.version = version;
         bind_record_insert(upsert, indexed, scope_key, version);
         if (record.evidence.has_value()) {
-            const std::string evidence = to_json_string(
-                JsonValue::Object{{"id", record.evidence->id.to_string()}});
+            const std::string evidence =
+                to_json_string(JsonValue::Object{{"id", record.evidence->id.to_string()}});
             sqlite3_bind_text(upsert.get(), 8, evidence.c_str(), -1, storage::transient_copy());
         } else {
             sqlite3_bind_null(upsert.get(), 8);
@@ -570,10 +566,10 @@ class SqliteMemoryStore::Impl final {
                 MemoryMutationResult result;
                 const auto *type_text =
                     reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 0));
-                result.applied = type_text != nullptr &&
-                                         memory_mutation_type_from(type_text).has_value()
-                                     ? *memory_mutation_type_from(type_text)
-                                     : MemoryMutationType::Noop;
+                result.applied =
+                    type_text != nullptr && memory_mutation_type_from(type_text).has_value()
+                        ? *memory_mutation_type_from(type_text)
+                        : MemoryMutationType::Noop;
                 const auto *record_text =
                     reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 1));
                 if (auto parsed = MemoryId::parse(record_text != nullptr ? record_text : "");
@@ -658,9 +654,8 @@ class SqliteMemoryStore::Impl final {
                 new_version = 1;
                 break;
             }
-            proposed.status = proposed.status == MemoryStatus::Superseded
-                                  ? MemoryStatus::Active
-                                  : proposed.status;
+            proposed.status = proposed.status == MemoryStatus::Superseded ? MemoryStatus::Active
+                                                                          : proposed.status;
             // Update is in place: the target keeps its identity and version
             // history; only Supersede introduces a fresh record id.
             proposed.id = *mutation.target;
@@ -753,7 +748,8 @@ class SqliteMemoryStore::Impl final {
         }
         int next_param = 1;
         for (const auto &key : scope_keys) {
-            sqlite3_bind_text(universe.get(), next_param, key.c_str(), -1, storage::transient_copy());
+            sqlite3_bind_text(universe.get(), next_param, key.c_str(), -1,
+                              storage::transient_copy());
             ++next_param;
         }
         if (!bitemporal) {
@@ -763,7 +759,8 @@ class SqliteMemoryStore::Impl final {
         if (request.kinds.has_value()) {
             for (const auto kind : *request.kinds) {
                 const std::string name = memory_kind_name(kind);
-                sqlite3_bind_text(universe.get(), next_param, name.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(universe.get(), next_param, name.c_str(), -1,
+                                  storage::transient_copy());
                 ++next_param;
             }
         }
@@ -782,9 +779,8 @@ class SqliteMemoryStore::Impl final {
         }
         if (request.max_sensitivity.has_value()) {
             const int cap = sensitivity_rank(*request.max_sensitivity);
-            std::erase_if(candidates, [cap](const Row &row) {
-                return row.sensitivity_rank_value > cap;
-            });
+            std::erase_if(candidates,
+                          [cap](const Row &row) { return row.sensitivity_rank_value > cap; });
         }
         if (bitemporal) {
             // Resolve each record to the version mandated by the bitemporal
@@ -836,9 +832,10 @@ class SqliteMemoryStore::Impl final {
                         if (version_record.validity.valid_until.has_value()) {
                             const std::int64_t closed =
                                 wall_nanos(*version_record.validity.valid_until);
-                            effective_until = !effective_until.has_value() || closed < *effective_until
-                                                  ? std::optional<std::int64_t>(closed)
-                                                  : effective_until;
+                            effective_until =
+                                !effective_until.has_value() || closed < *effective_until
+                                    ? std::optional<std::int64_t>(closed)
+                                    : effective_until;
                         }
                         vstep = sqlite3_step(versions.get());
                         continue;
@@ -909,8 +906,7 @@ class SqliteMemoryStore::Impl final {
 
         // FTS leg: phrase match restricted to the scope universe.
         std::map<std::string, double> fts_rank;
-        if (!request.text.empty() &&
-            std::chrono::steady_clock::now() < deadline_point) {
+        if (!request.text.empty() && std::chrono::steady_clock::now() < deadline_point) {
             Statement fts(db, "SELECT record_id, rank FROM memory_fts WHERE memory_fts MATCH ?1"
                               " ORDER BY rank LIMIT 512");
             if (fts.valid()) {
@@ -926,8 +922,8 @@ class SqliteMemoryStore::Impl final {
                         // FTS5 bm25 ranks are negative-better; normalize the
                         // magnitude into a (0,1] contribution.
                         const double rank = sqlite3_column_double(fts.get(), 1);
-                        fts_rank[id_text] =
-                            1.0 / (1.0 + std::max(0.0, -rank) + static_cast<double>(position) * 0.01);
+                        fts_rank[id_text] = 1.0 / (1.0 + std::max(0.0, -rank) +
+                                                   static_cast<double>(position) * 0.01);
                     }
                     ++position;
                     fstep = sqlite3_step(fts.get());
@@ -944,12 +940,10 @@ class SqliteMemoryStore::Impl final {
 
         // Vector leg: bounded cosine over indexed embeddings.
         std::map<std::string, double> vector_scores;
-        if (!request.query_embedding.empty() &&
-            std::chrono::steady_clock::now() < deadline_point) {
+        if (!request.query_embedding.empty() && std::chrono::steady_clock::now() < deadline_point) {
             const std::size_t query_dim = request.query_embedding.size();
-            Statement embeddings(
-                db, "SELECT record_id, vector FROM memory_embeddings"
-                    " ORDER BY embedded_at DESC LIMIT ?");
+            Statement embeddings(db, "SELECT record_id, vector FROM memory_embeddings"
+                                     " ORDER BY embedded_at DESC LIMIT ?");
             std::size_t vector_errors = 0;
             if (embeddings.valid()) {
                 sqlite3_bind_int64(embeddings.get(), 1,
@@ -960,8 +954,7 @@ class SqliteMemoryStore::Impl final {
                         reinterpret_cast<const char *>(sqlite3_column_text(embeddings.get(), 0));
                     const auto *blob = sqlite3_column_blob(embeddings.get(), 1);
                     const int bytes = sqlite3_column_bytes(embeddings.get(), 1);
-                    if (id_text == nullptr || blob == nullptr ||
-                        bytes <= 0 || bytes % 4 != 0) {
+                    if (id_text == nullptr || blob == nullptr || bytes <= 0 || bytes % 4 != 0) {
                         ++vector_errors;
                         estep = sqlite3_step(embeddings.get());
                         continue;
@@ -1011,17 +1004,16 @@ class SqliteMemoryStore::Impl final {
                                         ? now
                                         : std::max_element(candidates.begin(), candidates.end(),
                                                            [](const Row &a, const Row &b) {
-                                                               return a.recorded_at <
-                                                                      b.recorded_at;
+                                                               return a.recorded_at < b.recorded_at;
                                                            })
                                               ->recorded_at;
-        const std::int64_t oldest =
-            candidates.empty() ? now
-                               : std::min_element(candidates.begin(), candidates.end(),
-                                                  [](const Row &a, const Row &b) {
-                                                      return a.recorded_at < b.recorded_at;
-                                                  })
-                                     ->recorded_at;
+        const std::int64_t oldest = candidates.empty()
+                                        ? now
+                                        : std::min_element(candidates.begin(), candidates.end(),
+                                                           [](const Row &a, const Row &b) {
+                                                               return a.recorded_at < b.recorded_at;
+                                                           })
+                                              ->recorded_at;
         const double span = newest > oldest ? static_cast<double>(newest - oldest) : 1.0;
         const bool any_leg = !exact_hits.empty() || !fts_rank.empty() || !vector_scores.empty();
         // A query that asked for ranking (text, terms or embedding) and got
@@ -1059,15 +1051,11 @@ class SqliteMemoryStore::Impl final {
                 score += weights.vector * vector_entry->second;
             }
             score += weights.verification *
-                     (static_cast<double>(
-                          verification_rank(row.decoded.verification)) /
-                      3.0);
+                     (static_cast<double>(verification_rank(row.decoded.verification)) / 3.0);
             score += weights.confidence * row.confidence;
             if (newest >= oldest) {
                 const double recency =
-                    span > 0.0
-                        ? static_cast<double>(row.recorded_at - oldest) / span
-                        : 1.0;
+                    span > 0.0 ? static_cast<double>(row.recorded_at - oldest) / span : 1.0;
                 score += weights.recency * recency;
             }
             scored.push_back({&row, score});
@@ -1122,7 +1110,8 @@ class SqliteMemoryStore::Impl final {
             if (!query.valid()) {
                 return store_error(ErrorCode::Internal, "erasure scan failed to prepare");
             }
-            sqlite3_bind_text(query.get(), 1, targets.scope_key->c_str(), -1, storage::transient_copy());
+            sqlite3_bind_text(query.get(), 1, targets.scope_key->c_str(), -1,
+                              storage::transient_copy());
             int step = sqlite3_step(query.get());
             while (step == SQLITE_ROW) {
                 const auto *id_text =
@@ -1154,8 +1143,8 @@ class SqliteMemoryStore::Impl final {
         return targets;
     }
 
-    [[nodiscard]] static Result<std::optional<ArtifactId>> evidence_artifact(sqlite3 *db,
-                                                                            const std::string &id) {
+    [[nodiscard]] static Result<std::optional<ArtifactId>>
+    evidence_artifact(sqlite3 *db, const std::string &id) {
         Statement query(db, "SELECT evidence FROM memory_records WHERE id = ?1");
         if (!query.valid()) {
             return store_error(ErrorCode::Internal, "evidence read failed to prepare");
@@ -1251,7 +1240,8 @@ class SqliteMemoryStore::Impl final {
             if (failed) {
                 break;
             }
-            if (request.include_artifacts && artifacts_ != nullptr && evidence.value().has_value()) {
+            if (request.include_artifacts && artifacts_ != nullptr &&
+                evidence.value().has_value()) {
                 ArtifactErasureRequest artifact_request;
                 artifact_request.id = *evidence.value();
                 artifact_request.reason = request.reason;
@@ -1280,7 +1270,8 @@ class SqliteMemoryStore::Impl final {
             sqlite3_bind_text(log.get(), 3, request.reason.c_str(), -1, storage::transient_copy());
             sqlite3_bind_int64(log.get(), 4, now);
             sqlite3_bind_int64(log.get(), 5, failed ? 0 : now);
-            sqlite3_bind_text(log.get(), 6, failed ? "pending" : "complete", -1, storage::transient_copy());
+            sqlite3_bind_text(log.get(), 6, failed ? "pending" : "complete", -1,
+                              storage::transient_copy());
             sqlite3_bind_int64(log.get(), 7,
                                static_cast<std::int64_t>(result.counts.records_removed));
             sqlite3_bind_int64(log.get(), 8,
@@ -1308,7 +1299,8 @@ class SqliteMemoryStore::Impl final {
         if (!scope_key.empty()) {
             Statement release(db, "DELETE FROM memory_scope_holds WHERE scope_key = ?1");
             if (release.valid()) {
-                sqlite3_bind_text(release.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(release.get(), 1, scope_key.c_str(), -1,
+                                  storage::transient_copy());
                 (void)sqlite3_step(release.get());
             }
         }
@@ -1316,7 +1308,7 @@ class SqliteMemoryStore::Impl final {
     }
 
     static void record_pending_hold(sqlite3 *db, const std::string &scope_key,
-                                     const std::string &reason) {
+                                    const std::string &reason) {
         if (scope_key.empty()) {
             return;
         }
@@ -1434,8 +1426,7 @@ class SqliteMemoryStore::Impl final {
                 if (erased.value().status == ErasureStatus::Complete) {
                     result.expired_records_purged += 1;
                 } else if (erased.value().held_scope.has_value()) {
-                    pending_holds.emplace_back(
-                        scope_key_of(*erased.value().held_scope));
+                    pending_holds.emplace_back(scope_key_of(*erased.value().held_scope));
                 }
             }
         }
@@ -1461,9 +1452,8 @@ class SqliteMemoryStore::Impl final {
         if (options_.purge_horizon.count() > 0) {
             const std::int64_t horizon =
                 now - std::chrono::duration_cast<std::chrono::nanoseconds>(
-                          std::chrono::duration_cast<std::chrono::seconds>(
-                              options_.purge_horizon))
-                              .count();
+                          std::chrono::duration_cast<std::chrono::seconds>(options_.purge_horizon))
+                          .count();
             std::vector<std::string> tombstoned;
             Statement query(db, "SELECT id FROM memory_records WHERE scope_key = ?1"
                                 " AND status = 'tombstoned' AND updated_at <= ?2");
@@ -1500,8 +1490,7 @@ class SqliteMemoryStore::Impl final {
                 if (erased.value().status == ErasureStatus::Complete) {
                     result.tombstones_purged += 1;
                 } else if (erased.value().held_scope.has_value()) {
-                    pending_holds.emplace_back(
-                        scope_key_of(*erased.value().held_scope));
+                    pending_holds.emplace_back(scope_key_of(*erased.value().held_scope));
                 }
             }
         }
@@ -1526,9 +1515,9 @@ class SqliteMemoryStore::Impl final {
 
 SqliteMemoryStore::SqliteMemoryStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
-Result<std::unique_ptr<SqliteMemoryStore>>
-SqliteMemoryStore::open(executor::Executor &executor, SqliteMemoryStoreOptions options,
-                        IArtifactStore *artifacts) {
+Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(executor::Executor &executor,
+                                                                   SqliteMemoryStoreOptions options,
+                                                                   IArtifactStore *artifacts) {
     const auto valid = options.validate();
     if (!valid) {
         return valid.error();
@@ -1558,8 +1547,8 @@ SqliteMemoryStore::open(executor::Executor &executor, SqliteMemoryStoreOptions o
         return store_error(ErrorCode::InvalidState,
                            "store file holds an unrecognized schema; refusing to touch it");
     }
-    std::string schema_text = std::to_string(kMemoryStoreSchema.major) + "." +
-                              std::to_string(kMemoryStoreSchema.minor);
+    std::string schema_text =
+        std::to_string(kMemoryStoreSchema.major) + "." + std::to_string(kMemoryStoreSchema.minor);
     if (fresh) {
         if (options.read_only_diagnostic) {
             diagnostics.disposition = StoreSchemaDisposition::Created;
@@ -1653,9 +1642,8 @@ SqliteMemoryStore::open(executor::Executor &executor, SqliteMemoryStoreOptions o
     channel_config.operation_timeout = options.operation_timeout;
     auto channel = std::make_unique<StoreChannel>(executor, handle.get(), channel_config);
 
-    const bool read_only =
-        options.read_only_diagnostic ||
-        diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic;
+    const bool read_only = options.read_only_diagnostic ||
+                           diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic;
     auto impl = std::make_unique<Impl>(std::move(options), diagnostics, std::move(handle),
                                        std::move(channel), artifacts);
     impl->read_only_.store(read_only);
@@ -1700,55 +1688,53 @@ Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const
         return make_memory_error(MemoryDomainCode::InvalidRecord,
                                  "embedding dimensions must be within (0, 4096]");
     }
-    return impl_->channel_->run<void>(
-        [record, vector](sqlite3 *db) -> Result<void> {
-            const std::string id = record.to_string();
-            Statement exists(db, "SELECT 1 FROM memory_records WHERE id = ?1 AND status = 'active'");
-            if (!exists.valid()) {
-                return store_error(ErrorCode::Internal, "embedding check failed to prepare");
-            }
-            sqlite3_bind_text(exists.get(), 1, id.c_str(), -1, storage::transient_copy());
-            if (sqlite3_step(exists.get()) != SQLITE_ROW) {
-                return make_memory_error(MemoryDomainCode::InvalidRecord,
-                                         "embedding target is not an active record");
-            }
-            Transaction transaction(db);
-            if (!transaction.valid()) {
-                return store_error(ErrorCode::Internal, "embedding transaction rejected");
-            }
-            Statement upsert(db, "INSERT INTO memory_embeddings(record_id, dim, vector,"
-                                 " embedded_at) VALUES(?1, ?2, ?3, ?4)"
-                                 " ON CONFLICT(record_id) DO UPDATE SET dim = excluded.dim,"
-                                 " vector = excluded.vector, embedded_at = excluded.embedded_at");
-            if (!upsert.valid()) {
-                return store_error(ErrorCode::Internal, "embedding upsert failed to prepare");
-            }
-            const auto bytes = static_cast<int>(vector.size() * sizeof(float));
-            sqlite3_bind_text(upsert.get(), 1, id.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_int64(upsert.get(), 2, static_cast<std::int64_t>(vector.size()));
-            sqlite3_bind_blob(upsert.get(), 3, vector.data(), bytes, storage::transient_copy());
-            sqlite3_bind_int64(upsert.get(), 4, wall_nanos(std::chrono::system_clock::now()));
-            if (sqlite3_step(upsert.get()) != SQLITE_DONE) {
-                return store_error(ErrorCode::Internal, "embedding upsert failed");
-            }
-            return transaction.commit();
-        });
+    return impl_->channel_->run<void>([record, vector](sqlite3 *db) -> Result<void> {
+        const std::string id = record.to_string();
+        Statement exists(db, "SELECT 1 FROM memory_records WHERE id = ?1 AND status = 'active'");
+        if (!exists.valid()) {
+            return store_error(ErrorCode::Internal, "embedding check failed to prepare");
+        }
+        sqlite3_bind_text(exists.get(), 1, id.c_str(), -1, storage::transient_copy());
+        if (sqlite3_step(exists.get()) != SQLITE_ROW) {
+            return make_memory_error(MemoryDomainCode::InvalidRecord,
+                                     "embedding target is not an active record");
+        }
+        Transaction transaction(db);
+        if (!transaction.valid()) {
+            return store_error(ErrorCode::Internal, "embedding transaction rejected");
+        }
+        Statement upsert(db, "INSERT INTO memory_embeddings(record_id, dim, vector,"
+                             " embedded_at) VALUES(?1, ?2, ?3, ?4)"
+                             " ON CONFLICT(record_id) DO UPDATE SET dim = excluded.dim,"
+                             " vector = excluded.vector, embedded_at = excluded.embedded_at");
+        if (!upsert.valid()) {
+            return store_error(ErrorCode::Internal, "embedding upsert failed to prepare");
+        }
+        const auto bytes = static_cast<int>(vector.size() * sizeof(float));
+        sqlite3_bind_text(upsert.get(), 1, id.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_int64(upsert.get(), 2, static_cast<std::int64_t>(vector.size()));
+        sqlite3_bind_blob(upsert.get(), 3, vector.data(), bytes, storage::transient_copy());
+        sqlite3_bind_int64(upsert.get(), 4, wall_nanos(std::chrono::system_clock::now()));
+        if (sqlite3_step(upsert.get()) != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "embedding upsert failed");
+        }
+        return transaction.commit();
+    });
 }
 
 Result<std::size_t> SqliteMemoryStore::index_lag() const {
-    return impl_->channel_->run<std::size_t>(
-        [](sqlite3 *db) -> Result<std::size_t> {
-            Statement lag(db, "SELECT COUNT(*) FROM memory_records r WHERE r.status = 'active'"
-                              " AND NOT EXISTS(SELECT 1 FROM memory_embeddings e"
-                              " WHERE e.record_id = r.id)");
-            if (!lag.valid()) {
-                return store_error(ErrorCode::Internal, "index lag failed to prepare");
-            }
-            if (sqlite3_step(lag.get()) != SQLITE_ROW) {
-                return store_error(ErrorCode::Internal, "index lag failed");
-            }
-            return static_cast<std::size_t>(sqlite3_column_int64(lag.get(), 0));
-        });
+    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+        Statement lag(db, "SELECT COUNT(*) FROM memory_records r WHERE r.status = 'active'"
+                          " AND NOT EXISTS(SELECT 1 FROM memory_embeddings e"
+                          " WHERE e.record_id = r.id)");
+        if (!lag.valid()) {
+            return store_error(ErrorCode::Internal, "index lag failed to prepare");
+        }
+        if (sqlite3_step(lag.get()) != SQLITE_ROW) {
+            return store_error(ErrorCode::Internal, "index lag failed");
+        }
+        return static_cast<std::size_t>(sqlite3_column_int64(lag.get(), 0));
+    });
 }
 
 Result<std::size_t> SqliteMemoryStore::clear_embeddings() {
@@ -1756,42 +1742,35 @@ Result<std::size_t> SqliteMemoryStore::clear_embeddings() {
     if (!writable) {
         return writable.error();
     }
-    return impl_->channel_->run<std::size_t>(
-        [](sqlite3 *db) -> Result<std::size_t> {
-            Transaction transaction(db);
-            if (!transaction.valid()) {
-                return store_error(ErrorCode::Internal, "index reset transaction rejected");
-            }
-            Statement clear(db, "DELETE FROM memory_embeddings");
-            if (!clear.valid()) {
-                return store_error(ErrorCode::Internal, "index reset failed to prepare");
-            }
-            if (sqlite3_step(clear.get()) != SQLITE_DONE) {
-                return store_error(ErrorCode::Internal, "index reset failed");
-            }
-            const auto removed = static_cast<std::size_t>(sqlite3_changes(db));
-            const auto commit = transaction.commit();
-            if (!commit) {
-                return commit.error();
-            }
-            return removed;
-        });
+    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+        Transaction transaction(db);
+        if (!transaction.valid()) {
+            return store_error(ErrorCode::Internal, "index reset transaction rejected");
+        }
+        Statement clear(db, "DELETE FROM memory_embeddings");
+        if (!clear.valid()) {
+            return store_error(ErrorCode::Internal, "index reset failed to prepare");
+        }
+        if (sqlite3_step(clear.get()) != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "index reset failed");
+        }
+        const auto removed = static_cast<std::size_t>(sqlite3_changes(db));
+        const auto commit = transaction.commit();
+        if (!commit) {
+            return commit.error();
+        }
+        return removed;
+    });
 }
 
 const StoreDiagnostics &SqliteMemoryStore::diagnostics() const noexcept {
     return impl_->diagnostics_;
 }
 
-std::size_t SqliteMemoryStore::pending_requests() const {
-    return impl_->channel_->pending_count();
-}
+std::size_t SqliteMemoryStore::pending_requests() const { return impl_->channel_->pending_count(); }
 
-void SqliteMemoryStore::set_worker_paused(bool paused) {
-    impl_->channel_->set_paused(paused);
-}
+void SqliteMemoryStore::set_worker_paused(bool paused) { impl_->channel_->set_paused(paused); }
 
-Result<void> SqliteMemoryStore::close() noexcept {
-    return impl_->channel_->close();
-}
+Result<void> SqliteMemoryStore::close() noexcept { return impl_->channel_->close(); }
 
 } // namespace mira

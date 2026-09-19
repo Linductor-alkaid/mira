@@ -77,8 +77,8 @@ struct ContextCurationOptions final {
         "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
     // Instruction-shaped markers for untrusted model text.
     std::vector<std::string> injection_markers = {
-        "ignore previous", "disregard previous", "you are now", "system:",
-        "new instructions:", "override policy"};
+        "ignore previous", "disregard previous", "you are now",
+        "system:",         "new instructions:",  "override policy"};
     // Cooperative cancellation probe owned by the operation supervisor; the
     // adapter maps it into the provider OperationContext.
     std::function<bool()> cancellation_requested;

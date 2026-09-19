@@ -10,6 +10,14 @@ file(GLOB_RECURSE MIRA_FORMAT_FILES
     "${ROOT_DIR}/tests/*.cpp"
     "${ROOT_DIR}/examples/*.cpp"
 )
+list(LENGTH MIRA_FORMAT_FILES MIRA_FORMAT_COUNT)
+if(MIRA_FORMAT_COUNT EQUAL 0)
+    # A vacuous check is worse than a failed one: a mangled ROOT_DIR (e.g.
+    # carrying embedded quote characters) must be a hard error, never a
+    # silent pass.
+    message(FATAL_ERROR "format check matched no source files under '${ROOT_DIR}'")
+endif()
+message(STATUS "format check: ${MIRA_FORMAT_COUNT} files")
 foreach(FILE_PATH IN LISTS MIRA_FORMAT_FILES)
     execute_process(
         COMMAND "${CLANG_FORMAT_EXECUTABLE}" --dry-run --Werror "${FILE_PATH}"

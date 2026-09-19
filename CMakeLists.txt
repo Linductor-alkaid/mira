@@ -122,6 +122,7 @@ add_library(mira_core
     src/model/agent_loop.cpp
     src/tool/tool_module.cpp
     src/tool/tool_module_registry.cpp
+    src/tool/tool_module_exposure.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 
@@ -439,7 +440,7 @@ endif()
 
 add_custom_target(format-check
     COMMAND "${CMAKE_COMMAND}"
-            -DROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            -DROOT_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckFormat.cmake"
     COMMENT "Checking C++ formatting"
     VERBATIM

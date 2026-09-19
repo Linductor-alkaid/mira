@@ -54,7 +54,8 @@ ContinuationInvalidation evaluate_continuation(const ProviderContinuation &conti
     if (!(continuation.profile_id == binding.profile_id)) {
         return ContinuationInvalidation::ProfileChanged;
     }
-    if (!(continuation.profile_digest == Hash{}) && !(continuation.profile_digest == binding.profile_digest)) {
+    if (!(continuation.profile_digest == Hash{}) &&
+        !(continuation.profile_digest == binding.profile_digest)) {
         return ContinuationInvalidation::ProfileChanged;
     }
     if (!binding.conversation.empty() && !continuation.conversation.empty() &&
@@ -110,18 +111,15 @@ Result<void> ContinuationCache::store(ProviderContinuation continuation) {
                                   "cached continuations must assert their provider identity");
     }
     if (continuation.task_id.is_nil()) {
-        return continuation_error(ErrorCode::InvalidArgument,
-                                  "continuation must bind a task");
+        return continuation_error(ErrorCode::InvalidArgument, "continuation must bind a task");
     }
     if (continuation.expires_at.time_since_epoch().count() == 0) {
-        return continuation_error(ErrorCode::InvalidArgument,
-                                  "cached continuations require a TTL");
+        return continuation_error(ErrorCode::InvalidArgument, "cached continuations require a TTL");
     }
     std::lock_guard lock(state_->mutex);
     const auto key = std::make_pair(continuation.task_id.to_string(),
-                                    continuation.conversation.empty()
-                                        ? continuation.provider_state
-                                        : continuation.conversation);
+                                    continuation.conversation.empty() ? continuation.provider_state
+                                                                      : continuation.conversation);
     state_->entries.insert_or_assign(key, Entry{std::move(continuation), false});
     return Result<void>{};
 }
@@ -129,9 +127,9 @@ Result<void> ContinuationCache::store(ProviderContinuation continuation) {
 Result<std::optional<ProviderContinuation>>
 ContinuationCache::lookup(const ContinuationBinding &binding) const {
     std::lock_guard lock(state_->mutex);
-    const auto key = std::make_pair(
-        binding.task_id.to_string(),
-        binding.conversation.empty() ? std::string{} : binding.conversation);
+    const auto key =
+        std::make_pair(binding.task_id.to_string(),
+                       binding.conversation.empty() ? std::string{} : binding.conversation);
     const auto found = state_->entries.find(key);
     if (found == state_->entries.end()) {
         return std::optional<ProviderContinuation>{};
@@ -144,9 +142,9 @@ ContinuationCache::lookup(const ContinuationBinding &binding) const {
     const auto verdict = evaluate_continuation(found->second.continuation, binding);
     if (verdict != ContinuationInvalidation::Valid) {
         state_->entries.erase(found);
-        return continuation_error(
-            ErrorCode::InvalidState,
-            "continuation unusable: " + continuation_invalidation_name(verdict));
+        return continuation_error(ErrorCode::InvalidState,
+                                  "continuation unusable: " +
+                                      continuation_invalidation_name(verdict));
     }
     return std::optional<ProviderContinuation>(found->second.continuation);
 }

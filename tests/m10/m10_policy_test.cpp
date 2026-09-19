@@ -124,17 +124,15 @@ int agent_assisted_checkpoint_hands_off_before_execution() {
 int checkpoint_revisits_hand_off_each_loop_arrival() {
     WorkflowFixture fixture;
     CountingTool counter;
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     counter.registration("counter", "count")));
+    MIRA_CHECK(register_registration(*fixture.registry_, counter.registration("counter", "count")));
     auto workflow = fixture.make_workflow();
 
     auto definition = full_policy_definition("checkpoint-loop");
     definition.default_policy = WorkflowPolicy::AgentAssisted;
     auto head = tool_step("counter", std::nullopt, escalation_hook(), true);
-    auto control =
-        control_step(head.id, 2,
-                     step_result_predicate(head.id, WorkflowPredicateOp::Lt,
-                                           JsonValue{static_cast<std::int64_t>(2)}));
+    auto control = control_step(head.id, 2,
+                                step_result_predicate(head.id, WorkflowPredicateOp::Lt,
+                                                      JsonValue{static_cast<std::int64_t>(2)}));
     definition.steps = {head, control};
 
     const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
@@ -197,10 +195,9 @@ int interactive_failure_raises_a_waiting_user_decision() {
     MIRA_CHECK(resumed.error().code == ErrorCode::InvalidState);
 
     // Accept applies the skip proposal and continues past the failed step.
-    const auto resolved =
-        workflow->resolve_decision(created.value().run_id, decision.value().decision_id,
-                                   decision.value().payload_digest,
-                                   WorkflowDecisionResolution::Accept);
+    const auto resolved = workflow->resolve_decision(
+        created.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+        WorkflowDecisionResolution::Accept);
     MIRA_CHECK(resolved.has_value());
     const auto settled = workflow->wait_run(created.value().run_id, std::chrono::seconds(10));
     MIRA_CHECK(settled.has_value());
@@ -224,27 +221,25 @@ int interactive_decision_reject_fails_and_cancel_cancels() {
     const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
                                               WorkflowPolicy::Interactive);
     MIRA_CHECK(created.has_value());
-    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context())
-                   .value()
-                   .state == WorkflowRunState::WaitingUser);
+    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context()).value().state ==
+               WorkflowRunState::WaitingUser);
 
     // A wrong digest is rejected without settling the decision.
     const auto decision = workflow->pending_decision_request(created.value().run_id);
     MIRA_CHECK(decision.has_value());
     auto wrong = decision.value().payload_digest;
     wrong.bytes[0] ^= static_cast<std::uint8_t>(0x01);
-    const auto mismatch = workflow->resolve_decision(
-        created.value().run_id, decision.value().decision_id, wrong,
-        WorkflowDecisionResolution::Accept);
+    const auto mismatch =
+        workflow->resolve_decision(created.value().run_id, decision.value().decision_id, wrong,
+                                   WorkflowDecisionResolution::Accept);
     MIRA_CHECK(!mismatch.has_value());
     MIRA_CHECK(mismatch.error().code == ErrorCode::InvalidState);
     MIRA_CHECK(workflow->run_snapshot(created.value().run_id).value().state ==
                WorkflowRunState::WaitingUser);
 
-    const auto rejected =
-        workflow->resolve_decision(created.value().run_id, decision.value().decision_id,
-                                   decision.value().payload_digest,
-                                   WorkflowDecisionResolution::Reject);
+    const auto rejected = workflow->resolve_decision(
+        created.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+        WorkflowDecisionResolution::Reject);
     MIRA_CHECK(rejected.has_value());
     MIRA_CHECK(workflow->run_snapshot(created.value().run_id).value().state ==
                WorkflowRunState::Failed);
@@ -253,9 +248,8 @@ int interactive_decision_reject_fails_and_cancel_cancels() {
     const auto second = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
                                              WorkflowPolicy::Interactive);
     MIRA_CHECK(second.has_value());
-    MIRA_CHECK(workflow->execute_run(second.value().run_id, drive_context())
-                   .value()
-                   .state == WorkflowRunState::WaitingUser);
+    MIRA_CHECK(workflow->execute_run(second.value().run_id, drive_context()).value().state ==
+               WorkflowRunState::WaitingUser);
     const auto second_decision = workflow->pending_decision_request(second.value().run_id);
     MIRA_CHECK(second_decision.has_value());
     const auto cancelled = workflow->resolve_decision(
@@ -282,13 +276,11 @@ int escalation_budget_bounds_wait_cycles() {
                                               WorkflowPolicy::Recoverable);
     MIRA_CHECK(created.has_value());
 
-    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context())
-                   .value()
-                   .state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context()).value().state ==
+               WorkflowRunState::WaitingAgent);
     MIRA_CHECK(workflow->resume_run(created.value().run_id).has_value());
-    MIRA_CHECK(workflow->wait_run(created.value().run_id, std::chrono::seconds(10))
-                   .value()
-                   .state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(workflow->wait_run(created.value().run_id, std::chrono::seconds(10)).value().state ==
+               WorkflowRunState::WaitingAgent);
     // The third escalation exceeds the budget: the run settles Failed.
     MIRA_CHECK(workflow->resume_run(created.value().run_id).has_value());
     const auto settled = workflow->wait_run(created.value().run_id, std::chrono::seconds(10));
@@ -307,19 +299,18 @@ int strict_and_dry_run_never_escalate() {
 
     auto definition = full_policy_definition("strict-no-agent");
     definition.steps = {tool_step("counter", std::nullopt)};
-    const auto strict = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
-                                             WorkflowPolicy::Strict);
+    const auto strict =
+        workflow->create_run(definition, JsonValue{JsonValue::Object{}}, WorkflowPolicy::Strict);
     MIRA_CHECK(strict.has_value());
-    MIRA_CHECK(workflow->execute_run(strict.value().run_id, drive_context())
-                   .value()
-                   .state == WorkflowRunState::Failed);
+    MIRA_CHECK(workflow->execute_run(strict.value().run_id, drive_context()).value().state ==
+               WorkflowRunState::Failed);
 
     // AgentEscalation hooks stay inadmissible under non-agent policies.
     auto hooked = full_policy_definition("hook-rejected");
     hooked.default_policy = WorkflowPolicy::Recoverable;
     hooked.steps = {tool_step("counter", std::nullopt, escalation_hook())};
-    const auto rejected = workflow->create_run(hooked, JsonValue{JsonValue::Object{}},
-                                               WorkflowPolicy::Strict);
+    const auto rejected =
+        workflow->create_run(hooked, JsonValue{JsonValue::Object{}}, WorkflowPolicy::Strict);
     MIRA_CHECK(!rejected.has_value());
 
     // The agent continuation API answers fail closed outside WaitingAgent.

@@ -187,8 +187,7 @@ class WorkflowRecoveryOrchestrator final {
     // calling thread (deterministic tests, synchronous hosts). Admission
     // failures settle as Aborted attempts (audited), not transport errors;
     // capacity rejections return ResourceExhausted errors.
-    [[nodiscard]] Result<WorkflowRecoveryAttempt>
-    attempt_recovery(const WorkflowRunId &run_id);
+    [[nodiscard]] Result<WorkflowRecoveryAttempt> attempt_recovery(const WorkflowRunId &run_id);
 
     // Asynchronous entry point: submits one bounded task per attempt and
     // returns after submission. Rejected while shutting down, when an
@@ -199,8 +198,8 @@ class WorkflowRecoveryOrchestrator final {
     // Bounded wait for the result of the most recent attempt of one run.
     // Returns the settled attempt (immediately when already settled),
     // DeadlineExceeded on timeout, NotFound when no attempt was started.
-    [[nodiscard]] Result<WorkflowRecoveryAttempt>
-    wait_recovery(const WorkflowRunId &run_id, std::chrono::milliseconds timeout);
+    [[nodiscard]] Result<WorkflowRecoveryAttempt> wait_recovery(const WorkflowRunId &run_id,
+                                                                std::chrono::milliseconds timeout);
 
     // Cooperative cancel of the in-flight attempt of one run; the attempt
     // settles Aborted("cancelled") at its next checkpoint. Idempotent and
@@ -216,9 +215,9 @@ class WorkflowRecoveryOrchestrator final {
 
   private:
     struct RunTracking final {
-        std::uint32_t ordinal = 0;        // last assigned audit ordinal
-        std::uint32_t attempts_used = 0;  // budget: attempts that reached the
-                                          // model-request stage (failures too)
+        std::uint32_t ordinal = 0;       // last assigned audit ordinal
+        std::uint32_t attempts_used = 0; // budget: attempts that reached the
+                                         // model-request stage (failures too)
         bool in_flight = false;
         std::optional<WorkflowRecoveryAttempt> last_result;
         // Cancel flag of the in-flight attempt (sync or async).

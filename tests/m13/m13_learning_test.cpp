@@ -28,7 +28,7 @@ WorkflowDefinition escalate_definition(WorkflowPolicy policy) {
 
 // One shared admission helper: installs the context on a throwaway runtime.
 Result<void> install_context(std::shared_ptr<IMemory> memory, MemoryScope scope,
-                              WorkflowLearningLimits limits = WorkflowLearningLimits{}) {
+                             WorkflowLearningLimits limits = WorkflowLearningLimits{}) {
     WorkflowFixture fixture;
     auto workflow = fixture.make_workflow();
     return workflow->set_learning_context(std::move(memory), std::move(scope), limits);
@@ -59,17 +59,16 @@ int settlement_records_episodes_for_non_dryrun_terminals() {
     WorkflowFixture fixture;
     auto memory = std::make_shared<FakeLearningMemory>();
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     tool.registration("scripted")).has_value());
-    auto workflow = fixture.make_workflow();
     MIRA_CHECK(
-        workflow->set_learning_context(memory, learning_scope()).has_value());
+        register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
+    auto workflow = fixture.make_workflow();
+    MIRA_CHECK(workflow->set_learning_context(memory, learning_scope()).has_value());
 
     // Completed: dispatch 1 would fail, but this is a fresh tool call that
     // succeeds (the script fails dispatch 1 — so use a second instance).
     ScriptedTool reliable{std::vector<int>{}};
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     reliable.registration("reliable")).has_value());
+    MIRA_CHECK(
+        register_registration(*fixture.registry_, reliable.registration("reliable")).has_value());
     auto ok_definition = escalate_definition(WorkflowPolicy::Strict);
     ok_definition.steps[0].arguments = JsonValue{JsonValue::Object{
         std::pair{"tool", JsonValue{"reliable"}}, std::pair{"payload", JsonValue{"p"}}}};
@@ -94,8 +93,7 @@ int settlement_records_episodes_for_non_dryrun_terminals() {
     auto cancel_definition = escalate_definition(WorkflowPolicy::Strict);
     cancel_definition.steps[0].arguments = JsonValue{JsonValue::Object{
         std::pair{"tool", JsonValue{"reliable"}}, std::pair{"payload", JsonValue{"p"}}}};
-    const auto cancel_run =
-        workflow->create_run(cancel_definition, JsonValue{}, std::nullopt);
+    const auto cancel_run = workflow->create_run(cancel_definition, JsonValue{}, std::nullopt);
     MIRA_CHECK(cancel_run.has_value());
     const auto cancelled = workflow->cancel_run(cancel_run.value().run_id);
     MIRA_CHECK(cancelled.has_value());
@@ -198,8 +196,8 @@ int memory_write_failure_never_breaks_settlement() {
     // event, not by un-settling the terminal state.
     MIRA_CHECK(settled.has_value() && settled.value().state == WorkflowRunState::Completed);
     MIRA_CHECK(memory->stored_records() == 0);
-    const auto outcomes = learning_event_outcomes(*fixture.events_, fixture.session_id_,
-                                                  "WorkflowEpisodeRecorded");
+    const auto outcomes =
+        learning_event_outcomes(*fixture.events_, fixture.session_id_, "WorkflowEpisodeRecorded");
     MIRA_CHECK(outcomes.size() == 1 && outcomes[0] == "failed");
     static_cast<void>(workflow->shutdown());
     return 0;
@@ -227,9 +225,8 @@ int escalation_retrieval_feeds_the_agent_continuation() {
     seeded.failed_step_id = step_id;
     seeded.failure_reason_code = "mira.workflow:6";
     seeded.recorded_at_ms = 1;
-    const auto record =
-        episode_to_memory_record(seeded, learning_scope(), {EventId::generate()},
-                                 std::chrono::system_clock::now());
+    const auto record = episode_to_memory_record(seeded, learning_scope(), {EventId::generate()},
+                                                 std::chrono::system_clock::now());
     {
         MemoryMutation seed;
         seed.id = MutationId::generate();
@@ -247,8 +244,7 @@ int escalation_retrieval_feeds_the_agent_continuation() {
     context.session = fixture.session_id_;
     context.started_at = Timestamp::now();
     const auto escalated = workflow->execute_run(run.value().run_id, context);
-    MIRA_CHECK(escalated.has_value() &&
-               escalated.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(escalated.has_value() && escalated.value().state == WorkflowRunState::WaitingAgent);
     const auto continuation = workflow->agent_continuation(run.value().run_id);
     MIRA_CHECK(continuation.has_value());
     MIRA_CHECK(continuation.value().relevant_lessons.size() == 1);
@@ -274,8 +270,7 @@ int retrieval_degradation_keeps_the_escalation_path() {
     context.session = fixture.session_id_;
     context.started_at = Timestamp::now();
     const auto escalated = workflow->execute_run(run.value().run_id, context);
-    MIRA_CHECK(escalated.has_value() &&
-               escalated.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(escalated.has_value() && escalated.value().state == WorkflowRunState::WaitingAgent);
     const auto continuation = workflow->agent_continuation(run.value().run_id);
     MIRA_CHECK(continuation.has_value());
     MIRA_CHECK(continuation.value().relevant_lessons.empty());
@@ -319,8 +314,7 @@ int checkpoint_handoffs_do_not_retrieve() {
         seed.id = MutationId::generate();
         seed.type = MemoryMutationType::Add;
         seed.scope = learning_scope();
-        seed.proposed = episode_to_memory_record(seeded, learning_scope(),
-                                                 {EventId::generate()},
+        seed.proposed = episode_to_memory_record(seeded, learning_scope(), {EventId::generate()},
                                                  std::chrono::system_clock::now());
         seed.evidence = {EventId::generate()};
         seed.reason = MutationReasonCode::VerifiedEvent;
@@ -397,16 +391,16 @@ int recovery_lessons_derive_and_stay_idempotent() {
 
     // DryRun completions and escalation-free runs never admit lessons.
     ScriptedTool reliable{std::vector<int>{}};
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     reliable.registration("reliable")).has_value());
+    MIRA_CHECK(
+        register_registration(*fixture.registry_, reliable.registration("reliable")).has_value());
     auto dry = escalate_definition(WorkflowPolicy::DryRun);
     const auto dry_run = workflow->create_run(dry, JsonValue{}, std::nullopt);
     MIRA_CHECK(dry_run.has_value());
     MIRA_CHECK(workflow->execute_run(dry_run.value().run_id, context).has_value());
     MIRA_CHECK(!workflow->record_recovery_lesson(dry_run.value().run_id).has_value());
     auto clean = escalate_definition(WorkflowPolicy::Strict);
-    clean.steps[0].arguments = JsonValue{JsonValue::Object{
-        std::pair{"tool", JsonValue{"reliable"}}, std::pair{"payload", JsonValue{"p"}}}};
+    clean.steps[0].arguments = JsonValue{JsonValue::Object{std::pair{"tool", JsonValue{"reliable"}},
+                                                           std::pair{"payload", JsonValue{"p"}}}};
     const auto clean_run = workflow->create_run(clean, JsonValue{}, std::nullopt);
     MIRA_CHECK(clean_run.has_value());
     MIRA_CHECK(workflow->execute_run(clean_run.value().run_id, context).has_value());
@@ -475,8 +469,7 @@ int end_to_end_loop_feeds_the_next_failure() {
     const auto definition = escalate_definition(WorkflowPolicy::Recoverable);
 
     // Run A: terminal failure records a failed episode with the signature.
-    const auto run_a = workflow->create_run(definition, JsonValue{},
-                                            WorkflowPolicy::Strict);
+    const auto run_a = workflow->create_run(definition, JsonValue{}, WorkflowPolicy::Strict);
     MIRA_CHECK(run_a.has_value());
     const auto failed = workflow->execute_run(run_a.value().run_id, context);
     MIRA_CHECK(failed.has_value() && failed.value().state == WorkflowRunState::Failed);
@@ -487,8 +480,7 @@ int end_to_end_loop_feeds_the_next_failure() {
     const auto run_b = workflow->create_run(definition, JsonValue{}, std::nullopt);
     MIRA_CHECK(run_b.has_value());
     const auto escalated = workflow->execute_run(run_b.value().run_id, context);
-    MIRA_CHECK(escalated.has_value() &&
-               escalated.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(escalated.has_value() && escalated.value().state == WorkflowRunState::WaitingAgent);
     const auto mid = workflow->agent_continuation(run_b.value().run_id);
     MIRA_CHECK(mid.has_value());
     MIRA_CHECK(mid.value().relevant_lessons.size() == 1);
@@ -512,12 +504,10 @@ int end_to_end_loop_feeds_the_next_failure() {
     for (const auto &attached : continuation.value().relevant_lessons) {
         if (attached.kind == MemoryKind::Episode) {
             ++episodes;
-            MIRA_CHECK(attached.statement.find("\"outcome\":\"failed\"") !=
-                       std::string::npos);
+            MIRA_CHECK(attached.statement.find("\"outcome\":\"failed\"") != std::string::npos);
         } else if (attached.kind == MemoryKind::RecoveryLesson) {
             ++lessons;
-            MIRA_CHECK(attached.statement.find("\"outcome\":\"recovered\"") !=
-                       std::string::npos);
+            MIRA_CHECK(attached.statement.find("\"outcome\":\"recovered\"") != std::string::npos);
         }
     }
     MIRA_CHECK(episodes >= 1);
@@ -532,11 +522,10 @@ int main() {
     const auto scenarios = std::to_array(
         {learning_context_admission_fails_closed,
          settlement_records_episodes_for_non_dryrun_terminals,
-         dry_run_and_missing_context_record_nothing,
-         memory_write_failure_never_breaks_settlement,
+         dry_run_and_missing_context_record_nothing, memory_write_failure_never_breaks_settlement,
          escalation_retrieval_feeds_the_agent_continuation,
-         retrieval_degradation_keeps_the_escalation_path,
-         checkpoint_handoffs_do_not_retrieve, recovery_lessons_derive_and_stay_idempotent,
+         retrieval_degradation_keeps_the_escalation_path, checkpoint_handoffs_do_not_retrieve,
+         recovery_lessons_derive_and_stay_idempotent,
          recovery_lesson_patch_form_records_the_recovery_actions,
          end_to_end_loop_feeds_the_next_failure});
     for (const auto scenario : scenarios) {

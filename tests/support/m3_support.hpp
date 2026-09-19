@@ -46,8 +46,7 @@ namespace mira::testing {
 // Profiles and secrets
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] inline ModelProfile make_profile(ProtocolDialect dialect,
-                                               const std::string &origin) {
+[[nodiscard]] inline ModelProfile make_profile(ProtocolDialect dialect, const std::string &origin) {
     ModelProfile profile;
     profile.id = ModelProfileId::generate();
     profile.display_name = "test-profile";
@@ -65,7 +64,8 @@ namespace mira::testing {
     profile.capabilities.function_tools = CapabilityFlag{true, verified, ""};
     profile.capabilities.parallel_tool_calls = CapabilityFlag{true, verified, ""};
     profile.capabilities.sse = CapabilityFlag{true, verified, ""};
-    profile.capabilities.exact_token_count = CapabilityFlag{false, CapabilityEvidence::Configured, ""};
+    profile.capabilities.exact_token_count =
+        CapabilityFlag{false, CapabilityEvidence::Configured, ""};
     profile.capabilities.continuation = CapabilityFlag{true, verified, ""};
     profile.capabilities.remote_retention = CapabilityFlag{true, verified, ""};
     profile.capabilities.upload = CapabilityFlag{true, verified, ""};
@@ -117,8 +117,7 @@ class MockHttpTransport final : public IHttpTransport {
     explicit MockHttpTransport(std::shared_ptr<ISecretResolver> secrets)
         : secrets_(std::move(secrets)) {}
 
-    Result<HttpResponseInfo> execute(const HttpRequest &request,
-                                     const TransportLimits & /*limits*/,
+    Result<HttpResponseInfo> execute(const HttpRequest &request, const TransportLimits & /*limits*/,
                                      const OperationContext &context,
                                      const HttpChunkCallback &on_chunk,
                                      TransportTrace &trace) override {
@@ -126,10 +125,9 @@ class MockHttpTransport final : public IHttpTransport {
         recorded.url = request.url;
         recorded.body = request.body;
         recorded.headers = request.headers;
-        recorded.authorization =
-            request.authorization.has_value()
-                ? resolve_secret(*request.authorization)
-                : std::string("<none>");
+        recorded.authorization = request.authorization.has_value()
+                                     ? resolve_secret(*request.authorization)
+                                     : std::string("<none>");
         recorded.cancelled_before_admission = context.cancelled();
 
         std::unique_lock lock(mutex_);
@@ -246,8 +244,7 @@ class ScriptedProvider final : public IModelProvider {
         std::lock_guard lock(mutex_);
         if (cursor_ >= script_.size()) {
             return make_model_error(ModelDomainCode::ModelResourceExhausted,
-                                    "scripted provider is exhausted", false,
-                                    request.operation_id);
+                                    "scripted provider is exhausted", false, request.operation_id);
         }
         ModelResponse response = script_[cursor_++];
         response.request_id = request.request_id;
@@ -363,8 +360,7 @@ class ScriptedHttpServer final {
         timeval wait{};
         wait.tv_sec = static_cast<long>(timeout.count() / 1000);
         wait.tv_usec = static_cast<long>((timeout.count() % 1000) * 1000);
-        const int ready =
-            ::select(static_cast<int>(listener_ + 1), &set, nullptr, nullptr, &wait);
+        const int ready = ::select(static_cast<int>(listener_ + 1), &set, nullptr, nullptr, &wait);
         if (ready <= 0) {
             return false;
         }

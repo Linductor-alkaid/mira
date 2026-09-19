@@ -16,17 +16,17 @@ namespace mira {
 // How far a failed exchange progressed. The stage decides whether the remote
 // may have received (and billed) the request.
 enum class RequestStage : std::uint8_t {
-    LocalRejection,    // Failed before any bytes left the process.
-    PreWriteFailure,   // DNS/connect/TLS failed before request bytes.
-    PartialWrite,      // Some request bytes left; billing is possible.
-    AwaitingResponse,  // Fully written; outcome unknown on transport loss.
-    StreamBroken,      // SSE stream ended without a terminal event.
+    LocalRejection,   // Failed before any bytes left the process.
+    PreWriteFailure,  // DNS/connect/TLS failed before request bytes.
+    PartialWrite,     // Some request bytes left; billing is possible.
+    AwaitingResponse, // Fully written; outcome unknown on transport loss.
+    StreamBroken,     // SSE stream ended without a terminal event.
 };
 
 enum class RetryAction : std::uint8_t {
-    RetryNow,    // Safe to resend immediately (stage + error allow it).
-    RetryAfter,  // Retryable, but honour the computed delay first.
-    GiveUp,      // Not retryable at this stage, or budgets exhausted.
+    RetryNow,   // Safe to resend immediately (stage + error allow it).
+    RetryAfter, // Retryable, but honour the computed delay first.
+    GiveUp,     // Not retryable at this stage, or budgets exhausted.
 };
 
 struct RetryBudget final {
@@ -90,10 +90,10 @@ class ProviderSupervisor final {
   public:
     // `retryable` is the mechanism hint from the model error; the stage and
     // budgets make the final decision.
-    [[nodiscard]] RetryDecision evaluate(const Error &failure, RequestStage stage,
-                                         const std::optional<std::chrono::milliseconds> &retry_after,
-                                         const RetryBudget &budget,
-                                         const ProviderCircuit &circuit) const;
+    [[nodiscard]] RetryDecision
+    evaluate(const Error &failure, RequestStage stage,
+             const std::optional<std::chrono::milliseconds> &retry_after, const RetryBudget &budget,
+             const ProviderCircuit &circuit) const;
 };
 
 // Classifies the request stage from a transport failure, given whether the

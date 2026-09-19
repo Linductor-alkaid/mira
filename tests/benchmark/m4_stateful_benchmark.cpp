@@ -59,14 +59,14 @@ struct Sample final {
     return samples[index];
 }
 
-
 struct Fixture final {
     explicit Fixture(std::filesystem::path root) {
         std::filesystem::create_directories(root);
         executor_.initialize(executor::ExecutorConfig{});
         checkpoint_options.path = root / "bench-checkpoints.db";
         memory_options.path = root / "bench-memory.db";
-        checkpoint_store = std::move(SqliteCheckpointStore::open(executor_, checkpoint_options).value());
+        checkpoint_store =
+            std::move(SqliteCheckpointStore::open(executor_, checkpoint_options).value());
         memory_store = std::move(SqliteMemoryStore::open(executor_, memory_options).value());
     }
     ~Fixture() {
@@ -82,7 +82,8 @@ struct Fixture final {
     std::unique_ptr<SqliteMemoryStore> memory_store;
 };
 
-[[nodiscard]] JsonValue scenario_a_long_task_recovery(Fixture &fixture, JsonValue::Array &failures) {
+[[nodiscard]] JsonValue scenario_a_long_task_recovery(Fixture &fixture,
+                                                      JsonValue::Array &failures) {
     const auto runtime = RuntimeId::generate();
     const auto session = SessionId::generate();
     const auto task = TaskId::generate();
@@ -90,10 +91,11 @@ struct Fixture final {
     // Long task: goal + safety constraint + N steps + one uncertain side
     // effect pinned mid-run.
     TaskEventLog log(runtime, session, task);
-    log.add("TaskGoalSet", JsonValue::Object{{"statement", "long haul goal"},
-                                             {"success_criterion", "done"}});
-    log.add("TaskConstraintAdded",
-            JsonValue::Object{{"key", "safety"}, {"requirement", "never leave app"}, {"safety", true}});
+    log.add("TaskGoalSet",
+            JsonValue::Object{{"statement", "long haul goal"}, {"success_criterion", "done"}});
+    log.add(
+        "TaskConstraintAdded",
+        JsonValue::Object{{"key", "safety"}, {"requirement", "never leave app"}, {"safety", true}});
     log.add("TaskObjectiveAdded", JsonValue::Object{{"objective", "phase one"}});
     constexpr std::uint64_t kSteps = 120;
     for (std::uint64_t step = 0; step < kSteps; ++step) {
@@ -102,11 +104,11 @@ struct Fixture final {
                                   {"summary", "step " + std::to_string(step)}});
     }
     const ActionId uncertain_action = ActionId::generate();
-    log.add_pipe("ActionDispatchStarted",
-                 uncertain_action.to_string() + "|" + task.to_string() + "|2|1|tap|com.example|ok|");
-    log.add_pipe("ActionExecutionUncertain",
-                 uncertain_action.to_string() + "|" + task.to_string() + "|2|1|tap|com.example|ok|"
-                 "network receipt lost");
+    log.add_pipe("ActionDispatchStarted", uncertain_action.to_string() + "|" + task.to_string() +
+                                              "|2|1|tap|com.example|ok|");
+    log.add_pipe("ActionExecutionUncertain", uncertain_action.to_string() + "|" + task.to_string() +
+                                                 "|2|1|tap|com.example|ok|"
+                                                 "network receipt lost");
     log.append_to(fixture.events);
 
     // Checkpoint at every durability boundary with latency samples.
@@ -115,8 +117,8 @@ struct Fixture final {
     std::uint64_t checkpoints = 0;
     for (std::uint64_t boundary = 16; boundary <= log.envelopes().size(); boundary += 16) {
         const auto started = Clock::now();
-        auto outcome = coordinator.checkpoint(task, session, CheckpointTrigger::Watermark,
-                                              Timestamp::now());
+        auto outcome =
+            coordinator.checkpoint(task, session, CheckpointTrigger::Watermark, Timestamp::now());
         const auto elapsed = std::chrono::duration<double, std::milli>(Clock::now() - started);
         if (!outcome.has_value()) {
             failures.emplace_back("checkpoint rejected");
@@ -130,7 +132,8 @@ struct Fixture final {
 
     // Explicit durability point covering the tail (pause trigger is not
     // increment-gated, so nothing after the last watermark survives unseen).
-    auto final_put = coordinator.checkpoint(task, session, CheckpointTrigger::Pause, Timestamp::now());
+    auto final_put =
+        coordinator.checkpoint(task, session, CheckpointTrigger::Pause, Timestamp::now());
     MIRA_CHECK(final_put.has_value() && final_put.value().has_value());
     ++checkpoints;
 
@@ -184,7 +187,8 @@ struct Fixture final {
     };
 }
 
-[[nodiscard]] MemoryMutation corpus_mutation(const MemoryScope &scope, const std::string &statement) {
+[[nodiscard]] MemoryMutation corpus_mutation(const MemoryScope &scope,
+                                             const std::string &statement) {
     MemoryRecord record;
     record.id = MemoryId::generate();
     record.scope = scope;
@@ -270,14 +274,15 @@ struct Fixture final {
     request.profile_id = ModelProfileId::generate();
     request.limits = limits;
     request.items.push_back(testing::text_item(ContextItemKind::SystemPolicy,
-                                                ContextAuthority::SystemPolicy, "safety policy", 1));
-    request.items.push_back(testing::text_item(ContextItemKind::Goal, ContextAuthority::UserConstraint,
-                                                "goal: compact history", 2));
+                                               ContextAuthority::SystemPolicy, "safety policy", 1));
+    request.items.push_back(testing::text_item(
+        ContextItemKind::Goal, ContextAuthority::UserConstraint, "goal: compact history", 2));
     std::uint64_t sequence = 3;
     for (int index = 0; index < 200; ++index) {
         request.items.push_back(testing::text_item(
             ContextItemKind::HistoricalPayload, ContextAuthority::VerifiedState,
-            "history event " + std::to_string(index) + " with a moderately long description", sequence++));
+            "history event " + std::to_string(index) + " with a moderately long description",
+            sequence++));
     }
 
     const auto full = manager.prepare(request);
@@ -306,10 +311,8 @@ struct Fixture final {
         return kept;
     };
     return JsonValue::Object{
-        {"full_history_tokens",
-         static_cast<std::int64_t>(full.value().budget.estimated_tokens)},
-        {"compacted_tokens",
-         static_cast<std::int64_t>(compact.value().budget.estimated_tokens)},
+        {"full_history_tokens", static_cast<std::int64_t>(full.value().budget.estimated_tokens)},
+        {"compacted_tokens", static_cast<std::int64_t>(compact.value().budget.estimated_tokens)},
         {"full_p0_p1_kept", static_cast<std::int64_t>(keep_count(full.value()))},
         {"compacted_p0_p1_kept", static_cast<std::int64_t>(keep_count(compact.value()))},
         {"token_savings_ratio",
@@ -358,9 +361,9 @@ struct Fixture final {
     request.profile_id = ModelProfileId::generate();
     request.items.push_back(testing::text_item(ContextItemKind::SystemPolicy,
                                                ContextAuthority::SystemPolicy, "policy", 1));
-    request.items.push_back(testing::text_item(
-        ContextItemKind::CheckpointSummary, ContextAuthority::VerifiedState,
-        "checkpoint rebuild after provider switch", 2));
+    request.items.push_back(testing::text_item(ContextItemKind::CheckpointSummary,
+                                               ContextAuthority::VerifiedState,
+                                               "checkpoint rebuild after provider switch", 2));
     const auto rebuilt = manager.prepare(request);
     MIRA_CHECK(rebuilt.has_value());
     return JsonValue::Object{
@@ -375,8 +378,8 @@ int run_benchmark(int argc, char **argv);
 
 int run_benchmark(int argc, char **argv) {
     std::random_device device;
-    const auto root = std::filesystem::temp_directory_path() /
-                      ("mira-m4-benchmark-" + std::to_string(device()));
+    const auto root =
+        std::filesystem::temp_directory_path() / ("mira-m4-benchmark-" + std::to_string(device()));
     {
         Fixture fixture(root);
         JsonValue::Array failures;

@@ -36,9 +36,8 @@ struct ParkedRun final {
         auto counter_step = tool_step("counter", std::nullopt);
         counter_step.precondition = std::move(counter_precondition);
         definition.steps = {tool_step(wire, std::nullopt), counter_step};
-        const auto created =
-            workflow.create_run(definition, JsonValue{JsonValue::Object{}},
-                                WorkflowPolicy::Interactive);
+        const auto created = workflow.create_run(definition, JsonValue{JsonValue::Object{}},
+                                                 WorkflowPolicy::Interactive);
         if (!created.has_value()) {
             return false;
         }
@@ -80,9 +79,8 @@ int admission_matrix_gates_patches_by_policy_and_state() {
         auto strict_definition = parked.definition;
         strict_definition.workflow_id = WorkflowId::generate();
         strict_definition.name = "patch-strict-strict";
-        const auto strict =
-            workflow->create_run(strict_definition, JsonValue{JsonValue::Object{}},
-                                 WorkflowPolicy::Strict);
+        const auto strict = workflow->create_run(strict_definition, JsonValue{JsonValue::Object{}},
+                                                 WorkflowPolicy::Strict);
         MIRA_CHECK(strict.has_value());
         MIRA_CHECK(workflow->start_run(strict.value().run_id).has_value());
         while (parked.gate->entries.load() < 2) {
@@ -96,16 +94,15 @@ int admission_matrix_gates_patches_by_policy_and_state() {
         MIRA_CHECK(rejected.error().code == ErrorCode::UnsupportedCapability);
         parked.gate->release.store(true);
         MIRA_CHECK(workflow->resume_run(strict.value().run_id).has_value());
-        MIRA_CHECK(workflow->wait_run(strict.value().run_id, std::chrono::seconds(10))
-                       .value()
-                       .state == WorkflowRunState::Completed);
+        MIRA_CHECK(
+            workflow->wait_run(strict.value().run_id, std::chrono::seconds(10)).value().state ==
+            WorkflowRunState::Completed);
     }
     MIRA_CHECK(parked.finish(*workflow));
 
     // Terminal runs reject fresh patches.
-    const auto terminal =
-        workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                            {parameter_set("mode", JsonValue{"loud"})});
+    const auto terminal = workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                                              {parameter_set("mode", JsonValue{"loud"})});
     MIRA_CHECK(!terminal.has_value());
     MIRA_CHECK(terminal.error().code == ErrorCode::InvalidState);
     return 0;
@@ -174,9 +171,8 @@ int running_runs_apply_queued_patches_at_the_boundary() {
     while (gate.entries.load() == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    const auto queued =
-        workflow->patch_run(created.value().run_id, WorkflowPatchId::generate(),
-                            {parameter_set("mode", JsonValue{"boundary"})});
+    const auto queued = workflow->patch_run(created.value().run_id, WorkflowPatchId::generate(),
+                                            {parameter_set("mode", JsonValue{"boundary"})});
     MIRA_CHECK(queued.has_value());
     MIRA_CHECK(queued.value().applied);
     MIRA_CHECK(queued.value().queued);
@@ -193,8 +189,7 @@ int running_runs_apply_queued_patches_at_the_boundary() {
 int parameter_patches_rebuild_bindings_and_predicates() {
     WorkflowFixture fixture;
     CountingTool counter;
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     counter.registration("counter", "sent")));
+    MIRA_CHECK(register_registration(*fixture.registry_, counter.registration("counter", "sent")));
     auto workflow = fixture.make_workflow();
 
     // The counter step of the parked flow runs only when the patched
@@ -203,8 +198,9 @@ int parameter_patches_rebuild_bindings_and_predicates() {
     ParkedRun parked;
     MIRA_CHECK(parked.park(*workflow, *fixture.registry_, "param-rebuild", 1,
                            parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"go"})));
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                                   {parameter_set("mode", JsonValue{"go"})})
+    MIRA_CHECK(workflow
+                   ->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                               {parameter_set("mode", JsonValue{"go"})})
                    .has_value());
     MIRA_CHECK(parked.finish(*workflow));
     // The precondition-armed counter step ran after the patch.
@@ -213,12 +209,12 @@ int parameter_patches_rebuild_bindings_and_predicates() {
     // Unsetting an optional parameter falls back to its declared default
     // ("run"), which the precondition no longer matches.
     ParkedRun second_parked;
-    MIRA_CHECK(second_parked.park(
-        *workflow, *fixture.registry_, "param-rebuild", 2,
-        parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"go"})));
-    MIRA_CHECK(workflow->patch_run(second_parked.view.run_id, WorkflowPatchId::generate(),
-                                   {parameter_set("mode", JsonValue{"go"}),
-                                    parameter_unset("mode")})
+    MIRA_CHECK(
+        second_parked.park(*workflow, *fixture.registry_, "param-rebuild", 2,
+                           parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"go"})));
+    MIRA_CHECK(workflow
+                   ->patch_run(second_parked.view.run_id, WorkflowPatchId::generate(),
+                               {parameter_set("mode", JsonValue{"go"}), parameter_unset("mode")})
                    .has_value());
     MIRA_CHECK(second_parked.finish(*workflow));
     MIRA_CHECK(counter.dispatches.load() == 1);
@@ -237,9 +233,10 @@ int skip_and_policy_switch_entries_execute() {
     ParkedRun parked;
     MIRA_CHECK(parked.park(*workflow, *fixture.registry_, "skip-and-switch", 1));
     // Skip the gate step entirely and switch the policy to Recoverable.
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                                   {step_skip(parked.definition.steps.front()),
-                                    policy_set(WorkflowPolicy::Recoverable)})
+    MIRA_CHECK(workflow
+                   ->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                               {step_skip(parked.definition.steps.front()),
+                                policy_set(WorkflowPolicy::Recoverable)})
                    .has_value());
     MIRA_CHECK(workflow->run_snapshot(parked.view.run_id).value().policy ==
                WorkflowPolicy::Recoverable);
@@ -258,9 +255,8 @@ int skip_and_policy_switch_entries_execute() {
     ParkedRun narrow;
     MIRA_CHECK(narrow.park(*workflow, *fixture.registry_, "narrow-switch", 2, std::nullopt,
                            {WorkflowPolicy::Interactive}));
-    const auto outside =
-        workflow->patch_run(narrow.view.run_id, WorkflowPatchId::generate(),
-                            {policy_set(WorkflowPolicy::Recoverable)});
+    const auto outside = workflow->patch_run(narrow.view.run_id, WorkflowPatchId::generate(),
+                                             {policy_set(WorkflowPolicy::Recoverable)});
     MIRA_CHECK(!outside.has_value());
     MIRA_CHECK(narrow.finish(*workflow));
 
@@ -268,8 +264,8 @@ int skip_and_policy_switch_entries_execute() {
     // closed (the resolver arrives with phase E).
     auto navigating = full_policy_definition("navigate-switch");
     navigating.steps = {navigate_step("home")};
-    const auto dry = workflow->create_run(navigating, JsonValue{JsonValue::Object{}},
-                                          WorkflowPolicy::DryRun);
+    const auto dry =
+        workflow->create_run(navigating, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(dry.has_value());
     const auto switched = workflow->patch_run(dry.value().run_id, WorkflowPatchId::generate(),
                                               {policy_set(WorkflowPolicy::Interactive)});
@@ -281,8 +277,7 @@ int waiting_agent_runs_accept_repair_patches() {
     WorkflowFixture fixture;
     CountingTool counter;
     counter.failures_first = 1;
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     counter.registration("counter", "count")));
+    MIRA_CHECK(register_registration(*fixture.registry_, counter.registration("counter", "count")));
     auto workflow = fixture.make_workflow();
 
     auto definition = full_policy_definition("repair-patch");
@@ -290,9 +285,8 @@ int waiting_agent_runs_accept_repair_patches() {
     const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
                                               WorkflowPolicy::Recoverable);
     MIRA_CHECK(created.has_value());
-    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context())
-                   .value()
-                   .state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(workflow->execute_run(created.value().run_id, drive_context()).value().state ==
+               WorkflowRunState::WaitingAgent);
 
     // The repairing agent patches run parameters in the wait state
     // (DEC-024 §1), then resumes.
@@ -311,24 +305,22 @@ int waiting_agent_runs_accept_repair_patches() {
     auto gated = definition;
     gated.workflow_id = WorkflowId::generate();
     gated.steps = {tool_step("gate", std::nullopt)};
-    const auto busy = workflow->create_run(gated, JsonValue{JsonValue::Object{}},
-                                           WorkflowPolicy::Recoverable);
+    const auto busy =
+        workflow->create_run(gated, JsonValue{JsonValue::Object{}}, WorkflowPolicy::Recoverable);
     MIRA_CHECK(busy.has_value());
     MIRA_CHECK(workflow->start_run(busy.value().run_id).has_value());
     while (gate.entries.load() == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     MIRA_CHECK(workflow->pause_run(busy.value().run_id).has_value());
-    const auto rejected =
-        workflow->patch_run(busy.value().run_id, WorkflowPatchId::generate(),
-                            {parameter_set("mode", JsonValue{"x"})});
+    const auto rejected = workflow->patch_run(busy.value().run_id, WorkflowPatchId::generate(),
+                                              {parameter_set("mode", JsonValue{"x"})});
     MIRA_CHECK(!rejected.has_value());
     MIRA_CHECK(rejected.error().code == ErrorCode::UnsupportedCapability);
     gate.release.store(true);
     MIRA_CHECK(workflow->resume_run(busy.value().run_id).has_value());
-    MIRA_CHECK(workflow->wait_run(busy.value().run_id, std::chrono::seconds(10))
-                   .value()
-                   .state == WorkflowRunState::Completed);
+    MIRA_CHECK(workflow->wait_run(busy.value().run_id, std::chrono::seconds(10)).value().state ==
+               WorkflowRunState::Completed);
     return 0;
 }
 
@@ -342,13 +334,14 @@ int patch_audit_events_and_epoch_semantics() {
     MIRA_CHECK(parked.park(*workflow, *fixture.registry_, "patch-audit", 1));
 
     const auto patch_id = WorkflowPatchId::generate();
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, patch_id,
-                                   {parameter_set("mode", JsonValue{"one"})})
-                   .has_value());
+    MIRA_CHECK(
+        workflow->patch_run(parked.view.run_id, patch_id, {parameter_set("mode", JsonValue{"one"})})
+            .has_value());
     // A rejected patch (unknown parameter) emits Proposed then Rejected and
     // does not advance the epoch.
-    MIRA_CHECK(!workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                                    {parameter_set("missing", JsonValue{"x"})})
+    MIRA_CHECK(!workflow
+                    ->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                                {parameter_set("missing", JsonValue{"x"})})
                     .has_value());
     MIRA_CHECK(workflow->run_snapshot(parked.view.run_id).value().run_patch_epoch == 1);
 
@@ -369,8 +362,9 @@ int patch_audit_events_and_epoch_semantics() {
     MIRA_CHECK(rejected.front().find("reason_code")->is_string());
 
     // A policy switch emits WorkflowPolicySwitched.
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                                   {policy_set(WorkflowPolicy::Recoverable)})
+    MIRA_CHECK(workflow
+                   ->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                               {policy_set(WorkflowPolicy::Recoverable)})
                    .has_value());
     const auto switched =
         session_event_payloads(*fixture.events_, fixture.session_id_, "WorkflowPolicySwitched");
@@ -391,13 +385,15 @@ int rollback_restores_the_boundary_state() {
     MIRA_CHECK(parked.park(*workflow, *fixture.registry_, "patch-rollback", 1));
 
     const auto boundary = WorkflowPatchId::generate();
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, boundary,
-                                   {parameter_set("mode", JsonValue{"keep"})})
-                   .has_value());
+    MIRA_CHECK(
+        workflow
+            ->patch_run(parked.view.run_id, boundary, {parameter_set("mode", JsonValue{"keep"})})
+            .has_value());
     // A later patch drifts the effective state away.
-    MIRA_CHECK(workflow->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
-                                   {parameter_set("mode", JsonValue{"drifted"}),
-                                    step_skip(parked.definition.steps.back())})
+    MIRA_CHECK(workflow
+                   ->patch_run(parked.view.run_id, WorkflowPatchId::generate(),
+                               {parameter_set("mode", JsonValue{"drifted"}),
+                                step_skip(parked.definition.steps.back())})
                    .has_value());
     MIRA_CHECK(workflow->run_snapshot(parked.view.run_id).value().run_patch_epoch == 2);
 
@@ -445,11 +441,13 @@ int pending_patch_queue_is_bounded() {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
-    MIRA_CHECK(workflow->patch_run(created.value().run_id, WorkflowPatchId::generate(),
-                                   {parameter_set("mode", JsonValue{"a"})})
+    MIRA_CHECK(workflow
+                   ->patch_run(created.value().run_id, WorkflowPatchId::generate(),
+                               {parameter_set("mode", JsonValue{"a"})})
                    .has_value());
-    MIRA_CHECK(workflow->patch_run(created.value().run_id, WorkflowPatchId::generate(),
-                                   {parameter_set("mode", JsonValue{"b"})})
+    MIRA_CHECK(workflow
+                   ->patch_run(created.value().run_id, WorkflowPatchId::generate(),
+                               {parameter_set("mode", JsonValue{"b"})})
                    .has_value());
     const auto overflow = workflow->patch_run(created.value().run_id, WorkflowPatchId::generate(),
                                               {parameter_set("mode", JsonValue{"c"})});

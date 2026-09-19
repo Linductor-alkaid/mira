@@ -88,8 +88,8 @@ namespace {
     return JsonValue(std::move(object));
 }
 
-[[nodiscard]] Result<ConversationStatement>
-statement_from_json(const JsonValue &json, std::string_view section) {
+[[nodiscard]] Result<ConversationStatement> statement_from_json(const JsonValue &json,
+                                                                std::string_view section) {
     const auto *object = json.as_object();
     if (object == nullptr) {
         return consolidation_error(ErrorCode::InvalidArgument,
@@ -159,12 +159,10 @@ Result<void> ConsolidationOptions::validate() const {
                                    "statement bound per kind is out of range");
     }
     if (max_preferences > 1'024) {
-        return consolidation_error(ErrorCode::InvalidArgument,
-                                   "preference bound is out of range");
+        return consolidation_error(ErrorCode::InvalidArgument, "preference bound is out of range");
     }
     if (max_summary_chars > 64 * 1024) {
-        return consolidation_error(ErrorCode::InvalidArgument,
-                                   "summary bound is out of range");
+        return consolidation_error(ErrorCode::InvalidArgument, "summary bound is out of range");
     }
     if (max_statement_chars < 16 || max_statement_chars > 8 * 1024) {
         return consolidation_error(ErrorCode::InvalidArgument,
@@ -202,13 +200,14 @@ Result<void> ConsolidationOptions::validate() const {
 }
 
 ConversationCheckpointId conversation_checkpoint_id_from_seed(std::string_view seed) {
-    const auto asset = context_asset_id_from_seed("mira.conversation.checkpoint|" + std::string(seed));
+    const auto asset =
+        context_asset_id_from_seed("mira.conversation.checkpoint|" + std::string(seed));
     return ConversationCheckpointId{asset.value};
 }
 
 Result<void> ConversationCheckpoint::validate() const {
-    if (const auto supported = validate_schema_version(schema_version,
-                                                       conversation_checkpoint_schema_current());
+    if (const auto supported =
+            validate_schema_version(schema_version, conversation_checkpoint_schema_current());
         !supported) {
         return supported.error();
     }
@@ -258,7 +257,8 @@ Result<void> ConversationCheckpoint::validate() const {
     if (const auto result = validate_statements(decisions, "decisions"); !result) {
         return result;
     }
-    if (const auto result = validate_statements(unresolved_threads, "unresolved_threads"); !result) {
+    if (const auto result = validate_statements(unresolved_threads, "unresolved_threads");
+        !result) {
         return result;
     }
     if (const auto result = validate_statements(preferences, "preferences"); !result) {
@@ -273,9 +273,10 @@ Result<void> ConversationCheckpoint::validate() const {
 
 Hash ConversationCheckpoint::projection_digest() const {
     JsonValue::Object object;
-    object.emplace_back("schema_version",
-                        JsonValue::Object{{"major", static_cast<std::int64_t>(schema_version.major)},
-                                          {"minor", static_cast<std::int64_t>(schema_version.minor)}});
+    object.emplace_back(
+        "schema_version",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(schema_version.major)},
+                          {"minor", static_cast<std::int64_t>(schema_version.minor)}});
     object.emplace_back("session_id", session_id.to_string());
     object.emplace_back("task_id", task_id.to_string());
     object.emplace_back("task_epoch", static_cast<std::int64_t>(task_epoch));
@@ -326,8 +327,7 @@ JsonValue conversation_checkpoint_to_json(const ConversationCheckpoint &checkpoi
     return JsonValue(std::move(object));
 }
 
-Result<ConversationCheckpoint>
-conversation_checkpoint_from_json(const JsonValue &json) {
+Result<ConversationCheckpoint> conversation_checkpoint_from_json(const JsonValue &json) {
     if (!json.is_object()) {
         return consolidation_error(ErrorCode::InvalidArgument,
                                    "conversation checkpoint payload must be an object");
@@ -341,9 +341,8 @@ conversation_checkpoint_from_json(const JsonValue &json) {
             const auto major_value = major->as_integer();
             const auto minor_value = minor->as_integer();
             if (major_value && minor_value) {
-                checkpoint.schema_version = SchemaVersion{
-                    static_cast<std::uint16_t>(*major_value),
-                    static_cast<std::uint16_t>(*minor_value)};
+                checkpoint.schema_version = SchemaVersion{static_cast<std::uint16_t>(*major_value),
+                                                          static_cast<std::uint16_t>(*minor_value)};
             }
         }
     }
@@ -375,8 +374,8 @@ conversation_checkpoint_from_json(const JsonValue &json) {
         !result) {
         return result.error();
     }
-    if (const auto result =
-            parse_id_field("task_id", checkpoint.task_id, "conversation checkpoint task is malformed");
+    if (const auto result = parse_id_field("task_id", checkpoint.task_id,
+                                           "conversation checkpoint task is malformed");
         !result) {
         return result.error();
     }
@@ -416,8 +415,7 @@ conversation_checkpoint_from_json(const JsonValue &json) {
         !result) {
         return result.error();
     }
-    if (const auto *created = json.find("created_at");
-        created != nullptr && created->is_number()) {
+    if (const auto *created = json.find("created_at"); created != nullptr && created->is_number()) {
         const auto *monotonic = json.find("created_at_monotonic");
         const auto wall = created->as_integer();
         const auto monotonic_value = monotonic != nullptr ? monotonic->as_integer() : std::nullopt;
@@ -428,8 +426,7 @@ conversation_checkpoint_from_json(const JsonValue &json) {
     if (const auto *summary = json.find("summary"); summary != nullptr && summary->is_string()) {
         checkpoint.summary = *summary->as_string();
     }
-    const auto parse_section = [&json](const char *key,
-                                       std::vector<ConversationStatement> &target,
+    const auto parse_section = [&json](const char *key, std::vector<ConversationStatement> &target,
                                        const char *message) -> Result<void> {
         const auto *section = json.find(key);
         if (section == nullptr) {
@@ -512,15 +509,15 @@ JsonSchema consolidation_output_schema() {
          JsonValue::Object{
              {"content", JsonValue::Object{{"type", std::string("string")}}},
              {"sources",
-              JsonValue::Object{{"type", std::string("array")},
-                                {"items", JsonValue::Object{
-                                              {"type", std::string("integer")},
+              JsonValue::Object{
+                  {"type", std::string("array")},
+                  {"items", JsonValue::Object{{"type", std::string("integer")},
                                               {"minimum", static_cast<std::int64_t>(0)}}}}},
              {"confidence", JsonValue::Object{{"type", std::string("number")}}},
          }},
     };
-    const JsonValue statement_array = JsonValue::Object{
-        {"type", std::string("array")}, {"items", statement}};
+    const JsonValue statement_array =
+        JsonValue::Object{{"type", std::string("array")}, {"items", statement}};
     JsonValue::Object root;
     root.emplace_back("type", std::string("object"));
     root.emplace_back("additionalProperties", false);
@@ -529,16 +526,15 @@ JsonSchema consolidation_output_schema() {
                                        std::string("constraints"), std::string("decisions"),
                                        std::string("unresolved_threads"),
                                        std::string("preferences")});
-    root.emplace_back(
-        "properties",
-        JsonValue::Object{
-            {"summary", JsonValue::Object{{"type", std::string("string")}}},
-            {"confidence", JsonValue::Object{{"type", std::string("number")}}},
-            {"constraints", statement_array},
-            {"decisions", statement_array},
-            {"unresolved_threads", statement_array},
-            {"preferences", statement_array},
-        });
+    root.emplace_back("properties",
+                      JsonValue::Object{
+                          {"summary", JsonValue::Object{{"type", std::string("string")}}},
+                          {"confidence", JsonValue::Object{{"type", std::string("number")}}},
+                          {"constraints", statement_array},
+                          {"decisions", statement_array},
+                          {"unresolved_threads", statement_array},
+                          {"preferences", statement_array},
+                      });
     JsonSchema schema;
     schema.root = JsonValue(std::move(root));
     return schema;
@@ -573,8 +569,8 @@ namespace {
                << "sequence " << segment.through_sequence << "; " << segment.entries.size()
                << " numbered entries:";
     for (std::size_t index = 0; index < segment.entries.size(); ++index) {
-        transcript << "\n[" << index << "|seq=" << segment.entries[index].session_sequence
-                   << "] " << segment.entries[index].text;
+        transcript << "\n[" << index << "|seq=" << segment.entries[index].session_sequence << "] "
+                   << segment.entries[index].text;
     }
     return transcript.str();
 }
@@ -741,8 +737,7 @@ ProviderSemanticConsolidator::consolidate(const ConversationSegment &segment,
         return valid.error();
     }
     if (segment.session.is_nil()) {
-        return consolidation_error(ErrorCode::InvalidArgument,
-                                   "consolidation requires a session");
+        return consolidation_error(ErrorCode::InvalidArgument, "consolidation requires a session");
     }
     if (segment.entries.empty() || segment.entries.size() != segment.entry_count) {
         return consolidation_error(ErrorCode::InvalidArgument,
@@ -810,8 +805,7 @@ ProviderSemanticConsolidator::consolidate(const ConversationSegment &segment,
                                    "consolidation was cancelled during the model call");
     }
     if (context.expired(Timestamp::now())) {
-        return consolidation_error(ErrorCode::DeadlineExceeded,
-                                   "consolidation deadline expired");
+        return consolidation_error(ErrorCode::DeadlineExceeded, "consolidation deadline expired");
     }
     const ModelResponse &response = inferred.value();
     if (response.status != ModelCompletionStatus::Completed) {
@@ -849,8 +843,8 @@ ProviderSemanticConsolidator::consolidate(const ConversationSegment &segment,
                                    "consolidation confidence must be a finite number");
     }
 
-    auto constraints = parse_section(root, "constraints", segment, options,
-                                     options.max_statements_per_kind);
+    auto constraints =
+        parse_section(root, "constraints", segment, options, options.max_statements_per_kind);
     if (!constraints) {
         return constraints.error();
     }
@@ -872,8 +866,8 @@ ProviderSemanticConsolidator::consolidate(const ConversationSegment &segment,
 
     ConversationCheckpoint checkpoint;
     checkpoint.schema_version = conversation_checkpoint_schema_current();
-    checkpoint.id = conversation_checkpoint_id_from_seed(
-        segment.session.to_string() + "|" + std::to_string(segment.through_sequence));
+    checkpoint.id = conversation_checkpoint_id_from_seed(segment.session.to_string() + "|" +
+                                                         std::to_string(segment.through_sequence));
     checkpoint.session_id = segment.session;
     checkpoint.task_id = options.identity.task;
     checkpoint.task_epoch = options.identity.task_epoch;
@@ -887,8 +881,8 @@ ProviderSemanticConsolidator::consolidate(const ConversationSegment &segment,
     checkpoint.unresolved_threads = std::move(threads).value();
     checkpoint.preferences = std::move(preferences).value();
     std::set<EventId> seen_events;
-    const auto collect = [&seen_events, &checkpoint, &options](
-                             const std::vector<ConversationStatement> &statements) {
+    const auto collect = [&seen_events, &checkpoint,
+                          &options](const std::vector<ConversationStatement> &statements) {
         for (const auto &statement : statements) {
             for (const auto &event : statement.source_events) {
                 if (checkpoint.source_events.size() >= options.max_source_events) {
@@ -1021,8 +1015,8 @@ Result<std::size_t> InMemoryConversationCheckpointStore::count(SessionId session
     return impl_->count(session);
 }
 
-Result<std::size_t>
-InMemoryConversationCheckpointStore::erase_session(SessionId session, std::string reason) {
+Result<std::size_t> InMemoryConversationCheckpointStore::erase_session(SessionId session,
+                                                                       std::string reason) {
     return impl_->erase_session(session, reason); // reason is audit metadata only
 }
 
@@ -1056,10 +1050,9 @@ namespace {
 
 } // namespace
 
-ConversationCommitOutcome
-commit_conversation_checkpoint(IConversationCheckpointStore &store,
-                               const ConversationCheckpoint &candidate,
-                               const ConversationCommitState &live) {
+ConversationCommitOutcome commit_conversation_checkpoint(IConversationCheckpointStore &store,
+                                                         const ConversationCheckpoint &candidate,
+                                                         const ConversationCommitState &live) {
     if (const auto valid = candidate.validate(); !valid) {
         return discard(ConversationCommitDisposition::DiscardedStale, "invalid-candidate");
     }
@@ -1083,8 +1076,7 @@ commit_conversation_checkpoint(IConversationCheckpointStore &store,
         return discard(ConversationCommitDisposition::DiscardedStale, "task-epoch-mismatch");
     }
     if (candidate.environment_epoch != live.environment_epoch) {
-        return discard(ConversationCommitDisposition::DiscardedStale,
-                       "environment-epoch-mismatch");
+        return discard(ConversationCommitDisposition::DiscardedStale, "environment-epoch-mismatch");
     }
     const auto stored = store.latest(candidate.session_id);
     if (!stored) {
@@ -1097,11 +1089,9 @@ commit_conversation_checkpoint(IConversationCheckpointStore &store,
         }
         if (candidate.through_event_sequence == existing.through_event_sequence) {
             if (candidate.projection_digest() == existing.projection_digest()) {
-                return discard(ConversationCommitDisposition::IdempotentNoOp,
-                               "idempotent-replay");
+                return discard(ConversationCommitDisposition::IdempotentNoOp, "idempotent-replay");
             }
-            return discard(ConversationCommitDisposition::DiscardedStale,
-                           "conflicting-watermark");
+            return discard(ConversationCommitDisposition::DiscardedStale, "conflicting-watermark");
         }
     }
     const auto put = store.put(candidate);
@@ -1122,8 +1112,8 @@ commit_conversation_checkpoint(IConversationCheckpointStore &store,
 std::vector<ContextItem> context_items_from_checkpoint(const ConversationCheckpoint &checkpoint) {
     std::vector<ContextItem> items;
     std::size_t index = 0;
-    const auto push_statement = [&](const ConversationStatement &statement,
-                                    ContextItemKind kind, std::string_view tag) {
+    const auto push_statement = [&](const ConversationStatement &statement, ContextItemKind kind,
+                                    std::string_view tag) {
         ContextItem item;
         const std::string seed = "mira.context.item|" + checkpoint.id.to_string() + "|" +
                                  std::string(tag) + "|" + std::to_string(index);

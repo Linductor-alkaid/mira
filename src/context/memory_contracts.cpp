@@ -384,8 +384,7 @@ Result<void> MemoryQuery::validate() const {
         return memory_error(MemoryDomainCode::InvalidRecord, "kind filter must not be empty");
     }
     if (max_results == 0 || max_results > 512) {
-        return memory_error(MemoryDomainCode::InvalidRecord,
-                            "max_results must be within (0, 512]");
+        return memory_error(MemoryDomainCode::InvalidRecord, "max_results must be within (0, 512]");
     }
     if (deadline.count() < 0) {
         return memory_error(MemoryDomainCode::InvalidRecord, "deadline must not be negative");

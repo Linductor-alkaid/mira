@@ -2,8 +2,8 @@
 
 #include <executor/executor.hpp>
 
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <mutex>
@@ -43,18 +43,25 @@ Result<T> wait_result(const std::shared_future<T> &future, std::chrono::millisec
         return true;
     }
     const std::array<TaskState, 15> kStates{
-        TaskState::Idle,      TaskState::Observing,       TaskState::Reasoning,
-        TaskState::Planning,  TaskState::Acting,          TaskState::Verifying,
-        TaskState::Recovering, TaskState::Pausing,        TaskState::Paused,
-        TaskState::TakeoverSettling, TaskState::SuspendedForTakeover,
-        TaskState::Cancelling, TaskState::Completed,      TaskState::Failed,
+        TaskState::Idle,
+        TaskState::Observing,
+        TaskState::Reasoning,
+        TaskState::Planning,
+        TaskState::Acting,
+        TaskState::Verifying,
+        TaskState::Recovering,
+        TaskState::Pausing,
+        TaskState::Paused,
+        TaskState::TakeoverSettling,
+        TaskState::SuspendedForTakeover,
+        TaskState::Cancelling,
+        TaskState::Completed,
+        TaskState::Failed,
         TaskState::Cancelled,
     };
     std::array<bool, 15> visited{};
     std::vector<TaskState> frontier{from};
-    const auto index_of = [](TaskState state) {
-        return static_cast<std::size_t>(state);
-    };
+    const auto index_of = [](TaskState state) { return static_cast<std::size_t>(state); };
     visited[index_of(from)] = true;
     while (!frontier.empty()) {
         const auto current = frontier.back();
@@ -290,9 +297,9 @@ class MiraRuntime::Impl final {
     }
 
     Result<CommandHandle> complete_task(TaskId task_id, TaskOutcome outcome) {
-        return enqueue(CommandKind::CompleteTask,
-                       [this, task_id, outcome](std::uint64_t sequence,
-                                                CommandHandle::State &state) {
+        return enqueue(CommandKind::CompleteTask, [this, task_id,
+                                                   outcome](std::uint64_t sequence,
+                                                            CommandHandle::State &state) {
             std::lock_guard lock(records_mutex);
             const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
             const auto found = tasks.find(task_id);
@@ -318,11 +325,11 @@ class MiraRuntime::Impl final {
                 // Terminal states are idempotent per state and never revive:
                 // repeating the same settlement is a NoOp, a conflicting one
                 // is rejected (RULE-03).
-                const auto reason = make_error(
-                    ErrorCode::InvalidState,
-                    snapshot.state == outcome.terminal_state
-                        ? "task already settled in the requested terminal state"
-                        : "task already settled in a different terminal state");
+                const auto reason =
+                    make_error(ErrorCode::InvalidState,
+                               snapshot.state == outcome.terminal_state
+                                   ? "task already settled in the requested terminal state"
+                                   : "task already settled in a different terminal state");
                 set_receipt(handle, CommandKind::CompleteTask,
                             snapshot.state == outcome.terminal_state ? ReceiptStatus::Accepted
                                                                      : ReceiptStatus::Rejected,
@@ -334,9 +341,9 @@ class MiraRuntime::Impl final {
                 return;
             }
             if (!task_state_path_exists(snapshot.state, outcome.terminal_state)) {
-                const auto reason = make_error(
-                    ErrorCode::InvalidState,
-                    "no legal task transition path to the requested terminal state");
+                const auto reason =
+                    make_error(ErrorCode::InvalidState,
+                               "no legal task transition path to the requested terminal state");
                 set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Rejected, sequence,
                             reason);
                 set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
@@ -464,7 +471,7 @@ Result<CommandHandle> MiraRuntime::cancel_task(TaskId task_id) {
 
 Result<CommandHandle> MiraRuntime::begin_task_recovery(TaskId task_id) {
     return impl_->simple_task_command(CommandKind::BeginTaskRecovery, task_id,
-                                       TaskState::Recovering);
+                                      TaskState::Recovering);
 }
 
 Result<CommandHandle> MiraRuntime::complete_task(TaskId task_id, TaskOutcome outcome) {

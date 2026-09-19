@@ -1,10 +1,10 @@
 #include "support/m3_support.hpp"
 
-#include <executor/executor.hpp>
 #include "support/test.hpp"
+#include <executor/executor.hpp>
 
-#include <mira/agent_loop.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/agent_loop.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
 
@@ -36,9 +36,9 @@ class LoopFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                 ModelGatewayConfig{});
-        gateway_->register_provider(std::make_shared<OpenAiCompatibleProvider>(
-            profile_, transport_, artifact_source()));
+                                                  ModelGatewayConfig{});
+        gateway_->register_provider(
+            std::make_shared<OpenAiCompatibleProvider>(profile_, transport_, artifact_source()));
         admission_ = std::make_shared<SimpleAdmissionGate>();
         gateway_->set_admission_gate(admission_);
     }
@@ -120,8 +120,7 @@ class NeverSatisfied final : public ILoopVerifier {
 // accepting the model's done claim.
 class InputCountVerifier final : public ILoopVerifier {
   public:
-    explicit InputCountVerifier(SimulatorEnvironment &environment,
-                                std::size_t required_inputs = 1)
+    explicit InputCountVerifier(SimulatorEnvironment &environment, std::size_t required_inputs = 1)
         : environment_(environment), required_(required_inputs) {}
     Verdict verify(const Observation &, const DecisionCandidate &decision) override {
         const auto action = decision.value.find("action");
@@ -161,8 +160,7 @@ class AndroidLikeEnvironment final : public IEnvironment {
             Error error;
             error.code = ErrorCode::UnsupportedCapability;
             error.domain = "mira.test.android-like";
-            error.safe_message =
-                "the host adapter only captures screen and structure components";
+            error.safe_message = "the host adapter only captures screen and structure components";
             return error;
         }
         return inner_->observe(request, context);
@@ -194,8 +192,12 @@ int successful_two_step_loop() {
     fixture.spec().profile_id = fixture.profile_->id;
 
     // Step 1: tap; step 2: done (after verification sees one executed input).
-    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
-    fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{8, 1});
     InputCountVerifier verifier(*fixture.environment_, 1);
@@ -238,8 +240,12 @@ int verification_observation_declares_components() {
     fixture.spec().profile_id = fixture.profile_->id;
     // Step 1: tap (post-action verification); step 2: done (claim
     // verification).
-    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
-    fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
 
     const auto android_like = std::make_shared<AndroidLikeEnvironment>(fixture.environment_);
     AgentLoop loop(android_like, *fixture.gateway_, AgentLoopConfig{8, 1});
@@ -278,7 +284,9 @@ int refused_and_failed_paths() {
         LoopFixture fixture;
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
-        fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"no"}]}],"usage":{}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"no"}]}],"usage":{}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
@@ -291,7 +299,9 @@ int refused_and_failed_paths() {
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
         // Model declares explicit failure.
-        fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"fail\",\"reason\":\"impossible\"}"}]}],"usage":{}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"fail\",\"reason\":\"impossible\"}"}]}],"usage":{}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
@@ -305,7 +315,8 @@ int refused_and_failed_paths() {
         // Incomplete output, no recovery left after the budget.
         MockStep step;
         step.status = 200;
-        step.body = R"({"id":"r","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{}})";
+        step.body =
+            R"({"id":"r","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{}})";
         fixture.transport_->enqueue(std::move(step));
         fixture.transport_->enqueue(std::move(step));
         AgentLoopConfig config;
@@ -325,8 +336,12 @@ int malformed_decision_triggers_bounded_repair() {
     fixture.spec().profile_id = fixture.profile_->id;
     // First response is completed but schema-invalid; the repair request
     // yields a valid decision.
-    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"detonate\",\"reason\":\"typo\"}"}]}],"usage":{"input_tokens":5,"output_tokens":2}})");
-    fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"repaired\"}"}]}],"usage":{"input_tokens":5,"output_tokens":2}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"detonate\",\"reason\":\"typo\"}"}]}],"usage":{"input_tokens":5,"output_tokens":2}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"repaired\"}"}]}],"usage":{"input_tokens":5,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
     InputCountVerifier verifier(*fixture.environment_, 0);
@@ -350,10 +365,16 @@ int param_missing_decision_recovers_with_feedback() {
         fixture.spec().profile_id = fixture.profile_->id;
         // Step 1: the exact real-device payload from the issue -- swipe
         // without any coordinates passes the schema but cannot compile.
-        fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"I should open the Settings application.\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"I should open the Settings application.\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
         // Step 2: the retried decision carries the required coordinates.
-        fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"swipe\",\"x\":0.1,\"y\":0.1,\"end_x\":0.2,\"end_y\":0.2,\"reason\":\"swipe up\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
-        fixture.transport_->enqueue_json(200, R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"swipe\",\"x\":0.1,\"y\":0.1,\"end_x\":0.2,\"end_y\":0.2,\"reason\":\"swipe up\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
 
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{6, 1});
         InputCountVerifier verifier(*fixture.environment_, 1);
@@ -367,10 +388,10 @@ int param_missing_decision_recovers_with_feedback() {
         MIRA_CHECK(fixture.transport_->recorded().size() == 3);
         // The retry request quotes the compile diagnosis as feedback; the
         // diagnosis is a static string, never the raw model output.
+        MIRA_CHECK(fixture.transport_->recorded()[1].body.find("did not compile to an action") !=
+                   std::string::npos);
         MIRA_CHECK(fixture.transport_->recorded()[1].body.find(
-                      "did not compile to an action") != std::string::npos);
-        MIRA_CHECK(fixture.transport_->recorded()[1].body.find(
-                      "swipe requires four canonical coordinates") != std::string::npos);
+                       "swipe requires four canonical coordinates") != std::string::npos);
         MIRA_CHECK(!result.value().steps.empty() &&
                    result.value().steps.front().phase == StepPhase::Recovering);
         MIRA_CHECK(!result.value().steps.empty() &&
@@ -383,14 +404,15 @@ int param_missing_decision_recovers_with_feedback() {
         LoopFixture fixture;
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
-        fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 0});
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.has_value());
         MIRA_CHECK(result.value().outcome == LoopOutcome::Failed);
-        MIRA_CHECK(result.value().safe_summary.find("did not compile") !=
-                   std::string::npos);
+        MIRA_CHECK(result.value().safe_summary.find("did not compile") != std::string::npos);
         MIRA_CHECK(fixture.environment_->executed_inputs().empty());
         MIRA_CHECK(fixture.transport_->recorded().size() == 1);
     }
@@ -401,7 +423,9 @@ int param_missing_decision_recovers_with_feedback() {
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
         for (int index = 0; index < 2; ++index) {
-            fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"still no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
+            fixture.transport_->enqueue_json(
+                200,
+                R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"still no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
         }
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
         ModelDoneVerifier verifier;
@@ -435,8 +459,7 @@ int artifact_reference_digest_is_enforced() {
     reference.digest = screen.payload_digest;
     const auto fetched = fixture.artifact_source()->fetch(reference);
     MIRA_CHECK(fetched.has_value());
-    MIRA_CHECK(fetched.has_value() &&
-               fetched.value().size() == screen.payload_byte_size);
+    MIRA_CHECK(fetched.has_value() && fetched.value().size() == screen.payload_byte_size);
 
     // The pre-fix loop behavior: digest left zeroed while the store holds a
     // real one. The fetch must fail closed instead of serving the payload.
@@ -461,7 +484,9 @@ int max_steps_and_verification_disagreement() {
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
         for (int index = 0; index < 3; ++index) {
-            fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"swipe\",\"x\":0.1,\"y\":0.1,\"end_x\":0.2,\"end_y\":0.2,\"reason\":\"r\"}"}]}],"usage":{}})");
+            fixture.transport_->enqueue_json(
+                200,
+                R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"swipe\",\"x\":0.1,\"y\":0.1,\"end_x\":0.2,\"end_y\":0.2,\"reason\":\"r\"}"}]}],"usage":{}})");
         }
         AgentLoopConfig config;
         config.max_steps = 3;
@@ -477,9 +502,15 @@ int max_steps_and_verification_disagreement() {
         LoopFixture fixture;
         fixture.activate();
         fixture.spec().profile_id = fixture.profile_->id;
-        fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"premature\"}"}]}],"usage":{}})");
-        fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.2,\"y\":0.2,\"reason\":\"again\"}"}]}],"usage":{}})");
-        fixture.transport_->enqueue_json(200, R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"now\"}"}]}],"usage":{}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"premature\"}"}]}],"usage":{}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.2,\"y\":0.2,\"reason\":\"again\"}"}]}],"usage":{}})");
+        fixture.transport_->enqueue_json(
+            200,
+            R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"now\"}"}]}],"usage":{}})");
 
         class OnceVerifier final : public ILoopVerifier {
           public:
@@ -490,6 +521,7 @@ int max_steps_and_verification_disagreement() {
                 }
                 return ++done_claims_ >= 2 ? Verdict::Satisfied : Verdict::NotSatisfied;
             }
+
           private:
             int done_claims_ = 0;
         };
@@ -509,8 +541,12 @@ int cancellation_stops_before_next_action() {
 
     std::atomic<bool> cancel{false};
     // First decision executes; then cancellation is observed.
-    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.3,\"y\":0.3,\"reason\":\"r\"}"}]}],"usage":{}})");
-    fixture.transport_->enqueue_json(200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.7,\"y\":0.7,\"reason\":\"never\"}"}]}],"usage":{}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.3,\"y\":0.3,\"reason\":\"r\"}"}]}],"usage":{}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.7,\"y\":0.7,\"reason\":\"never\"}"}]}],"usage":{}})");
 
     class CancelAfterFirstAction final : public ILoopVerifier {
       public:
@@ -522,6 +558,7 @@ int cancellation_stops_before_next_action() {
             flag_.store(true);
             return Verdict::NotSatisfied;
         }
+
       private:
         std::atomic<bool> &flag_;
     };
@@ -541,7 +578,9 @@ int admission_rejection_prevents_actions() {
     LoopFixture fixture;
     // The gate stays inactive: no request may even leave.
     fixture.spec().profile_id = fixture.profile_->id;
-    fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}"}]}],"usage":{}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}"}]}],"usage":{}})");
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
     ModelDoneVerifier verifier;
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
@@ -564,7 +603,9 @@ int rate_limit_recovery_inside_the_loop() {
     limited.headers = {{"Retry-After", "0"}};
     limited.body = R"({"error":{"code":"rate_limited"}})";
     fixture.transport_->enqueue(std::move(limited));
-    fixture.transport_->enqueue_json(200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"after retry\"}"}]}],"usage":{"input_tokens":3,"output_tokens":2}})");
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"after retry\"}"}]}],"usage":{"input_tokens":3,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 2});
     InputCountVerifier verifier(*fixture.environment_, 0);

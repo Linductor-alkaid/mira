@@ -1,10 +1,10 @@
 #include "support/m3_support.hpp"
 
-#include <executor/executor.hpp>
 #include "support/test.hpp"
+#include <executor/executor.hpp>
 
-#include <mira/agent_loop.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/agent_loop.hpp>
 #include <mira/model_gateway.hpp>
 #include <mira/model_replay.hpp>
 #include <mira/replay.hpp>
@@ -29,7 +29,7 @@ class ReplayFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                 ModelGatewayConfig{});
+                                                  ModelGatewayConfig{});
         admission_ = std::make_shared<SimpleAdmissionGate>();
         gateway_->set_admission_gate(admission_);
     }
@@ -79,7 +79,8 @@ int offline_replay_runs_without_network_or_input() {
 
     // Recorded canonical responses: one action, one terminal claim.
     std::vector<ModelResponse> script;
-    script.push_back(text_response("{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"replay\"}"));
+    script.push_back(
+        text_response("{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"replay\"}"));
     script.push_back(text_response("{\"action\":\"done\",\"reason\":\"replayed\"}"));
     auto provider = std::make_shared<ReplayModelProvider>(fixture.profile_, std::move(script));
     fixture.gateway_->register_provider(provider);
@@ -103,9 +104,9 @@ int offline_replay_runs_without_network_or_input() {
     OfflineReplayEnvironment environment(std::move(observations), std::move(receipts),
                                          EnvironmentCapabilities{});
 
-    AgentLoop loop(std::shared_ptr<IEnvironment>(
-                       static_cast<IEnvironment *>(&environment), [](auto *) {}),
-                   *fixture.gateway_, AgentLoopConfig{4, 1});
+    AgentLoop loop(
+        std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment), [](auto *) {}),
+        *fixture.gateway_, AgentLoopConfig{4, 1});
     ReplayVerifier verifier;
     OperationContext context;
     context.session = SessionId::generate();
@@ -128,7 +129,8 @@ int replay_is_exhaustion_bounded() {
     ReplayFixture fixture;
     fixture.admission_->activate(fixture.spec().task_id, 1);
     fixture.spec().profile_id = fixture.profile_->id;
-    std::vector<ModelResponse> script{text_response("{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}")};
+    std::vector<ModelResponse> script{
+        text_response("{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}")};
     auto provider = std::make_shared<ReplayModelProvider>(fixture.profile_, std::move(script));
     fixture.gateway_->register_provider(provider);
 
@@ -141,9 +143,9 @@ int replay_is_exhaustion_bounded() {
         observations.push_back(std::move(observation));
     }
     OfflineReplayEnvironment environment(std::move(observations), {}, EnvironmentCapabilities{});
-    AgentLoop loop(std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment),
-                                                 [](auto *) {}),
-                   *fixture.gateway_, AgentLoopConfig{4, 1});
+    AgentLoop loop(
+        std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment), [](auto *) {}),
+        *fixture.gateway_, AgentLoopConfig{4, 1});
     NeverSatisfiedLike verifier;
     OperationContext context;
     context.started_at = Timestamp::now();
@@ -171,8 +173,8 @@ int raw_payload_tombstone_degrades_but_replays() {
     raw.sensitivity = Sensitivity::Sensitive;
     recorded.protected_raw_response = raw;
 
-    auto provider = std::make_shared<ReplayModelProvider>(
-        fixture.profile_, std::vector<ModelResponse>{recorded});
+    auto provider = std::make_shared<ReplayModelProvider>(fixture.profile_,
+                                                          std::vector<ModelResponse>{recorded});
     // The raw artifact was deleted after recording.
     provider->note_raw_artifact_erased();
     fixture.gateway_->register_provider(provider);

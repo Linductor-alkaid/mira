@@ -7,8 +7,7 @@ namespace mira {
 namespace {
 
 [[nodiscard]] bool same_domain(const Error &error, ModelDomainCode code) {
-    return error.domain == "mira.model" &&
-           error.domain_code == static_cast<std::int32_t>(code);
+    return error.domain == "mira.model" && error.domain_code == static_cast<std::int32_t>(code);
 }
 
 } // namespace
@@ -39,7 +38,7 @@ void ProviderCircuit::record_success() {
     case CircuitState::Degraded:
     case CircuitState::Probing:
         state_ = successes_ >= config_.consecutive_successes_to_close ? CircuitState::Healthy
-                                                                     : CircuitState::Degraded;
+                                                                      : CircuitState::Degraded;
         break;
     case CircuitState::Healthy:
     case CircuitState::OpenCircuit:
@@ -79,10 +78,10 @@ RequestStage classify_stage(bool write_started, bool write_completed,
     return RequestStage::PreWriteFailure;
 }
 
-RetryDecision ProviderSupervisor::evaluate(
-    const Error &failure, RequestStage stage,
-    const std::optional<std::chrono::milliseconds> &retry_after, const RetryBudget &budget,
-    const ProviderCircuit &circuit) const {
+RetryDecision
+ProviderSupervisor::evaluate(const Error &failure, RequestStage stage,
+                             const std::optional<std::chrono::milliseconds> &retry_after,
+                             const RetryBudget &budget, const ProviderCircuit &circuit) const {
     RetryDecision decision;
 
     // Budgets first: no retry beyond attempts, time or circuit admission.
@@ -132,8 +131,7 @@ RetryDecision ProviderSupervisor::evaluate(
             break; // Honour Retry-After below.
         }
         decision.action = RetryAction::GiveUp;
-        decision.reason =
-            "request bytes left the process; resend requires idempotency evidence";
+        decision.reason = "request bytes left the process; resend requires idempotency evidence";
         return decision;
     }
 

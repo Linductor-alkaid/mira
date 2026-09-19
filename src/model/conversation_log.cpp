@@ -30,8 +30,7 @@ namespace {
     return detail;
 }
 
-[[nodiscard]] Result<ConversationEntry>
-user_message_entry(const EventEnvelope &envelope) {
+[[nodiscard]] Result<ConversationEntry> user_message_entry(const EventEnvelope &envelope) {
     const auto payload = parse_json(envelope.payload.data);
     const auto *detail = event_detail(payload);
     if (detail == nullptr) {

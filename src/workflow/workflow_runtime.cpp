@@ -334,8 +334,8 @@ bool WorkflowRuntime::navigation_context_installed() const {
 // --- Stage F: learning loop (DEC-030) ----------------------------------------
 
 Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memory,
-                                                    MemoryScope scope,
-                                                    WorkflowLearningLimits limits) {
+                                                   MemoryScope scope,
+                                                   WorkflowLearningLimits limits) {
     if (memory == nullptr) {
         return workflow_error(ErrorCode::InvalidArgument,
                               "learning context requires a memory backend");
@@ -348,8 +348,7 @@ Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memo
     }
     if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
         scope.kind != MemoryScopeKind::Agent) {
-        return workflow_error(ErrorCode::InvalidArgument,
-                              "learning scope requires a subject id");
+        return workflow_error(ErrorCode::InvalidArgument, "learning scope requires a subject id");
     }
     if (auto valid = limits.validate(); !valid.has_value()) {
         return valid.error();
@@ -390,10 +389,10 @@ void WorkflowRuntime::record_episode(RunRecord &run, WorkflowRunState terminal_s
     episode.escalations = run.escalations;
     episode.checkpoint_handoffs =
         std::accumulate(run.checkpoint_handoffs.begin(), run.checkpoint_handoffs.end(), 0U);
-    episode.recorded_at_ms = static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    episode.recorded_at_ms =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count());
     if (terminal_state == WorkflowRunState::Completed) {
         episode.outcome = "completed";
     } else if (terminal_state == WorkflowRunState::Failed) {
@@ -418,8 +417,7 @@ void WorkflowRuntime::record_episode(RunRecord &run, WorkflowRunState terminal_s
     const auto applied = memory->apply(mutation);
     if (!applied.has_value()) {
         ++episode_record_failures_;
-        emit_episode_recorded(run, Sha256Digest{},
-                              "failed",
+        emit_episode_recorded(run, Sha256Digest{}, "failed",
                               bounded_summary(applied.error().domain + ":" +
                                               std::to_string(applied.error().domain_code)));
         return;
@@ -529,8 +527,8 @@ void WorkflowRuntime::emit_lesson_recorded(const RunRecord &run, const Sha256Dig
     }
 }
 
-Result<WorkflowRecoveryLesson> WorkflowRuntime::record_recovery_lesson(
-    const WorkflowRunId &run_id) {
+Result<WorkflowRecoveryLesson>
+WorkflowRuntime::record_recovery_lesson(const WorkflowRunId &run_id) {
     Error error;
     auto found = find_run(run_id, error);
     if (!found.has_value()) {
@@ -547,8 +545,7 @@ Result<WorkflowRecoveryLesson> WorkflowRuntime::record_recovery_lesson(
     {
         std::lock_guard lock(mutex_);
         if (shut_down_) {
-            return workflow_error(ErrorCode::InvalidState,
-                                  "workflow runtime is shutting down");
+            return workflow_error(ErrorCode::InvalidState, "workflow runtime is shutting down");
         }
         const auto replayed = recorded_lessons_.find(run_id);
         if (replayed != recorded_lessons_.end()) {
@@ -567,8 +564,7 @@ Result<WorkflowRecoveryLesson> WorkflowRuntime::record_recovery_lesson(
                                   "run completed without a failure-driven escalation");
         }
         if (!learning_memory_) {
-            return workflow_error(ErrorCode::InvalidState,
-                                  "no learning context is installed");
+            return workflow_error(ErrorCode::InvalidState, "no learning context is installed");
         }
         if (!run.last_failure_signature.has_value()) {
             return workflow_error(ErrorCode::Internal,
@@ -596,10 +592,10 @@ Result<WorkflowRecoveryLesson> WorkflowRuntime::record_recovery_lesson(
     lesson.failure = signature;
     lesson.resumed_without_patch = recovery_patches.empty();
     lesson.outcome = "recovered";
-    lesson.recorded_at_ms = static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    lesson.recorded_at_ms =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count());
     for (const auto &patch : recovery_patches) {
         WorkflowRecoveryAction action;
         action.patch_id = patch.patch_id.to_string();
@@ -664,19 +660,18 @@ Result<Sha256Digest> WorkflowRuntime::publish_workflow(const WorkflowDefinition 
     if (auto valid = validate_workflow_definition(definition); !valid.has_value()) {
         return valid.error();
     }
-    auto appended = append_version_record(definition, workflow_definition_digest(definition),
-                                          actor, reason, validation, evidence, false);
+    auto appended = append_version_record(definition, workflow_definition_digest(definition), actor,
+                                          reason, validation, evidence, false);
     if (!appended.has_value()) {
         return appended.error();
     }
     return appended.value().digest;
 }
 
-Result<WorkflowRuntime::VersionAppendResult>
-WorkflowRuntime::append_version_record(const WorkflowDefinition &definition, const Sha256Digest &digest,
-                                       const std::string &actor, const std::string &reason,
-                                       WorkflowValidationResult validation,
-                                       std::optional<Sha256Digest> evidence, bool dedupe) {
+Result<WorkflowRuntime::VersionAppendResult> WorkflowRuntime::append_version_record(
+    const WorkflowDefinition &definition, const Sha256Digest &digest, const std::string &actor,
+    const std::string &reason, WorkflowValidationResult validation,
+    std::optional<Sha256Digest> evidence, bool dedupe) {
     std::lock_guard lock(mutex_);
     const bool fresh_history = library_.find(definition.workflow_id) == library_.end();
     if (fresh_history) {
@@ -693,8 +688,7 @@ WorkflowRuntime::append_version_record(const WorkflowDefinition &definition, con
         }
     }
     WorkflowVersionRecord record;
-    record.version =
-        SemanticVersion{1, 0, static_cast<std::uint16_t>(history.records.size() + 1)};
+    record.version = SemanticVersion{1, 0, static_cast<std::uint16_t>(history.records.size() + 1)};
     record.actor = actor;
     record.reason = reason;
     record.content_digest = digest;
@@ -753,8 +747,8 @@ Result<WorkflowRunView> WorkflowRuntime::create_run(const WorkflowId &workflow_i
 }
 
 Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinition &definition,
-                                                            JsonValue parameters,
-                                                            std::optional<WorkflowPolicy> policy) {
+                                                           JsonValue parameters,
+                                                           std::optional<WorkflowPolicy> policy) {
     const auto effective = policy.value_or(definition.default_policy);
     const bool dispatches = workflow_policy_dispatches_side_effects(effective);
     if (auto compatible = validate_workflow_policy_compatibility(definition, effective);
@@ -816,8 +810,8 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
             return resolved.error();
         }
         const auto *tool_member = resolved.value().find("tool");
-        if (!resolved.value().is_object() || tool_member == nullptr ||
-            !tool_member->is_string() || tool_member->as_string()->empty()) {
+        if (!resolved.value().is_object() || tool_member == nullptr || !tool_member->is_string() ||
+            tool_member->as_string()->empty()) {
             return make_runtime_error(WorkflowRuntimeError::ToolBindingInvalid,
                                       "tool_call arguments must be an object naming the target "
                                       "tool in the reserved \"tool\" member");
@@ -831,9 +825,10 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
                                   "a tool registry is required to run tool_call steps");
         }
         const auto exposed = tools->exposed_tools();
-        const auto tool = std::find_if(
-            exposed.begin(), exposed.end(),
-            [&](const ExposedToolSpec &entry) { return entry.wire_name == *tool_member->as_string(); });
+        const auto tool =
+            std::find_if(exposed.begin(), exposed.end(), [&](const ExposedToolSpec &entry) {
+                return entry.wire_name == *tool_member->as_string();
+            });
         if (tool == exposed.end()) {
             return workflow_error(ErrorCode::NotFound, "step tool is not registered");
         }
@@ -865,8 +860,7 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
         return outcome.has_value()
                    ? outcome.value().error.value_or(
                          workflow_error(ErrorCode::Internal, "task submission failed"))
-                   : workflow_error(ErrorCode::DeadlineExceeded, "task submission timed out",
-                                    true);
+                   : workflow_error(ErrorCode::DeadlineExceeded, "task submission timed out", true);
     }
 
     auto record = std::make_unique<RunRecord>();
@@ -894,10 +888,10 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
         if (rollback.has_value()) {
             static_cast<void>(rollback.value().outcome(config_.command_timeout));
         }
-        return workflow_error(
-            accepting_ ? ErrorCode::ResourceExhausted : ErrorCode::Unavailable,
-            accepting_ ? "run table is at capacity" : "workflow runtime is shutting down",
-            accepting_);
+        return workflow_error(accepting_ ? ErrorCode::ResourceExhausted : ErrorCode::Unavailable,
+                              accepting_ ? "run table is at capacity"
+                                         : "workflow runtime is shutting down",
+                              accepting_);
     }
     ++active_runs_;
     const auto view = record->view;
@@ -961,7 +955,7 @@ Result<void> WorkflowRuntime::start_run(const WorkflowRunId &run_id) {
 }
 
 Result<WorkflowRunResult> WorkflowRuntime::execute_run(const WorkflowRunId &run_id,
-                                                        const OperationContext &context) {
+                                                       const OperationContext &context) {
     Error error;
     auto found = find_run(run_id, error);
     if (!found.has_value()) {
@@ -1019,8 +1013,7 @@ Result<WorkflowRunResult> WorkflowRuntime::wait_run(const WorkflowRunId &run_id,
     }
 }
 
-std::optional<Error> WorkflowRuntime::commit_transition(RunRecord &run,
-                                                        WorkflowRunState target) {
+std::optional<Error> WorkflowRuntime::commit_transition(RunRecord &run, WorkflowRunState target) {
     std::lock_guard lock(mutex_);
     const auto previous = run.view.state;
     auto applied = apply_workflow_run_transition(run.view, target);
@@ -1320,7 +1313,8 @@ void WorkflowRuntime::emit_publish_proposed(const WorkflowId &workflow_id,
     }
 }
 
-void WorkflowRuntime::emit_publish_applied(const WorkflowId &workflow_id, const Sha256Digest &ir_digest,
+void WorkflowRuntime::emit_publish_applied(const WorkflowId &workflow_id,
+                                           const Sha256Digest &ir_digest,
                                            const Sha256Digest &evidence,
                                            const WorkflowRunId &dry_run_id) {
     if (!events_) {
@@ -1372,10 +1366,9 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
 
     const bool started_fresh = run_state(run) == WorkflowRunState::Created;
     if (started_fresh) {
-        if (auto failure = commit_transition(run, WorkflowRunState::Running);
-            failure.has_value()) {
-            static_cast<void>(
-                settle_terminal(run, WorkflowRunState::Failed, "run start transition was rejected"));
+        if (auto failure = commit_transition(run, WorkflowRunState::Running); failure.has_value()) {
+            static_cast<void>(settle_terminal(run, WorkflowRunState::Failed,
+                                              "run start transition was rejected"));
             assemble_result(run, result);
             return result;
         }
@@ -1437,8 +1430,7 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
         // completion is the safe point in stage B).
         if (flags.withdrawn.load(std::memory_order_relaxed) || context.cancelled()) {
             const auto snapshot = runtime_.task_snapshot(run.task);
-            const auto state =
-                snapshot.has_value() ? snapshot.value().state : TaskState::Cancelled;
+            const auto state = snapshot.has_value() ? snapshot.value().state : TaskState::Cancelled;
             if (!context.cancelled() && task_pause_family(state)) {
                 static_cast<void>(commit_transition(run, WorkflowRunState::Paused));
             } else {
@@ -1448,11 +1440,11 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
             break;
         }
         if (run.executions >= config_.max_step_executions_per_run) {
-            static_cast<void>(settle_terminal(
-                run, WorkflowRunState::Failed,
-                make_runtime_error(WorkflowRuntimeError::StepBudgetExceeded,
-                                   "run step budget exhausted")
-                    .safe_message));
+            static_cast<void>(
+                settle_terminal(run, WorkflowRunState::Failed,
+                                make_runtime_error(WorkflowRuntimeError::StepBudgetExceeded,
+                                                   "run step budget exhausted")
+                                    .safe_message));
             break;
         }
         if (run.cursor >= run.definition.steps.size()) {
@@ -1507,8 +1499,8 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
         // Checkpoint handoff (DEC-023 §2): under AgentAssisted a step
         // declaring an AgentEscalation hook is a checkpoint; each arrival
         // surrenders to the agent at most once before executing.
-        const bool entered = (first_iteration && started_fresh) ||
-                             (!first_iteration && index != previous_index);
+        const bool entered =
+            (first_iteration && started_fresh) || (!first_iteration && index != previous_index);
         if (entered) {
             ++run.checkpoint_arrivals[index];
         }
@@ -1519,8 +1511,8 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
             step.recovery->mode == WorkflowRecoveryHook::Mode::AgentEscalation &&
             run.checkpoint_arrivals[index] > run.checkpoint_handoffs[index]) {
             ++run.checkpoint_handoffs[index];
-            if (auto failure = enter_waiting_agent(
-                    run, "checkpoint reached; agent participation requested");
+            if (auto failure =
+                    enter_waiting_agent(run, "checkpoint reached; agent participation requested");
                 failure.has_value()) {
                 static_cast<void>(
                     settle_terminal(run, WorkflowRunState::Failed, failure.value().safe_message));
@@ -1571,8 +1563,8 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
             // DryRun plans for real when a context exists and keeps the M9
             // shape-planning settlement otherwise.
             bool nav_cancelled = false;
-            auto navigated = execute_navigate_step(run, step, index, context, flags, record,
-                                                   nav_cancelled);
+            auto navigated =
+                execute_navigate_step(run, step, index, context, flags, record, nav_cancelled);
             if (nav_cancelled) {
                 record.disposition = WorkflowStepDisposition::Stale;
                 record.safe_summary = "step cut short at a control boundary";
@@ -1593,14 +1585,13 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
 
         if (!dispatches) {
             if (step.verification.has_value()) {
-                const auto verdict = evaluate_workflow_predicate(*step.verification,
-                                                                 evaluation_context(run));
+                const auto verdict =
+                    evaluate_workflow_predicate(*step.verification, evaluation_context(run));
                 record.verification = verification_name(verdict);
                 if (verdict == WorkflowPredicateResult::NotSatisfied) {
-                    if (!handle_step_failure(
-                                run, step, index,
-                                make_runtime_error(WorkflowRuntimeError::VerifyFailed,
-                                                   "dry-run verification failed"))) {
+                    if (!handle_step_failure(run, step, index,
+                                             make_runtime_error(WorkflowRuntimeError::VerifyFailed,
+                                                                "dry-run verification failed"))) {
                         break;
                     }
                     continue;
@@ -1716,8 +1707,7 @@ bool WorkflowRuntime::handle_step_failure(RunRecord &run, const WorkflowStep &st
         signature.workflow_id = run.view.workflow_id.to_string();
         signature.step_id = step.id.to_string();
         signature.step_kind = workflow_step_kind_name(step.kind);
-        signature.reason_code =
-            failure.domain + ":" + std::to_string(failure.domain_code);
+        signature.reason_code = failure.domain + ":" + std::to_string(failure.domain_code);
         run.last_failure_signature = std::move(signature);
     }
 
@@ -1729,8 +1719,7 @@ bool WorkflowRuntime::handle_step_failure(RunRecord &run, const WorkflowStep &st
             ++run.retries[index];
             // A side effect may have happened before the failure: re-observe
             // before any redispatch (RULE-05; blind retries forbidden).
-            if (step.kind == WorkflowStepKind::ToolCall &&
-                step_tool_has_side_effects(run, index)) {
+            if (step.kind == WorkflowStepKind::ToolCall && step_tool_has_side_effects(run, index)) {
                 OperationContext context;
                 context.session = session_;
                 context.task = run.task;
@@ -1772,8 +1761,7 @@ bool WorkflowRuntime::handle_step_failure(RunRecord &run, const WorkflowStep &st
         skip.op = WorkflowPatchOp::Skip;
         skip.path = step.id.to_string();
         decision.proposal = {std::move(skip)};
-        decision.payload_digest =
-            decision_payload_digest(decision.safe_summary, decision.proposal);
+        decision.payload_digest = decision_payload_digest(decision.safe_summary, decision.proposal);
         const auto escalated = escalate_waiting_user(run, std::move(decision));
         if (!escalated.has_value()) {
             return false;
@@ -1796,7 +1784,7 @@ bool WorkflowRuntime::handle_step_failure(RunRecord &run, const WorkflowStep &st
 }
 
 std::optional<Error> WorkflowRuntime::enter_waiting_agent(RunRecord &run,
-                                                           const std::string &reason) {
+                                                          const std::string &reason) {
     if (auto failure = commit_transition(run, WorkflowRunState::WaitingAgent);
         failure.has_value()) {
         return failure;
@@ -1847,7 +1835,7 @@ std::optional<Error> WorkflowRuntime::escalate_waiting_agent(RunRecord &run,
 }
 
 std::optional<Error> WorkflowRuntime::escalate_waiting_user(RunRecord &run,
-                                                             WorkflowDecisionRequest decision) {
+                                                            WorkflowDecisionRequest decision) {
     {
         std::lock_guard lock(mutex_);
         if (run.escalations >= config_.max_escalations_per_run) {
@@ -1861,8 +1849,7 @@ std::optional<Error> WorkflowRuntime::escalate_waiting_user(RunRecord &run,
             WorkflowPendingDecision{decision.decision_id, decision.payload_digest};
         run.decision = decision;
     }
-    if (auto failure = commit_transition(run, WorkflowRunState::WaitingUser);
-        failure.has_value()) {
+    if (auto failure = commit_transition(run, WorkflowRunState::WaitingUser); failure.has_value()) {
         std::lock_guard lock(mutex_);
         run.view.pending_decision.reset();
         run.decision.reset();
@@ -1875,14 +1862,12 @@ std::optional<Error> WorkflowRuntime::escalate_waiting_user(RunRecord &run,
     }
     {
         std::lock_guard lock(mutex_);
-        run.safe_summary = bounded_summary("waiting for user decision: " +
-                                           decision.safe_summary);
+        run.safe_summary = bounded_summary("waiting for user decision: " + decision.safe_summary);
     }
     return std::nullopt;
 }
 
-bool WorkflowRuntime::step_tool_has_side_effects(const RunRecord &run,
-                                                 std::size_t index) const {
+bool WorkflowRuntime::step_tool_has_side_effects(const RunRecord &run, std::size_t index) const {
     if (!tools_) {
         return false;
     }
@@ -1892,17 +1877,16 @@ bool WorkflowRuntime::step_tool_has_side_effects(const RunRecord &run,
         return false;
     }
     const auto exposed = tools_->exposed_tools();
-    const auto tool = std::find_if(
-        exposed.begin(), exposed.end(),
-        [&](const ExposedToolSpec &entry) { return entry.wire_name == *tool_member->as_string(); });
+    const auto tool =
+        std::find_if(exposed.begin(), exposed.end(), [&](const ExposedToolSpec &entry) {
+            return entry.wire_name == *tool_member->as_string();
+        });
     return tool != exposed.end() && tool->has_side_effects;
 }
 
-Result<ToolExecutionRecord>
-WorkflowRuntime::dispatch_tool_invocation(RunRecord &run, const ExposedToolSpec &tool,
-                                          const JsonValue &input, const std::string &call_id,
-                                          const OperationContext &parent, const DriveFlags &flags,
-                                          bool &cancelled) {
+Result<ToolExecutionRecord> WorkflowRuntime::dispatch_tool_invocation(
+    RunRecord &run, const ExposedToolSpec &tool, const JsonValue &input, const std::string &call_id,
+    const OperationContext &parent, const DriveFlags &flags, bool &cancelled) {
     ToolProposal proposal;
     proposal.provider_call_id = ProviderToolCallId{call_id};
     proposal.tool_id = tool.tool_id;
@@ -1967,16 +1951,15 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
     const std::string wire_name = *resolved.find("tool")->as_string();
 
     const auto exposed = tools_->exposed_tools();
-    const auto tool = std::find_if(
-        exposed.begin(), exposed.end(),
-        [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
+    const auto tool =
+        std::find_if(exposed.begin(), exposed.end(),
+                     [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
     if (tool == exposed.end()) {
         return workflow_error(ErrorCode::NotFound, "step tool is not registered");
     }
 
     const std::string call_id = "workflow:" + run.view.run_id.to_string() + ":" +
-                                step.id.to_string() + ":" +
-                                std::to_string(run.attempts[index]);
+                                step.id.to_string() + ":" + std::to_string(run.attempts[index]);
     OperationContext context = parent;
     context.step = step.id;
     auto execution =
@@ -1989,8 +1972,7 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
     }
     {
         std::lock_guard lock(mutex_);
-        run.predicate_context.set("step_result:" + step.id.to_string(),
-                                  execution.value().result);
+        run.predicate_context.set("step_result:" + step.id.to_string(), execution.value().result);
     }
 
     record.safe_summary = "tool: " + wire_name;
@@ -2005,8 +1987,7 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
                                       "verification observation failed");
         }
     }
-    const auto verdict =
-        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+    const auto verdict = evaluate_workflow_predicate(*step.verification, evaluation_context(run));
     record.verification = verification_name(verdict);
     switch (verdict) {
     case WorkflowPredicateResult::Satisfied:
@@ -2069,8 +2050,7 @@ void WorkflowRuntime::emit_navigation_planned(const RunRecord &run, const Workfl
 }
 
 void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const WorkflowStep &step,
-                                               const AppModelTransition &transition,
-                                               bool success) {
+                                               const AppModelTransition &transition, bool success) {
     if (!events_) {
         return;
     }
@@ -2094,8 +2074,8 @@ void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const Workf
 }
 
 void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
-                                              const AppModelTransition &transition,
-                                              bool success, std::uint64_t now_ms) {
+                                              const AppModelTransition &transition, bool success,
+                                              std::uint64_t now_ms) {
     std::optional<AppModelTransition> updated;
     {
         std::lock_guard lock(mutex_);
@@ -2115,13 +2095,10 @@ void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep
     emit_navigation_observed(run, step, *updated, success);
 }
 
-std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
-                                                            const WorkflowStep &step,
-                                                            std::size_t index,
-                                                            const OperationContext &parent,
-                                                            const DriveFlags &flags,
-                                                            WorkflowStepRecord &record,
-                                                            bool &cancelled) {
+std::optional<Error>
+WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step, std::size_t index,
+                                       const OperationContext &parent, const DriveFlags &flags,
+                                       WorkflowStepRecord &record, bool &cancelled) {
     JsonValue arguments;
     ScreenStateProvider provider;
     std::optional<AppModel> model;
@@ -2131,8 +2108,7 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
         provider = screen_state_provider_;
         model = app_model_;
     }
-    const auto *target_member =
-        arguments.is_object() ? arguments.find("target") : nullptr;
+    const auto *target_member = arguments.is_object() ? arguments.find("target") : nullptr;
     if (target_member == nullptr || !target_member->is_string() ||
         target_member->as_string()->empty()) {
         return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid,
@@ -2161,9 +2137,9 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
                                   "no current screen state reading");
     }
     // 2. The target must be a declared state of the installed model.
-    const bool declared = std::any_of(
-        model->states.begin(), model->states.end(),
-        [&](const AppModelState &state) { return state.id == target; });
+    const bool declared =
+        std::any_of(model->states.begin(), model->states.end(),
+                    [&](const AppModelState &state) { return state.id == target; });
     if (!declared) {
         return make_runtime_error(WorkflowRuntimeError::NavigateTargetUnknown,
                                   "navigate target '" + target +
@@ -2182,9 +2158,9 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
                                   plan.error().safe_message);
     }
     emit_navigation_planned(run, step, plan.value());
-    record.safe_summary = "navigation planned: " +
-                          std::to_string(plan.value().transition_ids.size()) +
-                          " edge(s) to '" + target + "'";
+    record.safe_summary =
+        "navigation planned: " + std::to_string(plan.value().transition_ids.size()) +
+        " edge(s) to '" + target + "'";
 
     if (!dispatches) {
         // DryRun: planning only. Verification predicates evaluate against the
@@ -2253,9 +2229,10 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
             return make_runtime_error(WorkflowRuntimeError::NavigateTargetInvalid, detail);
         }
         const std::string wire_name = *tool_member->as_string();
-        const auto tool = std::find_if(
-            exposed.begin(), exposed.end(),
-            [&](const ExposedToolSpec &entry) { return entry.wire_name == wire_name; });
+        const auto tool =
+            std::find_if(exposed.begin(), exposed.end(), [&](const ExposedToolSpec &entry) {
+                return entry.wire_name == wire_name;
+            });
         if (tool == exposed.end()) {
             std::string detail = "navigation edge tool '";
             detail += wire_name;
@@ -2296,8 +2273,7 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
         // Arrival verification: one fresh read; the observed state must be
         // the edge target (W-02; navigate-arrival-unverified otherwise).
         const auto arrival = provider();
-        const bool arrived = arrival.has_value() &&
-                             arrival.value().state_id == edge->to_state;
+        const bool arrived = arrival.has_value() && arrival.value().state_id == edge->to_state;
         note_navigation_outcome(run, step, *edge, arrived, now_millis());
         if (!arrived) {
             std::string detail = "edge '";
@@ -2321,8 +2297,7 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
         record.verification = "none";
         return std::nullopt;
     }
-    const auto verdict =
-        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+    const auto verdict = evaluate_workflow_predicate(*step.verification, evaluation_context(run));
     record.verification = verification_name(verdict);
     switch (verdict) {
     case WorkflowPredicateResult::Satisfied:
@@ -2338,8 +2313,8 @@ std::optional<Error> WorkflowRuntime::execute_navigate_step(RunRecord &run,
 }
 
 Result<Observation> WorkflowRuntime::observe_for_verification(const RunRecord & /*run*/,
-                                                               const WorkflowStep &step,
-                                                               const OperationContext &parent) {
+                                                              const WorkflowStep &step,
+                                                              const OperationContext &parent) {
     OperationContext context = parent;
     context.step = step.id;
     context.operation = OperationId::generate();
@@ -2508,8 +2483,8 @@ Result<WorkflowRunView> WorkflowRuntime::continue_run(RunRecord &run) {
         anchor = run.definition.steps[std::min(run.cursor, run.definition.steps.size() - 1)];
     }
     if (!observe_for_verification(run, anchor, context).has_value()) {
-        static_cast<void>(settle_terminal(run, WorkflowRunState::Failed,
-                                          "resume re-observation failed"));
+        static_cast<void>(
+            settle_terminal(run, WorkflowRunState::Failed, "resume re-observation failed"));
         std::lock_guard lock(mutex_);
         return run.view;
     }
@@ -2517,8 +2492,7 @@ Result<WorkflowRunView> WorkflowRuntime::continue_run(RunRecord &run) {
     // Running comes first: the frozen table has no Paused -> Failed edge, so
     // a resume that cannot recover its interrupted step settles Failed from
     // Running (the re-observation above already ran under its safety rules).
-    if (auto failure = commit_transition(run, WorkflowRunState::Running);
-        failure.has_value()) {
+    if (auto failure = commit_transition(run, WorkflowRunState::Running); failure.has_value()) {
         return failure.value();
     }
     if (run.interrupted) {
@@ -2602,8 +2576,7 @@ Result<void> WorkflowRuntime::resolve_interrupted_step(RunRecord &run) {
     }
     // Uncertain side effect: RULE-05 forbids blind redispatch. W-02 guarantees
     // side-effecting steps carry a verification predicate; re-evaluate it.
-    const auto verdict =
-        evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+    const auto verdict = evaluate_workflow_predicate(*step.verification, evaluation_context(run));
     if (verdict == WorkflowPredicateResult::Satisfied) {
         WorkflowStepRecord record;
         record.step_id = step.id;
@@ -2677,7 +2650,8 @@ Result<WorkflowRunView> WorkflowRuntime::cancel_run(const WorkflowRunId &run_id)
     }
     // Force the view: the transition table keeps this safe against racing
     // drives, and a late drive settlement collapses to a terminal NoOp.
-    static_cast<void>(settle_terminal(run, WorkflowRunState::Cancelled, "run cancelled by request"));
+    static_cast<void>(
+        settle_terminal(run, WorkflowRunState::Cancelled, "run cancelled by request"));
     {
         std::lock_guard lock(mutex_);
         return run.view;
@@ -2693,9 +2667,9 @@ Result<WorkflowRunView> WorkflowRuntime::run_snapshot(const WorkflowRunId &run_i
     return found->second->view;
 }
 
-Result<WorkflowPatchOutcome> WorkflowRuntime::patch_run(const WorkflowRunId &run_id,
-                                                        const WorkflowPatchId &patch_id,
-                                                        const std::vector<WorkflowPatchEntry> &entries) {
+Result<WorkflowPatchOutcome>
+WorkflowRuntime::patch_run(const WorkflowRunId &run_id, const WorkflowPatchId &patch_id,
+                           const std::vector<WorkflowPatchEntry> &entries) {
     if (shut_down_) {
         return workflow_error(ErrorCode::Unavailable, "workflow runtime is shut down");
     }
@@ -2721,10 +2695,9 @@ Result<WorkflowPatchOutcome> WorkflowRuntime::rollback_run_patch(const WorkflowR
     std::vector<WorkflowPatchEntry> entries;
     {
         std::lock_guard lock(mutex_);
-        const auto target = std::find_if(run.applied_patches.begin(), run.applied_patches.end(),
-                                         [&](const AppliedPatch &candidate) {
-                                             return candidate.patch_id == patch_id;
-                                         });
+        const auto target = std::find_if(
+            run.applied_patches.begin(), run.applied_patches.end(),
+            [&](const AppliedPatch &candidate) { return candidate.patch_id == patch_id; });
         if (target == run.applied_patches.end()) {
             return workflow_error(ErrorCode::NotFound, "applied patch was not found");
         }
@@ -2765,9 +2738,9 @@ WorkflowRuntime::submit_patch(RunRecord &run, const WorkflowPatchId &patch_id,
                 outcome.applied = false;
                 return Result<WorkflowPatchOutcome>{outcome};
             }
-            return Result<WorkflowPatchOutcome>{make_runtime_error(
-                WorkflowRuntimeError::PatchIdConflict,
-                "patch id is already used by different content")};
+            return Result<WorkflowPatchOutcome>{
+                make_runtime_error(WorkflowRuntimeError::PatchIdConflict,
+                                   "patch id is already used by different content")};
         };
         for (const auto &applied : run.applied_patches) {
             if (applied.patch_id == patch_id) {
@@ -2901,10 +2874,10 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                                       "a tool registry is required to run tool_call steps");
             }
             const auto exposed = tools->exposed_tools();
-            const auto tool = std::find_if(exposed.begin(), exposed.end(),
-                                           [&](const ExposedToolSpec &entry) {
-                                               return entry.wire_name == *tool_member->as_string();
-                                           });
+            const auto tool =
+                std::find_if(exposed.begin(), exposed.end(), [&](const ExposedToolSpec &entry) {
+                    return entry.wire_name == *tool_member->as_string();
+                });
             if (tool == exposed.end()) {
                 return workflow_error(ErrorCode::NotFound, "step tool is not registered");
             }
@@ -2939,11 +2912,9 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
             if (!parsed.has_value()) {
                 return reject("policy-unknown", parsed.error());
             }
-            const bool allowed = std::any_of(run.definition.allowed_policies.begin(),
-                                             run.definition.allowed_policies.end(),
-                                             [&](WorkflowPolicy candidate) {
-                                                 return candidate == parsed.value();
-                                             });
+            const bool allowed = std::any_of(
+                run.definition.allowed_policies.begin(), run.definition.allowed_policies.end(),
+                [&](WorkflowPolicy candidate) { return candidate == parsed.value(); });
             if (!allowed) {
                 return reject("policy-not-allowed",
                               make_runtime_error(WorkflowRuntimeError::PolicySwitchRejected,
@@ -2951,15 +2922,14 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                                                  "set"));
             }
             if (workflow_policy_dispatches_side_effects(parsed.value())) {
-                const auto navigate = std::find_if(
-                    run.definition.steps.begin(), run.definition.steps.end(),
-                    [](const WorkflowStep &step) {
-                        return step.kind == WorkflowStepKind::Navigate;
-                    });
+                const auto navigate =
+                    std::find_if(run.definition.steps.begin(), run.definition.steps.end(),
+                                 [](const WorkflowStep &step) {
+                                     return step.kind == WorkflowStepKind::Navigate;
+                                 });
                 // Stage E (DEC-028 §3): with an installed navigation context
                 // the switch is admissible; without one the M9 gate stays.
-                if (navigate != run.definition.steps.end() &&
-                    !navigation_context_installed()) {
+                if (navigate != run.definition.steps.end() && !navigation_context_installed()) {
                     return reject("navigate-unresolvable",
                                   make_runtime_error(WorkflowRuntimeError::PolicySwitchRejected,
                                                      "navigate steps require an installed "
@@ -3016,8 +2986,8 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                     return reject("resolve-failed", resolved.error());
                 }
                 const auto *target = resolved.value().find("target");
-                if (!resolved.value().is_object() || target == nullptr ||
-                    !target->is_string() || target->as_string()->empty()) {
+                if (!resolved.value().is_object() || target == nullptr || !target->is_string() ||
+                    target->as_string()->empty()) {
                     return reject(
                         "navigate-target-invalid",
                         make_runtime_error(WorkflowRuntimeError::PatchRejected,
@@ -3076,8 +3046,8 @@ std::optional<Error> WorkflowRuntime::apply_patch(RunRecord &run, const Workflow
                     return reject("resolve-failed", resolved.error());
                 }
                 const auto *target = resolved.value().find("target");
-                if (!resolved.value().is_object() || target == nullptr ||
-                    !target->is_string() || target->as_string()->empty()) {
+                if (!resolved.value().is_object() || target == nullptr || !target->is_string() ||
+                    target->as_string()->empty()) {
                     return reject(
                         "navigate-target-invalid",
                         make_runtime_error(WorkflowRuntimeError::PatchRejected,
@@ -3182,8 +3152,8 @@ void WorkflowRuntime::drain_pending_patches(RunRecord &run) {
         // Application re-runs the full validation: the effective state may
         // have advanced since submission, and a patch that no longer applies
         // settles as Rejected without touching the epoch.
-        static_cast<void>(apply_patch(run, patch.patch_id, patch.digest, patch.entries, false,
-                                      "boundary"));
+        static_cast<void>(
+            apply_patch(run, patch.patch_id, patch.digest, patch.entries, false, "boundary"));
     }
 }
 
@@ -3277,9 +3247,10 @@ WorkflowRuntime::pending_decision_request(const WorkflowRunId &run_id) const {
     return *run.decision;
 }
 
-Result<WorkflowRunView> WorkflowRuntime::resolve_decision(
-    const WorkflowRunId &run_id, const WorkflowDecisionId &decision_id,
-    const Sha256Digest &payload_digest, WorkflowDecisionResolution resolution) {
+Result<WorkflowRunView> WorkflowRuntime::resolve_decision(const WorkflowRunId &run_id,
+                                                          const WorkflowDecisionId &decision_id,
+                                                          const Sha256Digest &payload_digest,
+                                                          WorkflowDecisionResolution resolution) {
     Error error;
     auto found = find_run(run_id, error);
     if (!found.has_value()) {
@@ -3311,8 +3282,8 @@ Result<WorkflowRunView> WorkflowRuntime::resolve_decision(
         WorkflowDecisionKind kind = WorkflowDecisionKind::StepFailure;
         {
             std::lock_guard lock(mutex_);
-            kind = run.decision.has_value() ? run.decision->kind
-                                            : WorkflowDecisionKind::StepFailure;
+            kind =
+                run.decision.has_value() ? run.decision->kind : WorkflowDecisionKind::StepFailure;
         }
         emit_decision_resolved(run, decision_id, resolution);
         if (kind == WorkflowDecisionKind::StepFailure) {
@@ -3356,8 +3327,8 @@ Result<WorkflowRunView> WorkflowRuntime::resolve_decision(
     return workflow_error(ErrorCode::InvalidArgument, "unknown decision resolution");
 }
 
-Result<WorkflowAgentContinuation> WorkflowRuntime::agent_continuation(
-    const WorkflowRunId &run_id) const {
+Result<WorkflowAgentContinuation>
+WorkflowRuntime::agent_continuation(const WorkflowRunId &run_id) const {
     std::lock_guard lock(mutex_);
     const auto found = runs_.find(run_id);
     if (found == runs_.end()) {
@@ -3478,9 +3449,9 @@ WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const s
     }
     if (driven.value().state != WorkflowRunState::Completed) {
         emit_publish_rejected(definition.workflow_id, digest, "publish-dryrun-failed");
-        return make_workflow_compile_error(
-            WorkflowCompileError::PublishDryRunFailed,
-            "gate drive settled as " + workflow_run_state_name(driven.value().state));
+        return make_workflow_compile_error(WorkflowCompileError::PublishDryRunFailed,
+                                           "gate drive settled as " +
+                                               workflow_run_state_name(driven.value().state));
     }
 
     // Content-derived evidence (DEC-025 §3): same definition plus same DryRun
@@ -3499,8 +3470,9 @@ WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const s
     evidence_object.emplace_back("workflow_id", definition.workflow_id.to_string());
     evidence_object.emplace_back("ir_digest", digest.to_string());
     evidence_object.emplace_back("steps", JsonValue{std::move(step_items)});
-    evidence_object.emplace_back("unevaluable_verifications",
-                                 static_cast<std::int64_t>(driven.value().unevaluable_verifications));
+    evidence_object.emplace_back(
+        "unevaluable_verifications",
+        static_cast<std::int64_t>(driven.value().unevaluable_verifications));
     const Sha256Digest evidence = canonical_json_digest(JsonValue{std::move(evidence_object)});
 
     auto appended = append_version_record(definition, digest, actor, reason,
@@ -3520,8 +3492,7 @@ WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const s
     return outcome;
 }
 
-std::vector<BuiltinToolRegistration>
-WorkflowRuntime::operation_tool_registrations() {
+std::vector<BuiltinToolRegistration> WorkflowRuntime::operation_tool_registrations() {
     std::vector<BuiltinToolRegistration> registrations;
     for (const auto operation :
          {WorkflowOperation::RunWorkflow, WorkflowOperation::PatchWorkflow,
@@ -3829,10 +3800,10 @@ WorkflowShutdownReport WorkflowRuntime::shutdown() {
     if (event_emit_failures_.load() != 0 || task_settlement_failures_.load() != 0 ||
         monitor_failures_.load() != 0) {
         report.clean = false;
-        report.diagnostic = "event emit failures: " + std::to_string(event_emit_failures_.load()) +
-                            "; task settlement failures: " +
-                            std::to_string(task_settlement_failures_.load()) +
-                            "; monitor failures: " + std::to_string(monitor_failures_.load());
+        report.diagnostic =
+            "event emit failures: " + std::to_string(event_emit_failures_.load()) +
+            "; task settlement failures: " + std::to_string(task_settlement_failures_.load()) +
+            "; monitor failures: " + std::to_string(monitor_failures_.load());
     }
     if (report.clean && report.diagnostic.empty()) {
         report.diagnostic = "workflow runtime stopped";
@@ -3840,8 +3811,6 @@ WorkflowShutdownReport WorkflowRuntime::shutdown() {
     return report;
 }
 
-bool WorkflowRuntime::shut_down() const noexcept {
-    return shut_down_;
-}
+bool WorkflowRuntime::shut_down() const noexcept { return shut_down_; }
 
 } // namespace mira

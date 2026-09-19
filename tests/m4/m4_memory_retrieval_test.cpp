@@ -122,8 +122,8 @@ int exact_fts_and_vector_legs_merge() {
     std::size_t attached = 0;
     for (const auto &entry : records) {
         const bool oven = entry.statement.find("oven") != std::string::npos;
-        const std::vector<float> vector = oven ? std::vector<float>{1.0F, 0.0F}
-                                               : std::vector<float>{0.0F, 1.0F};
+        const std::vector<float> vector =
+            oven ? std::vector<float>{1.0F, 0.0F} : std::vector<float>{0.0F, 1.0F};
         MIRA_CHECK(store->index_embedding(entry.id, vector).has_value());
         ++attached;
     }
@@ -140,8 +140,8 @@ int exact_fts_and_vector_legs_merge() {
     MIRA_CHECK(vector_result.value().records.front().statement.find("oven") != std::string::npos);
 
     // Index lag reports records without embeddings.
-    MIRA_CHECK(store->apply(add_for(make_record(scope, "dishwasher tablet brand is finish")))
-                   .has_value());
+    MIRA_CHECK(
+        store->apply(add_for(make_record(scope, "dishwasher tablet brand is finish"))).has_value());
     auto lag = store->index_lag();
     MIRA_CHECK(lag.has_value() && lag.value() == 1);
     return 0;
@@ -154,8 +154,8 @@ int vector_corruption_degrades_without_blocking() {
 
     auto target = make_record(scope, "calibration file is on the shared drive");
     MIRA_CHECK(store->apply(add_for(target)).has_value());
-    MIRA_CHECK(store->apply(add_for(make_record(scope, "whiteboard markers are dry", 50)))
-                   .has_value());
+    MIRA_CHECK(
+        store->apply(add_for(make_record(scope, "whiteboard markers are dry", 50))).has_value());
 
     // Dimension mismatch between query and index degrades the vector leg but
     // exact/FTS still answer.
@@ -167,8 +167,7 @@ int vector_corruption_degrades_without_blocking() {
     auto degraded = store->query(mismatch);
     MIRA_CHECK(degraded.has_value());
     MIRA_CHECK(!degraded.value().records.empty());
-    MIRA_CHECK(degraded.value().records.front().statement.find("calibration") !=
-               std::string::npos);
+    MIRA_CHECK(degraded.value().records.front().statement.find("calibration") != std::string::npos);
     MIRA_CHECK(!degraded.value().quality.vector_leg_ran);
 
     // Clearing the index (embedding-model change) reports lag and keeps
@@ -229,8 +228,8 @@ int deadline_returns_partial_with_quality_flag() {
     auto *store = fixture.store.get();
     const auto scope = scope_of("office");
 
-    MIRA_CHECK(store->apply(add_for(make_record(scope, "standing desk is near the window")))
-                   .has_value());
+    MIRA_CHECK(
+        store->apply(add_for(make_record(scope, "standing desk is near the window"))).has_value());
 
     // A zero deadline expires before the FTS/vector legs can run: the exact
     // meta leg still returns the record, flagged as a partial answer.
@@ -251,10 +250,9 @@ int fts_operator_text_is_never_injected() {
     auto *store = fixture.store.get();
     const auto scope = scope_of("lab");
 
-    MIRA_CHECK(store->apply(add_for(make_record(scope, "laser interlock requires badge")))
-                   .has_value());
-    MIRA_CHECK(store->apply(add_for(make_record(scope, "glove box is left handed")))
-                   .has_value());
+    MIRA_CHECK(
+        store->apply(add_for(make_record(scope, "laser interlock requires badge"))).has_value());
+    MIRA_CHECK(store->apply(add_for(make_record(scope, "glove box is left handed"))).has_value());
 
     // Operator-shaped text is treated as a literal phrase, never as FTS
     // syntax: no results rather than an unintended match set.

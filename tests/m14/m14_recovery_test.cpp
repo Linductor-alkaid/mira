@@ -49,8 +49,7 @@ using namespace mira::testing;
 int continuation_exposes_recovery_identity() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                     tool.registration("scripted"))
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                    .has_value());
     auto definition = escalate_definition(WorkflowPolicy::Recoverable);
     const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
@@ -78,20 +77,17 @@ int decision_matrix_four_actions_reach_the_runtime_exits() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         const auto continuation = fixture.workflow_->agent_continuation(run.value().run_id);
         MIRA_CHECK(continuation.has_value());
-        fixture.provider_->add_response(
-            text_response(skip_step_decision(continuation.value().current_step->to_string(),
-                                             "skip the failing step")));
+        fixture.provider_->add_response(text_response(skip_step_decision(
+            continuation.value().current_step->to_string(), "skip the failing step")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
         MIRA_CHECK(attempt.has_value());
@@ -109,15 +105,13 @@ int decision_matrix_four_actions_reach_the_runtime_exits() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(resume_decision("retry")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
@@ -134,24 +128,20 @@ int decision_matrix_four_actions_reach_the_runtime_exits() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
-        const auto run = fixture.workflow_->create_run(escalate_definition(
-                                                           WorkflowPolicy::Recoverable),
-                                                       JsonValue{}, std::nullopt);
+        const auto run = fixture.workflow_->create_run(
+            escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(cancel_decision("unrecoverable")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
         MIRA_CHECK(attempt.has_value());
         MIRA_CHECK(attempt.value().outcome == WorkflowRecoveryOutcome::CancelRequested);
         const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-        MIRA_CHECK(snapshot.has_value() &&
-                   snapshot.value().state == WorkflowRunState::Cancelled);
+        MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::Cancelled);
         static_cast<void>(orchestrator->shutdown());
         static_cast<void>(fixture.workflow_->shutdown());
     }
@@ -159,16 +149,13 @@ int decision_matrix_four_actions_reach_the_runtime_exits() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
-        const auto run = fixture.workflow_->create_run(escalate_definition(
-                                                           WorkflowPolicy::Recoverable),
-                                                       JsonValue{}, std::nullopt);
+        const auto run = fixture.workflow_->create_run(
+            escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(need_user_decision("host must decide")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
@@ -187,9 +174,8 @@ int decision_matrix_four_actions_reach_the_runtime_exits() {
 int malformed_decisions_repair_then_defer() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -198,8 +184,7 @@ int malformed_decisions_repair_then_defer() {
     // First response malformed, repair round answers legally.
     fixture.provider_->add_response(text_response("this is not json"));
     const auto continuation = fixture.workflow_->agent_continuation(run.value().run_id);
-    fixture.provider_->add_response(
-        text_response(resume_decision("recovered after repair")));
+    fixture.provider_->add_response(text_response(resume_decision("recovered after repair")));
     auto orchestrator = fixture.make_orchestrator();
     const auto repaired = orchestrator->attempt_recovery(run.value().run_id);
     MIRA_CHECK(repaired.has_value());
@@ -212,13 +197,11 @@ int malformed_decisions_repair_then_defer() {
     ScriptedTool again{std::vector<int>{1}};
     MIRA_CHECK(register_registration(*second.fixture_.registry_, again.registration("scripted"))
                    .has_value());
-    const auto run_b =
-        second.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
-                                     JsonValue{}, std::nullopt);
+    const auto run_b = second.workflow_->create_run(
+        escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
     MIRA_CHECK(run_b.has_value());
-    MIRA_CHECK(second.workflow_
-                   ->execute_run(run_b.value().run_id, run_context(second))
-                   .has_value());
+    MIRA_CHECK(
+        second.workflow_->execute_run(run_b.value().run_id, run_context(second)).has_value());
     second.provider_->add_response(text_response("still not json"));
     second.provider_->add_response(text_response("{\"action\":\"resume\"}")); // no rationale
     auto exhausted = second.make_orchestrator();
@@ -228,8 +211,7 @@ int malformed_decisions_repair_then_defer() {
     MIRA_CHECK(deferred.value().reason_code == "decision-invalid");
     MIRA_CHECK(second.provider_->consumed() == 2);
     const auto snapshot = second.workflow_->run_snapshot(run_b.value().run_id);
-    MIRA_CHECK(snapshot.has_value() &&
-               snapshot.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::WaitingAgent);
     static_cast<void>(exhausted->shutdown());
     static_cast<void>(second.workflow_->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
@@ -239,9 +221,8 @@ int malformed_decisions_repair_then_defer() {
 int refused_decisions_never_repair() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -262,9 +243,8 @@ int refused_decisions_never_repair() {
 int unavailable_models_abort_without_touching_the_run() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -277,8 +257,7 @@ int unavailable_models_abort_without_touching_the_run() {
     MIRA_CHECK(attempt.value().outcome == WorkflowRecoveryOutcome::Aborted);
     MIRA_CHECK(attempt.value().reason_code == "model-unavailable");
     const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-    MIRA_CHECK(snapshot.has_value() &&
-               snapshot.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::WaitingAgent);
     static_cast<void>(orchestrator->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -289,16 +268,13 @@ int lesson_matrix_counts_filtering_layers() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
-        const auto run = fixture.workflow_->create_run(escalate_definition(
-                                                           WorkflowPolicy::Recoverable),
-                                                       JsonValue{}, std::nullopt);
+        const auto run = fixture.workflow_->create_run(
+            escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(resume_decision("retry")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
@@ -313,11 +289,9 @@ int lesson_matrix_counts_filtering_layers() {
     {
         RecoveryFixture fixture;
         auto memory = std::make_shared<FakeLearningMemory>();
-        MIRA_CHECK(
-            fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
+        MIRA_CHECK(fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const std::string step_id = definition.steps[0].id.to_string();
@@ -333,9 +307,9 @@ int lesson_matrix_counts_filtering_layers() {
         stale.failure_reason_code = "mira.test:77";
         stale.recorded_at_ms = 1;
         MIRA_CHECK(memory
-                       ->apply(mutation_of(episode_to_memory_record(
-                                    stale, learning_scope(), {EventId::generate()},
-                                    std::chrono::system_clock::now())))
+                       ->apply(mutation_of(
+                           episode_to_memory_record(stale, learning_scope(), {EventId::generate()},
+                                                    std::chrono::system_clock::now())))
                        .has_value());
 
         // Unparseable: a structurally valid record whose statement is not
@@ -349,9 +323,8 @@ int lesson_matrix_counts_filtering_layers() {
         unparseable.failed_step_id = step_id;
         unparseable.failure_reason_code = "mira.test:77";
         unparseable.recorded_at_ms = 1;
-        auto garbage = episode_to_memory_record(unparseable, learning_scope(),
-                                                {EventId::generate()},
-                                                std::chrono::system_clock::now());
+        auto garbage = episode_to_memory_record(
+            unparseable, learning_scope(), {EventId::generate()}, std::chrono::system_clock::now());
         garbage.statement = "{\"workflow_id\":\"" + definition.workflow_id.to_string() +
                             "\",\"step_id\":\"" + step_id + "\",\"junk\":true}";
         MIRA_CHECK(memory->apply(mutation_of(std::move(garbage))).has_value());
@@ -374,9 +347,8 @@ int lesson_matrix_counts_filtering_layers() {
             fresh, learning_scope(), {EventId::generate()}, std::chrono::system_clock::now());
         MIRA_CHECK(memory->apply(mutation_of(fresh_record)).has_value());
 
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(resume_decision("retry")));
         auto orchestrator = fixture.make_orchestrator();
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
@@ -400,11 +372,9 @@ int lesson_matrix_counts_filtering_layers() {
     {
         RecoveryFixture fixture;
         auto memory = std::make_shared<FakeLearningMemory>();
-        MIRA_CHECK(
-            fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
+        MIRA_CHECK(fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const std::string step_id = definition.steps[0].id.to_string();
@@ -422,17 +392,15 @@ int lesson_matrix_counts_filtering_layers() {
             episode.recorded_at_ms = static_cast<std::uint64_t>(serial + 1);
             MIRA_CHECK(memory
                            ->apply(mutation_of(episode_to_memory_record(
-                                        episode, learning_scope(), {EventId::generate()},
-                                        std::chrono::system_clock::now())))
+                               episode, learning_scope(), {EventId::generate()},
+                               std::chrono::system_clock::now())))
                            .has_value());
         }
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(text_response(resume_decision("retry")));
-        auto orchestrator = fixture.make_orchestrator([](WorkflowRecoveryConfig &config) {
-            config.max_lessons_in_context = 1;
-        });
+        auto orchestrator = fixture.make_orchestrator(
+            [](WorkflowRecoveryConfig &config) { config.max_lessons_in_context = 1; });
         const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
         MIRA_CHECK(attempt.has_value());
         MIRA_CHECK(attempt.value().lessons_offered == 2);
@@ -446,9 +414,8 @@ int lesson_matrix_counts_filtering_layers() {
 int cancellation_mid_request_aborts_and_keeps_the_run() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -470,8 +437,7 @@ int cancellation_mid_request_aborts_and_keeps_the_run() {
     MIRA_CHECK(settled.value().outcome == WorkflowRecoveryOutcome::Aborted);
     MIRA_CHECK(settled.value().reason_code == "cancelled");
     const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-    MIRA_CHECK(snapshot.has_value() &&
-               snapshot.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::WaitingAgent);
     static_cast<void>(orchestrator->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -480,9 +446,8 @@ int cancellation_mid_request_aborts_and_keeps_the_run() {
 int host_cancellation_drift_discards_the_late_decision() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -502,8 +467,7 @@ int host_cancellation_drift_discards_the_late_decision() {
     MIRA_CHECK(settled.value().reason_code == "run-state-changed");
     // The late decision is discarded: no resume, terminal state not revived.
     const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-    MIRA_CHECK(snapshot.has_value() &&
-               snapshot.value().state == WorkflowRunState::Cancelled);
+    MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::Cancelled);
     static_cast<void>(orchestrator->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -518,9 +482,8 @@ int host_patch_in_flight_does_not_invalidate_a_valid_decision() {
     // (the previous scenario) covers the observable race.
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -547,8 +510,7 @@ int host_patch_in_flight_does_not_invalidate_a_valid_decision() {
     MIRA_CHECK(!settled.value().patch_id.has_value());
     const auto completed =
         fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
-    MIRA_CHECK(completed.has_value() &&
-               completed.value().state == WorkflowRunState::Completed);
+    MIRA_CHECK(completed.has_value() && completed.value().state == WorkflowRunState::Completed);
     static_cast<void>(orchestrator->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -557,9 +519,8 @@ int host_patch_in_flight_does_not_invalidate_a_valid_decision() {
 int takeover_blocks_recovery_admission() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -577,8 +538,7 @@ int takeover_blocks_recovery_admission() {
     MIRA_CHECK(attempt.value().reason_code == "takeover");
     MIRA_CHECK(fixture.provider_->consumed() == 0);
     const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-    MIRA_CHECK(snapshot.has_value() &&
-               snapshot.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(snapshot.has_value() && snapshot.value().state == WorkflowRunState::WaitingAgent);
     static_cast<void>(orchestrator->shutdown());
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -590,22 +550,17 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
-        const auto run = fixture.workflow_->create_run(escalate_definition(
-                                                           WorkflowPolicy::Recoverable),
-                                                       JsonValue{}, std::nullopt);
+        const auto run = fixture.workflow_->create_run(
+            escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
-        auto orchestrator = fixture.make_orchestrator([](WorkflowRecoveryConfig &config) {
-            config.max_attempts_per_run = 1;
-        });
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
+        auto orchestrator = fixture.make_orchestrator(
+            [](WorkflowRecoveryConfig &config) { config.max_attempts_per_run = 1; });
         const auto first = orchestrator->attempt_recovery(run.value().run_id);
-        MIRA_CHECK(first.has_value() &&
-                   first.value().reason_code == "model-unavailable");
+        MIRA_CHECK(first.has_value() && first.value().reason_code == "model-unavailable");
         const auto second = orchestrator->attempt_recovery(run.value().run_id);
         MIRA_CHECK(second.has_value());
         MIRA_CHECK(second.value().outcome == WorkflowRecoveryOutcome::DeferredToHost);
@@ -621,19 +576,16 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1, 2}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const auto run_a = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         const auto run_b = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         MIRA_CHECK(run_a.has_value() && run_b.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run_a.value().run_id, run_context(fixture))
-                       .has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run_b.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run_a.value().run_id, run_context(fixture)).has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run_b.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->block();
         auto orchestrator = fixture.make_orchestrator();
         MIRA_CHECK(orchestrator->start_recovery(run_a.value().run_id).has_value());
@@ -644,8 +596,7 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
         fixture.provider_->release();
         const auto settled =
             orchestrator->wait_recovery(run_a.value().run_id, std::chrono::seconds(10));
-        MIRA_CHECK(settled.has_value() &&
-                   settled.value().reason_code == "model-unavailable");
+        MIRA_CHECK(settled.has_value() && settled.value().reason_code == "model-unavailable");
         static_cast<void>(orchestrator->shutdown());
         static_cast<void>(fixture.workflow_->shutdown());
     }
@@ -654,23 +605,19 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1, 2, 3, 4}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
-        auto orchestrator = fixture.make_orchestrator([](WorkflowRecoveryConfig &config) {
-            config.max_tracked_runs = 2;
-        });
+        auto orchestrator = fixture.make_orchestrator(
+            [](WorkflowRecoveryConfig &config) { config.max_tracked_runs = 2; });
         const auto escalate = [&](const char *label) -> Result<WorkflowRunView> {
-            auto created =
-                fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
+            auto created = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
             if (!created.has_value()) {
                 return created;
             }
-            const auto driven = fixture.workflow_->execute_run(created.value().run_id,
-                                                               run_context(fixture));
-            if (!driven.has_value() ||
-                driven.value().state != WorkflowRunState::WaitingAgent) {
+            const auto driven =
+                fixture.workflow_->execute_run(created.value().run_id, run_context(fixture));
+            if (!driven.has_value() || driven.value().state != WorkflowRunState::WaitingAgent) {
                 Error error;
                 error.domain = "mira.test";
                 error.safe_message = label;
@@ -683,26 +630,23 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
         MIRA_CHECK(run_a.has_value());
         const auto continuation = fixture.workflow_->agent_continuation(run_a.value().run_id);
         MIRA_CHECK(continuation.has_value());
-        fixture.provider_->add_response(
-            text_response(skip_step_decision(continuation.value().current_step->to_string(), "fix")));
+        fixture.provider_->add_response(text_response(
+            skip_step_decision(continuation.value().current_step->to_string(), "fix")));
         const auto recovered = orchestrator->attempt_recovery(run_a.value().run_id);
         MIRA_CHECK(recovered.has_value() &&
                    recovered.value().outcome == WorkflowRecoveryOutcome::PatchedAndResumed);
-        MIRA_CHECK(fixture.workflow_
-                       ->wait_run(run_a.value().run_id, std::chrono::seconds(10))
+        MIRA_CHECK(fixture.workflow_->wait_run(run_a.value().run_id, std::chrono::seconds(10))
                        .has_value());
         // Slot 2: a live run whose attempt aborted (model unavailable).
         const auto run_b = escalate("b");
         MIRA_CHECK(run_b.has_value());
         const auto aborted = orchestrator->attempt_recovery(run_b.value().run_id);
-        MIRA_CHECK(aborted.has_value() &&
-                   aborted.value().reason_code == "model-unavailable");
+        MIRA_CHECK(aborted.has_value() && aborted.value().reason_code == "model-unavailable");
         // The terminal run A is evicted to make room for run C.
         const auto run_c = escalate("c");
         MIRA_CHECK(run_c.has_value());
         const auto evicted = orchestrator->attempt_recovery(run_c.value().run_id);
-        MIRA_CHECK(evicted.has_value() &&
-                   evicted.value().reason_code == "model-unavailable");
+        MIRA_CHECK(evicted.has_value() && evicted.value().reason_code == "model-unavailable");
         // The table now holds two live runs: run D is rejected outright.
         const auto run_d = escalate("d");
         MIRA_CHECK(run_d.has_value());
@@ -712,8 +656,7 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
         // Cancelling run C frees a slot through terminal eviction.
         MIRA_CHECK(fixture.workflow_->cancel_run(run_c.value().run_id).has_value());
         const auto admitted = orchestrator->attempt_recovery(run_d.value().run_id);
-        MIRA_CHECK(admitted.has_value() &&
-                   admitted.value().reason_code == "model-unavailable");
+        MIRA_CHECK(admitted.has_value() && admitted.value().reason_code == "model-unavailable");
         static_cast<void>(orchestrator->shutdown());
         static_cast<void>(fixture.workflow_->shutdown());
     }
@@ -723,9 +666,8 @@ int attempt_budget_and_tracking_capacity_bound_the_loop() {
 int shutdown_matrix_drains_and_rejects() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -780,9 +722,8 @@ int event_emission_failure_never_breaks_the_attempt() {
 
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
                                                    JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
@@ -805,9 +746,8 @@ int end_to_end_lesson_reuse_with_full_event_correlation() {
     auto memory = std::make_shared<FakeLearningMemory>();
     MIRA_CHECK(fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
     ScriptedTool tool{std::vector<int>{1, 2, 3}};
-    MIRA_CHECK(
-        register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     auto definition = escalate_definition(WorkflowPolicy::Recoverable);
 
     // Run 0: a terminal Strict failure seeds the episodic half of the
@@ -907,27 +847,23 @@ int end_to_end_lesson_reuse_with_full_event_correlation() {
     MIRA_CHECK(attempts.back().lessons_kept >= 2);
     MIRA_CHECK(attempts.back().task_id == continuation.value().carrier_task_id);
     bool request_event = false;
-    for (const auto &payload :
-         event_payloads_of_type(*fixture.fixture_.events_, fixture.fixture_.session_id_,
-                                "ModelRequestPrepared")) {
-        if (payload.find(attempts.back().model_request_id->to_string()) !=
-            std::string::npos) {
+    for (const auto &payload : event_payloads_of_type(
+             *fixture.fixture_.events_, fixture.fixture_.session_id_, "ModelRequestPrepared")) {
+        if (payload.find(attempts.back().model_request_id->to_string()) != std::string::npos) {
             request_event = true;
         }
     }
     MIRA_CHECK(request_event);
     bool patch_event = false;
-    for (const auto &payload :
-         event_payloads_of_type(*fixture.fixture_.events_, fixture.fixture_.session_id_,
-                                "WorkflowPatchApplied")) {
+    for (const auto &payload : event_payloads_of_type(
+             *fixture.fixture_.events_, fixture.fixture_.session_id_, "WorkflowPatchApplied")) {
         if (payload.find(attempts.back().patch_id->to_string()) != std::string::npos) {
             patch_event = true;
         }
     }
     MIRA_CHECK(patch_event);
-    const auto run_settled =
-        event_payloads_of_type(*fixture.fixture_.events_, fixture.fixture_.session_id_,
-                               "WorkflowRunSettled");
+    const auto run_settled = event_payloads_of_type(
+        *fixture.fixture_.events_, fixture.fixture_.session_id_, "WorkflowRunSettled");
     MIRA_CHECK(run_settled.size() >= 2);
     static_cast<void>(fixture.workflow_->shutdown());
     return 0;
@@ -939,18 +875,15 @@ int security_negatives_fail_closed() {
     {
         RecoveryFixture fixture;
         auto memory = std::make_shared<FakeLearningMemory>();
-        MIRA_CHECK(
-            fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
+        MIRA_CHECK(fixture.workflow_->set_learning_context(memory, learning_scope()).has_value());
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         // An unknown run parameter: entry shape is valid, the runtime
         // binding fails deterministically.
         fixture.provider_->add_response(text_response(
@@ -977,16 +910,14 @@ int security_negatives_fail_closed() {
     {
         RecoveryFixture fixture;
         ScriptedTool tool{std::vector<int>{1}};
-        MIRA_CHECK(register_registration(*fixture.fixture_.registry_,
-                                         tool.registration("scripted"))
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
                        .has_value());
         auto definition = escalate_definition(WorkflowPolicy::Recoverable);
         definition.parameters.front().default_value = JsonValue{"secret-val"};
         const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         MIRA_CHECK(run.has_value());
-        MIRA_CHECK(fixture.workflow_
-                       ->execute_run(run.value().run_id, run_context(fixture))
-                       .has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
         fixture.provider_->add_response(
             text_response(need_user_decision("unique-rationale-marker-2026")));
         auto orchestrator = fixture.make_orchestrator();
@@ -1002,8 +933,7 @@ int security_negatives_fail_closed() {
         MIRA_CHECK(mode->find("value") == nullptr);
         MIRA_CHECK(mode->find("type") != nullptr);
         MIRA_CHECK(mode->find("digest") != nullptr);
-        MIRA_CHECK(context_text(requests.front()).find("secret-val") ==
-                   std::string::npos);
+        MIRA_CHECK(context_text(requests.front()).find("secret-val") == std::string::npos);
         for (const auto &payload :
              event_payloads_of_type(*fixture.fixture_.events_, fixture.fixture_.session_id_,
                                     "WorkflowRecoveryAttempted")) {
@@ -1071,9 +1001,8 @@ int recovery_event_payload_round_trips_fail_closed() {
 int config_validation_fails_closed() {
     auto fixture = std::make_unique<RecoveryFixture>();
     ScriptedTool tool{std::vector<int>{}};
-    MIRA_CHECK(
-        register_registration(*fixture->fixture_.registry_, tool.registration("scripted"))
-            .has_value());
+    MIRA_CHECK(register_registration(*fixture->fixture_.registry_, tool.registration("scripted"))
+                   .has_value());
     WorkflowRecoveryConfig base;
     base.profile_id = fixture->profile_->id;
     MIRA_CHECK(base.validate().has_value());
@@ -1092,9 +1021,9 @@ int config_validation_fails_closed() {
     bool threw = false;
     try {
         WorkflowRecoveryConfig empty;
-        WorkflowRecoveryOrchestrator orchestrator(
-            fixture->fixture_.executor_, *fixture->workflow_, *fixture->fixture_.runtime_,
-            *fixture->gateway_, fixture->fixture_.session_id_, empty);
+        WorkflowRecoveryOrchestrator orchestrator(fixture->fixture_.executor_, *fixture->workflow_,
+                                                  *fixture->fixture_.runtime_, *fixture->gateway_,
+                                                  fixture->fixture_.session_id_, empty);
         static_cast<void>(orchestrator);
     } catch (const std::invalid_argument &) {
         threw = true;
@@ -1111,19 +1040,14 @@ int main() {
         {continuation_exposes_recovery_identity,
          decision_matrix_four_actions_reach_the_runtime_exits,
          malformed_decisions_repair_then_defer, refused_decisions_never_repair,
-         unavailable_models_abort_without_touching_the_run,
-         lesson_matrix_counts_filtering_layers,
+         unavailable_models_abort_without_touching_the_run, lesson_matrix_counts_filtering_layers,
          cancellation_mid_request_aborts_and_keeps_the_run,
          host_cancellation_drift_discards_the_late_decision,
          host_patch_in_flight_does_not_invalidate_a_valid_decision,
-         takeover_blocks_recovery_admission,
-         attempt_budget_and_tracking_capacity_bound_the_loop,
-         shutdown_matrix_drains_and_rejects,
-         event_emission_failure_never_breaks_the_attempt,
-         end_to_end_lesson_reuse_with_full_event_correlation,
-         security_negatives_fail_closed,
-         recovery_event_payload_round_trips_fail_closed,
-         config_validation_fails_closed});
+         takeover_blocks_recovery_admission, attempt_budget_and_tracking_capacity_bound_the_loop,
+         shutdown_matrix_drains_and_rejects, event_emission_failure_never_breaks_the_attempt,
+         end_to_end_lesson_reuse_with_full_event_correlation, security_negatives_fail_closed,
+         recovery_event_payload_round_trips_fail_closed, config_validation_fails_closed});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

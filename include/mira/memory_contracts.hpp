@@ -268,12 +268,10 @@ class IMemory {
     [[nodiscard]] virtual Result<std::optional<MemoryRecord>> get(MemoryId record) const = 0;
     // Idempotent by mutation id; optimistic version conflicts return
     // VersionConflict instead of silently overwriting.
-    [[nodiscard]] virtual Result<MemoryMutationResult>
-    apply(const MemoryMutation &mutation) = 0;
+    [[nodiscard]] virtual Result<MemoryMutationResult> apply(const MemoryMutation &mutation) = 0;
     // Retention sweep: purge expired records, prune old versions and stale
     // tombstones. Artifacts referenced by purged records are erased too.
-    [[nodiscard]] virtual Result<MemoryCompactionResult>
-    compact(const MemoryScope &scope) = 0;
+    [[nodiscard]] virtual Result<MemoryCompactionResult> compact(const MemoryScope &scope) = 0;
     // Privacy erasure. Partial failure keeps the request Pending and holds the
     // scope out of Context (query/apply reject for held scopes) until a retry
     // completes; the audit trail never records the erased statements.

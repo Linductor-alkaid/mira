@@ -32,17 +32,16 @@ int gate_publishes_validated_draft_and_it_runs() {
     const auto compiled = compile_workflow(trajectory.value(), options);
     MIRA_CHECK(compiled.has_value());
 
-    const auto published = workflow->publish_validated(compiled.value(), "m11-test",
-                                                       "first compilation", run_id);
+    const auto published =
+        workflow->publish_validated(compiled.value(), "m11-test", "first compilation", run_id);
     MIRA_CHECK(published.has_value());
     MIRA_CHECK(!published.value().idempotent);
     MIRA_CHECK(published.value().ir_digest == workflow_definition_digest(compiled.value()));
 
     // The new version is runnable and completes with the baked defaults
     // (no parameters supplied).
-    const auto rerun = workflow->create_run(
-        definition.workflow_id, published.value().ir_digest,
-        JsonValue{JsonValue::Object{}}, WorkflowPolicy::Strict);
+    const auto rerun = workflow->create_run(definition.workflow_id, published.value().ir_digest,
+                                            JsonValue{JsonValue::Object{}}, WorkflowPolicy::Strict);
     MIRA_CHECK(rerun.has_value());
     const auto driven = workflow->execute_run(rerun.value().run_id, drive_context());
     MIRA_CHECK(driven.has_value());
@@ -79,9 +78,9 @@ int gate_failure_leaves_library_untouched() {
     const auto recovered =
         workflow->publish_validated(good, "m11-test", "recovered draft", std::nullopt);
     MIRA_CHECK(recovered.has_value());
-    const auto replay = workflow->create_run(good.workflow_id, recovered.value().ir_digest,
-                                             JsonValue{JsonValue::Object{}},
-                                             WorkflowPolicy::DryRun);
+    const auto replay =
+        workflow->create_run(good.workflow_id, recovered.value().ir_digest,
+                             JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(replay.has_value());
     return 0;
 }
@@ -103,11 +102,10 @@ int gate_replay_is_idempotent() {
     const auto compiled = compile_workflow(trajectory.value(), options);
     MIRA_CHECK(compiled.has_value());
 
-    const auto first = workflow->publish_validated(compiled.value(), "m11-test", "compile",
-                                                   run_id);
+    const auto first = workflow->publish_validated(compiled.value(), "m11-test", "compile", run_id);
     MIRA_CHECK(first.has_value() && !first.value().idempotent);
-    const auto second = workflow->publish_validated(compiled.value(), "m11-test", "compile",
-                                                   run_id);
+    const auto second =
+        workflow->publish_validated(compiled.value(), "m11-test", "compile", run_id);
     MIRA_CHECK(second.has_value());
     MIRA_CHECK(second.value().idempotent);
     MIRA_CHECK(second.value().ir_digest == first.value().ir_digest);
@@ -144,9 +142,8 @@ int gate_rejects_invalid_drafts_and_required_parameters() {
     spec.type = WorkflowParameterType::String;
     spec.required = true;
     demanding.parameters.push_back(spec);
-    MIRA_CHECK(
-        !workflow->publish_validated(demanding, "m11", "required parameter", std::nullopt)
-             .has_value());
+    MIRA_CHECK(!workflow->publish_validated(demanding, "m11", "required parameter", std::nullopt)
+                    .has_value());
 
     const auto types = session_event_types(*fixture.events_, fixture.session_id_);
     const auto rejections = std::count(types.begin(), types.end(), "WorkflowPublishRejected");
@@ -170,29 +167,26 @@ int publish_events_round_trip_through_payloads() {
     options.name = "compiled-flow";
     const auto compiled = compile_workflow(trajectory.value(), options);
     MIRA_CHECK(compiled.has_value());
-    const auto published =
-        workflow->publish_validated(compiled.value(), "m11", "compile", run_id);
+    const auto published = workflow->publish_validated(compiled.value(), "m11", "compile", run_id);
     MIRA_CHECK(published.has_value());
 
     // Every emitted publish payload parses back with its identity intact and
     // fails closed on mutation (DEC-022 §5 conventions).
-    const auto proposed = session_event_payloads(*fixture.events_, fixture.session_id_,
-                                                  "WorkflowPublishProposed");
+    const auto proposed =
+        session_event_payloads(*fixture.events_, fixture.session_id_, "WorkflowPublishProposed");
     MIRA_CHECK(proposed.size() == 1);
-    const auto parsed_proposed = parse_workflow_publish_proposed(
-        EventPayload{"WorkflowPublishProposed",
-                     to_json_string(proposed.front()), EventClass::State});
+    const auto parsed_proposed = parse_workflow_publish_proposed(EventPayload{
+        "WorkflowPublishProposed", to_json_string(proposed.front()), EventClass::State});
     MIRA_CHECK(parsed_proposed.has_value());
     MIRA_CHECK(parsed_proposed.value().source_run_id.has_value());
     MIRA_CHECK(*parsed_proposed.value().source_run_id == run_id);
     MIRA_CHECK(parsed_proposed.value().ir_digest == published.value().ir_digest);
 
-    const auto applied = session_event_payloads(*fixture.events_, fixture.session_id_,
-                                                "WorkflowPublishApplied");
+    const auto applied =
+        session_event_payloads(*fixture.events_, fixture.session_id_, "WorkflowPublishApplied");
     MIRA_CHECK(applied.size() == 1);
     const auto parsed_applied = parse_workflow_publish_applied(
-        EventPayload{"WorkflowPublishApplied", to_json_string(applied.front()),
-                     EventClass::State});
+        EventPayload{"WorkflowPublishApplied", to_json_string(applied.front()), EventClass::State});
     MIRA_CHECK(parsed_applied.has_value());
     MIRA_CHECK(parsed_applied.value().evidence == published.value().evidence);
     MIRA_CHECK(parsed_applied.value().dry_run_id == published.value().dry_run_id);
@@ -200,10 +194,10 @@ int publish_events_round_trip_through_payloads() {
     // Unknown fields fail closed.
     auto mutated = applied.front();
     mutated.set("extra", JsonValue{"field"});
-    MIRA_CHECK(!parse_workflow_publish_applied(
-                    EventPayload{"WorkflowPublishApplied", to_json_string(mutated),
-                                 EventClass::State})
-                 .has_value());
+    MIRA_CHECK(
+        !parse_workflow_publish_applied(
+             EventPayload{"WorkflowPublishApplied", to_json_string(mutated), EventClass::State})
+             .has_value());
 
     MIRA_CHECK(is_workflow_event_type("WorkflowPublishProposed"));
     MIRA_CHECK(is_workflow_event_type("WorkflowPublishApplied"));
@@ -224,18 +218,16 @@ int publish_workflow_raw_path_stays_unaudited() {
     const auto digest = workflow->publish_workflow(definition, "m11", "raw publish");
     MIRA_CHECK(digest.has_value());
     const auto types = session_event_types(*fixture.events_, fixture.session_id_);
-    MIRA_CHECK(std::find(types.begin(), types.end(), "WorkflowPublishProposed") ==
-               types.end());
+    MIRA_CHECK(std::find(types.begin(), types.end(), "WorkflowPublishProposed") == types.end());
 
     // The gated path on other content appends a DryRunPassed record that is
     // runnable through library-resolved creation.
     auto gated = compilable_definition({tool_step("counter", std::nullopt)}, "m11-gated");
-    const auto published =
-        workflow->publish_validated(gated, "m11", "gated publish", std::nullopt);
+    const auto published = workflow->publish_validated(gated, "m11", "gated publish", std::nullopt);
     MIRA_CHECK(published.has_value());
-    const auto runnable = workflow->create_run(gated.workflow_id, published.value().ir_digest,
-                                               JsonValue{JsonValue::Object{}},
-                                               WorkflowPolicy::DryRun);
+    const auto runnable =
+        workflow->create_run(gated.workflow_id, published.value().ir_digest,
+                             JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(runnable.has_value());
     return 0;
 }

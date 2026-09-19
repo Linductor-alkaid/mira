@@ -594,14 +594,16 @@ Result<void> validate_model_request(const ModelRequest &request) {
                 }
             } else if (const auto *image = std::get_if<ImagePart>(&part)) {
                 if (image->source.id.is_nil() || image->media_type.empty()) {
-                    return contract_error("image part requires an artifact reference and media type");
+                    return contract_error(
+                        "image part requires an artifact reference and media type");
                 }
                 if (image->source.sensitivity == Sensitivity::Secret) {
                     return contract_error("secret artifacts must not enter a model request");
                 }
             } else if (const auto *file = std::get_if<FilePart>(&part)) {
                 if (file->source.id.is_nil() || file->media_type.empty()) {
-                    return contract_error("file part requires an artifact reference and media type");
+                    return contract_error(
+                        "file part requires an artifact reference and media type");
                 }
             }
         }
@@ -654,9 +656,9 @@ Result<void> validate_model_request(const ModelRequest &request) {
     }
     if (request.continuation.has_value()) {
         const auto &continuation = *request.continuation;
-        if (continuation.profile_id != request.profile_id || continuation.task_id != request.task_id ||
-            continuation.task_epoch != request.task_epoch ||
-            continuation.provider_state.empty()) {
+        if (continuation.profile_id != request.profile_id ||
+            continuation.task_id != request.task_id ||
+            continuation.task_epoch != request.task_epoch || continuation.provider_state.empty()) {
             return contract_error("continuation binding does not match the request");
         }
     }
@@ -685,7 +687,8 @@ Result<void> validate_model_response(const ModelResponse &response) {
         response.status != ModelCompletionStatus::Incomplete) {
         return contract_error("incomplete reason requires the incomplete status");
     }
-    if (response.status == ModelCompletionStatus::Incomplete && !response.incomplete_reason.has_value()) {
+    if (response.status == ModelCompletionStatus::Incomplete &&
+        !response.incomplete_reason.has_value()) {
         return contract_error("incomplete status requires an incomplete reason");
     }
     if (response.output.size() > kMaxOutputItems) {
@@ -693,7 +696,8 @@ Result<void> validate_model_response(const ModelResponse &response) {
     }
     const auto &usage = response.usage;
     const bool any_usage = usage.input_tokens.has_value() || usage.output_tokens.has_value() ||
-                           usage.cached_input_tokens.has_value() || usage.reasoning_tokens.has_value();
+                           usage.cached_input_tokens.has_value() ||
+                           usage.reasoning_tokens.has_value();
     if (usage.quality == UsageQuality::Missing && any_usage) {
         return contract_error("missing usage quality must not carry token counts");
     }
@@ -718,9 +722,10 @@ Result<void> validate_model_response(const ModelResponse &response) {
 
 JsonValue model_request_to_json(const ModelRequest &request) {
     JsonValue::Object root;
-    root.emplace_back("contract_version",
-                      JsonValue::Object{{"major", static_cast<std::int64_t>(request.contract_version.major)},
-                                        {"minor", static_cast<std::int64_t>(request.contract_version.minor)}});
+    root.emplace_back(
+        "contract_version",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(request.contract_version.major)},
+                          {"minor", static_cast<std::int64_t>(request.contract_version.minor)}});
     root.emplace_back("request_id", request.request_id.to_string());
     root.emplace_back("operation_id", request.operation_id.to_string());
     root.emplace_back("task_id", request.task_id.to_string());
@@ -763,9 +768,10 @@ JsonValue model_request_to_json(const ModelRequest &request) {
     output_contract.emplace_back("schema_id", request.output_contract.schema_id.to_string());
     output_contract.emplace_back(
         "schema_version",
-        JsonValue::Object{{"major", static_cast<std::int64_t>(request.output_contract.schema_version.major)},
-                          {"minor", static_cast<std::int64_t>(request.output_contract.schema_version.minor)},
-                          {"patch", static_cast<std::int64_t>(request.output_contract.schema_version.patch)}});
+        JsonValue::Object{
+            {"major", static_cast<std::int64_t>(request.output_contract.schema_version.major)},
+            {"minor", static_cast<std::int64_t>(request.output_contract.schema_version.minor)},
+            {"patch", static_cast<std::int64_t>(request.output_contract.schema_version.patch)}});
     if (request.output_contract.schema.valid()) {
         output_contract.emplace_back("schema", request.output_contract.schema.root);
     }
@@ -778,10 +784,9 @@ JsonValue model_request_to_json(const ModelRequest &request) {
         JsonValue::Object tool_json;
         tool_json.emplace_back("tool_id", tool.tool_id.to_string());
         tool_json.emplace_back(
-            "version",
-            JsonValue::Object{{"major", static_cast<std::int64_t>(tool.version.major)},
-                              {"minor", static_cast<std::int64_t>(tool.version.minor)},
-                              {"patch", static_cast<std::int64_t>(tool.version.patch)}});
+            "version", JsonValue::Object{{"major", static_cast<std::int64_t>(tool.version.major)},
+                                         {"minor", static_cast<std::int64_t>(tool.version.minor)},
+                                         {"patch", static_cast<std::int64_t>(tool.version.patch)}});
         tool_json.emplace_back("wire_name", tool.wire_name);
         tool_json.emplace_back("description", tool.description);
         tool_json.emplace_back("parameters", tool.parameters_schema.root);
@@ -813,11 +818,12 @@ JsonValue model_request_to_json(const ModelRequest &request) {
         generation.emplace_back("seed", static_cast<std::int64_t>(*request.generation.seed));
     }
     if (request.generation.reasoning_effort.has_value()) {
-        generation.emplace_back(
-            "reasoning_effort", reasoning_effort_name(*request.generation.reasoning_effort));
+        generation.emplace_back("reasoning_effort",
+                                reasoning_effort_name(*request.generation.reasoning_effort));
     }
     if (request.generation.service_tier.has_value()) {
-        generation.emplace_back("service_tier", service_tier_name(*request.generation.service_tier));
+        generation.emplace_back("service_tier",
+                                service_tier_name(*request.generation.service_tier));
     }
     root.emplace_back("generation", std::move(generation));
 
@@ -843,28 +849,30 @@ JsonValue model_request_to_json(const ModelRequest &request) {
         continuation.emplace_back("session_id", request.continuation->session_id.to_string());
         continuation.emplace_back("task_epoch",
                                   static_cast<std::int64_t>(request.continuation->task_epoch));
-        continuation.emplace_back("environment_epoch",
-                                  static_cast<std::int64_t>(request.continuation->environment_epoch));
+        continuation.emplace_back(
+            "environment_epoch",
+            static_cast<std::int64_t>(request.continuation->environment_epoch));
         continuation.emplace_back("prompt_digest", request.continuation->prompt_digest.to_string());
         continuation.emplace_back("schema_digest", request.continuation->schema_digest.to_string());
         continuation.emplace_back("tool_snapshot_digest",
                                   request.continuation->tool_snapshot_digest.to_string());
-        continuation.emplace_back("data_policy_digest",
-                                  request.continuation->data_policy_digest);
+        continuation.emplace_back("data_policy_digest", request.continuation->data_policy_digest);
         continuation.emplace_back("remote_store_enabled",
                                   request.continuation->remote_store_enabled);
         root.emplace_back("continuation", std::move(continuation));
     }
 
     JsonValue::Object budget;
-    budget.emplace_back("max_input_tokens", static_cast<std::int64_t>(request.budget.max_input_tokens));
+    budget.emplace_back("max_input_tokens",
+                        static_cast<std::int64_t>(request.budget.max_input_tokens));
     budget.emplace_back("max_output_tokens",
                         static_cast<std::int64_t>(request.budget.max_output_tokens));
     budget.emplace_back("max_total_cost_micros",
                         static_cast<std::int64_t>(request.budget.max_total_cost_micros));
     budget.emplace_back("currency", request.budget.currency);
     budget.emplace_back("max_requests", static_cast<std::int64_t>(request.budget.max_requests));
-    budget.emplace_back("max_image_bytes", static_cast<std::int64_t>(request.budget.max_image_bytes));
+    budget.emplace_back("max_image_bytes",
+                        static_cast<std::int64_t>(request.budget.max_image_bytes));
     root.emplace_back("budget", std::move(budget));
 
     JsonValue::Object data_policy;
@@ -881,18 +889,23 @@ JsonValue model_request_to_json(const ModelRequest &request) {
     if (request.data_policy.project.has_value()) {
         data_policy.emplace_back("project", *request.data_policy.project);
     }
-    data_policy.emplace_back("local_raw_retention",
-                             static_cast<std::int64_t>(request.data_policy.local_raw_retention.count()));
-    data_policy.emplace_back("remote_retention",
-                             static_cast<std::int64_t>(request.data_policy.remote_retention.count()));
+    data_policy.emplace_back(
+        "local_raw_retention",
+        static_cast<std::int64_t>(request.data_policy.local_raw_retention.count()));
+    data_policy.emplace_back("remote_retention", static_cast<std::int64_t>(
+                                                     request.data_policy.remote_retention.count()));
     root.emplace_back("data_policy", std::move(data_policy));
 
     JsonValue::Object provenance;
     provenance.emplace_back(
         "system_template_version",
-        JsonValue::Object{{"major", static_cast<std::int64_t>(request.prompt_provenance.system_template_version.major)},
-                          {"minor", static_cast<std::int64_t>(request.prompt_provenance.system_template_version.minor)},
-                          {"patch", static_cast<std::int64_t>(request.prompt_provenance.system_template_version.patch)}});
+        JsonValue::Object{
+            {"major",
+             static_cast<std::int64_t>(request.prompt_provenance.system_template_version.major)},
+            {"minor",
+             static_cast<std::int64_t>(request.prompt_provenance.system_template_version.minor)},
+            {"patch",
+             static_cast<std::int64_t>(request.prompt_provenance.system_template_version.patch)}});
     provenance.emplace_back("system_template_digest",
                             request.prompt_provenance.system_template_digest.to_string());
     provenance.emplace_back("decision_schema_digest",
@@ -903,9 +916,13 @@ JsonValue model_request_to_json(const ModelRequest &request) {
                             request.prompt_provenance.context_selection_digest.to_string());
     provenance.emplace_back(
         "redaction_policy_version",
-        JsonValue::Object{{"major", static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.major)},
-                          {"minor", static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.minor)},
-                          {"patch", static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.patch)}});
+        JsonValue::Object{
+            {"major",
+             static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.major)},
+            {"minor",
+             static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.minor)},
+            {"patch",
+             static_cast<std::int64_t>(request.prompt_provenance.redaction_policy_version.patch)}});
     root.emplace_back("prompt_provenance", std::move(provenance));
 
     return JsonValue(std::move(root));
@@ -925,8 +942,9 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
     if (major == nullptr || minor == nullptr || !major->is_integer() || !minor->is_integer()) {
         return contract_error("model request contract version is malformed");
     }
-    request.contract_version = SchemaVersion{static_cast<std::uint16_t>(major->as_integer().value()),
-                                             static_cast<std::uint16_t>(minor->as_integer().value())};
+    request.contract_version =
+        SchemaVersion{static_cast<std::uint16_t>(major->as_integer().value()),
+                      static_cast<std::uint16_t>(minor->as_integer().value())};
 
     const auto parse_id_field = [](const JsonValue &parent, const std::string &key,
                                    auto &&target) -> bool {
@@ -1134,16 +1152,13 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
                 const auto *v_minor = version->find("minor");
                 const auto *v_patch = version->find("patch");
                 if (v_major != nullptr && v_major->is_integer()) {
-                    tool.version.major =
-                        static_cast<std::uint16_t>(v_major->as_integer().value());
+                    tool.version.major = static_cast<std::uint16_t>(v_major->as_integer().value());
                 }
                 if (v_minor != nullptr && v_minor->is_integer()) {
-                    tool.version.minor =
-                        static_cast<std::uint16_t>(v_minor->as_integer().value());
+                    tool.version.minor = static_cast<std::uint16_t>(v_minor->as_integer().value());
                 }
                 if (v_patch != nullptr && v_patch->is_integer()) {
-                    tool.version.patch =
-                        static_cast<std::uint16_t>(v_patch->as_integer().value());
+                    tool.version.patch = static_cast<std::uint16_t>(v_patch->as_integer().value());
                 }
             }
             const auto *wire_name = tool_json.find("wire_name");
@@ -1197,7 +1212,8 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
     const auto *generation = json.find("generation");
     if (generation != nullptr && generation->is_object()) {
         const auto read_u64 = [&generation](const char *key, std::optional<std::uint64_t> &out) {
-            if (const auto *field = generation->find(key); field != nullptr && field->is_integer()) {
+            if (const auto *field = generation->find(key);
+                field != nullptr && field->is_integer()) {
                 out = static_cast<std::uint64_t>(field->as_integer().value());
             }
         };
@@ -1307,21 +1323,24 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
 
     const auto *data_policy = json.find("data_policy");
     if (data_policy != nullptr && data_policy->is_object()) {
-        if (const auto *field = data_policy->find("store"); field != nullptr && field->is_boolean()) {
+        if (const auto *field = data_policy->find("store");
+            field != nullptr && field->is_boolean()) {
             request.data_policy.store = field->as_boolean();
         }
         if (const auto *field = data_policy->find("allow_uploads");
             field != nullptr && field->is_boolean()) {
             request.data_policy.allow_uploads = field->as_boolean().value_or(false);
         }
-        if (const auto *field = data_policy->find("region"); field != nullptr && field->is_string()) {
+        if (const auto *field = data_policy->find("region");
+            field != nullptr && field->is_string()) {
             request.data_policy.region = *field->as_string();
         }
         if (const auto *field = data_policy->find("organization");
             field != nullptr && field->is_string()) {
             request.data_policy.organization = *field->as_string();
         }
-        if (const auto *field = data_policy->find("project"); field != nullptr && field->is_string()) {
+        if (const auto *field = data_policy->find("project");
+            field != nullptr && field->is_string()) {
             request.data_policy.project = *field->as_string();
         }
         if (const auto *field = data_policy->find("local_raw_retention");
@@ -1352,9 +1371,10 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
 
 JsonValue model_response_to_json(const ModelResponse &response) {
     JsonValue::Object root;
-    root.emplace_back("contract_version",
-                      JsonValue::Object{{"major", static_cast<std::int64_t>(response.contract_version.major)},
-                                        {"minor", static_cast<std::int64_t>(response.contract_version.minor)}});
+    root.emplace_back(
+        "contract_version",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(response.contract_version.major)},
+                          {"minor", static_cast<std::int64_t>(response.contract_version.minor)}});
     root.emplace_back("request_id", response.request_id.to_string());
     root.emplace_back("operation_id", response.operation_id.to_string());
     root.emplace_back("profile_id", response.profile_id.to_string());
@@ -1426,7 +1446,8 @@ JsonValue model_response_to_json(const ModelResponse &response) {
         usage.emplace_back("input_tokens", static_cast<std::int64_t>(*response.usage.input_tokens));
     }
     if (response.usage.output_tokens.has_value()) {
-        usage.emplace_back("output_tokens", static_cast<std::int64_t>(*response.usage.output_tokens));
+        usage.emplace_back("output_tokens",
+                           static_cast<std::int64_t>(*response.usage.output_tokens));
     }
     if (response.usage.cached_input_tokens.has_value()) {
         usage.emplace_back("cached_input_tokens",
@@ -1449,8 +1470,8 @@ JsonValue model_response_to_json(const ModelResponse &response) {
                                 static_cast<std::int64_t>(*response.rate_limit.remaining_tokens));
     }
     if (response.rate_limit.reset_after.has_value()) {
-        rate_limit.emplace_back("reset_after",
-                                static_cast<std::int64_t>(response.rate_limit.reset_after->count()));
+        rate_limit.emplace_back(
+            "reset_after", static_cast<std::int64_t>(response.rate_limit.reset_after->count()));
     }
     root.emplace_back("rate_limit", std::move(rate_limit));
 
@@ -1475,8 +1496,9 @@ Result<ModelResponse> model_response_from_json(const JsonValue &json) {
     if (major == nullptr || minor == nullptr || !major->is_integer() || !minor->is_integer()) {
         return contract_error("model response contract version is malformed");
     }
-    response.contract_version = SchemaVersion{static_cast<std::uint16_t>(major->as_integer().value()),
-                                              static_cast<std::uint16_t>(minor->as_integer().value())};
+    response.contract_version =
+        SchemaVersion{static_cast<std::uint16_t>(major->as_integer().value()),
+                      static_cast<std::uint16_t>(minor->as_integer().value())};
 
     const auto parse_id = [](const JsonValue &parent, const std::string &key,
                              auto &&target) -> bool {

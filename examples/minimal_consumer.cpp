@@ -1,6 +1,7 @@
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/runtime_baseline.hpp>
 #include <mira/tool_module.hpp>
+#include <mira/tool_module_exposure.hpp>
 #include <mira/tool_module_registry.hpp>
 #include <mira/version.hpp>
 
@@ -79,6 +80,22 @@ int main() {
     mira::ModuleNegotiationCoordinator coordinator{mira::CapabilityCatalog::core()};
     if (coordinator.current() != nullptr) {
         return 8;
+    }
+
+    // M7-TM2-G6 consumer closure: the exposure projection header must be
+    // includable and linkable from the same minimal consumer, and the empty
+    // Active-set projection must yield the defined empty view (M3 empty
+    // allowlist compatibility).
+    const mira::ModuleNegotiationResult empty_negotiation =
+        mira::negotiate_modules(active, mira::EnvironmentCapabilities{}, catalog);
+    const auto exposure = mira::project_tool_exposure(1, active, empty_negotiation);
+    if (!exposure.has_value() || !exposure.value().empty() ||
+        exposure.value().snapshot_digest == mira::Hash{}) {
+        return 9;
+    }
+    const auto reference = mira::make_simulator_reference_module();
+    if (!reference.has_value() || reference.value().module_id != "builtin.simulator.env") {
+        return 9;
     }
     return 0;
 }

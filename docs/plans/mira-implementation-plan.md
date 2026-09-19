@@ -280,7 +280,25 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    暴露投影，实施前冻结细项）；证据与限制见
    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
-M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
+11. M7 TM2 落地入口（2026-09-19）：TM1 关闭后依 §4.3 冻结 TM2 细项
+   （`M7-TM2-01`–`03`）与门禁（`M7-TM2-G1`–`G6`）并交付 LLM 暴露投影：
+   `project_tool_exposure` 投影纯函数（active 集与协商结论错配整组 fail-closed、
+   空集空视图兼容 M3）、ToolId 确定性派生（TM2 身份分配）、两级排除理由
+   （模组级 Unavailable/Conflict/Revoked/ReservedWireName，任务级
+   TaskPolicy/TaskBudget）、合成 `snapshot_digest`（绑定 generation + module
+   digest 集 + ToolSpec digest 集，DEC-002 加法演进）、`wire_name` 规则 v1 冻结
+   （设计 §17 收口，DEC-009 注记）、Simulator 参考模组
+   `builtin.simulator.env` 与 Replay `verify_recorded_module_digests` 绑定、
+   `resolve_tool_calls` 组合语义。附带修复：TM0 manifest 解析器成员重名检测
+   悬垂 `string_view` 缺陷（等长短名误判重复，IVA 首轮发现，主循环修复后回归
+   门落地）；**format 门禁空转缺陷**——`format-check` 目标 `VERBATIM` 下
+   `-DROOT_DIR="..."` 内嵌引号被字面保留导致 GLOB 匹配零文件、检查静默通过
+   （自 M0 基线起，既往各轮"format 检查通过"证据对 C++ 文件为空转），本轮修复
+   脚本与传参并整树按 CI 口径（clang-format 18.1.8）机械重排。证据与限制见
+   [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+
+M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
+后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。
 本轮不新增产品范围决策；具体依赖、负责人、验收与补跑条件见上述计划。
 

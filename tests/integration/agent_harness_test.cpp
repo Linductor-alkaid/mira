@@ -10,8 +10,8 @@
 
 #include "support/test.hpp"
 
-#include <mira/agent_loop.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/agent_loop.hpp>
 #include <mira/conversation_log.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
@@ -35,7 +35,7 @@ using namespace mira::adapters::simulator;
 using namespace mira::testing;
 
 [[nodiscard]] std::unordered_set<std::string> session_event_types(const IEventStore &store,
-                                                                 const SessionId &session) {
+                                                                  const SessionId &session) {
     std::unordered_set<std::string> types;
     EventQuery query;
     query.session_id = session;
@@ -168,8 +168,9 @@ int full_harness_session() {
     };
 
     ModelDoneVerifier verifier;
-    auto future = executor.submit_auto(
-        [&loop, &loop_spec, &loop_context, &verifier] { return loop.run(loop_spec, loop_context, verifier); });
+    auto future = executor.submit_auto([&loop, &loop_spec, &loop_context, &verifier] {
+        return loop.run(loop_spec, loop_context, verifier);
+    });
     const auto loop_result = future.get();
     runtime_withdrew.store(true, std::memory_order_relaxed); // stop the monitor
     (void)monitor.get();

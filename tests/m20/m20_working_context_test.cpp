@@ -38,13 +38,9 @@ using namespace mira;
     return SessionId{id_from_seed(seed)};
 }
 
-[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) {
-    return TaskId{id_from_seed(seed)};
-}
+[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) { return TaskId{id_from_seed(seed)}; }
 
-[[nodiscard]] EventId event_from_seed(std::uint64_t seed) {
-    return EventId{id_from_seed(seed)};
-}
+[[nodiscard]] EventId event_from_seed(std::uint64_t seed) { return EventId{id_from_seed(seed)}; }
 
 [[nodiscard]] WorkingContextIdentity make_identity(const TaskId &task) {
     WorkingContextIdentity identity;
@@ -66,28 +62,27 @@ using namespace mira;
 
 // Deterministic checkpoint builder standing in for the M19 commit pipeline
 // (W1 has no model: the checkpoint is the frozen input contract).
-[[nodiscard]] ConversationCheckpoint make_checkpoint(const SessionId &session,
-                                                     const TaskId &task, std::uint64_t watermark,
+[[nodiscard]] ConversationCheckpoint make_checkpoint(const SessionId &session, const TaskId &task,
+                                                     std::uint64_t watermark,
                                                      std::uint64_t revision) {
     ConversationCheckpoint checkpoint;
-    checkpoint.id = conversation_checkpoint_id_from_seed(session.to_string() + "|" +
-                                                         std::to_string(watermark) + "|" +
-                                                         std::to_string(revision));
+    checkpoint.id = conversation_checkpoint_id_from_seed(
+        session.to_string() + "|" + std::to_string(watermark) + "|" + std::to_string(revision));
     checkpoint.session_id = session;
     checkpoint.task_id = task;
     checkpoint.task_epoch = 3;
     checkpoint.environment_epoch = 7;
     checkpoint.through_event_sequence = watermark;
     checkpoint.created_at = Timestamp::now();
-    checkpoint.constraints.push_back(make_statement(
-        "constraint r" + std::to_string(revision) + " confirm before sending", watermark + 1,
-        watermark - 1));
+    checkpoint.constraints.push_back(
+        make_statement("constraint r" + std::to_string(revision) + " confirm before sending",
+                       watermark + 1, watermark - 1));
     checkpoint.decisions.push_back(
         make_statement("decision r" + std::to_string(revision) + " use batch provider",
                        watermark + 2, watermark - 1));
-    checkpoint.unresolved_threads.push_back(make_statement(
-        "thread r" + std::to_string(revision) + " waiting for quota reply", watermark + 3,
-        watermark - 1));
+    checkpoint.unresolved_threads.push_back(
+        make_statement("thread r" + std::to_string(revision) + " waiting for quota reply",
+                       watermark + 3, watermark - 1));
     checkpoint.summary = "revision " + std::to_string(revision);
     checkpoint.source_events = {event_from_seed(watermark + 1), event_from_seed(watermark + 2),
                                 event_from_seed(watermark + 3)};
@@ -150,8 +145,7 @@ int projection_is_deterministic_and_round_trips() {
     MIRA_CHECK(restored.value().id == snapshot.value().id);
     MIRA_CHECK(restored.value().state_digest() == snapshot.value().state_digest());
     MIRA_CHECK(restored.value().constraints.size() == 1);
-    MIRA_CHECK(restored.value().constraints[0].content ==
-               snapshot.value().constraints[0].content);
+    MIRA_CHECK(restored.value().constraints[0].content == snapshot.value().constraints[0].content);
     MIRA_CHECK(restored.value().constraints[0].source_events ==
                snapshot.value().constraints[0].source_events);
 
@@ -180,20 +174,17 @@ int over_bounds_input_is_rejected_entirely() {
     WorkingContextMergeOptions tight;
     tight.max_items_per_section = 2;
     auto checkpoint = make_checkpoint(session, task, 10, 1);
-    checkpoint.constraints.push_back(
-        make_statement("second constraint", 100, 9));
-    checkpoint.constraints.push_back(
-        make_statement("third constraint", 101, 9));
+    checkpoint.constraints.push_back(make_statement("second constraint", 100, 9));
+    checkpoint.constraints.push_back(make_statement("third constraint", 101, 9));
     // Three constraints against a two-item bound: the whole candidate is
     // rejected, not truncated to two.
-    MIRA_CHECK(!working_context_from_checkpoint(checkpoint, make_identity(task), tight)
-                    .has_value());
+    MIRA_CHECK(
+        !working_context_from_checkpoint(checkpoint, make_identity(task), tight).has_value());
 
     WorkingContextMergeOptions narrow_bytes;
     narrow_bytes.max_item_chars = 16;
-    MIRA_CHECK(
-        !working_context_from_checkpoint(checkpoint, make_identity(task), narrow_bytes)
-             .has_value());
+    MIRA_CHECK(!working_context_from_checkpoint(checkpoint, make_identity(task), narrow_bytes)
+                    .has_value());
 
     // A checkpoint failing its own validation (statement without provenance)
     // never yields a snapshot.
@@ -217,8 +208,8 @@ int commit_tuple_races_are_discarded() {
     InMemoryWorkingContextStore store;
     const auto live = make_live(session, task);
 
-    const auto first = working_context_from_checkpoint(make_checkpoint(session, task, 10, 1),
-                                                       make_identity(task));
+    const auto first =
+        working_context_from_checkpoint(make_checkpoint(session, task, 10, 1), make_identity(task));
     MIRA_CHECK(first.has_value());
     const auto first_outcome = commit_working_context(store, first.value(), live);
     MIRA_CHECK(first_outcome.disposition == WorkingContextCommitDisposition::Committed);
@@ -226,34 +217,38 @@ int commit_tuple_races_are_discarded() {
 
     // Stale watermark inside the same identity chain: discarded, stored
     // snapshot kept.
-    const auto older = working_context_from_checkpoint(make_checkpoint(session, task, 9, 1),
-                                                       make_identity(task));
+    const auto older =
+        working_context_from_checkpoint(make_checkpoint(session, task, 9, 1), make_identity(task));
     MIRA_CHECK(older.has_value());
     const auto stale_outcome = commit_working_context(store, older.value(), live);
     MIRA_CHECK(stale_outcome.disposition == WorkingContextCommitDisposition::DiscardedStale);
     MIRA_CHECK(stale_outcome.reason_code == "stale-watermark");
 
     // Identity mismatches are all stale discards.
-    const auto chain = working_context_from_checkpoint(make_checkpoint(session, task, 11, 2),
-                                                       make_identity(task));
+    const auto chain =
+        working_context_from_checkpoint(make_checkpoint(session, task, 11, 2), make_identity(task));
     MIRA_CHECK(chain.has_value());
     const std::pair<const char *, WorkingContextCommitState> mismatches[] = {
-        {"session-mismatch", [&] {
+        {"session-mismatch",
+         [&] {
              auto state = live;
              state.session = session_from_seed(999);
              return state;
          }()},
-        {"task-mismatch", [&] {
+        {"task-mismatch",
+         [&] {
              auto state = live;
              state.task = task_from_seed(999);
              return state;
          }()},
-        {"task-epoch-mismatch", [&] {
+        {"task-epoch-mismatch",
+         [&] {
              auto state = live;
              state.task_epoch = 4;
              return state;
          }()},
-        {"environment-epoch-mismatch", [&] {
+        {"environment-epoch-mismatch",
+         [&] {
              auto state = live;
              state.environment_epoch = 8;
              return state;
@@ -295,8 +290,8 @@ int commit_tuple_races_are_discarded() {
     MIRA_CHECK(at_eleven == after_conflict);
 
     // Advancing the watermark commits.
-    const auto advancing = working_context_from_checkpoint(make_checkpoint(session, task, 12, 3),
-                                                           make_identity(task));
+    const auto advancing =
+        working_context_from_checkpoint(make_checkpoint(session, task, 12, 3), make_identity(task));
     MIRA_CHECK(advancing.has_value());
     const auto advance_outcome = commit_working_context(store, advancing.value(), live);
     MIRA_CHECK(advance_outcome.disposition == WorkingContextCommitDisposition::Committed);
@@ -315,8 +310,8 @@ int terminal_state_discards_late_snapshots() {
 
     WorkingContextCommitState terminal = make_live(session, task);
     terminal.session_terminal = true;
-    const auto candidate = working_context_from_checkpoint(make_checkpoint(session, task, 10, 1),
-                                                           make_identity(task));
+    const auto candidate =
+        working_context_from_checkpoint(make_checkpoint(session, task, 10, 1), make_identity(task));
     MIRA_CHECK(candidate.has_value());
     auto outcome = commit_working_context(store, candidate.value(), terminal);
     MIRA_CHECK(outcome.disposition == WorkingContextCommitDisposition::DiscardedTerminal);
@@ -343,8 +338,8 @@ int epoch_change_opens_an_isolated_chain() {
     InMemoryWorkingContextStore store;
     const auto live = make_live(session, task);
 
-    const auto old_snapshot = working_context_from_checkpoint(
-        make_checkpoint(session, task, 10, 1), make_identity(task));
+    const auto old_snapshot =
+        working_context_from_checkpoint(make_checkpoint(session, task, 10, 1), make_identity(task));
     MIRA_CHECK(old_snapshot.has_value());
     MIRA_CHECK(commit_working_context(store, old_snapshot.value(), live).disposition ==
                WorkingContextCommitDisposition::Committed);
@@ -403,14 +398,14 @@ int store_enforces_monotonicity_and_retention() {
 
     // Watermark regression inside the same identity chain is rejected at the
     // store level.
-    const auto regressed = working_context_from_checkpoint(make_checkpoint(session, task, 9, 5),
-                                                           make_identity(task));
+    const auto regressed =
+        working_context_from_checkpoint(make_checkpoint(session, task, 9, 5), make_identity(task));
     MIRA_CHECK(regressed.has_value());
     MIRA_CHECK(!store.put(regressed.value()).has_value());
 
     // The ring evicts the oldest entry beyond the policy bound.
-    const auto fourth = working_context_from_checkpoint(make_checkpoint(session, task, 13, 6),
-                                                        make_identity(task));
+    const auto fourth =
+        working_context_from_checkpoint(make_checkpoint(session, task, 13, 6), make_identity(task));
     MIRA_CHECK(fourth.has_value());
     MIRA_CHECK(store.put(fourth.value()).has_value());
     MIRA_CHECK(store.count(session).value() == 3);
@@ -566,7 +561,8 @@ int supervisor_routes_working_context_commits() {
         const auto raced = racing.get();
         if (raced.has_value()) {
             MIRA_CHECK(raced.value().disposition == WorkingContextCommitDisposition::Committed ||
-                       raced.value().disposition == WorkingContextCommitDisposition::IdempotentNoOp);
+                       raced.value().disposition ==
+                           WorkingContextCommitDisposition::IdempotentNoOp);
         }
         MIRA_CHECK(store.count(session).value() <= 2);
     }

@@ -7,8 +7,8 @@
 // supervisor Deferrable routing with shutdown rejection and in-flight
 // cancellation.
 
-#include "../support/test.hpp"
 #include "../support/m3_support.hpp"
+#include "../support/test.hpp"
 
 #include <mira/context_consolidation.hpp>
 #include <mira/context_memory_supervisor.hpp>
@@ -40,13 +40,9 @@ using namespace mira;
     return SessionId{id_from_seed(seed)};
 }
 
-[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) {
-    return TaskId{id_from_seed(seed)};
-}
+[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) { return TaskId{id_from_seed(seed)}; }
 
-[[nodiscard]] EventId event_from_seed(std::uint64_t seed) {
-    return EventId{id_from_seed(seed)};
-}
+[[nodiscard]] EventId event_from_seed(std::uint64_t seed) { return EventId{id_from_seed(seed)}; }
 
 [[nodiscard]] ConversationEntry make_entry(ConversationEntry::Kind kind, std::uint64_t sequence,
                                            std::string text) {
@@ -77,7 +73,7 @@ class StubConsolidationProvider final : public IModelProvider {
     explicit StubConsolidationProvider(std::string response_json)
         : profile_(std::make_shared<ModelProfile>(mira::testing::make_profile(
               ProtocolDialect::OpenAIResponsesV1, "https://consolidation.test"))),
-              response_json_(std::move(response_json)) {}
+          response_json_(std::move(response_json)) {}
 
     [[nodiscard]] const ModelProfile &profile() const override { return *profile_; }
 
@@ -179,8 +175,8 @@ class StubConsolidationProvider final : public IModelProvider {
                                                      std::uint64_t watermark,
                                                      const std::string &content) {
     ConversationCheckpoint checkpoint;
-    checkpoint.id = conversation_checkpoint_id_from_seed(session.to_string() + "|" +
-                                                         std::to_string(watermark));
+    checkpoint.id =
+        conversation_checkpoint_id_from_seed(session.to_string() + "|" + std::to_string(watermark));
     checkpoint.session_id = session;
     checkpoint.task_id = task;
     checkpoint.task_epoch = 3;
@@ -212,11 +208,11 @@ int consolidation_produces_bound_checkpoint() {
     const auto segment = prefix_segment(1, entries);
     MIRA_CHECK(segment.entries.size() == 3);
 
-    StubConsolidationProvider provider(output_json(
-        "Session keeps a sending constraint and one open thread.", 0.9,
-        statement_json("always confirm before sending to zhangsan", {0}, 0.95),
-        statement_json("chose the nightly batch", {1}, 0.8),
-        statement_json("waiting for quota reply", {2}, 0.7), ""));
+    StubConsolidationProvider provider(
+        output_json("Session keeps a sending constraint and one open thread.", 0.9,
+                    statement_json("always confirm before sending to zhangsan", {0}, 0.95),
+                    statement_json("chose the nightly batch", {1}, 0.8),
+                    statement_json("waiting for quota reply", {2}, 0.7), ""));
     const auto options = make_options();
     ProviderSemanticConsolidator consolidator(provider);
     const auto result = consolidator.consolidate(segment, options);
@@ -361,12 +357,12 @@ int malformed_output_fails_closed() {
     MIRA_CHECK(expect_model_output_error(failed_status) == 0);
 
     // Fabricated citations are dropped per statement, valid ones survive.
-    StubConsolidationProvider mixed(output_json(
-        "s", 0.9,
-        statement_json("fabricated citation", {42}, 0.9) + "," +
-            statement_json("bound citation", {0}, 0.9) + "," +
-            statement_json("empty sources", {}, 0.9),
-        "", "", ""));
+    StubConsolidationProvider mixed(output_json("s", 0.9,
+                                                statement_json("fabricated citation", {42}, 0.9) +
+                                                    "," +
+                                                    statement_json("bound citation", {0}, 0.9) +
+                                                    "," + statement_json("empty sources", {}, 0.9),
+                                                "", "", ""));
     ProviderSemanticConsolidator consolidator(mixed);
     const auto result = consolidator.consolidate(segment, options);
     MIRA_CHECK(result.has_value());
@@ -423,10 +419,10 @@ int markers_and_confidence_filtered() {
 // ---------------------------------------------------------------------------
 
 int bounds_are_enforced() {
-    const auto segment = prefix_segment(
-        5, {make_entry(ConversationEntry::Kind::UserMessage, 1, "constraint: a"),
-            make_entry(ConversationEntry::Kind::UserMessage, 2, "constraint: b"),
-            make_entry(ConversationEntry::Kind::UserMessage, 3, "constraint: c")});
+    const auto segment =
+        prefix_segment(5, {make_entry(ConversationEntry::Kind::UserMessage, 1, "constraint: a"),
+                           make_entry(ConversationEntry::Kind::UserMessage, 2, "constraint: b"),
+                           make_entry(ConversationEntry::Kind::UserMessage, 3, "constraint: c")});
     StubConsolidationProvider provider(
         output_json("a summary that is certainly longer than ten characters", 0.9,
                     statement_json("constraint one", {0}, 0.9) + "," +
@@ -562,9 +558,8 @@ int terminal_state_discards_late_results() {
     task_terminal.session = session;
     task_terminal.task = task;
     task_terminal.task_terminal = true;
-    const auto task_outcome =
-        commit_conversation_checkpoint(store, make_checkpoint(session, task, 5, "late"),
-                                       task_terminal);
+    const auto task_outcome = commit_conversation_checkpoint(
+        store, make_checkpoint(session, task, 5, "late"), task_terminal);
     MIRA_CHECK(task_outcome.disposition == ConversationCommitDisposition::DiscardedTerminal);
     MIRA_CHECK(task_outcome.reason_code == "task-terminal");
     return 0;
@@ -670,8 +665,8 @@ int supervisor_routes_and_shuts_down_consolidation() {
             output_json("s", 0.9, statement_json("routed constraint", {0}, 0.9), "", "", ""));
         ProviderSemanticConsolidator consolidator(provider);
         ContextMemorySupervisor supervisor(exec);
-        auto future = supervisor.schedule_context_consolidation(consolidator, segment,
-                                                                make_options());
+        auto future =
+            supervisor.schedule_context_consolidation(consolidator, segment, make_options());
         const auto result = future.get();
         MIRA_CHECK(result.has_value());
         MIRA_CHECK(result.value().constraints.size() == 1);
@@ -680,8 +675,8 @@ int supervisor_routes_and_shuts_down_consolidation() {
         const auto report = supervisor.begin_shutdown();
         MIRA_CHECK(report.critical_drain_complete);
         MIRA_CHECK(supervisor.closed());
-        auto rejected = supervisor.schedule_context_consolidation(consolidator, segment,
-                                                                  make_options());
+        auto rejected =
+            supervisor.schedule_context_consolidation(consolidator, segment, make_options());
         const auto rejection = rejected.get();
         MIRA_CHECK(!rejection.has_value());
     }
@@ -694,8 +689,8 @@ int supervisor_routes_and_shuts_down_consolidation() {
         provider.wait_for_cancellation_ = true;
         ProviderSemanticConsolidator consolidator(provider);
         ContextMemorySupervisor supervisor(exec);
-        auto future = supervisor.schedule_context_consolidation(consolidator, segment,
-                                                                make_options());
+        auto future =
+            supervisor.schedule_context_consolidation(consolidator, segment, make_options());
         while (provider.calls_ == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

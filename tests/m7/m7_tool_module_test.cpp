@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -625,6 +626,82 @@ int manifest_fail_closed_matrix() {
     return 0;
 }
 
+// Regression (2026-09-19, found by TM2 exposure verification): the duplicate
+// member-name gate once kept std::string_views into a loop-local string that
+// was moved and destroyed each iteration, so two consecutive equal-length
+// short (SSO, <=15 chars) member names collided spuriously and a valid
+// manifest was rejected as a "duplicate". The gate now stores copies. These
+// cases pin both directions with short names specifically.
+int manifest_short_member_names_parse_and_duplicates_rejected() {
+    const CapabilityCatalog &catalog = CapabilityCatalog::core();
+
+    const auto parse_with_tools =
+        [&](const std::vector<std::string> &names) -> Result<ToolModuleManifest> {
+        auto base = parse_json(kValidManifestJson);
+        if (!base.has_value()) {
+            std::abort(); // fixture constant, not a subject
+        }
+        JsonValue::Array tools;
+        for (const auto &name : names) {
+            tools.push_back(minimal_tool_json(name));
+        }
+        base.value().set("tools", JsonValue{std::move(tools)});
+        return parse_tool_module_manifest(base.value(), catalog);
+    };
+
+    // Equal-length distinct short names (the exact shapes the old dangling
+    // view misread) parse successfully, and the declared order is preserved.
+    {
+        const std::vector<std::string> names{"zz_probe", "aa_probe"}; // both 8 chars
+        auto parsed = parse_with_tools(names);
+        MIRA_CHECK(parsed.has_value());
+        MIRA_CHECK(parsed.value().tools.size() == 2);
+        MIRA_CHECK(parsed.value().tools[0].name == "zz_probe");
+        MIRA_CHECK(parsed.value().tools[1].name == "aa_probe");
+
+        const std::vector<std::string> other{"member_a", "member_b"}; // both 8 chars
+        auto second = parse_with_tools(other);
+        MIRA_CHECK(second.has_value());
+        MIRA_CHECK(second.value().tools.size() == 2);
+
+        // Three members, two of them consecutive equal-length short names.
+        const std::vector<std::string> triple{"one_aaa", "two_bbb", "three_ccc"};
+        auto third = parse_with_tools(triple);
+        MIRA_CHECK(third.has_value());
+        MIRA_CHECK(third.value().tools.size() == 3);
+        MIRA_CHECK(third.value().tools[0].name == "one_aaa");
+        MIRA_CHECK(third.value().tools[1].name == "two_bbb");
+        MIRA_CHECK(third.value().tools[2].name == "three_ccc");
+
+        // Same inputs, same digest: the short-name parses are deterministic.
+        auto repeat = parse_with_tools(names);
+        MIRA_CHECK(repeat.has_value());
+        MIRA_CHECK(tool_module_manifest_digest(repeat.value()) ==
+                   tool_module_manifest_digest(parsed.value()));
+    }
+
+    // True duplicates are still rejected wherever they sit: adjacent, and
+    // separated by a name of a different length as well as the same length.
+    {
+        const auto adjacent = parse_with_tools({"dup_name", "dup_name"});
+        MIRA_CHECK(!adjacent.has_value());
+        MIRA_CHECK(adjacent.error().domain == "mira.tool_module");
+        MIRA_CHECK(adjacent.error().code == ErrorCode::InvalidArgument);
+        MIRA_CHECK(adjacent.error().safe_message.find("dup_name") != std::string::npos);
+
+        const auto separated_short = parse_with_tools({"dup_name", "middle_one", "dup_name"});
+        MIRA_CHECK(!separated_short.has_value());
+        MIRA_CHECK(separated_short.error().code == ErrorCode::InvalidArgument);
+        MIRA_CHECK(separated_short.error().safe_message.find("dup_name") != std::string::npos);
+
+        const auto separated_equal_length =
+            parse_with_tools({"dup_name", "mid_name", "dup_name"}); // all 8 chars
+        MIRA_CHECK(!separated_equal_length.has_value());
+        MIRA_CHECK(separated_equal_length.error().code == ErrorCode::InvalidArgument);
+    }
+    return 0;
+}
+
 int manifest_digest_is_canonical_and_content_addressed() {
     const CapabilityCatalog &catalog = CapabilityCatalog::core();
     auto first = parse_json(kValidManifestJson);
@@ -933,6 +1010,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (manifest_fail_closed_matrix() != 0) {
+        return 1;
+    }
+    if (manifest_short_member_names_parse_and_duplicates_rejected() != 0) {
         return 1;
     }
     if (manifest_digest_is_canonical_and_content_addressed() != 0) {

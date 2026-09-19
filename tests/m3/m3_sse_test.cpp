@@ -34,11 +34,12 @@ using namespace mira::testing;
 }
 
 [[nodiscard]] std::string completed_event(int sequence, const std::string &output_text) {
-    const std::string response = R"({"id":"resp_1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":")" +
-                                 output_text + R"("}]}],"usage":{"input_tokens":5,"output_tokens":2}})";
+    const std::string response =
+        R"({"id":"resp_1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":")" +
+        output_text + R"("}]}],"usage":{"input_tokens":5,"output_tokens":2}})";
     return sse_event("response.completed", R"({"type":"response.completed","sequence_number":)" +
-                                             std::to_string(sequence) + R"(,"response":)" +
-                                             response + "}");
+                                               std::to_string(sequence) + R"(,"response":)" +
+                                               response + "}");
 }
 
 int framing_handles_arbitrary_fragmentation() {
@@ -80,21 +81,30 @@ int reducer_happy_path_and_terminal_reduction() {
     ResponsesSseParser parser(request, profile);
 
     std::string stream;
-    stream += sse_event("response.created", R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_1"}})");
-    stream += sse_event("response.output_item.added",
-                        R"({"type":"output_item.added","sequence_number":1,"item":{"id":"msg_1","type":"message"}})");
-    stream += sse_event("response.content_part.added",
-                        R"({"type":"content_part.added","sequence_number":2,"item_id":"msg_1","output_index":0})");
-    stream += sse_event("response.output_text.delta",
-                        R"({"type":"output_text.delta","sequence_number":3,"item_id":"msg_1","delta":"{\"act"})");
-    stream += sse_event("response.output_text.delta",
-                        R"({"type":"output_text.delta","sequence_number":4,"item_id":"msg_1","delta":"ion\":\"back\"}"})");
-    stream += sse_event("response.output_text.done",
-                        R"({"type":"output_text.done","sequence_number":5,"item_id":"msg_1","text":"{\"action\":\"back\"}"})");
-    stream += sse_event("response.content_part.done",
-                        R"({"type":"content_part.done","sequence_number":6,"item_id":"msg_1","output_index":0})");
-    stream += sse_event("response.output_item.done",
-                        R"({"type":"output_item.done","sequence_number":7,"item":{"id":"msg_1","type":"message"}})");
+    stream +=
+        sse_event("response.created",
+                  R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_1"}})");
+    stream += sse_event(
+        "response.output_item.added",
+        R"({"type":"output_item.added","sequence_number":1,"item":{"id":"msg_1","type":"message"}})");
+    stream += sse_event(
+        "response.content_part.added",
+        R"({"type":"content_part.added","sequence_number":2,"item_id":"msg_1","output_index":0})");
+    stream += sse_event(
+        "response.output_text.delta",
+        R"({"type":"output_text.delta","sequence_number":3,"item_id":"msg_1","delta":"{\"act"})");
+    stream += sse_event(
+        "response.output_text.delta",
+        R"({"type":"output_text.delta","sequence_number":4,"item_id":"msg_1","delta":"ion\":\"back\"}"})");
+    stream += sse_event(
+        "response.output_text.done",
+        R"({"type":"output_text.done","sequence_number":5,"item_id":"msg_1","text":"{\"action\":\"back\"}"})");
+    stream += sse_event(
+        "response.content_part.done",
+        R"({"type":"content_part.done","sequence_number":6,"item_id":"msg_1","output_index":0})");
+    stream += sse_event(
+        "response.output_item.done",
+        R"({"type":"output_item.done","sequence_number":7,"item":{"id":"msg_1","type":"message"}})");
     stream += completed_event(8, "dGFw");
     MIRA_CHECK(parser.feed(stream).has_value());
     auto preview = parser.take_preview();
@@ -135,9 +145,11 @@ int reducer_rejects_protocol_violations() {
     {
         ResponsesSseParser parser(request, profile);
         std::string stream;
-        stream += sse_event("response.created", R"({"type":"response.created","sequence_number":0})");
-        stream += sse_event("output_item.added",
-                            R"({"type":"output_item.added","sequence_number":5,"item":{"id":"a","type":"message"}})");
+        stream +=
+            sse_event("response.created", R"({"type":"response.created","sequence_number":0})");
+        stream += sse_event(
+            "output_item.added",
+            R"({"type":"output_item.added","sequence_number":5,"item":{"id":"a","type":"message"}})");
         MIRA_CHECK(!parser.feed(stream).has_value());
     }
     // Duplicate terminal events are rejected.
@@ -151,24 +163,28 @@ int reducer_rejects_protocol_violations() {
         ResponsesSseParser parser(request, profile);
         std::string stream =
             completed_event(1, "eA==") +
-            sse_event("output_item.added",
-                      R"({"type":"output_item.added","sequence_number":2,"item":{"id":"b","type":"message"}})");
+            sse_event(
+                "output_item.added",
+                R"({"type":"output_item.added","sequence_number":2,"item":{"id":"b","type":"message"}})");
         MIRA_CHECK(!parser.feed(stream).has_value());
     }
     // Unpaired done for an unknown item.
     {
         ResponsesSseParser parser(request, profile);
-        MIRA_CHECK(!parser
-                       .feed(sse_event("output_item.done",
-                                       R"({"type":"output_item.done","sequence_number":0,"item":{"id":"ghost","type":"message"}})"))
-                       .has_value());
+        MIRA_CHECK(
+            !parser
+                 .feed(sse_event(
+                     "output_item.done",
+                     R"({"type":"output_item.done","sequence_number":0,"item":{"id":"ghost","type":"message"}})"))
+                 .has_value());
     }
     // Terminal while an item is still open.
     {
         ResponsesSseParser parser(request, profile);
         std::string stream;
-        stream += sse_event("output_item.added",
-                            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
+        stream += sse_event(
+            "output_item.added",
+            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
         stream += completed_event(1, "eA==");
         MIRA_CHECK(!parser.feed(stream).has_value());
     }
@@ -176,12 +192,15 @@ int reducer_rejects_protocol_violations() {
     {
         ResponsesSseParser parser(request, profile);
         std::string stream;
-        stream += sse_event("output_item.added",
-                            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
-        stream += sse_event("output_text.delta",
-                            R"({"type":"output_text.delta","sequence_number":1,"item_id":"a","delta":"abc"})");
-        stream += sse_event("output_text.done",
-                            R"({"type":"output_text.done","sequence_number":2,"item_id":"a","text":"xyz"})");
+        stream += sse_event(
+            "output_item.added",
+            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
+        stream += sse_event(
+            "output_text.delta",
+            R"({"type":"output_text.delta","sequence_number":1,"item_id":"a","delta":"abc"})");
+        stream += sse_event(
+            "output_text.done",
+            R"({"type":"output_text.done","sequence_number":2,"item_id":"a","text":"xyz"})");
         MIRA_CHECK(!parser.feed(stream).has_value());
     }
     // Unknown event names fail closed.
@@ -192,21 +211,22 @@ int reducer_rejects_protocol_violations() {
     // Server error events surface as protocol failures.
     {
         ResponsesSseParser parser(request, profile);
-        MIRA_CHECK(!parser
-                       .feed(sse_event("error",
-                                       R"({"type":"error","code":"server_error"})"))
-                       .has_value());
+        MIRA_CHECK(!parser.feed(sse_event("error", R"({"type":"error","code":"server_error"})"))
+                        .has_value());
     }
     // Function arguments must be complete before the item closes.
     {
         ResponsesSseParser parser(request, profile);
         std::string stream;
-        stream += sse_event("output_item.added",
-                            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"f","type":"function_call"}})");
-        stream += sse_event("function_call_arguments.delta",
-                            R"({"type":"function_call_arguments.delta","sequence_number":1,"item_id":"f","delta":"{\"q\":"})");
-        stream += sse_event("output_item.done",
-                            R"({"type":"output_item.done","sequence_number":2,"item":{"id":"f","type":"function_call"}})");
+        stream += sse_event(
+            "output_item.added",
+            R"({"type":"output_item.added","sequence_number":0,"item":{"id":"f","type":"function_call"}})");
+        stream += sse_event(
+            "function_call_arguments.delta",
+            R"({"type":"function_call_arguments.delta","sequence_number":1,"item_id":"f","delta":"{\"q\":"})");
+        stream += sse_event(
+            "output_item.done",
+            R"({"type":"output_item.done","sequence_number":2,"item":{"id":"f","type":"function_call"}})");
         MIRA_CHECK(!parser.feed(stream).has_value());
     }
     return 0;
@@ -220,13 +240,14 @@ int preview_is_bounded_and_unvalidated() {
     ResponsesSseParser parser(request, profile, limits);
 
     std::string stream;
-    stream += sse_event("output_item.added",
-                        R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
+    stream += sse_event(
+        "output_item.added",
+        R"({"type":"output_item.added","sequence_number":0,"item":{"id":"a","type":"message"}})");
     for (int index = 0; index < 8; ++index) {
-        stream += sse_event("output_text.delta",
-                            R"({"type":"output_text.delta","sequence_number":)" +
-                                std::to_string(index + 1) +
-                                R"(,"item_id":"a","delta":"0123456789"})");
+        stream +=
+            sse_event("output_text.delta", R"({"type":"output_text.delta","sequence_number":)" +
+                                               std::to_string(index + 1) +
+                                               R"(,"item_id":"a","delta":"0123456789"})");
     }
     MIRA_CHECK(parser.feed(stream).has_value());
     auto preview = parser.take_preview();

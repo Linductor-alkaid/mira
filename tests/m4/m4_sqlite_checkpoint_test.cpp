@@ -48,8 +48,7 @@ std::filesystem::path temp_dir() {
     fact.value = "10";
     checkpoint.verified_facts.push_back(fact);
     checkpoint.uncertain_side_effects.push_back(
-        UncertainSideEffect{ActionId::generate(), "tap", "receipt missing",
-                            {EventId::generate()}});
+        UncertainSideEffect{ActionId::generate(), "tap", "receipt missing", {EventId::generate()}});
     return checkpoint;
 }
 

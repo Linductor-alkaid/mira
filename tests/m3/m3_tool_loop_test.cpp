@@ -6,8 +6,8 @@
 
 #include "support/test.hpp"
 
-#include <mira/agent_loop.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/agent_loop.hpp>
 #include <mira/conversation_log.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
@@ -38,7 +38,7 @@ class ToolLoopFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                 ModelGatewayConfig{});
+                                                  ModelGatewayConfig{});
         admission_ = std::make_shared<SimpleAdmissionGate>();
         gateway_->set_admission_gate(admission_);
 

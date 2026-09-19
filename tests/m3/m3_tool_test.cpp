@@ -25,14 +25,14 @@ using namespace mira::testing;
     request.input = {std::move(system_item)};
     request.data_policy.store = false;
     const auto tool_id = ToolId::generate();
-    request.tools.push_back(ExposedToolSpec{
-        tool_id, SemanticVersion{2, 1, 0}, "lookup", "finds things",
-        JsonSchema{parse_json(R"({"type":"object"})").value()}, Hash{}, true});
+    request.tools.push_back(
+        ExposedToolSpec{tool_id, SemanticVersion{2, 1, 0}, "lookup", "finds things",
+                        JsonSchema{parse_json(R"({"type":"object"})").value()}, Hash{}, true});
     return {std::move(request), tool_id};
 }
 
-[[nodiscard]] ModelResponse call_response(const ModelRequest &request,
-                                          const std::string &call_id, const std::string &arguments,
+[[nodiscard]] ModelResponse call_response(const ModelRequest &request, const std::string &call_id,
+                                          const std::string &arguments,
                                           const std::string &name = "lookup") {
     ModelResponse response;
     response.contract_version = SchemaVersion{1, 0};
@@ -87,8 +87,8 @@ int fails_closed_on_hosted_and_unknown_tools() {
     MIRA_CHECK(hosted.error().domain_code ==
                static_cast<std::int32_t>(ModelDomainCode::ProtocolViolation));
 
-    auto computer = resolve_tool_calls(request,
-                                       call_response(request, "c1", "{}", "computer_use_preview"));
+    auto computer =
+        resolve_tool_calls(request, call_response(request, "c1", "{}", "computer_use_preview"));
     MIRA_CHECK(!computer.has_value());
 
     auto unknown = resolve_tool_calls(request, call_response(request, "c1", "{}", "mystery"));
@@ -147,8 +147,8 @@ int duplicate_call_ids_collapse_or_reject() {
     ToolBridgeLimits limits;
     limits.max_calls_per_response = 4;
     for (int index = 0; index < 5; ++index) {
-        many.output.push_back(
-            std::get<ToolCallOutput>(call_response(request, "c" + std::to_string(index), "{}").output[0]));
+        many.output.push_back(std::get<ToolCallOutput>(
+            call_response(request, "c" + std::to_string(index), "{}").output[0]));
     }
     MIRA_CHECK(!resolve_tool_calls(request, many, limits).has_value());
     return 0;
@@ -169,12 +169,11 @@ int result_backfill_wire_items() {
             return JsonValue::Object{};
         }
         auto parsed = parse_json(*output->as_string());
-        return parsed.has_value() && parsed.value().is_object()
-                   ? *parsed.value().as_object()
-                   : JsonValue::Object{};
+        return parsed.has_value() && parsed.value().is_object() ? *parsed.value().as_object()
+                                                                : JsonValue::Object{};
     };
-    auto responses_items = build_tool_result_input(
-        ProtocolDialect::OpenAIResponsesV1, std::vector<ToolExecutionRecord>{record});
+    auto responses_items = build_tool_result_input(ProtocolDialect::OpenAIResponsesV1,
+                                                   std::vector<ToolExecutionRecord>{record});
     MIRA_CHECK(responses_items.has_value());
     const auto responses_text = to_json_string(responses_items.value()[0]);
     MIRA_CHECK(responses_text.find("\"type\":\"function_call_output\"") != std::string::npos);
@@ -184,8 +183,8 @@ int result_backfill_wire_items() {
     MIRA_CHECK(responses_output[0].second.as_string() != nullptr &&
                *responses_output[0].second.as_string() == "ok");
 
-    auto chat_items = build_tool_result_input(
-        ProtocolDialect::OpenAIChatCompletionsV1, std::vector<ToolExecutionRecord>{record});
+    auto chat_items = build_tool_result_input(ProtocolDialect::OpenAIChatCompletionsV1,
+                                              std::vector<ToolExecutionRecord>{record});
     MIRA_CHECK(chat_items.has_value());
     const auto chat_text = to_json_string(chat_items.value()[0]);
     MIRA_CHECK(chat_text.find("\"role\":\"tool\"") != std::string::npos);
@@ -195,8 +194,8 @@ int result_backfill_wire_items() {
     ToolExecutionRecord failed = record;
     failed.failed = true;
     failed.safe_error_summary = "permission denied";
-    auto failed_items = build_tool_result_input(
-        ProtocolDialect::OpenAIResponsesV1, std::vector<ToolExecutionRecord>{failed});
+    auto failed_items = build_tool_result_input(ProtocolDialect::OpenAIResponsesV1,
+                                                std::vector<ToolExecutionRecord>{failed});
     MIRA_CHECK(failed_items.has_value());
     const auto failed_output = parse_output(failed_items.value()[0]);
     MIRA_CHECK(failed_output[0].second.as_string() != nullptr &&
@@ -213,8 +212,8 @@ int result_backfill_wire_items() {
                     .has_value());
     large.large_payload = ArtifactRef{ArtifactId::generate(), digest_string("x"), 4096,
                                       "application/octet-stream", Sensitivity::Internal};
-    auto with_artifact = build_tool_result_input(
-        ProtocolDialect::OpenAIResponsesV1, std::vector<ToolExecutionRecord>{large});
+    auto with_artifact = build_tool_result_input(ProtocolDialect::OpenAIResponsesV1,
+                                                 std::vector<ToolExecutionRecord>{large});
     MIRA_CHECK(with_artifact.has_value());
     const auto artifact_output = parse_output(with_artifact.value()[0]);
     const auto payload_text = to_json_string(JsonValue(artifact_output));

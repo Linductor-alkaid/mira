@@ -90,8 +90,8 @@ enum class WorkflowStepKind : std::uint8_t { ToolCall, Navigate, Verify, Control
 struct WorkflowRecoveryHook final {
     enum class Mode : std::uint8_t { None, Retry, FallbackStep, AgentEscalation };
     Mode mode = Mode::None;
-    std::uint32_t max_retries = 0;           // Retry; 0..8, bounded by attempts.
-    std::optional<StepId> fallback_step;     // FallbackStep; must come later.
+    std::uint32_t max_retries = 0;       // Retry; 0..8, bounded by attempts.
+    std::optional<StepId> fallback_step; // FallbackStep; must come later.
     [[nodiscard]] bool operator==(const WorkflowRecoveryHook &) const noexcept = default;
 };
 
@@ -121,13 +121,13 @@ struct WorkflowParameterSpec final {
     std::string name;
     WorkflowParameterType type = WorkflowParameterType::String;
     bool required = false;
-    JsonValue default_value; // Null when absent; optional parameters only.
-    std::optional<double> minimum;         // Integer/Number.
-    std::optional<double> maximum;         // Integer/Number.
+    JsonValue default_value;                 // Null when absent; optional parameters only.
+    std::optional<double> minimum;           // Integer/Number.
+    std::optional<double> maximum;           // Integer/Number.
     std::optional<std::uint64_t> min_length; // String.
     std::optional<std::uint64_t> max_length; // String.
-    std::optional<std::string> pattern;    // String; std::regex, search semantics.
-    std::vector<JsonValue> enum_values;    // Any scalar type.
+    std::optional<std::string> pattern;      // String; std::regex, search semantics.
+    std::vector<JsonValue> enum_values;      // Any scalar type.
     std::string summary;
 };
 
@@ -157,7 +157,8 @@ validate_workflow_definition(const WorkflowDefinition &definition,
 workflow_definition_from_json(const JsonValue &json,
                               const WorkflowLimits &limits = kDefaultWorkflowLimits);
 [[nodiscard]] Result<WorkflowDefinition>
-parse_workflow_definition(std::string_view text, const WorkflowLimits &limits = kDefaultWorkflowLimits);
+parse_workflow_definition(std::string_view text,
+                          const WorkflowLimits &limits = kDefaultWorkflowLimits);
 
 // Content-addressed identity: canonical JSON digest of the definition.
 [[nodiscard]] Sha256Digest workflow_definition_digest(const WorkflowDefinition &definition);
@@ -201,7 +202,8 @@ enum class WorkflowPredicateResult : std::uint8_t { Satisfied, NotSatisfied, Not
 evaluate_workflow_predicate(const WorkflowPredicate &predicate, const JsonValue &context);
 
 // Validates the predicate's signal reference shape ("kind:ref", non-empty ref).
-[[nodiscard]] Result<void> validate_workflow_predicate(const WorkflowPredicate &predicate,
-                                                       const WorkflowLimits &limits = kDefaultWorkflowLimits);
+[[nodiscard]] Result<void>
+validate_workflow_predicate(const WorkflowPredicate &predicate,
+                            const WorkflowLimits &limits = kDefaultWorkflowLimits);
 
 } // namespace mira

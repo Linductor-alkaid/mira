@@ -23,8 +23,7 @@ namespace {
 using namespace mira;
 using namespace mira::testing;
 
-[[nodiscard]] BuiltinToolSpec number_tool_spec(ToolId id,
-                                               std::string wire_name = "double_number") {
+[[nodiscard]] BuiltinToolSpec number_tool_spec(ToolId id, std::string wire_name = "double_number") {
     BuiltinToolSpec spec;
     spec.tool_id = id;
     spec.wire_name = std::move(wire_name);
@@ -167,10 +166,10 @@ int execute_fail_closed_paths() {
     MIRA_CHECK(registry.register_tool(
         chatty_spec, [](const JsonValue &, const OperationContext &) -> Result<JsonValue> {
             JsonValue::Object blob;
-            blob.emplace_back("text", std::string(
-                                          static_cast<std::size_t>(
-                                              kDefaultToolBridgeLimits.max_result_bytes) + 1,
-                                          'x'));
+            blob.emplace_back(
+                "text",
+                std::string(static_cast<std::size_t>(kDefaultToolBridgeLimits.max_result_bytes) + 1,
+                            'x'));
             return JsonValue(std::move(blob));
         }));
     auto chatty = proposal_for(chatty_spec, parse_json(R"json({"value": 1})json").value());
@@ -187,9 +186,8 @@ int wait_tool_behavior() {
     MIRA_CHECK(registry.register_tool(spec, registration.handler));
 
     const auto started = std::chrono::steady_clock::now();
-    const auto outcome =
-        registry.execute(proposal_for(spec, parse_json(R"json({"duration_ms": 60})json").value()),
-                         plain_context());
+    const auto outcome = registry.execute(
+        proposal_for(spec, parse_json(R"json({"duration_ms": 60})json").value()), plain_context());
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started);
     MIRA_CHECK(outcome && !outcome.value().failed);
@@ -197,17 +195,17 @@ int wait_tool_behavior() {
     MIRA_CHECK(elapsed.count() >= 50);
 
     // Out-of-range arguments are model-attributable failures, not dispatches.
-    const auto over =
-        registry.execute(proposal_for(spec, parse_json(R"json({"duration_ms": 99999})json").value()),
-                         plain_context());
+    const auto over = registry.execute(
+        proposal_for(spec, parse_json(R"json({"duration_ms": 99999})json").value()),
+        plain_context());
     MIRA_CHECK(over && over.value().failed);
 
     // Cancellation propagates as a Result error for the loop to settle on.
     OperationContext cancelled_context = plain_context();
     cancelled_context.cancellation_requested = [] { return true; };
-    const auto cancelled = registry.execute(
-        proposal_for(spec, parse_json(R"json({"duration_ms": 5000})json").value()),
-        cancelled_context);
+    const auto cancelled =
+        registry.execute(proposal_for(spec, parse_json(R"json({"duration_ms": 5000})json").value()),
+                         cancelled_context);
     MIRA_CHECK(!cancelled);
     MIRA_CHECK(cancelled.error().code == ErrorCode::Cancelled);
     return 0;
@@ -238,13 +236,12 @@ int conversation_projection() {
     const auto message = conversation_event(
         session, "UserMessageInjected",
         JsonValue::Object{{"text", "use DingTalk instead"}, {"bytes", std::int64_t{21}}});
-    const auto unrelated = conversation_event(session, "ActionDispatched",
-                                               JsonValue::Object{{"action", "tap"}});
-    const auto settled =
-        conversation_event(session, "LoopSettled",
-                           JsonValue::Object{{"outcome", "Completed"},
-                                             {"steps", std::int64_t{2}},
-                                             {"recoveries", std::int64_t{0}}});
+    const auto unrelated =
+        conversation_event(session, "ActionDispatched", JsonValue::Object{{"action", "tap"}});
+    const auto settled = conversation_event(session, "LoopSettled",
+                                            JsonValue::Object{{"outcome", "Completed"},
+                                                              {"steps", std::int64_t{2}},
+                                                              {"recoveries", std::int64_t{0}}});
     MIRA_CHECK(store.append(message).has_value());
     MIRA_CHECK(store.append(unrelated).has_value());
     MIRA_CHECK(store.append(settled).has_value());

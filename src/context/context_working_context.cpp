@@ -28,8 +28,7 @@ namespace {
 
 [[nodiscard]] std::int64_t monotonic_nanos(const Timestamp &timestamp) {
     return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            timestamp.monotonic.time_since_epoch())
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp.monotonic.time_since_epoch())
             .count());
 }
 
@@ -115,8 +114,8 @@ namespace {
     return item;
 }
 
-[[nodiscard]] Result<std::vector<WorkingContextItem>>
-items_from_json(const JsonValue &json, std::string_view section) {
+[[nodiscard]] Result<std::vector<WorkingContextItem>> items_from_json(const JsonValue &json,
+                                                                      std::string_view section) {
     std::vector<WorkingContextItem> items;
     const auto *array = json.as_array();
     if (array == nullptr) {
@@ -135,8 +134,8 @@ items_from_json(const JsonValue &json, std::string_view section) {
     return items;
 }
 
-[[nodiscard]] JsonValue snapshot_id_list_to_json(
-    const std::vector<ConversationCheckpointId> &checkpoints) {
+[[nodiscard]] JsonValue
+snapshot_id_list_to_json(const std::vector<ConversationCheckpointId> &checkpoints) {
     JsonValue::Array array;
     for (const auto &checkpoint : checkpoints) {
         array.emplace_back(checkpoint.to_string());
@@ -162,8 +161,7 @@ Result<void> WorkingContextMergeOptions::validate() const {
                                      "item bound per section is out of range");
     }
     if (max_item_chars < 16 || max_item_chars > 8 * 1024) {
-        return working_context_error(ErrorCode::InvalidArgument,
-                                     "item byte bound is out of range");
+        return working_context_error(ErrorCode::InvalidArgument, "item byte bound is out of range");
     }
     if (max_source_events == 0 || max_source_events > 4'096) {
         return working_context_error(ErrorCode::InvalidArgument,
@@ -259,9 +257,10 @@ Result<void> WorkingContextSnapshot::validate() const {
 
 Hash WorkingContextSnapshot::state_digest() const {
     JsonValue::Object object;
-    object.emplace_back("schema_version",
-                        JsonValue::Object{{"major", static_cast<std::int64_t>(schema_version.major)},
-                                          {"minor", static_cast<std::int64_t>(schema_version.minor)}});
+    object.emplace_back(
+        "schema_version",
+        JsonValue::Object{{"major", static_cast<std::int64_t>(schema_version.major)},
+                          {"minor", static_cast<std::int64_t>(schema_version.minor)}});
     object.emplace_back("session_id", session_id.to_string());
     object.emplace_back("task_id", task_id.to_string());
     object.emplace_back("task_epoch", static_cast<std::int64_t>(task_epoch));
@@ -291,11 +290,11 @@ JsonValue working_context_to_json(const WorkingContextSnapshot &snapshot) {
     object.emplace_back("session_id", snapshot.session_id.to_string());
     object.emplace_back("task_id", snapshot.task_id.to_string());
     object.emplace_back("task_epoch", static_cast<std::int64_t>(snapshot.task_epoch));
-    object.emplace_back("environment_epoch",
-                        static_cast<std::int64_t>(snapshot.environment_epoch));
+    object.emplace_back("environment_epoch", static_cast<std::int64_t>(snapshot.environment_epoch));
     object.emplace_back("through_event_sequence",
                         static_cast<std::int64_t>(snapshot.through_event_sequence));
-    object.emplace_back("source_checkpoints", snapshot_id_list_to_json(snapshot.source_checkpoints));
+    object.emplace_back("source_checkpoints",
+                        snapshot_id_list_to_json(snapshot.source_checkpoints));
     object.emplace_back("created_at", wall_nanos(snapshot.created_at));
     object.emplace_back("created_at_monotonic", monotonic_nanos(snapshot.created_at));
     object.emplace_back("generated_by", snapshot.generated_by.to_string());
@@ -324,9 +323,8 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
             const auto major_value = major->as_integer();
             const auto minor_value = minor->as_integer();
             if (major_value && minor_value) {
-                snapshot.schema_version = SchemaVersion{
-                    static_cast<std::uint16_t>(*major_value),
-                    static_cast<std::uint16_t>(*minor_value)};
+                snapshot.schema_version = SchemaVersion{static_cast<std::uint16_t>(*major_value),
+                                                        static_cast<std::uint16_t>(*minor_value)};
             }
         }
     }
@@ -358,8 +356,8 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
         !result) {
         return result.error();
     }
-    if (const auto result =
-            parse_id_field("task_id", snapshot.task_id, "working context snapshot task is malformed");
+    if (const auto result = parse_id_field("task_id", snapshot.task_id,
+                                           "working context snapshot task is malformed");
         !result) {
         return result.error();
     }
@@ -403,9 +401,9 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
         !result) {
         return result.error();
     }
-    if (const auto result = parse_uint_field("through_event_sequence",
-                                             snapshot.through_event_sequence,
-                                             "working context snapshot watermark is malformed");
+    if (const auto result =
+            parse_uint_field("through_event_sequence", snapshot.through_event_sequence,
+                             "working context snapshot watermark is malformed");
         !result) {
         return result.error();
     }
@@ -630,8 +628,7 @@ class InMemoryWorkingContextStore::Impl final {
         auto &ring = snapshots_[snapshot.session_id];
         if (!ring.empty()) {
             const auto &latest = ring.back();
-            if (latest.task_id == snapshot.task_id &&
-                latest.task_epoch == snapshot.task_epoch &&
+            if (latest.task_id == snapshot.task_id && latest.task_epoch == snapshot.task_epoch &&
                 latest.environment_epoch == snapshot.environment_epoch &&
                 snapshot.through_event_sequence < latest.through_event_sequence) {
                 return working_context_error(ErrorCode::InvalidState,
@@ -719,8 +716,8 @@ Result<std::size_t> InMemoryWorkingContextStore::count(SessionId session) const 
     return impl_->count(session);
 }
 
-Result<std::size_t>
-InMemoryWorkingContextStore::erase_session(SessionId session, std::string reason) {
+Result<std::size_t> InMemoryWorkingContextStore::erase_session(SessionId session,
+                                                               std::string reason) {
     return impl_->erase_session(session, reason); // reason is audit metadata only
 }
 
@@ -754,9 +751,9 @@ namespace {
 
 } // namespace
 
-WorkingContextCommitOutcome
-commit_working_context(IWorkingContextStore &store, const WorkingContextSnapshot &candidate,
-                       const WorkingContextCommitState &live) {
+WorkingContextCommitOutcome commit_working_context(IWorkingContextStore &store,
+                                                   const WorkingContextSnapshot &candidate,
+                                                   const WorkingContextCommitState &live) {
     if (const auto valid = candidate.validate(); !valid) {
         return discard(WorkingContextCommitDisposition::DiscardedStale, "invalid-candidate");
     }
@@ -789,8 +786,7 @@ commit_working_context(IWorkingContextStore &store, const WorkingContextSnapshot
     }
     if (stored.value().has_value()) {
         const auto &existing = *stored.value();
-        if (existing.task_id == candidate.task_id &&
-            existing.task_epoch == candidate.task_epoch &&
+        if (existing.task_id == candidate.task_id && existing.task_epoch == candidate.task_epoch &&
             existing.environment_epoch == candidate.environment_epoch) {
             if (candidate.through_event_sequence < existing.through_event_sequence) {
                 return discard(WorkingContextCommitDisposition::DiscardedStale, "stale-watermark");

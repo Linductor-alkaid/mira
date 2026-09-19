@@ -58,8 +58,21 @@ using namespace mira;
     asset.session = session;
     asset.through_event_sequence = sequence;
     const Id128::Bytes origin_bytes{static_cast<std::uint8_t>(sequence),
-                                    static_cast<std::uint8_t>(sequence >> 8U), 0, 0,
-                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+                                    static_cast<std::uint8_t>(sequence >> 8U),
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0};
     asset.source_events = {EventId{Id128{origin_bytes}}};
     return asset;
 }
@@ -83,8 +96,8 @@ int rerank_is_deterministic() {
     for (std::size_t index = 0; index < first.value().size(); ++index) {
         MIRA_CHECK(first.value()[index].candidate.asset_id ==
                    second.value()[index].candidate.asset_id);
-        MIRA_CHECK(std::fabs(first.value()[index].fused_score -
-                             second.value()[index].fused_score) < 1e-15);
+        MIRA_CHECK(std::fabs(first.value()[index].fused_score - second.value()[index].fused_score) <
+                   1e-15);
     }
     // Candidates sharing all query tokens must outrank partial overlaps,
     // regardless of their retrieval score ordering above (0.9 vs 0.6).
@@ -235,16 +248,16 @@ int retrieval_to_rerank_never_grows_or_rewrites() {
     for (std::size_t noise = 0; noise < 6; ++noise) {
         const auto id = context_asset_id_from_seed("mira.conversation.segment|rerank|n|" +
                                                    std::to_string(noise));
-        MIRA_CHECK(index
-                       .upsert_asset(conversation_asset_with(
-                           id, session, "user: unrelated noise " + std::to_string(noise), 2 + noise))
-                       .has_value());
+        MIRA_CHECK(
+            index
+                .upsert_asset(conversation_asset_with(
+                    id, session, "user: unrelated noise " + std::to_string(noise), 2 + noise))
+                .has_value());
     }
     const auto foreign = context_asset_id_from_seed("mira.conversation.segment|rerank|f|1");
     MIRA_CHECK(index
-                   .upsert_asset(
-                       conversation_asset_with(foreign, stranger,
-                                               "user: deadline overrun recovery plan details", 9))
+                   .upsert_asset(conversation_asset_with(
+                       foreign, stranger, "user: deadline overrun recovery plan details", 9))
                    .has_value());
 
     const ContextQuery query = query_for(session, "deadline overrun recovery");

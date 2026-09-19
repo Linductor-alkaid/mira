@@ -41,9 +41,8 @@ class FakeLearningMemory final : public IMemory {
             if (!scope_ok || record.status != MemoryStatus::Active) {
                 continue;
             }
-            if (query.kinds.has_value() &&
-                std::find(query.kinds->begin(), query.kinds->end(), record.kind) ==
-                    query.kinds->end()) {
+            if (query.kinds.has_value() && std::find(query.kinds->begin(), query.kinds->end(),
+                                                     record.kind) == query.kinds->end()) {
                 continue;
             }
             const bool terms_ok = std::all_of(
@@ -157,7 +156,8 @@ class ScriptedTool final {
             "type": "object",
             "properties": {"payload": {"type": "string"}},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                             .value()};
         registration.spec.has_side_effects = false;
         registration.handler = [this](const JsonValue &,
                                       const OperationContext &) -> Result<JsonValue> {

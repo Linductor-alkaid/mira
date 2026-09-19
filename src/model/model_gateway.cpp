@@ -1,5 +1,5 @@
-#include <mira/model_gateway.hpp>
 #include <mira/model_digest.hpp>
+#include <mira/model_gateway.hpp>
 
 #include <executor/executor.hpp>
 
@@ -57,9 +57,10 @@ void ModelGateway::register_provider(std::shared_ptr<IModelProvider> provider) {
     if (provider == nullptr) {
         return;
     }
-    const auto found = std::find_if(
-        providers_.begin(), providers_.end(),
-        [&](const auto &candidate) { return candidate->profile().id == provider->profile().id; });
+    const auto found =
+        std::find_if(providers_.begin(), providers_.end(), [&](const auto &candidate) {
+            return candidate->profile().id == provider->profile().id;
+        });
     if (found != providers_.end()) {
         *found = std::move(provider);
         return;
@@ -115,8 +116,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
     }
     if (admission_ != nullptr && !admission_->admit(request.task_id, request.task_epoch)) {
         return make_model_error(ModelDomainCode::ModelCancelled,
-                                "request task epoch is not admitted", false,
-                                request.operation_id);
+                                "request task epoch is not admitted", false, request.operation_id);
     }
 
     RouteQuery query;
@@ -147,9 +147,10 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         if (!profile_mismatches(*profile, query).empty()) {
             continue;
         }
-        const auto provider = std::find_if(
-            providers_.begin(), providers_.end(),
-            [&](const auto &candidate) { return candidate->profile().id == profile->id; });
+        const auto provider =
+            std::find_if(providers_.begin(), providers_.end(), [&](const auto &candidate) {
+                return candidate->profile().id == profile->id;
+            });
         if (provider != providers_.end()) {
             candidates.push_back(*provider);
         }
@@ -176,8 +177,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         std::chrono::system_clock::now());
     if (priced.has_value()) {
         estimate.cost_micros = (estimate.input_tokens * priced->input_micros_per_mtok +
-                                estimate.output_tokens * priced->output_micros_per_mtok +
-                                999'999) /
+                                estimate.output_tokens * priced->output_micros_per_mtok + 999'999) /
                                1'000'000;
         estimate.currency = priced->currency;
     } else if (config_.require_known_price) {
@@ -192,21 +192,19 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
     }
 
     emit(request, "ModelRequestPrepared",
-         JsonValue::Object{{"profile_digest", selected->profile_digest().to_string()},
-                           {"estimated_input_tokens",
-                            static_cast<std::int64_t>(estimate.input_tokens)},
-                           {"estimated_output_tokens",
-                            static_cast<std::int64_t>(estimate.output_tokens)},
-                           {"priced", JsonValue(priced.has_value())},
-                           {"candidate_profiles",
-                            static_cast<std::int64_t>(candidates.size())}},
+         JsonValue::Object{
+             {"profile_digest", selected->profile_digest().to_string()},
+             {"estimated_input_tokens", static_cast<std::int64_t>(estimate.input_tokens)},
+             {"estimated_output_tokens", static_cast<std::int64_t>(estimate.output_tokens)},
+             {"priced", JsonValue(priced.has_value())},
+             {"candidate_profiles", static_cast<std::int64_t>(candidates.size())}},
          EventClass::Diagnostic);
 
     ProviderSupervisor supervisor;
     const auto attempt_started = std::chrono::steady_clock::now();
-    Error last_failure = make_model_error(ModelDomainCode::CapabilityMismatch,
-                                          "no candidate profile executed", false,
-                                          request.operation_id);
+    Error last_failure =
+        make_model_error(ModelDomainCode::CapabilityMismatch, "no candidate profile executed",
+                         false, request.operation_id);
     std::uint32_t total_attempts = 0;
 
     for (std::size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index) {
@@ -217,9 +215,9 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             circuit = ProviderCircuit(config_.circuit_config);
         }
         if (!circuit.admits_requests()) {
-            last_failure = make_model_error(ModelDomainCode::ProviderOverloaded,
-                                            "provider circuit is open", false,
-                                            request.operation_id);
+            last_failure =
+                make_model_error(ModelDomainCode::ProviderOverloaded, "provider circuit is open",
+                                 false, request.operation_id);
             continue; // Open circuits fall through to the next candidate.
         }
 
@@ -231,136 +229,132 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         outcome.reservation = reservation.value();
 
         for (std::uint32_t attempt = 1;; ++attempt) {
-        outcome.attempts = ++total_attempts;
-        outcome.attempts = attempt;
-        ModelRequest attempt_request = request;
-        attempt_request.request_id = ModelRequestId::generate();
+            outcome.attempts = ++total_attempts;
+            outcome.attempts = attempt;
+            ModelRequest attempt_request = request;
+            attempt_request.request_id = ModelRequestId::generate();
 
-        ProviderInferOptions provider_options;
-        provider_options.stream = options.stream;
-        provider_options.capture_raw_response = options.capture_raw_response;
-        auto response = provider->infer(attempt_request, context, provider_options);
-        if (response) {
-            outcome.response = std::move(response).value();
-            outcome.sse_stats = provider->last_sse_stats();
-            circuit.record_success();
+            ProviderInferOptions provider_options;
+            provider_options.stream = options.stream;
+            provider_options.capture_raw_response = options.capture_raw_response;
+            auto response = provider->infer(attempt_request, context, provider_options);
+            if (response) {
+                outcome.response = std::move(response).value();
+                outcome.sse_stats = provider->last_sse_stats();
+                circuit.record_success();
+                outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
+
+                auto settlement = ledger_.reconcile(
+                    request.task_id, request.budget, outcome.response.usage,
+                    outcome.response.resolved_model.value_or(selected->model_selector));
+                if (settlement) {
+                    outcome.settlement = std::move(settlement).value();
+                }
+
+                outcome.parse = parse_decision(attempt_request, outcome.response);
+                if (outcome.parse.outcome == DecisionParseOutcome::ToolProposals) {
+                    auto batch = resolve_tool_calls(attempt_request, outcome.response);
+                    if (!batch) {
+                        outcome.parse.outcome = DecisionParseOutcome::Ambiguous;
+                        outcome.parse.safe_summary = batch.error().safe_message;
+                    } else {
+                        outcome.tool_proposals = std::move(batch).value();
+                    }
+                }
+                if (admission_ != nullptr &&
+                    !admission_->admit(request.task_id, request.task_epoch)) {
+                    // The response settles as a late diagnostic; no decision or
+                    // action follows from it.
+                    outcome.admitted = false;
+                    outcome.rejection_reason = "task epoch or lifecycle rejected the completion";
+                }
+                emit(request, "ModelResponseReceived",
+                     JsonValue::Object{
+                         {"attempts", static_cast<std::int64_t>(attempt)},
+                         {"admitted", outcome.admitted},
+                         {"parse_outcome", static_cast<std::int64_t>(
+                                               static_cast<std::uint8_t>(outcome.parse.outcome))},
+                         {"settlement_quality", static_cast<std::int64_t>(static_cast<std::uint8_t>(
+                                                    outcome.settlement.quality))}},
+                     EventClass::State);
+                return outcome;
+            }
+
+            auto failure = response.error();
+            circuit.record_failure();
             outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
 
-            auto settlement = ledger_.reconcile(
-                request.task_id, request.budget, outcome.response.usage,
-                outcome.response.resolved_model.value_or(selected->model_selector));
-            if (settlement) {
-                outcome.settlement = std::move(settlement).value();
-            }
+            emit(request, "ModelAttemptFailed",
+                 JsonValue::Object{{"code", domain_code_text(failure)},
+                                   {"stage", std::string(classify_provider_stage(
+                                                             provider->last_trace(), failure) ==
+                                                                 RequestStage::PreWriteFailure
+                                                             ? "pre-write"
+                                                             : "post-write")},
+                                   {"attempt", static_cast<std::int64_t>(attempt)}},
+                 EventClass::Diagnostic);
 
-            outcome.parse = parse_decision(attempt_request, outcome.response);
-            if (outcome.parse.outcome == DecisionParseOutcome::ToolProposals) {
-                auto batch = resolve_tool_calls(attempt_request, outcome.response);
-                if (!batch) {
-                    outcome.parse.outcome = DecisionParseOutcome::Ambiguous;
-                    outcome.parse.safe_summary = batch.error().safe_message;
-                } else {
-                    outcome.tool_proposals = std::move(batch).value();
+            RetryBudget budget = config_.retry_budget;
+            budget.attempts_used = attempt;
+            budget.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - attempt_started);
+            const auto decision = supervisor.evaluate(
+                failure, classify_provider_stage(provider->last_trace(), failure),
+                provider->last_retry_after_hint(), budget, circuit);
+            if (decision.action == RetryAction::GiveUp) {
+                // Bounded provider fallback: only retryable, non-ambiguous
+                // failures may switch profiles, and only while candidates and
+                // the retry time budget remain.
+                const bool ambiguous =
+                    failure.domain == "mira.model" &&
+                    failure.domain_code ==
+                        static_cast<std::int32_t>(ModelDomainCode::AmbiguousCompletion);
+                const bool fallback_eligible =
+                    failure.retryable && !ambiguous && failure.code != ErrorCode::Cancelled &&
+                    candidate_index + 1 < candidates.size() &&
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - attempt_started) <
+                        config_.retry_budget.total_budget;
+                last_failure = failure;
+                if (fallback_eligible) {
+                    emit(request, "ModelProfileFallback",
+                         JsonValue::Object{{"failed_profile", profile.id.to_string()},
+                                           {"code", domain_code_text(failure)}},
+                         EventClass::Diagnostic);
+                    break; // Try the next candidate profile.
+                }
+                // Reservations for calls that never completed are released.
+                // Ambiguous completions may still have been billed, so only the
+                // cost part of the reservation stays held for audit.
+                BudgetReservation to_release = reservation.value();
+                if (ambiguous) {
+                    // Keep only the cost part held; tokens and request count are
+                    // released so later admissions are not blocked.
+                    to_release.cost_micros = 0;
+                }
+                (void)ledger_.release(request.task_id, to_release);
+                // The original stable error is returned untouched; the retry
+                // context is already recorded as an event.
+                return failure;
+            }
+            if (decision.action == RetryAction::RetryAfter && decision.delay.count() > 0) {
+                // Retry pacing runs through an Executor timer so shutdown and
+                // cancellation can interrupt the wait.
+                auto sleeper = executor_.submit_delayed_with_handle(
+                    static_cast<std::int64_t>(decision.delay.count()), [] {});
+                if (sleeper.future.valid()) {
+                    try {
+                        sleeper.future.get();
+                    } catch (...) {
+                        // Timer cancellation ends the wait; the loop re-checks.
+                    }
+                }
+                if (context.cancelled()) {
+                    return make_model_error(ModelDomainCode::ModelCancelled,
+                                            "model call was cancelled during retry backoff", false,
+                                            request.operation_id);
                 }
             }
-            if (admission_ != nullptr &&
-                !admission_->admit(request.task_id, request.task_epoch)) {
-                // The response settles as a late diagnostic; no decision or
-                // action follows from it.
-                outcome.admitted = false;
-                outcome.rejection_reason = "task epoch or lifecycle rejected the completion";
-            }
-            emit(request, "ModelResponseReceived",
-                 JsonValue::Object{{"attempts", static_cast<std::int64_t>(attempt)},
-                                   {"admitted", outcome.admitted},
-                                   {"parse_outcome",
-                                    static_cast<std::int64_t>(
-                                        static_cast<std::uint8_t>(outcome.parse.outcome))},
-                                   {"settlement_quality",
-                                    static_cast<std::int64_t>(
-                                        static_cast<std::uint8_t>(outcome.settlement.quality))}},
-                 EventClass::State);
-            return outcome;
-        }
-
-        auto failure = response.error();
-        circuit.record_failure();
-        outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
-
-        emit(request, "ModelAttemptFailed",
-             JsonValue::Object{{"code", domain_code_text(failure)},
-                               {"stage",
-                                std::string(classify_provider_stage(provider->last_trace(),
-                                                                    failure) ==
-                                                RequestStage::PreWriteFailure
-                                                    ? "pre-write"
-                                                    : "post-write")},
-                               {"attempt", static_cast<std::int64_t>(attempt)}},
-             EventClass::Diagnostic);
-
-        RetryBudget budget = config_.retry_budget;
-        budget.attempts_used = attempt;
-        budget.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - attempt_started);
-        const auto decision = supervisor.evaluate(failure,
-                                                  classify_provider_stage(
-                                                      provider->last_trace(), failure),
-                                                  provider->last_retry_after_hint(), budget,
-                                                  circuit);
-        if (decision.action == RetryAction::GiveUp) {
-            // Bounded provider fallback: only retryable, non-ambiguous
-            // failures may switch profiles, and only while candidates and
-            // the retry time budget remain.
-            const bool ambiguous = failure.domain == "mira.model" &&
-                                   failure.domain_code ==
-                                       static_cast<std::int32_t>(
-                                           ModelDomainCode::AmbiguousCompletion);
-            const bool fallback_eligible =
-                failure.retryable && !ambiguous && failure.code != ErrorCode::Cancelled &&
-                candidate_index + 1 < candidates.size() &&
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - attempt_started) <
-                    config_.retry_budget.total_budget;
-            last_failure = failure;
-            if (fallback_eligible) {
-                emit(request, "ModelProfileFallback",
-                     JsonValue::Object{{"failed_profile", profile.id.to_string()},
-                                       {"code", domain_code_text(failure)}},
-                     EventClass::Diagnostic);
-                break; // Try the next candidate profile.
-            }
-            // Reservations for calls that never completed are released.
-            // Ambiguous completions may still have been billed, so only the
-            // cost part of the reservation stays held for audit.
-            BudgetReservation to_release = reservation.value();
-            if (ambiguous) {
-                // Keep only the cost part held; tokens and request count are
-                // released so later admissions are not blocked.
-                to_release.cost_micros = 0;
-            }
-            (void)ledger_.release(request.task_id, to_release);
-            // The original stable error is returned untouched; the retry
-            // context is already recorded as an event.
-            return failure;
-        }
-        if (decision.action == RetryAction::RetryAfter && decision.delay.count() > 0) {
-            // Retry pacing runs through an Executor timer so shutdown and
-            // cancellation can interrupt the wait.
-            auto sleeper = executor_.submit_delayed_with_handle(
-                static_cast<std::int64_t>(decision.delay.count()), [] {});
-            if (sleeper.future.valid()) {
-                try {
-                    sleeper.future.get();
-                } catch (...) {
-                    // Timer cancellation ends the wait; the loop re-checks.
-                }
-            }
-            if (context.cancelled()) {
-                return make_model_error(ModelDomainCode::ModelCancelled,
-                                        "model call was cancelled during retry backoff", false,
-                                        request.operation_id);
-            }
-        }
         }
     }
     return last_failure;

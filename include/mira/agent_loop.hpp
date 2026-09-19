@@ -87,8 +87,7 @@ class ILoopVerifier {
 // loop through a scripted provider.
 class ModelDoneVerifier final : public ILoopVerifier {
   public:
-    [[nodiscard]] Verdict verify(const Observation &,
-                                 const DecisionCandidate &decision) override;
+    [[nodiscard]] Verdict verify(const Observation &, const DecisionCandidate &decision) override;
 };
 
 struct AgentLoopSpec final {
@@ -114,8 +113,7 @@ class AgentLoop final {
     AgentLoop(std::shared_ptr<IEnvironment> environment, ModelGateway &gateway,
               AgentLoopConfig config = AgentLoopConfig{});
 
-    void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime,
-                         SessionId session);
+    void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
 
     // Queues one user message for injection at the next step boundary.
@@ -124,14 +122,12 @@ class AgentLoop final {
     // their own redaction policy before enqueueing (DEC-016).
     [[nodiscard]] Result<void> enqueue_user_message(std::string message);
 
-    [[nodiscard]] Result<AgentLoopResult> run(const AgentLoopSpec &spec,
-                                              const OperationContext &context,
-                                              ILoopVerifier &verifier);
+    [[nodiscard]] Result<AgentLoopResult>
+    run(const AgentLoopSpec &spec, const OperationContext &context, ILoopVerifier &verifier);
 
   private:
-    [[nodiscard]] Result<Observation> observe_once(const AgentLoopSpec &spec,
-                                                   const OperationContext &context,
-                                                   ObservationMode mode);
+    [[nodiscard]] Result<Observation>
+    observe_once(const AgentLoopSpec &spec, const OperationContext &context, ObservationMode mode);
     [[nodiscard]] Result<ModelRequest>
     build_request(const AgentLoopSpec &spec, const Observation &observation,
                   const std::string &extra_instruction,

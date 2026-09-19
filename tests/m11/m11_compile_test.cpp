@@ -28,8 +28,8 @@ int capture_requires_completed_dispatching_run() {
     MIRA_CHECK(!not_driven.has_value());
 
     // A DryRun completion planned only: capturing it must fail closed.
-    const auto planned = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
-                                              WorkflowPolicy::DryRun);
+    const auto planned =
+        workflow->create_run(definition, JsonValue{JsonValue::Object{}}, WorkflowPolicy::DryRun);
     MIRA_CHECK(planned.has_value());
     const auto planned_drive = workflow->execute_run(planned.value().run_id, drive_context());
     MIRA_CHECK(planned_drive.has_value());
@@ -49,12 +49,10 @@ int capture_requires_completed_dispatching_run() {
     MIRA_CHECK(trajectory.has_value());
     MIRA_CHECK(trajectory.value().source_run_id.has_value());
     MIRA_CHECK(*trajectory.value().source_run_id == run_id);
-    MIRA_CHECK(trajectory.value().source_digest ==
-               workflow_definition_digest(definition));
+    MIRA_CHECK(trajectory.value().source_digest == workflow_definition_digest(definition));
     MIRA_CHECK(trajectory.value().steps.size() == 1);
     MIRA_CHECK(trajectory.value().steps.front().kind == WorkflowStepKind::ToolCall);
-    const auto *payload =
-        trajectory.value().steps.front().arguments.find("payload");
+    const auto *payload = trajectory.value().steps.front().arguments.find("payload");
     MIRA_CHECK(payload != nullptr && payload->is_string());
     return 0;
 }
@@ -64,8 +62,7 @@ int capture_reflects_patch_effective_state() {
     CountingTool counter;
     counter.side_effects = true;
     counter.failures_first = 1; // The first dispatch escalates for repair.
-    MIRA_CHECK(register_registration(*fixture.registry_,
-                                     counter.registration("counter", "sent")));
+    MIRA_CHECK(register_registration(*fixture.registry_, counter.registration("counter", "sent")));
     auto workflow = fixture.make_workflow();
     const auto repaired = tool_step(
         "counter", parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"run"}));
@@ -74,9 +71,8 @@ int capture_reflects_patch_effective_state() {
     // WaitingAgent is a patch boundary (DEC-024 §1 agent-repair channel):
     // the agent repairs the arguments, resumes, and the run completes with
     // the patched effective state.
-    const auto created =
-        workflow->create_run(definition, JsonValue{JsonValue::Object{}},
-                             WorkflowPolicy::Recoverable);
+    const auto created = workflow->create_run(definition, JsonValue{JsonValue::Object{}},
+                                              WorkflowPolicy::Recoverable);
     MIRA_CHECK(created.has_value());
     const auto waiting = workflow->execute_run(created.value().run_id, drive_context());
     MIRA_CHECK(waiting.has_value());
@@ -84,10 +80,10 @@ int capture_reflects_patch_effective_state() {
 
     const auto patched = workflow->patch_run(
         created.value().run_id, WorkflowPatchId::generate(),
-        {WorkflowPatchEntry{
-            WorkflowPatchTarget::StepArguments, WorkflowPatchOp::Set, repaired.id.to_string(),
-            JsonValue{JsonValue::Object{{"tool", JsonValue{"counter"}},
-                                        {"payload", JsonValue{"patched"}}}}}});
+        {WorkflowPatchEntry{WorkflowPatchTarget::StepArguments, WorkflowPatchOp::Set,
+                            repaired.id.to_string(),
+                            JsonValue{JsonValue::Object{{"tool", JsonValue{"counter"}},
+                                                        {"payload", JsonValue{"patched"}}}}}});
     MIRA_CHECK(patched.has_value());
     const auto resumed = workflow->resume_run(created.value().run_id);
     MIRA_CHECK(resumed.has_value());
@@ -99,8 +95,7 @@ int capture_reflects_patch_effective_state() {
     const auto trajectory = workflow->capture_trajectory(created.value().run_id);
     MIRA_CHECK(trajectory.has_value());
     const auto *payload = trajectory.value().steps.front().arguments.find("payload");
-    MIRA_CHECK(payload != nullptr && payload->is_string() &&
-               *payload->as_string() == "patched");
+    MIRA_CHECK(payload != nullptr && payload->is_string() && *payload->as_string() == "patched");
     const auto *raw = trajectory.value().steps.front().raw_arguments.find("payload");
     MIRA_CHECK(raw != nullptr && raw->is_string() && *raw->as_string() == "payload");
     return 0;
@@ -118,16 +113,14 @@ int compile_bakes_defaults_and_preserves_structure() {
     // The precondition is not satisfied by the run's parameters, so the loop
     // settles as Skipped and the run completes linearly; the structure still
     // travels through capture and compilation.
-    auto loop = control_step(head.id, 4,
-                             parameter_predicate("mode", WorkflowPredicateOp::Eq,
-                                                 JsonValue{"run"}));
+    auto loop = control_step(
+        head.id, 4, parameter_predicate("mode", WorkflowPredicateOp::Eq, JsonValue{"run"}));
     auto definition = compilable_definition({head, first, second, loop}, "m11-flow", true);
     MIRA_CHECK(!definition.parameters.empty());
 
     JsonValue::Object parameters;
     parameters.emplace_back("mode", JsonValue{"fast"});
-    const auto run = run_to_completion(*workflow, definition,
-                                       JsonValue{std::move(parameters)});
+    const auto run = run_to_completion(*workflow, definition, JsonValue{std::move(parameters)});
     MIRA_CHECK(run.has_value());
     const WorkflowRunId run_id = run.value();
     const auto trajectory = workflow->capture_trajectory(run_id);
@@ -160,8 +153,7 @@ int compile_bakes_defaults_and_preserves_structure() {
                control.precondition->signal == "run_parameter:mode");
 
     // Policy set carried over; the compiled draft passes the same validation.
-    MIRA_CHECK(compiled.value().allowed_policies.size() ==
-               definition.allowed_policies.size());
+    MIRA_CHECK(compiled.value().allowed_policies.size() == definition.allowed_policies.size());
     MIRA_CHECK(compiled.value().default_policy == definition.default_policy);
     MIRA_CHECK(validate_workflow_definition(compiled.value()).has_value());
     return 0;
@@ -244,7 +236,7 @@ int host_built_trajectory_compiles_without_source() {
     call.max_attempts = 3;
     JsonValue::Object arguments;
     arguments.emplace_back("tool", JsonValue{"counter"});
-    arguments.emplace_back("payload", JsonValue{"hello"}); // Constant leaf.
+    arguments.emplace_back("payload", JsonValue{"hello"});   // Constant leaf.
     arguments.emplace_back("recipient", JsonValue{"alice"}); // Varying leaf.
     call.arguments = JsonValue{std::move(arguments)};
     call.raw_arguments = call.arguments;

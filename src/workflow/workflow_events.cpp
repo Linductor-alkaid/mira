@@ -40,145 +40,83 @@ constexpr std::size_t kMaxReasonCodeBytes = 128;
 }
 
 constexpr std::string_view kRunStartedKeys[] = {
-        "schema",
-        "run_id",
-        "workflow_id",
-        "ir_digest",
-        "parameters_digest",
-        "policy",
+    "schema", "run_id", "workflow_id", "ir_digest", "parameters_digest", "policy",
 };
 constexpr std::string_view kStepStartedKeys[] = {
-        "schema",
-        "run_id",
-        "step_id",
-        "kind",
-        "attempt",
+    "schema", "run_id", "step_id", "kind", "attempt",
 };
 constexpr std::string_view kStepSettledKeys[] = {
-        "schema",
-        "run_id",
-        "step_id",
-        "disposition",
-        "verification",
-        "safe_summary",
+    "schema", "run_id", "step_id", "disposition", "verification", "safe_summary",
 };
 constexpr std::string_view kRunSettledKeys[] = {
-        "schema",
-        "run_id",
-        "terminal_state",
-        "run_epoch",
-        "safe_summary",
+    "schema", "run_id", "terminal_state", "run_epoch", "safe_summary",
 };
 constexpr std::string_view kPatchProposedKeys[] = {
-        "schema",
-        "patch_id",
-        "run_id",
-        "patch_digest",
-        "target",
-        "reason_code",
+    "schema", "patch_id", "run_id", "patch_digest", "target", "reason_code",
 };
 constexpr std::string_view kPatchAppliedKeys[] = {
-        "schema",
-        "patch_id",
-        "run_id",
-        "run_patch_epoch",
+    "schema",
+    "patch_id",
+    "run_id",
+    "run_patch_epoch",
 };
 constexpr std::string_view kPatchRejectedKeys[] = {
-        "schema",
-        "patch_id",
-        "run_id",
-        "reason_code",
+    "schema",
+    "patch_id",
+    "run_id",
+    "reason_code",
 };
 constexpr std::string_view kPolicySwitchedKeys[] = {
-        "schema",
-        "run_id",
-        "from",
-        "to",
+    "schema",
+    "run_id",
+    "from",
+    "to",
 };
 constexpr std::string_view kDecisionRaisedKeys[] = {
-        "schema",
-        "run_id",
-        "decision_id",
-        "payload_digest",
+    "schema",
+    "run_id",
+    "decision_id",
+    "payload_digest",
 };
 constexpr std::string_view kDecisionResolvedKeys[] = {
-        "schema",
-        "run_id",
-        "decision_id",
-        "resolution",
+    "schema",
+    "run_id",
+    "decision_id",
+    "resolution",
 };
 constexpr std::string_view kPublishProposedKeys[] = {
-        "schema",
-        "workflow_id",
-        "ir_digest",
-        "source_run_id",
+    "schema",
+    "workflow_id",
+    "ir_digest",
+    "source_run_id",
 };
 constexpr std::string_view kPublishAppliedKeys[] = {
-        "schema",
-        "workflow_id",
-        "ir_digest",
-        "evidence",
-        "dry_run_id",
+    "schema", "workflow_id", "ir_digest", "evidence", "dry_run_id",
 };
 constexpr std::string_view kPublishRejectedKeys[] = {
-        "schema",
-        "workflow_id",
-        "ir_digest",
-        "reason_code",
+    "schema",
+    "workflow_id",
+    "ir_digest",
+    "reason_code",
 };
 constexpr std::string_view kNavigationPlannedKeys[] = {
-        "schema",
-        "run_id",
-        "step_id",
-        "from_state",
-        "to_state",
-        "edge_count",
-        "plan_digest",
-        "total_cost",
-        "guards_blocked",
-        "guards_unevaluable",
+    "schema",     "run_id",      "step_id",    "from_state",     "to_state",
+    "edge_count", "plan_digest", "total_cost", "guards_blocked", "guards_unevaluable",
 };
 constexpr std::string_view kNavigationObservedKeys[] = {
-        "schema",
-        "run_id",
-        "step_id",
-        "transition_id",
-        "from_state",
-        "to_state",
-        "success",
-        "confidence",
+    "schema",     "run_id",   "step_id", "transition_id",
+    "from_state", "to_state", "success", "confidence",
 };
 constexpr std::string_view kEpisodeRecordedKeys[] = {
-        "schema",
-        "run_id",
-        "workflow_id",
-        "episode_digest",
-        "outcome",
-        "reason_code",
+    "schema", "run_id", "workflow_id", "episode_digest", "outcome", "reason_code",
 };
 constexpr std::string_view kLessonRecordedKeys[] = {
-        "schema",
-        "run_id",
-        "workflow_id",
-        "lesson_digest",
-        "outcome",
-        "reason_code",
+    "schema", "run_id", "workflow_id", "lesson_digest", "outcome", "reason_code",
 };
 constexpr std::string_view kRecoveryAttemptedKeys[] = {
-        "schema",
-        "run_id",
-        "workflow_id",
-        "ordinal",
-        "task_id",
-        "outcome",
-        "reason_code",
-        "decision_digest",
-        "patch_id",
-        "model_request_id",
-        "lessons_offered",
-        "lessons_stale",
-        "lessons_unparseable",
-        "lessons_kept",
+    "schema",          "run_id",        "workflow_id",         "ordinal",      "task_id",
+    "outcome",         "reason_code",   "decision_digest",     "patch_id",     "model_request_id",
+    "lessons_offered", "lessons_stale", "lessons_unparseable", "lessons_kept",
 };
 
 // App Model identifiers are host contract strings (DEC-027), bounded by the
@@ -193,7 +131,8 @@ constexpr std::size_t kMaxNavigationIdBytes = 8 * 1024;
     return json;
 }
 
-template <typename Id> [[nodiscard]] Result<Id> parse_member_id(const JsonValue &json, const char *key) {
+template <typename Id>
+[[nodiscard]] Result<Id> parse_member_id(const JsonValue &json, const char *key) {
     const auto *text = json.find(key);
     if (text == nullptr || !text->is_string()) {
         return event_error(ErrorCode::InvalidArgument,
@@ -236,8 +175,7 @@ template <typename Id> [[nodiscard]] Result<Id> parse_member_id(const JsonValue 
     return parse_member_name(json, key);
 }
 
-[[nodiscard]] Result<JsonValue> parse_payload(const EventPayload &payload,
-                                              std::string_view type,
+[[nodiscard]] Result<JsonValue> parse_payload(const EventPayload &payload, std::string_view type,
                                               std::string_view schema) {
     if (payload.type != type) {
         return event_error(ErrorCode::InvalidArgument, "event type mismatch");
@@ -253,20 +191,18 @@ template <typename Id> [[nodiscard]] Result<Id> parse_member_id(const JsonValue 
     return json;
 }
 
-[[nodiscard]] std::string digest_text(const Sha256Digest &digest) {
-    return digest.to_string();
-}
+[[nodiscard]] std::string digest_text(const Sha256Digest &digest) { return digest.to_string(); }
 
 } // namespace
 
 bool is_workflow_event_type(std::string_view type) {
     static constexpr std::string_view kTypes[] = {
-        "WorkflowRunStarted",   "WorkflowStepStarted",   "WorkflowStepSettled",
-        "WorkflowRunSettled",   "WorkflowPatchProposed", "WorkflowPatchApplied",
-        "WorkflowPatchRejected", "WorkflowPolicySwitched", "WorkflowDecisionRaised",
-        "WorkflowDecisionResolved", "WorkflowPublishProposed", "WorkflowPublishApplied",
-        "WorkflowPublishRejected", "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
-        "WorkflowEpisodeRecorded", "WorkflowLessonRecorded", "WorkflowRecoveryAttempted",
+        "WorkflowRunStarted",       "WorkflowStepStarted",       "WorkflowStepSettled",
+        "WorkflowRunSettled",       "WorkflowPatchProposed",     "WorkflowPatchApplied",
+        "WorkflowPatchRejected",    "WorkflowPolicySwitched",    "WorkflowDecisionRaised",
+        "WorkflowDecisionResolved", "WorkflowPublishProposed",   "WorkflowPublishApplied",
+        "WorkflowPublishRejected",  "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
+        "WorkflowEpisodeRecorded",  "WorkflowLessonRecorded",    "WorkflowRecoveryAttempted",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -330,8 +266,7 @@ std::string workflow_decision_resolution_name(WorkflowDecisionResolution resolut
     return "unknown";
 }
 
-Result<WorkflowDecisionResolution>
-parse_workflow_decision_resolution(std::string_view name) {
+Result<WorkflowDecisionResolution> parse_workflow_decision_resolution(std::string_view name) {
     for (auto resolution : {WorkflowDecisionResolution::Accept, WorkflowDecisionResolution::Reject,
                             WorkflowDecisionResolution::CancelRun}) {
         if (workflow_decision_resolution_name(resolution) == name) {
@@ -525,8 +460,7 @@ Result<WorkflowStepStartedEvent> parse_workflow_step_started(const EventPayload 
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kStepStartedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kStepStartedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowStepStartedEvent event;
@@ -562,8 +496,7 @@ Result<WorkflowStepSettledEvent> parse_workflow_step_settled(const EventPayload 
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kStepSettledKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kStepSettledKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowStepSettledEvent event;
@@ -610,8 +543,7 @@ Result<WorkflowRunSettledEvent> parse_workflow_run_settled(const EventPayload &p
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kRunSettledKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kRunSettledKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowRunSettledEvent event;
@@ -650,13 +582,11 @@ Result<WorkflowRunSettledEvent> parse_workflow_run_settled(const EventPayload &p
 }
 
 Result<WorkflowPatchProposedEvent> parse_workflow_patch_proposed(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPatchProposed",
-                              "mira.workflow.patch-proposed.v1");
+    auto json = parse_payload(payload, "WorkflowPatchProposed", "mira.workflow.patch-proposed.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kPatchProposedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPatchProposedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPatchProposedEvent event;
@@ -696,14 +626,11 @@ Result<WorkflowPatchProposedEvent> parse_workflow_patch_proposed(const EventPayl
 }
 
 Result<WorkflowPatchAppliedEvent> parse_workflow_patch_applied(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPatchApplied",
-                              "mira.workflow.patch-applied.v1");
+    auto json = parse_payload(payload, "WorkflowPatchApplied", "mira.workflow.patch-applied.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check =
-            check_exact_keys(json.value(), kPatchAppliedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPatchAppliedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPatchAppliedEvent event;
@@ -727,14 +654,11 @@ Result<WorkflowPatchAppliedEvent> parse_workflow_patch_applied(const EventPayloa
 }
 
 Result<WorkflowPatchRejectedEvent> parse_workflow_patch_rejected(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPatchRejected",
-                              "mira.workflow.patch-rejected.v1");
+    auto json = parse_payload(payload, "WorkflowPatchRejected", "mira.workflow.patch-rejected.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check =
-            check_exact_keys(json.value(), kPatchRejectedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPatchRejectedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPatchRejectedEvent event;
@@ -760,13 +684,12 @@ Result<WorkflowPatchRejectedEvent> parse_workflow_patch_rejected(const EventPayl
 }
 
 Result<WorkflowPolicySwitchedEvent> parse_workflow_policy_switched(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPolicySwitched",
-                              "mira.workflow.policy-switched.v1");
+    auto json =
+        parse_payload(payload, "WorkflowPolicySwitched", "mira.workflow.policy-switched.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kPolicySwitchedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPolicySwitchedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPolicySwitchedEvent event;
@@ -797,13 +720,12 @@ Result<WorkflowPolicySwitchedEvent> parse_workflow_policy_switched(const EventPa
 }
 
 Result<WorkflowDecisionRaisedEvent> parse_workflow_decision_raised(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowDecisionRaised",
-                              "mira.workflow.decision-raised.v1");
+    auto json =
+        parse_payload(payload, "WorkflowDecisionRaised", "mira.workflow.decision-raised.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kDecisionRaisedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kDecisionRaisedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowDecisionRaisedEvent event;
@@ -827,13 +749,12 @@ Result<WorkflowDecisionRaisedEvent> parse_workflow_decision_raised(const EventPa
 
 Result<WorkflowDecisionResolvedEvent>
 parse_workflow_decision_resolved(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowDecisionResolved",
-                              "mira.workflow.decision-resolved.v1");
+    auto json =
+        parse_payload(payload, "WorkflowDecisionResolved", "mira.workflow.decision-resolved.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kDecisionResolvedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kDecisionResolvedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowDecisionResolvedEvent event;
@@ -904,13 +825,12 @@ EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event) {
 }
 
 Result<WorkflowPublishProposedEvent> parse_workflow_publish_proposed(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPublishProposed",
-                              "mira.workflow.publish-proposed.v1");
+    auto json =
+        parse_payload(payload, "WorkflowPublishProposed", "mira.workflow.publish-proposed.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kPublishProposedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPublishProposedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPublishProposedEvent event;
@@ -937,13 +857,12 @@ Result<WorkflowPublishProposedEvent> parse_workflow_publish_proposed(const Event
 }
 
 Result<WorkflowPublishAppliedEvent> parse_workflow_publish_applied(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPublishApplied",
-                              "mira.workflow.publish-applied.v1");
+    auto json =
+        parse_payload(payload, "WorkflowPublishApplied", "mira.workflow.publish-applied.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kPublishAppliedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPublishAppliedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPublishAppliedEvent event;
@@ -971,13 +890,12 @@ Result<WorkflowPublishAppliedEvent> parse_workflow_publish_applied(const EventPa
 }
 
 Result<WorkflowPublishRejectedEvent> parse_workflow_publish_rejected(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowPublishRejected",
-                              "mira.workflow.publish-rejected.v1");
+    auto json =
+        parse_payload(payload, "WorkflowPublishRejected", "mira.workflow.publish-rejected.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kPublishRejectedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kPublishRejectedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowPublishRejectedEvent event;
@@ -1015,8 +933,7 @@ EventPayload to_event_payload(const WorkflowNavigationPlannedEvent &event) {
     object.emplace_back("plan_digest", digest_text(event.plan_digest));
     object.emplace_back("total_cost", event.total_cost);
     object.emplace_back("guards_blocked", static_cast<std::int64_t>(event.guards_blocked));
-    object.emplace_back("guards_unevaluable",
-                        static_cast<std::int64_t>(event.guards_unevaluable));
+    object.emplace_back("guards_unevaluable", static_cast<std::int64_t>(event.guards_unevaluable));
     EventPayload payload;
     payload.type = "WorkflowNavigationPlanned";
     payload.data = to_json_string(JsonValue{std::move(object)});
@@ -1073,13 +990,12 @@ namespace {
 
 Result<WorkflowNavigationPlannedEvent>
 parse_workflow_navigation_planned(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowNavigationPlanned",
-                              "mira.workflow.navigation-planned.v1");
+    auto json =
+        parse_payload(payload, "WorkflowNavigationPlanned", "mira.workflow.navigation-planned.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kNavigationPlannedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kNavigationPlannedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowNavigationPlannedEvent event;
@@ -1115,8 +1031,7 @@ parse_workflow_navigation_planned(const EventPayload &payload) {
     event.plan_digest = plan_digest.value();
     const auto *total_cost = json.value().find("total_cost");
     if (total_cost == nullptr || !total_cost->is_number() ||
-        !std::isfinite(total_cost->as_number().value()) ||
-        total_cost->as_number().value() < 0.0) {
+        !std::isfinite(total_cost->as_number().value()) || total_cost->as_number().value() < 0.0) {
         return event_error(ErrorCode::InvalidArgument,
                            "payload member 'total_cost' must be a non-negative number");
     }
@@ -1141,8 +1056,7 @@ parse_workflow_navigation_observed(const EventPayload &payload) {
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kNavigationObservedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kNavigationObservedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowNavigationObservedEvent event;
@@ -1179,8 +1093,8 @@ parse_workflow_navigation_observed(const EventPayload &payload) {
     event.success = *success->as_boolean();
     const auto *confidence = json.value().find("confidence");
     if (confidence == nullptr || !confidence->is_number() ||
-        !std::isfinite(confidence->as_number().value()) ||
-        confidence->as_number().value() < 0.0 || confidence->as_number().value() > 1.0) {
+        !std::isfinite(confidence->as_number().value()) || confidence->as_number().value() < 0.0 ||
+        confidence->as_number().value() > 1.0) {
         return event_error(ErrorCode::InvalidArgument,
                            "payload member 'confidence' must be within [0,1]");
     }
@@ -1195,8 +1109,7 @@ namespace {
 [[nodiscard]] Result<std::string> parse_learning_outcome(const JsonValue &json) {
     const auto *outcome = json.find("outcome");
     if (outcome == nullptr || !outcome->is_string()) {
-        return event_error(ErrorCode::InvalidArgument,
-                           "payload member 'outcome' must be a string");
+        return event_error(ErrorCode::InvalidArgument, "payload member 'outcome' must be a string");
     }
     const auto &text = *outcome->as_string();
     if (text != "recorded" && text != "failed") {
@@ -1233,13 +1146,12 @@ EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event) {
 }
 
 Result<WorkflowEpisodeRecordedEvent> parse_workflow_episode_recorded(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowEpisodeRecorded",
-                              "mira.workflow.episode-recorded.v1");
+    auto json =
+        parse_payload(payload, "WorkflowEpisodeRecorded", "mira.workflow.episode-recorded.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kEpisodeRecordedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kEpisodeRecordedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowEpisodeRecordedEvent event;
@@ -1287,13 +1199,12 @@ EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event) {
 }
 
 Result<WorkflowLessonRecordedEvent> parse_workflow_lesson_recorded(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowLessonRecorded",
-                              "mira.workflow.lesson-recorded.v1");
+    auto json =
+        parse_payload(payload, "WorkflowLessonRecorded", "mira.workflow.lesson-recorded.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kLessonRecordedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kLessonRecordedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowLessonRecordedEvent event;
@@ -1370,14 +1281,14 @@ EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event) {
     object.emplace_back("outcome", workflow_recovery_outcome_name(event.outcome));
     object.emplace_back("reason_code", event.reason_code);
     object.emplace_back("decision_digest", event.decision_digest.has_value()
-                                                ? JsonValue{digest_text(*event.decision_digest)}
-                                                : JsonValue{nullptr});
+                                               ? JsonValue{digest_text(*event.decision_digest)}
+                                               : JsonValue{nullptr});
     object.emplace_back("patch_id", event.patch_id.has_value()
                                         ? JsonValue{event.patch_id->to_string()}
                                         : JsonValue{nullptr});
     object.emplace_back("model_request_id", event.model_request_id.has_value()
-                                                    ? JsonValue{event.model_request_id->to_string()}
-                                                    : JsonValue{nullptr});
+                                                ? JsonValue{event.model_request_id->to_string()}
+                                                : JsonValue{nullptr});
     object.emplace_back("lessons_offered", static_cast<std::int64_t>(event.lessons_offered));
     object.emplace_back("lessons_stale", static_cast<std::int64_t>(event.lessons_stale));
     object.emplace_back("lessons_unparseable",
@@ -1392,13 +1303,12 @@ EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event) {
 
 Result<WorkflowRecoveryAttemptedEvent>
 parse_workflow_recovery_attempted(const EventPayload &payload) {
-    auto json = parse_payload(payload, "WorkflowRecoveryAttempted",
-                              "mira.workflow.recovery-attempted.v1");
+    auto json =
+        parse_payload(payload, "WorkflowRecoveryAttempted", "mira.workflow.recovery-attempted.v1");
     if (!json.has_value()) {
         return json.error();
     }
-    if (auto check = check_exact_keys(json.value(), kRecoveryAttemptedKeys);
-        !check.has_value()) {
+    if (auto check = check_exact_keys(json.value(), kRecoveryAttemptedKeys); !check.has_value()) {
         return check.error();
     }
     WorkflowRecoveryAttemptedEvent event;
@@ -1427,8 +1337,7 @@ parse_workflow_recovery_attempted(const EventPayload &payload) {
     event.task_id = task_id.value();
     const auto *outcome_name = json.value().find("outcome");
     if (outcome_name == nullptr || !outcome_name->is_string()) {
-        return event_error(ErrorCode::InvalidArgument,
-                           "payload member 'outcome' must be a string");
+        return event_error(ErrorCode::InvalidArgument, "payload member 'outcome' must be a string");
     }
     auto outcome = parse_workflow_recovery_outcome(*outcome_name->as_string());
     if (!outcome.has_value()) {
@@ -1481,8 +1390,8 @@ parse_workflow_recovery_attempted(const EventPayload &payload) {
         }
         event.model_request_id = *parsed;
     }
-    for (const auto *counter : {"lessons_offered", "lessons_stale", "lessons_unparseable",
-                                "lessons_kept"}) {
+    for (const auto *counter :
+         {"lessons_offered", "lessons_stale", "lessons_unparseable", "lessons_kept"}) {
         auto value = parse_member_count(json.value(), counter);
         if (!value.has_value()) {
             return value.error();

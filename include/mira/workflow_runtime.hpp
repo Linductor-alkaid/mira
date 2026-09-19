@@ -233,8 +233,7 @@ class WorkflowRuntime final {
     // be cheap and non-blocking. With a context installed, Navigate steps
     // become admissible under dispatching policies; without one the M9
     // navigate-unresolvable admission rejection stays in force.
-    [[nodiscard]] Result<void> set_navigation_context(AppModel model,
-                                                      ScreenStateProvider provider);
+    [[nodiscard]] Result<void> set_navigation_context(AppModel model, ScreenStateProvider provider);
     // Reinstalls the model projection (e.g. a decayed or host-edited
     // document); the screen state provider stays. Same validation rules.
     [[nodiscard]] Result<void> set_app_model(AppModel model);
@@ -291,8 +290,8 @@ class WorkflowRuntime final {
 
     // Bounded wait for the result of an asynchronous drive; returns the
     // stored result for runs already settled or synchronously driven.
-    [[nodiscard]] Result<WorkflowRunResult>
-    wait_run(const WorkflowRunId &run_id, std::chrono::milliseconds timeout);
+    [[nodiscard]] Result<WorkflowRunResult> wait_run(const WorkflowRunId &run_id,
+                                                     std::chrono::milliseconds timeout);
 
     // Run control. pause converges at the next step boundary; resume
     // re-observes and continues from the cursor via a new asynchronous drive
@@ -314,18 +313,18 @@ class WorkflowRuntime final {
     // the recorded pre-application snapshot of one applied patch and submits
     // them as a fresh patch through the same pipeline. No implicit snapshot
     // restore exists.
-    [[nodiscard]] Result<WorkflowPatchOutcome>
-    rollback_run_patch(const WorkflowRunId &run_id, const WorkflowPatchId &patch_id);
+    [[nodiscard]] Result<WorkflowPatchOutcome> rollback_run_patch(const WorkflowRunId &run_id,
+                                                                  const WorkflowPatchId &patch_id);
 
     // Decision points (DEC-024 §5/§6). pending_decision_request returns the
     // current decision of a WaitingUser run; resolve_decision matches on
     // decision_id plus payload digest and settles accept / reject / cancel.
     [[nodiscard]] Result<WorkflowDecisionRequest>
     pending_decision_request(const WorkflowRunId &run_id) const;
-    [[nodiscard]] Result<WorkflowRunView>
-    resolve_decision(const WorkflowRunId &run_id, const WorkflowDecisionId &decision_id,
-                     const Sha256Digest &payload_digest,
-                     WorkflowDecisionResolution resolution);
+    [[nodiscard]] Result<WorkflowRunView> resolve_decision(const WorkflowRunId &run_id,
+                                                           const WorkflowDecisionId &decision_id,
+                                                           const Sha256Digest &payload_digest,
+                                                           WorkflowDecisionResolution resolution);
 
     // Agent continuation context (DEC-023 §3): WaitingAgent runs only.
     [[nodiscard]] Result<WorkflowAgentContinuation>
@@ -336,8 +335,7 @@ class WorkflowRuntime final {
     // completions, non-terminal, failed, cancelled and unknown runs fail
     // closed; a compile-ready draft never comes from a run that did not
     // execute (RULE-10).
-    [[nodiscard]] Result<WorkflowTrajectory>
-    capture_trajectory(const WorkflowRunId &run_id) const;
+    [[nodiscard]] Result<WorkflowTrajectory> capture_trajectory(const WorkflowRunId &run_id) const;
 
     // Stage F recovery-lesson recording (DEC-030 §4). Host-only API (never a
     // model tool, W-04): derives one lesson from a Completed run that
@@ -396,8 +394,8 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<VersionAppendResult>
     append_version_record(const WorkflowDefinition &definition, const Sha256Digest &digest,
                           const std::string &actor, const std::string &reason,
-                          WorkflowValidationResult validation,
-                          std::optional<Sha256Digest> evidence, bool dedupe);
+                          WorkflowValidationResult validation, std::optional<Sha256Digest> evidence,
+                          bool dedupe);
     [[nodiscard]] Result<WorkflowRunView> create_run_locked(const WorkflowDefinition &definition,
                                                             JsonValue parameters,
                                                             std::optional<WorkflowPolicy> policy);
@@ -406,18 +404,16 @@ class WorkflowRuntime final {
     // runtime mutex. Returns nullopt when applied; NoOpTerminal and Rejected
     // carry the corresponding Error. Leaving WaitingUser also drops the
     // record's staged decision details.
-    [[nodiscard]] std::optional<Error> commit_transition(RunRecord &run,
-                                                         WorkflowRunState target);
+    [[nodiscard]] std::optional<Error> commit_transition(RunRecord &run, WorkflowRunState target);
     // Commits the terminal transition, emits WorkflowRunSettled and settles
     // the carrier task through the control plane (tolerating idempotent
     // outcomes). Returns the transition error, if any.
-    [[nodiscard]] std::optional<Error>
-    settle_terminal(RunRecord &run, WorkflowRunState terminal_state,
-                    const std::string &safe_summary);
+    [[nodiscard]] std::optional<Error> settle_terminal(RunRecord &run,
+                                                       WorkflowRunState terminal_state,
+                                                       const std::string &safe_summary);
 
     void emit_run_started(const RunRecord &run);
-    void emit_step_started(const RunRecord &run, const WorkflowStep &step,
-                           std::uint32_t attempt);
+    void emit_step_started(const RunRecord &run, const WorkflowStep &step, std::uint32_t attempt);
     void emit_step_settled(const RunRecord &run, const WorkflowStep &step,
                            const WorkflowStepRecord &record);
     // Emits WorkflowRunSettled and stores the appended event id on the run
@@ -506,8 +502,8 @@ class WorkflowRuntime final {
     [[nodiscard]] bool step_tool_has_side_effects(const RunRecord &run, std::size_t index) const;
     [[nodiscard]] Result<void> dispatch_step(RunRecord &run, const WorkflowStep &step,
                                              std::size_t index, const OperationContext &parent,
-                                             const DriveFlags &flags,
-                                             WorkflowStepRecord &record, bool &cancelled);
+                                             const DriveFlags &flags, WorkflowStepRecord &record,
+                                             bool &cancelled);
     // One BuiltIn-boundary invocation shared by step tools and navigation
     // edge actions (stage E): bounded submit_auto dispatch with the common
     // cancellation probe, deadline and error mapping.
@@ -523,10 +519,9 @@ class WorkflowRuntime final {
     // validation and either queues (running) or applies immediately;
     // apply_patch performs the atomic effective-state transition, audit
     // events and epoch advance. Both fail closed with deterministic codes.
-    [[nodiscard]] Result<WorkflowPatchOutcome> submit_patch(RunRecord &run,
-                                                            const WorkflowPatchId &patch_id,
-                                                            const std::vector<WorkflowPatchEntry> &entries,
-                                                            bool decision_confirmed);
+    [[nodiscard]] Result<WorkflowPatchOutcome>
+    submit_patch(RunRecord &run, const WorkflowPatchId &patch_id,
+                 const std::vector<WorkflowPatchEntry> &entries, bool decision_confirmed);
     [[nodiscard]] std::optional<Error> apply_patch(RunRecord &run, const WorkflowPatchId &patch_id,
                                                    const Sha256Digest &digest,
                                                    const std::vector<WorkflowPatchEntry> &entries,

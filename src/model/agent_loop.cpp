@@ -33,9 +33,7 @@ namespace {
     return *field->as_string();
 }
 
-[[nodiscard]] bool canonical_range(double value) {
-    return value >= 0.0 && value <= 1.0;
-}
+[[nodiscard]] bool canonical_range(double value) { return value >= 0.0 && value <= 1.0; }
 
 [[nodiscard]] Error loop_error(ErrorCode code, std::string message) {
     Error error;
@@ -231,8 +229,7 @@ void AgentLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summ
 }
 
 Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
-                                            const OperationContext &context,
-                                            ObservationMode mode) {
+                                            const OperationContext &context, ObservationMode mode) {
     ObservationRequest request;
     request.mode = mode;
     if (mode == ObservationMode::Full) {
@@ -251,11 +248,11 @@ Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
     return environment_->observe(request, observe_context);
 }
 
-Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
-                                              const Observation &observation,
-                                              const std::string &extra_instruction,
-                                              const std::vector<std::string> &user_instructions,
-                                              const std::vector<ToolExecutionRecord> &tool_results) {
+Result<ModelRequest>
+AgentLoop::build_request(const AgentLoopSpec &spec, const Observation &observation,
+                         const std::string &extra_instruction,
+                         const std::vector<std::string> &user_instructions,
+                         const std::vector<ToolExecutionRecord> &tool_results) {
     const auto schema = agent_decision_schema();
     ModelRequest request;
     request.contract_version = SchemaVersion{1, 0};
@@ -276,16 +273,14 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
     system_item.provenance.source = "mira.agent-loop.system.v1";
     system_item.authority = Sensitivity::Internal;
     TextPart system_text;
-    system_text.text =
-        "You are Mira, a device agent. Decide exactly one discrete action per "
-        "turn as JSON matching the decision schema. Use canonical coordinates in "
-        "[0,1]. Return action \"done\" only when the goal is achieved or \"fail\" "
-        "when it cannot be achieved.";
+    system_text.text = "You are Mira, a device agent. Decide exactly one discrete action per "
+                       "turn as JSON matching the decision schema. Use canonical coordinates in "
+                       "[0,1]. Return action \"done\" only when the goal is achieved or \"fail\" "
+                       "when it cannot be achieved.";
     if (!request.tools.empty()) {
-        system_text.text +=
-            " You may also call the exposed tools when a whole bounded operation "
-            "fits a tool better than a single input event; tool results arrive "
-            "on your next turn.";
+        system_text.text += " You may also call the exposed tools when a whole bounded operation "
+                            "fits a tool better than a single input event; tool results arrive "
+                            "on your next turn.";
     }
     system_text.sensitivity = Sensitivity::Internal;
     system_item.content.emplace_back(std::move(system_text));
@@ -414,13 +409,11 @@ Result<ModelRequest> AgentLoop::build_request(const AgentLoopSpec &spec,
     // ledger accumulates per task, so the request budget must describe the
     // remaining loop capacity, not a single step.
     request.generation.max_output_tokens = 512;
-    request.budget.max_output_tokens =
-        512ULL * (static_cast<std::uint64_t>(config_.max_steps) +
-                  config_.max_recoveries_per_step + 1);
+    request.budget.max_output_tokens = 512ULL * (static_cast<std::uint64_t>(config_.max_steps) +
+                                                 config_.max_recoveries_per_step + 1);
     request.budget.max_requests = config_.max_steps + config_.max_recoveries_per_step + 1;
     request.data_policy.store = false;
-    request.prompt_provenance.system_template_digest =
-        digest_string("mira.agent-loop.system.v1");
+    request.prompt_provenance.system_template_digest = digest_string("mira.agent-loop.system.v1");
     request.prompt_provenance.decision_schema_digest =
         request.output_contract.canonical_schema_digest;
     return request;
@@ -527,8 +520,8 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
         const RepairPolicy repair_policy{1, 2048};
         if (outcome.parse.outcome == DecisionParseOutcome::Malformed &&
             !repair_budget.exhausted(repair_policy)) {
-            auto repair =
-                build_schema_repair_request(request.value(), outcome.parse, repair_policy, repair_budget);
+            auto repair = build_schema_repair_request(request.value(), outcome.parse, repair_policy,
+                                                      repair_budget);
             if (repair) {
                 repair_budget.attempts_used += 1;
                 result.repairs += 1;
@@ -561,15 +554,14 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 result.steps.push_back(std::move(record));
                 break;
             }
-            if (!outcome.tool_proposals.has_value() ||
-                outcome.tool_proposals->proposals.empty()) {
+            if (!outcome.tool_proposals.has_value() || outcome.tool_proposals->proposals.empty()) {
                 result.outcome = LoopOutcome::Failed;
                 result.safe_summary = "tool proposal batch carried no executable proposal";
                 result.steps.push_back(std::move(record));
                 break;
             }
-            if (tool_executions + static_cast<std::uint32_t>(
-                                        outcome.tool_proposals->proposals.size()) >
+            if (tool_executions +
+                    static_cast<std::uint32_t>(outcome.tool_proposals->proposals.size()) >
                 config_.max_tool_executions) {
                 result.outcome = LoopOutcome::Failed;
                 result.safe_summary = "tool execution budget exhausted";
@@ -587,9 +579,8 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 }
                 auto executed = tools_->execute(proposal, context);
                 if (!executed) {
-                    abort = executed.error().code == ErrorCode::Cancelled
-                                ? LoopOutcome::Cancelled
-                                : LoopOutcome::Failed;
+                    abort = executed.error().code == ErrorCode::Cancelled ? LoopOutcome::Cancelled
+                                                                          : LoopOutcome::Failed;
                     abort_summary =
                         executed.error().code == ErrorCode::Cancelled
                             ? "tool execution was cancelled"
@@ -604,8 +595,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                      JsonValue::Object{{"wire_name", proposal.wire_name},
                                        {"operation_id", proposal.operation_id.to_string()},
                                        {"failed", executed.value().failed},
-                                       {"arguments_digest",
-                                        proposal.arguments_digest.to_string()}},
+                                       {"arguments_digest", proposal.arguments_digest.to_string()}},
                      EventClass::State);
                 if (!record.action_summary.empty()) {
                     record.action_summary += ";";
@@ -702,8 +692,8 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             if (result.recoveries < config_.max_recoveries_per_step) {
                 ++result.recoveries;
                 record.phase = StepPhase::Recovering;
-                record.note = "decision compile failed; recovering: " +
-                              sequence.error().safe_message;
+                record.note =
+                    "decision compile failed; recovering: " + sequence.error().safe_message;
                 result.steps.push_back(std::move(record));
                 feedback = "The previous decision did not compile to an action: " +
                            sequence.error().safe_message +
@@ -713,8 +703,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             }
             result.outcome = LoopOutcome::Failed;
             result.safe_summary =
-                "decision did not compile to a discrete action: " +
-                sequence.error().safe_message;
+                "decision did not compile to a discrete action: " + sequence.error().safe_message;
             result.steps.push_back(std::move(record));
             break;
         }
@@ -725,8 +714,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
         emit(spec, "ActionDispatched",
              JsonValue::Object{{"step", static_cast<std::int64_t>(step)},
                                {"action", record.action_summary},
-                               {"decision_digest",
-                                decision.decision_digest_field.to_string()}},
+                               {"decision_digest", decision.decision_digest_field.to_string()}},
              EventClass::State);
         auto receipt = environment_->execute(sequence.value(), action_context);
         if (!receipt) {

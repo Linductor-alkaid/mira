@@ -185,16 +185,16 @@ bool parse_canonical_quad(const std::string &payload, double &x1, double &y1, do
 
 std::optional<UiRole> parse_ui_role(const std::string &token) {
     static const std::unordered_map<std::string, UiRole> roles{
-        {"unknown", UiRole::Unknown},       {"root", UiRole::Root},
-        {"window", UiRole::Window},         {"pane", UiRole::Pane},
-        {"app_bar", UiRole::AppBar},        {"button", UiRole::Button},
-        {"checkbox", UiRole::CheckBox},     {"switch", UiRole::Switch},
-        {"text_field", UiRole::TextField},  {"text", UiRole::Text},
-        {"image", UiRole::Image},           {"list", UiRole::List},
-        {"list_item", UiRole::ListItem},    {"grid", UiRole::Grid},
-        {"slider", UiRole::Slider},         {"tab", UiRole::Tab},
-        {"dialog", UiRole::Dialog},         {"menu", UiRole::Menu},
-        {"menu_item", UiRole::MenuItem},    {"web_view", UiRole::WebView},
+        {"unknown", UiRole::Unknown},      {"root", UiRole::Root},
+        {"window", UiRole::Window},        {"pane", UiRole::Pane},
+        {"app_bar", UiRole::AppBar},       {"button", UiRole::Button},
+        {"checkbox", UiRole::CheckBox},    {"switch", UiRole::Switch},
+        {"text_field", UiRole::TextField}, {"text", UiRole::Text},
+        {"image", UiRole::Image},          {"list", UiRole::List},
+        {"list_item", UiRole::ListItem},   {"grid", UiRole::Grid},
+        {"slider", UiRole::Slider},        {"tab", UiRole::Tab},
+        {"dialog", UiRole::Dialog},        {"menu", UiRole::Menu},
+        {"menu_item", UiRole::MenuItem},   {"web_view", UiRole::WebView},
         {"custom", UiRole::Custom},
     };
     const auto found = roles.find(token);
@@ -261,7 +261,8 @@ Result<RectF> parse_canonical_bounds(const JsonValue &node) {
     for (std::size_t index = 0; index < std::size(fields); ++index) {
         const auto *field = member->find(fields[index]);
         if (field == nullptr || !field->is_number()) {
-            return adapter_error(ErrorCode::InvalidObservation, "node bound is missing or not a number");
+            return adapter_error(ErrorCode::InvalidObservation,
+                                 "node bound is missing or not a number");
         }
         const auto value = field->as_number();
         if (!value.has_value() || !std::isfinite(*value) || *value < 0.0 || *value > 1.0) {
@@ -314,16 +315,16 @@ Result<UiNode> parse_ui_node(const JsonValue &node, const CoordinateSpaceId &spa
     }
     if (const auto *state = node.find("state"); state != nullptr && state->is_array()) {
         for (const auto &token : *state->as_array()) {
-            if (const auto parsed = token.is_string() ? parse_ui_state(*token.as_string())
-                                                      : std::nullopt) {
+            if (const auto parsed =
+                    token.is_string() ? parse_ui_state(*token.as_string()) : std::nullopt) {
                 result.state = result.state | *parsed;
             }
         }
     }
     if (const auto *actions = node.find("actions"); actions != nullptr && actions->is_array()) {
         for (const auto &token : *actions->as_array()) {
-            if (const auto parsed = token.is_string() ? parse_ui_action(*token.as_string())
-                                                      : std::nullopt) {
+            if (const auto parsed =
+                    token.is_string() ? parse_ui_action(*token.as_string()) : std::nullopt) {
                 result.supported_actions = result.supported_actions | *parsed;
             }
         }
@@ -385,8 +386,7 @@ Result<UiTreeSnapshot> parse_host_ui_tree(const std::vector<std::byte> &bytes,
     if (const auto *depth = root.find("max_depth_reached");
         depth != nullptr && depth->is_integer()) {
         const auto value = depth->as_integer();
-        if (value.has_value() && *value >= 0 &&
-            *value <= static_cast<std::int64_t>(0xFFFFFFFFU)) {
+        if (value.has_value() && *value >= 0 && *value <= static_cast<std::int64_t>(0xFFFFFFFFU)) {
             snapshot.max_depth_reached = static_cast<std::uint32_t>(*value);
         }
     }
@@ -402,8 +402,8 @@ Result<UiTreeSnapshot> parse_host_ui_tree(const std::vector<std::byte> &bytes,
         return adapter_error(ErrorCode::InvalidObservation, "ui tree capture span is not ordered");
     }
     snapshot.capture.clock_domain = ClockDomainId::generate();
-    snapshot.capture.normalized_begin.monotonic = std::chrono::steady_clock::time_point(
-        std::chrono::nanoseconds(begin_ns.value()));
+    snapshot.capture.normalized_begin.monotonic =
+        std::chrono::steady_clock::time_point(std::chrono::nanoseconds(begin_ns.value()));
     snapshot.capture.normalized_end.monotonic =
         std::chrono::steady_clock::time_point(std::chrono::nanoseconds(end_ns.value()));
     snapshot.capture.sync_quality = ClockSyncQuality::Estimated;
@@ -646,12 +646,10 @@ AndroidHostAdapter::capture_structure_component(const MiraHostTopologyV1 &topolo
     // full grounding fidelity.
     component.quality = value.truncated
                             ? ComponentQuality::Partial
-                            : (value.complete && !value.visible_only
-                                   ? ComponentQuality::Good
-                                   : ComponentQuality::Degraded);
-    component.provenance =
-        Provenance{"android.host.tree.v1", "accessibility",
-                   digest_bytes(std::span<const std::byte>(outcome.bytes))};
+                            : (value.complete && !value.visible_only ? ComponentQuality::Good
+                                                                     : ComponentQuality::Degraded);
+    component.provenance = Provenance{"android.host.tree.v1", "accessibility",
+                                      digest_bytes(std::span<const std::byte>(outcome.bytes))};
     component.environment_epoch = outcome.environment_epoch;
     component.value = std::move(value);
     return component;
@@ -746,18 +744,18 @@ Result<Observation> AndroidHostAdapter::observe(const ObservationRequest &reques
                 observation.aggregate_span.normalized_begin.monotonic =
                     std::min(observation.aggregate_span.normalized_begin.monotonic,
                              span->normalized_begin.monotonic);
-                observation.aggregate_span.normalized_end.monotonic = std::max(
-                    observation.aggregate_span.normalized_end.monotonic,
-                    span->normalized_end.monotonic);
+                observation.aggregate_span.normalized_end.monotonic =
+                    std::max(observation.aggregate_span.normalized_end.monotonic,
+                             span->normalized_end.monotonic);
             }
             observation.aggregate_span.sync_quality = ClockSyncQuality::Estimated;
         }
     }
-    const std::uint64_t current_epoch = structure_component.has_value()
-                                            ? structure_component->environment_epoch
-                                            : (screen_component.has_value()
-                                                   ? screen_component->environment_epoch
-                                                   : topology.environment_epoch);
+    const std::uint64_t current_epoch =
+        structure_component.has_value()
+            ? structure_component->environment_epoch
+            : (screen_component.has_value() ? screen_component->environment_epoch
+                                            : topology.environment_epoch);
     observation.environment_epoch = current_epoch;
     {
         std::vector<DisplayInfo> displays;

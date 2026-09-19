@@ -41,8 +41,7 @@ struct FrozenConfig final {
     std::size_t rerank_output = 10;   // metric cutoff, comparable to retrieval-v1 Recall@10
     std::uint64_t token_budget = 4'096;
     // Frozen digest of the reused dataset (M17 baseline anchor).
-    std::string dataset_digest =
-        "ffc59f6d0a0a375a6e8730906219339900b616ed1f861b274c437515a367649e";
+    std::string dataset_digest = "ffc59f6d0a0a375a6e8730906219339900b616ed1f861b274c437515a367649e";
 };
 
 [[nodiscard]] std::string digest_hex(const Sha256Digest &digest) {
@@ -50,8 +49,7 @@ struct FrozenConfig final {
     text.reserve(digest.bytes.size() * 2);
     for (const auto byte : digest.bytes) {
         std::ostringstream slot;
-        slot << std::hex << std::setw(2) << std::setfill('0')
-             << static_cast<unsigned int>(byte);
+        slot << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
         text += slot.str();
     }
     return text;
@@ -91,8 +89,7 @@ struct SplitMix64 final {
 
 class HashingEmbedder final : public IContextEmbedder {
   public:
-    HashingEmbedder(ModelProfileId profile, std::size_t dims)
-        : profile_(profile), dims_(dims) {}
+    HashingEmbedder(ModelProfileId profile, std::size_t dims) : profile_(profile), dims_(dims) {}
 
     Result<ContextEmbedding> embed(const ContextEmbeddingInput &input) override {
         ContextEmbedding embedding;
@@ -170,8 +167,8 @@ struct Dataset final {
     asset.session = session;
     asset.through_event_sequence = sequence;
     const EventId origin{Id128{Id128::Bytes{static_cast<std::uint8_t>(sequence),
-                                            static_cast<std::uint8_t>(sequence >> 8U), 0, 0, 0,
-                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}};
+                                            static_cast<std::uint8_t>(sequence >> 8U), 0, 0, 0, 0,
+                                            0, 0, 0, 0, 0, 0, 0, 0, 0}}};
     asset.source_events = {origin};
     return asset;
 }
@@ -186,8 +183,8 @@ struct Dataset final {
     asset.scope = scope;
     asset.through_event_sequence = sequence;
     const EventId origin{Id128{Id128::Bytes{static_cast<std::uint8_t>(sequence),
-                                            static_cast<std::uint8_t>(sequence >> 8U), 1, 0, 0,
-                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}};
+                                            static_cast<std::uint8_t>(sequence >> 8U), 1, 0, 0, 0,
+                                            0, 0, 0, 0, 0, 0, 0, 0, 0}}};
     asset.source_events = {origin};
     return asset;
 }
@@ -236,26 +233,24 @@ struct Dataset final {
             eval_query.anchored_asset = id;
         } else if (kind == ContextAssetKind::WorkflowEpisode) {
             const ContextAssetId id{Id128{id_from(local, "epi")}};
-            const std::string statement =
-                R"({"run_id":")" + std::to_string(query_index) + R"(","workflow_id":")" +
-                anchor_text + R"(","outcome":"completed","reason":"ok"})";
-            dataset.assets.push_back(
-                {make_learning(ContextAssetKind::WorkflowEpisode, id, statement,
-                               next_sequence(), learning_scope),
-                 true, query_index});
+            const std::string statement = R"({"run_id":")" + std::to_string(query_index) +
+                                          R"(","workflow_id":")" + anchor_text +
+                                          R"(","outcome":"completed","reason":"ok"})";
+            dataset.assets.push_back({make_learning(ContextAssetKind::WorkflowEpisode, id,
+                                                    statement, next_sequence(), learning_scope),
+                                      true, query_index});
             eval_query.query.session = conversation_session;
             eval_query.query.scopes = {learning_scope};
             eval_query.query.text = "episode " + anchor_text + "workflow";
             eval_query.anchored_asset = id;
         } else {
             const ContextAssetId id{Id128{id_from(local, "les")}};
-            const std::string statement =
-                R"({"lesson_id":")" + std::to_string(query_index) + R"(","workflow_id":")" +
-                anchor_text + R"(","reason_code":"timeout"})";
-            dataset.assets.push_back(
-                {make_learning(ContextAssetKind::RecoveryLesson, id, statement,
-                               next_sequence(), learning_scope),
-                 true, query_index});
+            const std::string statement = R"({"lesson_id":")" + std::to_string(query_index) +
+                                          R"(","workflow_id":")" + anchor_text +
+                                          R"(","reason_code":"timeout"})";
+            dataset.assets.push_back({make_learning(ContextAssetKind::RecoveryLesson, id, statement,
+                                                    next_sequence(), learning_scope),
+                                      true, query_index});
             eval_query.query.session = conversation_session;
             eval_query.query.scopes = {learning_scope};
             eval_query.query.text = "lesson " + anchor_text + "recovery";
@@ -263,8 +258,7 @@ struct Dataset final {
         }
         dataset.queries.push_back(std::move(eval_query));
 
-        for (std::size_t distractor = 0; distractor < config.distractors_per_query;
-             ++distractor) {
+        for (std::size_t distractor = 0; distractor < config.distractors_per_query; ++distractor) {
             std::string noise;
             for (std::size_t word = 0; word < 4; ++word) {
                 noise += rare_token(local) + " ";
@@ -287,8 +281,8 @@ struct Dataset final {
         for (std::size_t foreign = 0; foreign < 2; ++foreign) {
             const std::string noise = anchor_text + "foreign " + std::to_string(foreign);
             dataset.assets.push_back(
-                {make_segment(stranger_session, ContextAssetId{Id128{id_from(local, "f")}},
-                              noise, next_sequence()),
+                {make_segment(stranger_session, ContextAssetId{Id128{id_from(local, "f")}}, noise,
+                              next_sequence()),
                  false, 0});
             dataset.assets.push_back(
                 {make_learning(ContextAssetKind::WorkflowEpisode,
@@ -336,10 +330,10 @@ struct ColumnOutcome final {
 };
 
 struct ComparisonRound final {
-    ColumnOutcome base;    // B column: retrieval order Top-10
-    ColumnOutcome rerank;  // C column: rerank(Top-30) -> Top-10
+    ColumnOutcome base;   // B column: retrieval order Top-10
+    ColumnOutcome rerank; // C column: rerank(Top-30) -> Top-10
     double uplift = 0.0;
-    std::size_t order_moves = 0;           // queries whose anchor presence moved
+    std::size_t order_moves = 0; // queries whose anchor presence moved
 };
 
 void build_index(const Dataset &dataset, HashingEmbedder &embedder, bool attach_embeddings,
@@ -413,20 +407,20 @@ void audit_c(const std::vector<RankedContextItem> &items, const ContextQuery &qu
         audit(retrieved.value().candidates, round.base.acl_violations, round.base.tokens_total);
 
         // B column: anchor position in the retrieval order Top-10.
-        const auto base_position = std::find_if(
-            retrieved.value().candidates.begin(),
-            retrieved.value().candidates.begin() +
-                static_cast<std::ptrdiff_t>(std::min(config.rerank_output,
-                                                     retrieved.value().candidates.size())),
-            [&eval_query](const ContextCandidate &candidate) {
-                return candidate.asset_id == eval_query.anchored_asset;
-            });
+        const auto base_position =
+            std::find_if(retrieved.value().candidates.begin(),
+                         retrieved.value().candidates.begin() +
+                             static_cast<std::ptrdiff_t>(std::min(
+                                 config.rerank_output, retrieved.value().candidates.size())),
+                         [&eval_query](const ContextCandidate &candidate) {
+                             return candidate.asset_id == eval_query.anchored_asset;
+                         });
         if (base_position != retrieved.value().candidates.begin() +
                                  static_cast<std::ptrdiff_t>(std::min(
                                      config.rerank_output, retrieved.value().candidates.size()))) {
             ++round.base.anchored_hits;
-            base_reciprocal += 1.0 / static_cast<double>(
-                                        base_position - retrieved.value().candidates.begin() + 1);
+            base_reciprocal +=
+                1.0 / static_cast<double>(base_position - retrieved.value().candidates.begin() + 1);
         }
 
         // C column: rerank the retrieval Top-30 down to the output bound.
@@ -443,30 +437,30 @@ void audit_c(const std::vector<RankedContextItem> &items, const ContextQuery &qu
         audit_c(reranked.value(), query, round.rerank.acl_violations, round.rerank.tokens_total,
                 retrieved.value().tokens_estimate);
 
-        const auto rerank_position = std::find_if(
-            reranked.value().begin(), reranked.value().end(),
-            [&eval_query](const RankedContextItem &item) {
-                return item.candidate.asset_id == eval_query.anchored_asset;
-            });
+        const auto rerank_position =
+            std::find_if(reranked.value().begin(), reranked.value().end(),
+                         [&eval_query](const RankedContextItem &item) {
+                             return item.candidate.asset_id == eval_query.anchored_asset;
+                         });
         if (rerank_position != reranked.value().end()) {
             ++round.rerank.anchored_hits;
             rerank_reciprocal +=
                 1.0 / static_cast<double>(rerank_position - reranked.value().begin() + 1);
         }
-        if ((base_position != retrieved.value().candidates.begin() +
-                                  static_cast<std::ptrdiff_t>(std::min(
-                                      config.rerank_output,
-                                      retrieved.value().candidates.size()))) !=
+        if ((base_position !=
+             retrieved.value().candidates.begin() +
+                 static_cast<std::ptrdiff_t>(
+                     std::min(config.rerank_output, retrieved.value().candidates.size()))) !=
             (rerank_position != reranked.value().end())) {
             ++round.order_moves;
         }
     }
 
-    round.base.recall = static_cast<double>(round.base.anchored_hits) /
-                        static_cast<double>(round.base.queries);
+    round.base.recall =
+        static_cast<double>(round.base.anchored_hits) / static_cast<double>(round.base.queries);
     round.base.mrr = base_reciprocal / static_cast<double>(round.base.queries);
-    round.rerank.recall = static_cast<double>(round.rerank.anchored_hits) /
-                          static_cast<double>(round.rerank.queries);
+    round.rerank.recall =
+        static_cast<double>(round.rerank.anchored_hits) / static_cast<double>(round.rerank.queries);
     round.rerank.mrr = rerank_reciprocal / static_cast<double>(round.rerank.queries);
     round.uplift = round.rerank.mrr - round.base.mrr;
     return round;
@@ -542,8 +536,7 @@ int main(int argc, char **argv) {
 
     Gates gates;
     // C1: recall preserved in both columns (hybrid path).
-    gates.c1_recall_kept =
-        hybrid.base.recall == 1.0 && hybrid.rerank.recall == 1.0;
+    gates.c1_recall_kept = hybrid.base.recall == 1.0 && hybrid.rerank.recall == 1.0;
     if (!gates.c1_recall_kept) {
         gates.failures.push_back("C1: recall not preserved (base " +
                                  std::to_string(hybrid.base.recall) + ", rerank " +

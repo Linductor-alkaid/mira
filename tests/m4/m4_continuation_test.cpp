@@ -57,42 +57,42 @@ int binding_invalidation_matrix() {
     auto provider_switch = binding;
     provider_switch.provider = "other-provider";
     MIRA_CHECK(evaluate_continuation(continuation, provider_switch) ==
-              ContinuationInvalidation::ProviderChanged);
+               ContinuationInvalidation::ProviderChanged);
 
     auto profile_switch = binding;
     profile_switch.profile_id = ModelProfileId::generate();
     MIRA_CHECK(evaluate_continuation(continuation, profile_switch) ==
-              ContinuationInvalidation::ProfileChanged);
+               ContinuationInvalidation::ProfileChanged);
 
     auto task_switch = binding;
     task_switch.task_id = TaskId::generate();
     MIRA_CHECK(evaluate_continuation(continuation, task_switch) ==
-              ContinuationInvalidation::TaskChanged);
+               ContinuationInvalidation::TaskChanged);
 
     auto session_switch = binding;
     session_switch.session_id = SessionId::generate();
     MIRA_CHECK(evaluate_continuation(continuation, session_switch) ==
-              ContinuationInvalidation::TaskChanged);
+               ContinuationInvalidation::TaskChanged);
 
     auto epoch_advance = binding;
     epoch_advance.task_epoch += 1;
     MIRA_CHECK(evaluate_continuation(continuation, epoch_advance) ==
-              ContinuationInvalidation::EpochAdvanced);
+               ContinuationInvalidation::EpochAdvanced);
 
     auto environment_shift = binding;
     environment_shift.environment_epoch += 1;
     MIRA_CHECK(evaluate_continuation(continuation, environment_shift) ==
-              ContinuationInvalidation::EpochAdvanced);
+               ContinuationInvalidation::EpochAdvanced);
 
     auto schema_shift = binding;
     schema_shift.schema_digest = digest_string("changed");
     MIRA_CHECK(evaluate_continuation(continuation, schema_shift) ==
-              ContinuationInvalidation::SchemaChanged);
+               ContinuationInvalidation::SchemaChanged);
 
     auto policy_shift = binding;
     policy_shift.remote_store_enabled = !policy_shift.remote_store_enabled;
     MIRA_CHECK(evaluate_continuation(continuation, policy_shift) ==
-              ContinuationInvalidation::PolicyChanged);
+               ContinuationInvalidation::PolicyChanged);
 
     auto expired = binding;
     expired.now = continuation.expires_at + std::chrono::seconds(1);

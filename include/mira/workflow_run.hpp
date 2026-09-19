@@ -35,7 +35,8 @@ enum class WorkflowRunState : std::uint8_t {
 
 // The frozen transition table (DEC-020 §1). Terminal states have no outgoing
 // edges; see apply_workflow_run_transition for terminal idempotency.
-[[nodiscard]] bool valid_workflow_run_transition(WorkflowRunState from, WorkflowRunState to) noexcept;
+[[nodiscard]] bool valid_workflow_run_transition(WorkflowRunState from,
+                                                 WorkflowRunState to) noexcept;
 
 // One pending user decision point (DEC-022 §3): stable identity plus the
 // digest of the proposed payload. Answers match on both; mismatching answers
@@ -75,8 +76,8 @@ struct WorkflowRunTransitionResult final {
 // NoOpTerminal (idempotent, epoch unchanged); everything else is Rejected
 // with InvalidState. Pending decisions are dropped when leaving WaitingUser
 // towards a terminal or a different wait state only through legal edges.
-[[nodiscard]] WorkflowRunTransitionResult
-apply_workflow_run_transition(const WorkflowRunView &view, WorkflowRunState target);
+[[nodiscard]] WorkflowRunTransitionResult apply_workflow_run_transition(const WorkflowRunView &view,
+                                                                        WorkflowRunState target);
 
 // ---------------------------------------------------------------------------
 // Run <-> Task state mapping (DEC-020 §2)
@@ -109,7 +110,7 @@ admit_workflow_run_completion(const WorkflowRunView &view, std::uint64_t signal_
 // Policy compatibility checked when a run is created (DEC-020 §3): the chosen
 // policy must be declared in the definition's allowed set, and an
 // AgentEscalation recovery hook requires an agent-capable policy.
-[[nodiscard]] Result<void> validate_workflow_policy_compatibility(const WorkflowDefinition &definition,
-                                                                  WorkflowPolicy policy);
+[[nodiscard]] Result<void>
+validate_workflow_policy_compatibility(const WorkflowDefinition &definition, WorkflowPolicy policy);
 
 } // namespace mira
