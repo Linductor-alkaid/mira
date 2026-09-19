@@ -111,7 +111,8 @@ std::string id_charset_message(std::string_view what, std::string_view value) {
 // Normalized manifest projection; the digest input. Building the digest from
 // the validated structure (not raw input bytes) makes it independent of the
 // producer's key order and whitespace.
-[[nodiscard]] JsonValue tool_module_manifest_to_json(const ToolModuleManifest &manifest) {
+[[nodiscard]] JsonValue tool_module_manifest_to_json(const ToolModuleManifest &manifest,
+                                                     bool include_signature) {
     JsonValue::Object root;
     root.emplace_back("schema", std::string(kToolModuleManifestSchema));
     root.emplace_back("schema_version", std::string(kToolModuleManifestSchemaVersion));
@@ -126,7 +127,7 @@ std::string id_charset_message(std::string_view what, std::string_view value) {
     if (!manifest.signature_algorithm.empty()) {
         origin.emplace_back("signature_algorithm", manifest.signature_algorithm);
     }
-    if (!manifest.signature.empty()) {
+    if (include_signature && !manifest.signature.empty()) {
         origin.emplace_back("signature", manifest.signature);
     }
     root.emplace_back("origin", JsonValue{std::move(origin)});
@@ -802,7 +803,12 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
 }
 
 Hash tool_module_manifest_digest(const ToolModuleManifest &manifest) {
-    return canonical_json_digest(tool_module_manifest_to_json(manifest));
+    return canonical_json_digest(tool_module_manifest_to_json(manifest, /*include_signature=*/true));
+}
+
+Hash tool_module_unsigned_manifest_digest(const ToolModuleManifest &manifest) {
+    return canonical_json_digest(
+        tool_module_manifest_to_json(manifest, /*include_signature=*/false));
 }
 
 // ---------------------------------------------------------------------------

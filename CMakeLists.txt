@@ -121,6 +121,7 @@ add_library(mira_core
     src/model/conversation_log.cpp
     src/model/agent_loop.cpp
     src/tool/tool_module.cpp
+    src/tool/tool_module_registry.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 
