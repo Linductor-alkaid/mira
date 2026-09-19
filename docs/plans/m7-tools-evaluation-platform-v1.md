@@ -1,8 +1,8 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1 已交付关闭；TM2 2026-09-19 冻结细项与门禁并交付，PR CI 证据
-> 回填后关闭）
+> 重定义；TM0/TM1/TM2 已交付关闭；后续阶段（DEC-039 MCP 准入、DEC-040 稳定引用
+> 与 Skill）随各自立项冻结细项，不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
@@ -138,7 +138,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 
 ### 4.3 TM2：LLM 暴露投影（2026-09-19 跑前冻结细项，进入实施）
 
-- [ ] `M7-TM2-01` 投影纯函数 `project_tool_exposure`：以 NegotiationView
+- [x] `M7-TM2-01` 投影纯函数 `project_tool_exposure`：以 NegotiationView
   generation + Active snapshot（成员契约）+ 协商结论 + 任务级选择输入 →
   per-request `ExposedToolSpec` 集合——ToolId 由 (module_id, module_digest,
   成员名) 确定性派生（TM2 身份分配落地，跨进程一致，无随机）；wire_name 为
@@ -151,14 +151,14 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `PromptProvenance.tool_snapshot_digest` 字段与非模组纯工具 digest 函数
   不变，M3 空注册路径语义不变）。版本化 JSON 投影
   `mira.tool_module.exposure.v1`（脱敏，供事件/Replay/报告）。
-- [ ] `M7-TM2-02` `wire_name` 跨模组命名规则 v1 冻结（设计 §17 开放项收口）：
+- [x] `M7-TM2-02` `wire_name` 跨模组命名规则 v1 冻结（设计 §17 开放项收口）：
   wire 命名空间为扁平集合，成员名原文进入、不做任何自动前缀或改名；跨模组
   唯一性由协商（TM0 Conflict）与激活（TM1 后激活者拒绝）fail-closed 门禁
   承载；hosted provider 保留名（`is_known_hosted_tool_name`）冲突整组排除
   （ReservedWireName），绝不部分暴露或静默改名；命名空间前缀（如
   `builtin.simulator.env` → `simulator.*`）为非约束性约定，安全性不依赖
   约定；投影层对漏网重名/重复 ToolId 防御性整组拒绝。
-- [ ] `M7-TM2-03` Simulator BuiltIn 参考模组 `make_simulator_reference_module`
+- [x] `M7-TM2-03` Simulator BuiltIn 参考模组 `make_simulator_reference_module`
   （经真实解析器构建，manifest digest 为 golden 常量；含 read_only 与
   user_visible 两成员、后者要求 `env.input.discrete`）；Replay 绑定
   `verify_recorded_module_digests`（记录 module digest 集与投影 included
@@ -226,29 +226,29 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 
 ### 5.3 TM2 门禁（2026-09-19 跑前冻结）
 
-- [ ] `M7-TM2-G1` 投影与身份分配：Available 模组成员进入 per-request
+- [x] `M7-TM2-G1` 投影与身份分配：Available 模组成员进入 per-request
   `ExposedToolSpec`（ToolId 派生确定性跨进程一致；spec_digest canonical；
   wire_name 为成员名原文；`ActionRisk != read_only → has_side_effects`）；
   输出按 wire_name 排序；同输入同 snapshot_digest。
-- [ ] `M7-TM2-G2` 两级排除矩阵：模组级（Unavailable 附完整 missing 清单 /
+- [x] `M7-TM2-G2` 两级排除矩阵：模组级（Unavailable 附完整 missing 清单 /
   Conflict 附对端 / Revoked / ReservedWireName——成员撞 hosted 保留名整组排除，
   不部分暴露、不改名）；任务级（TaskPolicy 显式排除附调用方理由、TaskBudget
   预算耗尽按 module_id 序确定性整组排除，模组原子不拆成员）；每条排除含
   level/reason/module_id/明细。
-- [ ] `M7-TM2-G3` 一致性 fail-closed：active 集与协商结论错配（缺 verdict、
+- [x] `M7-TM2-G3` 一致性 fail-closed：active 集与协商结论错配（缺 verdict、
   module digest 不符、verdict 指向 active 外模组、active 集内重复 module_id、
   达到投影层的跨模组重名/重复 ToolId）整组拒绝返回错误，无部分投影；空集
   （无注册模组）投影为空视图且有确定 digest（§14 空 allowlist 兼容）。
-- [ ] `M7-TM2-G4` digest 绑定与确定性：snapshot_digest 绑定 generation +
+- [x] `M7-TM2-G4` digest 绑定与确定性：snapshot_digest 绑定 generation +
   included module digest 集合 + (tool_id, spec_digest, wire_name) 集合；
   `tool_exposure_to_json` 为版本化 JSON（`mira.tool_module.exposure.v1`，
   脱敏）；`--report` 跨进程字节一致（无时钟、无随机、canonical JSON）。
-- [ ] `M7-TM2-G5` Simulator 参考模组与 Replay 绑定：参考模组经真实解析器
+- [x] `M7-TM2-G5` Simulator 参考模组与 Replay 绑定：参考模组经真实解析器
   构建且 manifest digest 为 golden 常量；全能力环境协商 Available 且投影
   两成员（副作用映射正确）；缺 `env.input.discrete` 时模组级 Unavailable
   附 missing；`verify_recorded_module_digests` 精确匹配通过，多/少/错
   digest 全部显式拒绝。
-- [ ] `M7-TM2-G6` 组合与 consumer 闭包：投影产物填入 `ModelRequest.tools`
+- [x] `M7-TM2-G6` 组合与 consumer 闭包：投影产物填入 `ModelRequest.tools`
   后 `resolve_tool_calls` 正常解析（wire_name/tool_id 匹配、digest 通过），
   未暴露名与 hosted 名 fail closed 语义不变；新公开头可被最小外部 consumer
   独立包含链接。
@@ -441,4 +441,19 @@ TM2 符号在库（重排后重建复验）；TM2 契约报告 `--report` 跨进
 "重复派生 ToolId"防御分支无法经公开输入构造触发（需 sha256 前 16 字节碰撞），
 仅静态审查覆盖；executor shutdown 进行中并发窗口未注入竞态测试（与 TM1 一致）；
 Windows/Android 运行与 Release/quality 由 PR CI 回填后 TM2 方可关闭。
+2026-09-19：PR CI 证据回填并关闭。PR
+[#60](https://github.com/Linductor-alkaid/mira/pull/60)（head `21e749d`，合并提交
+`0655d65`）pull_request pipeline run
+[`35452396490`](https://github.com/Linductor-alkaid/mira/actions/runs/35452396490)
+12 项全部通过（Linux GCC/Clang Debug/Release、Windows MSVC、Android 两 ABI、
+ASAN/UBSAN/TSAN、quality——format 门禁首次真实检查 214 文件并在 CI 通过）；
+push run
+[`35452378534`](https://github.com/Linductor-alkaid/mira/actions/runs/35452378534)
+11/12 首轮通过，唯一未过项为 TSAN 作业在 9m48s 被**基础设施取消**（日志
+`The operation was canceled`，跑至 M16 基线中途被杀，无任何测试失败或 TSAN
+报告输出；workflow 无 timeout/concurrency 配置，取消发生在作业级），重跑该
+作业后 run conclusion `success`；master 合并提交 run
+[`35455012483`](https://github.com/Linductor-alkaid/mira/actions/runs/35455012483)
+success（12/12）。`M7-TM2-01`–`03` 与 `M7-TM2-G1`–`G6` 关闭；M7 已立项阶段
+（TM0–TM2）全部关闭，后续阶段（DEC-039/DEC-040）立项时增补工作项与门禁。
 

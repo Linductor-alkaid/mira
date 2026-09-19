@@ -294,8 +294,21 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    门落地）；**format 门禁空转缺陷**——`format-check` 目标 `VERBATIM` 下
    `-DROOT_DIR="..."` 内嵌引号被字面保留导致 GLOB 匹配零文件、检查静默通过
    （自 M0 基线起，既往各轮"format 检查通过"证据对 C++ 文件为空转），本轮修复
-   脚本与传参并整树按 CI 口径（clang-format 18.1.8）机械重排。证据与限制见
-   [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+   脚本与传参并整树按 CI 口径（clang-format 18.1.8）机械重排。测试由
+   Independent-Verification-Agent 三轮独立取证（86/86 ctest、三 sanitizer
+   9 项零报告、真实 format 门禁 214 文件、`--report` 跨四构建树字节一致）。
+   PR
+   [#60](https://github.com/Linductor-alkaid/mira/pull/60)（head `21e749d`，
+   合并提交 `0655d65`）pull_request run
+   [`35452396490`](https://github.com/Linductor-alkaid/mira/actions/runs/35452396490)
+   12 项全部通过；push run
+   [`35452378534`](https://github.com/Linductor-alkaid/mira/actions/runs/35452378534)
+   首轮 11/12（TSAN 作业被基础设施取消，无测试失败输出，重跑后 success）；
+   master 合并提交 run
+   [`35455012483`](https://github.com/Linductor-alkaid/mira/actions/runs/35455012483)
+   success（12/12）。`M7-TM2-01`–`03` 与 `M7-TM2-G1`–`G6` 关闭，M7 已立项
+   阶段（TM0–TM2）全部关闭，后续阶段（DEC-039/DEC-040）立项时增补；证据与
+   限制见 [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
