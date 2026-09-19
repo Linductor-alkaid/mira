@@ -200,6 +200,13 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
 // opaque strings; it is the module identity replay and events refer to.
 [[nodiscard]] Hash tool_module_manifest_digest(const ToolModuleManifest &manifest);
 
+// Canonical digest over the manifest with the signature field excluded: the
+// payload an origin signature authenticates. The full manifest digest cannot
+// serve as the signature payload because it covers the signature itself as an
+// opaque string; origin trust verification (TM1) binds signatures to this
+// unsigned digest instead. Same canonicalization rules as the full digest.
+[[nodiscard]] Hash tool_module_unsigned_manifest_digest(const ToolModuleManifest &manifest);
+
 // ---------------------------------------------------------------------------
 // Availability negotiation (pure function; tool module design §7)
 // ---------------------------------------------------------------------------

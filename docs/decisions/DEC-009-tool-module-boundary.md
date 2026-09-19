@@ -61,6 +61,10 @@
   评审，不能由单个模组私造。
 - `HostProvided` 来源信任首期采用“宿主显式注入 + allowlist”的暂定默认值，attestation
   机制最迟在 M7 冻结（负责人：Mira Maintainers）。
+  （2026-09-19 注记：M7 TM1 将该暂定默认值升格为 v1 冻结决策——`HostProvided` 信任
+  依据为宿主部署管线显式注入 + `module_id` allowlist（`ModuleTrustConfig`，Registry
+  生命周期内不可变）；签名/attestation 机制的进一步演进（如注入凭据绑定）届时另立
+  DEC，当前不设隐式计划项。）
 - 模组冲突解析首期保守（后注册者被拒绝并记录），可能要求宿主调整模组划分而不是由
   Runtime 自动仲裁。
 

@@ -1,6 +1,7 @@
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/runtime_baseline.hpp>
 #include <mira/tool_module.hpp>
+#include <mira/tool_module_registry.hpp>
 #include <mira/version.hpp>
 
 #include <chrono>
@@ -57,6 +58,27 @@ int main() {
         mira::negotiate_modules(active, mira::EnvironmentCapabilities{}, catalog);
     if (!negotiation.modules.empty()) {
         return 7;
+    }
+
+    // M7-TM1-G6 consumer closure: the registry lifecycle header must be
+    // includable and linkable from the same minimal consumer, without the
+    // Executor (the registry itself is a serial-plane component).
+    mira::ModuleRegistry registry{mira::CapabilityCatalog::core()};
+    if (registry.sealed() || registry.closed() || registry.active_snapshot().generation != 0) {
+        return 8;
+    }
+    const mira::ModuleState parsed = mira::parse_module_state("quarantined").value();
+    if (parsed != mira::ModuleState::Quarantined) {
+        return 8;
+    }
+    const mira::ModuleTrustReport report =
+        mira::verify_module_trust(mira::ToolModuleManifest{}, mira::ModuleTrustConfig{});
+    if (report.trusted) {
+        return 8;
+    }
+    mira::ModuleNegotiationCoordinator coordinator{mira::CapabilityCatalog::core()};
+    if (coordinator.current() != nullptr) {
+        return 8;
     }
     return 0;
 }

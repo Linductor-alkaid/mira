@@ -1,8 +1,10 @@
 # Mira 工具模组（ToolModule）设计
 
-> 状态：Active（规范草案，尚未实现）  
-> 版本：1.0  
-> 更新日期：2026-08-31  
+> 状态：Active（TM0/TM1 已实现：TM0 契约与协商 2026-09-16 交付，TM1 Registry 生命周期
+> 2026-09-19 交付，均见 [M7](../plans/m7-tools-evaluation-platform-v1.md)；TM2 及后续阶段
+> 为规范草案）  
+> 版本：1.2  
+> 更新日期：2026-09-19  
 > 适用范围：ToolModule manifest、Capability 目录与协商、ModuleRegistry、双消费者投影  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 决策依据：[DEC-009](../decisions/DEC-009-tool-module-boundary.md)
@@ -124,7 +126,7 @@ Consumers -> Decision/Policy -> ITool（既有路径，不变）
 ### 4.3 规范接口草案
 
 ```cpp
-// 规范接口草案，未实现。命名与字段布局可在实现时调整，
+// 规范接口草案（2026-09-16 已随 M7 TM0 实现于 tool_module.hpp，字段以代码为准）。
 // 但词汇治理和 fail closed 语义不得改变。
 enum class CapabilityKind : std::uint8_t { Boolean, Counted };
 
@@ -246,7 +248,7 @@ Session 建立、`EnvironmentCapabilities` 变化（含 epoch invalidation 后�
 ### 7.2 规范接口草案
 
 ```cpp
-// 规范接口草案，未实现。协商必须是纯函数：同输入同输出 digest。
+// 规范接口草案（2026-09-16 已随 M7 TM0 实现于 tool_module.hpp，以 span 传参；digest 语义已落地）。
 struct ModuleSnapshot final {
     ModuleId module_id;
     SemanticVersion version;
@@ -422,6 +424,11 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 重定义后的 [M7](../plans/m7-tools-evaluation-platform-v1.md)（TM0–TM2 进入常规交
 付节奏）；TM0 随 M7 首轮交付，TM3 的 Android HostProvided 模组与 TM4 的 policy
 绑定保持 DEC-011 证据门禁（DEC-042 不解锁）。
+2026-09-19：TM1（Registry 生命周期）交付——状态机、不可变 snapshot、tombstone、
+来源信任（BuiltIn 构建钉定 digest / HostProvided allowlist v1 冻结 / OutOfProcess
+注入式签名验证绑定 unsigned manifest digest）、协商触发挂接（session/epoch/模组
+状态三类）与 Executor 路由的部署验证（`submit_auto` + `consume` 折叠全部拒绝面），
+见 [M7](../plans/m7-tools-evaluation-platform-v1.md) 验证记录。
 
 ## 16. 测试策略
 
@@ -442,6 +449,9 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 - 模组间依赖与组合（module A 扩展 module B）首期不做，仅 `conflicts_with`。
 - `wire_name` 跨模组命名规范（前缀约定 vs 全局命名机构）留待 TM2 细化。
 - `HostProvided` attestation 为暂定默认值（负责人：Mira Maintainers，最迟 M7 冻结）。
+  （2026-09-19 收口：M7 TM1 将「宿主显式注入 + allowlist」升格为 v1 冻结决策
+  （[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 注记）；进一步 attestation
+  演进需另立 DEC。）
 - 远端模组分发与 MCP 式动态发现明确不在 v1；如引入需新 DEC。（2026-09-15 注记：
   「部署与初始化时注册的 MCP Tool 来源」方向已由
   [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) 冻结，实现前置为

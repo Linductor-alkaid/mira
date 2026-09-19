@@ -2,14 +2,20 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-16（`MNT-202609-30` 的 M7 重定义提案经
+> 更新日期：2026-09-19（M7 第二阶段 TM1「Registry 生命周期」跑前冻结工作项
+> `M7-TM1-01`–`03` 与门禁 `M7-TM1-G1`–`G6` 后交付：状态机与不可变 snapshot、
+> revoke tombstone、版本化生命周期事件、三 origin 来源信任（DEC-009
+> HostProvided allowlist 暂定默认值升格 v1 冻结）、协商触发挂接与 Executor
+> 路由部署验证，详见 §4.1 第 10 条与
+> [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> 此前 2026-09-16（`MNT-202609-30` 的 M7 重定义提案经
 > [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 批准：M7 收敛为
 > [DEC-009](../decisions/DEC-009-tool-module-boundary.md) Tool 模组体系分阶段
 > 落地（TM0 契约与协商 → TM1 Registry 生命周期 → TM2 LLM 暴露投影，后续衔接
 > [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与
 > [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/
 > Skill），状态 `Blocked` -> `Planned`，原 `M7-01`–`M7-28` 按 DEC-042 迁移映射
-> 处置，TM0 工作项与门禁跑前冻结并进入实施，见 §4.1 第 9 条。）
+> 处置，TM0 工作项与门禁跑前冻结并进入实施，同日 TM0 交付关闭，见 §4.1 第 9 条。）
 > 此前 2026-09-15（[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)/
 > [#56](https://github.com/Linductor-alkaid/mira/issues/56) 的架构缺口评审冻结为四份
 > 方向决策：[DEC-038](../decisions/DEC-038-unified-behavior-trace.md)（统一 Behavior
@@ -251,6 +257,20 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    master 合并提交 run
    [`35127320798`](https://github.com/Linductor-alkaid/mira/actions/runs/35127320798)
    success；`M7-TM0-01`–`05` 与 `M7-TM0-G1`–`G6` 关闭，下一阶段为 TM1。
+
+10. M7 TM1 落地入口（2026-09-19）：TM0 关闭后依 §4.2 冻结 TM1 细项
+   （`M7-TM1-01`–`03`）与门禁（`M7-TM1-G1`–`G6`）并交付 Registry 生命周期：
+   三 origin 来源信任（DEC-009 HostProvided allowlist 暂定默认值升格 v1 冻结，
+   注记见该决策）、七状态受控转换与不可变 snapshot、revoke tombstone、跨模组
+   wire 名冲突激活 fail-closed、协商触发挂接（session/epoch/模组状态三类，
+   closed registry 拒绝）、两类版本化事件与 Executor 路由部署验证
+   （`submit_auto()` + consume 折叠拒绝面）。测试由 Independent-Verification-
+   Agent 两轮独立取证（首轮抓到提交拒绝路径两处缺陷，修复后 20/20 门复验通过，
+   报告跨进程字节一致 md5 `aba09395c81b616f4adc0cd3d75829ab`）。本地门禁：
+   全量 ctest 85/85、三 sanitizer m7 目标零报告、四检查、clang-tidy 预检与
+   NDK r26.3 两 ABI 预演通过。PR CI 证据回填后 TM1 关闭，下一阶段为 TM2
+   （LLM 暴露投影，实施前冻结细项）；证据与限制见
+   [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
 维护轮交付；M7 剩余的是模组治理、隔离、评估及发布范围重定义，不再把 #8 列作未实现。

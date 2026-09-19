@@ -1,12 +1,12 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0 首阶段进入实施）
+> 重定义；TM0 已交付关闭，TM1 进入实施）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-16
+> 更新日期：2026-09-19
 
 ## 1. 目标
 
@@ -99,15 +99,41 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   （29 例负向）、协商 golden、fail-closed 负向；`--report` 跨进程协商 digest
   逐字节一致。
 
-### 4.2 TM1：Registry 生命周期（后续轮，实施前冻结细项）
+### 4.2 TM1：Registry 生命周期（2026-09-19 跑前冻结细项，进入实施）
 
-- [ ] `M7-TM1-01` ModuleRegistry 状态机、不可变 snapshot、初始化/部署期注册、
-  运行期只降级、revoke tombstone、生命周期事件与 shutdown 顺序测试。
-- [ ] `M7-TM1-02` 来源信任验证：BuiltIn 构建 digest、HostProvided 宿主显式注入
-  + allowlist（DEC-009 暂定默认值升格为 v1 冻结决策）、OutOfProcess 包签名；
-  校验失败 `Quarantined`。
-- [ ] `M7-TM1-03` 协商触发挂接：session 建立、能力变化（含 epoch invalidation
-  后重申报）、模组状态变化；结论作为事件提交，在途请求按旧 snapshot 结算。
+- [ ] `M7-TM1-01` ModuleRegistry 状态机与不可变 snapshot：状态机
+  `Discovered -> Verified -> Staged -> Active -> Deprecated -> Revoked`（验证失败
+  `Quarantined`）以受控转换落地——`register_module`（初始化/部署期准入：
+  Discovered→Verified，信任失败→Quarantined）、`stage_module`（Verified→Staged）、
+  `activate_module`（Staged→Active；跨模组成员 wire 名冲突时后激活者拒绝、先 Active
+  者不受影响，设计 §5.3/§11）、`deprecate_module`（Active→Deprecated）、
+  `revoke_module`（Active/Staged/Deprecated→Revoked）；升级、终态复活、Quarantined
+  出口等非法转换明确拒绝且状态不变。`seal()` 结束注册窗口（运行期只降级）；
+  `close()` 后一切变更与协商触发拒绝、snapshot 仍可读供在途结算。
+  `active_snapshot()` 返回值语义的不可变 `RegistrySnapshot`（generation 单调、
+  module_id 排序、canonical digest），状态变化只影响下一次读取。revoke digest 进
+  tombstone，同 digest 重注册拒绝并记事件；tombstone 可经信任配置构造时播种。
+  生命周期事件（`mira.tool_module.lifecycle.v1`，State 级，Revoked/Quarantined 为
+  Critical）：七种状态迁移 + 拒绝原因；事件 sink 失败计入统计不阻塞控制面。
+- [ ] `M7-TM1-02` 来源信任验证（DEC-009「宿主显式注入 + allowlist」暂定默认值升格为
+  v1 冻结决策）：`ModuleTrustConfig`——BuiltIn 构建钉定 digest 集、HostProvided
+  module_id allowlist（宿主部署管线持有，Registry 生命周期内不可变）、OutOfProcess
+  信任签名者集 + 注入式 `IModuleSignatureVerifier`（签名绑定 canonical manifest
+  digest；Core 不引入密码学依赖，参考实现为确定性绑定校验，真实密码学校验由宿主
+  注入）。`verify_module_trust` 纯函数：origin 与信任材料一致才通过；signer/
+  signature/algorithm 缺失或失配、digest 未钉定、allowlist 外、签名验证失败或不可用
+  全部 fail closed。注册准入集成：验证失败 → Quarantined，无部分状态。
+- [ ] `M7-TM1-03` 协商触发挂接：`ModuleNegotiationCoordinator` 持 catalog 与当前环境
+  （epoch + `EnvironmentCapabilities`），三类触发——`SessionEstablished`、
+  `EnvironmentChanged`（epoch 单调：旧 epoch 拒绝、同 epoch 重申报幂等 NoOp）、
+  `ModuleStatesChanged`（registry 状态变化）；每次有效触发以当前 Active snapshot 调
+  既有 `negotiate_modules`，产出新 generation 的 `NegotiationView`（generation 单调、
+  协商 digest、投影）并提交 `ModuleNegotiationDecided` 事件
+  （`mira.tool_module.negotiation.v1`，含触发源、epoch、generation、digest）。
+  在途请求按旧 generation 结算不受影响：`current()` 返回只读值语义 view，旧 view
+  永远可结算，新请求读 current。验证/安装类工作经 `submit_module_verification` 以
+  `submit_auto()` 承载，future 必须消费；提交拒绝、任务异常、执行中取消与
+  shutdown 转化为明确结果（设计 §10，M7 §6）。
 
 ### 4.3 TM2：LLM 暴露投影（后续轮，实施前冻结细项）
 
@@ -127,7 +153,9 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   §验证方式：引用解析矩阵、兼容状态投影、`Invalid` 准入拒绝、Skill 生命周期、
   Procedure 索引投影）。
 
-## 5. TM0 门禁（2026-09-16 跑前冻结；同日交付取证）
+## 5. 阶段门禁
+
+### 5.1 TM0 门禁（2026-09-16 跑前冻结；同日交付取证）
 
 - [x] `M7-TM0-G1` 目录与派生 golden：核心词表 digest 固定且与设计 §4.2 条目一
   一对应；`EnvironmentCapabilities` 布尔字段全组合 × `perception_sources`
@@ -148,6 +176,31 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 - [x] `M7-TM0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含并链接
   （`examples/minimal_consumer.cpp` 追加 TM0 闭包段并注册
   `mira_minimal_consumer_test` 进入 ctest；补齐该 consumer 此前未注册的缺口）。
+
+### 5.2 TM1 门禁（2026-09-19 跑前冻结）
+
+- [ ] `M7-TM1-G1` 状态机与只降级矩阵：七状态每条合法转换生效且生命周期事件
+  （kind、module_id、version、digest、origin）正确；非法转换（升级、终态复活、
+  Quarantined 出口、seal 后注册、close 后变更）100% 拒绝且状态不变、拒绝有事件或
+  明确错误。
+- [ ] `M7-TM1-G2` 来源信任 fail-closed：三 origin 的通过/拒绝矩阵——BuiltIn digest
+  钉定命中/未钉定、HostProvided allowlist 命中/在外、OutOfProcess 签名者信任/不
+  信任/verifier 拒绝/verifier 不可用、签名或算法字段缺失——全部整组拒绝 →
+  Quarantined + 事件、无部分状态；tombstone 同 digest 重注册（含换 module_id 同
+  digest）拒绝。
+- [ ] `M7-TM1-G3` 协商触发与 generation：三类触发各自产生新 generation 与
+  `ModuleNegotiationDecided` 事件（触发源/epoch/generation/digest 齐全）；epoch
+  回退拒绝、同 epoch 重申报幂等 NoOp；同输入协商 digest 确定性（`--report` 跨进程
+  字节一致）。
+- [ ] `M7-TM1-G4` 不可变 snapshot 与在途结算：状态变化后旧 snapshot 值（模块集与
+  digest）不变、generation 单调递增；旧 generation view 正常结算、新请求读新
+  digest；跨模组 wire 名冲突激活拒绝且先 Active 者成员不受影响。
+- [ ] `M7-TM1-G5` Executor 路由与关闭：验证任务经 `submit_auto()` 且 future 必被
+  消费；正常完成、任务异常、提交拒绝、执行中取消、shutdown 全矩阵转化为明确
+  结果，无吞掉的异常；`close()` 后注册/转换/协商触发全部拒绝且统计可见。
+- [ ] `M7-TM1-G6` consumer 闭包与事件 schema：新公开头可被最小外部 consumer 独立
+  包含链接；两事件 payload 为版本化 JSON（`mira.tool_module.lifecycle.v1` /
+  `mira.tool_module.negotiation.v1`），字段脱敏（不含 signature 原文与 secret）。
 
 ## 6. Executor 路由与关闭
 
@@ -243,3 +296,36 @@ success。限制与未执行项：签名字段的密码学验证、Registry 状�
 归 TM1/TM2（实施前在 §4.2/§4.3 冻结细项）；脚本化确定性口径非语义质量声明
 （`RULE-10`）；TSAN 仅覆盖纯计算路径（TM0 无并发）。TM0 关闭后下一阶段为
 TM1（Registry 生命周期）。
+
+2026-09-19：TM1 细项冻结并交付。交付 `include/mira/tool_module_registry.hpp` +
+`src/tool/tool_module_registry.cpp`（入 `mira_core`）：`ModuleTrustConfig` 与
+`verify_module_trust` 三 origin 来源信任纯函数（BuiltIn 构建钉定 digest /
+HostProvided allowlist——[DEC-009](../decisions/DEC-009-tool-module-boundary.md)
+暂定默认值升格 v1 冻结 / OutOfProcess 注入式 `IModuleSignatureVerifier` 绑定
+unsigned manifest digest；`tool_module.hpp` 加法式新增
+`tool_module_unsigned_manifest_digest` 作为签名载荷）；`ModuleRegistry` 状态机
+（七状态受控转换、`seal()`/`close()` 注册窗口与终态、跨模组 wire 名冲突激活
+fail-closed、revoke tombstone 播种与运行期追加、不可变 `RegistrySnapshot`
+generation/digest）；`ModuleNegotiationCoordinator` 三类触发（session 一次、
+epoch 单调与同 epoch 幂等、模组状态变化；closed registry 拒绝触发）；生命周期
+与协商两类版本化事件（`mira.tool_module.lifecycle.v1` /
+`mira.tool_module.negotiation.v1`，脱敏、sink 失败计数不阻塞）；
+`submit_module_verification`/`consume_module_verification` Executor 路由
+（`submit_auto()` + future 经 consume 折叠全部拒绝面为显式 Result）。测试
+`tests/m7/m7_tool_module_registry_test.cpp`（20 个 gate 函数、约 500 断言，
+label `contract`；测试的编写、运行与 sanitizer 取证由
+Independent-Verification-Agent 独立完成，共两轮：首轮抓到提交拒绝路径两处
+实现缺陷——shutdown 后 facade 抛普通 `runtime_error` 而非 `ExecutorStopping`
+映射失配、容量拒绝经 ready-with-exception future 逃逸 Result 边界——主循环
+修复为双层显式拒绝面并补齐 coordinator 的 closed 检查后复验通过）；
+`examples/minimal_consumer.cpp` 追加 TM1 闭包段。本地门禁：全量 ctest
+**85/85**（原 84 + 本里程碑 1 目标）、ASAN/UBSAN/TSAN（`setarch -R`）m7
+目标零报告、docs/platform-boundary/sbom/format 四检查通过（format 由与 CI
+同行为的 LLVM 18 二进制校验）、clang-tidy 18.1.8 预检两个被改库源零违例
+（一处 `performance-move-const-arg` 修复后复验）、本机 NDK r26.3 两 ABI
+交叉编译 `mira_core`+`mira_workflow` 通过且 8 个 TM1 符号在库；TM1 契约
+报告 `--report` 跨进程字节一致（md5
+`aba09395c81b616f4adc0cd3d75829ab`）。限制与未执行项：OutOfProcess 签名的
+密码学校验为宿主注入（Core 仅确定性绑定参考实现，`RULE-10`）；executor
+shutdown 进行中并发窗口的提交行为未注入竞态测试；Windows/Android 运行与
+Release/quality 由 PR CI 回填后 TM1 方可关闭。
