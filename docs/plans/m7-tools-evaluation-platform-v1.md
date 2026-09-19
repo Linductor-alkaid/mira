@@ -1,7 +1,7 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0 已交付关闭，TM1 进入实施）
+> 重定义；TM0/TM1 已交付关闭，下一阶段 TM2 实施前冻结细项）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
@@ -101,7 +101,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 
 ### 4.2 TM1：Registry 生命周期（2026-09-19 跑前冻结细项，进入实施）
 
-- [ ] `M7-TM1-01` ModuleRegistry 状态机与不可变 snapshot：状态机
+- [x] `M7-TM1-01` ModuleRegistry 状态机与不可变 snapshot：状态机
   `Discovered -> Verified -> Staged -> Active -> Deprecated -> Revoked`（验证失败
   `Quarantined`）以受控转换落地——`register_module`（初始化/部署期准入：
   Discovered→Verified，信任失败→Quarantined）、`stage_module`（Verified→Staged）、
@@ -115,7 +115,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   tombstone，同 digest 重注册拒绝并记事件；tombstone 可经信任配置构造时播种。
   生命周期事件（`mira.tool_module.lifecycle.v1`，State 级，Revoked/Quarantined 为
   Critical）：七种状态迁移 + 拒绝原因；事件 sink 失败计入统计不阻塞控制面。
-- [ ] `M7-TM1-02` 来源信任验证（DEC-009「宿主显式注入 + allowlist」暂定默认值升格为
+- [x] `M7-TM1-02` 来源信任验证（DEC-009「宿主显式注入 + allowlist」暂定默认值升格为
   v1 冻结决策）：`ModuleTrustConfig`——BuiltIn 构建钉定 digest 集、HostProvided
   module_id allowlist（宿主部署管线持有，Registry 生命周期内不可变）、OutOfProcess
   信任签名者集 + 注入式 `IModuleSignatureVerifier`（签名绑定 canonical manifest
@@ -123,7 +123,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   注入）。`verify_module_trust` 纯函数：origin 与信任材料一致才通过；signer/
   signature/algorithm 缺失或失配、digest 未钉定、allowlist 外、签名验证失败或不可用
   全部 fail closed。注册准入集成：验证失败 → Quarantined，无部分状态。
-- [ ] `M7-TM1-03` 协商触发挂接：`ModuleNegotiationCoordinator` 持 catalog 与当前环境
+- [x] `M7-TM1-03` 协商触发挂接：`ModuleNegotiationCoordinator` 持 catalog 与当前环境
   （epoch + `EnvironmentCapabilities`），三类触发——`SessionEstablished`、
   `EnvironmentChanged`（epoch 单调：旧 epoch 拒绝、同 epoch 重申报幂等 NoOp）、
   `ModuleStatesChanged`（registry 状态变化）；每次有效触发以当前 Active snapshot 调
@@ -179,26 +179,26 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 
 ### 5.2 TM1 门禁（2026-09-19 跑前冻结）
 
-- [ ] `M7-TM1-G1` 状态机与只降级矩阵：七状态每条合法转换生效且生命周期事件
+- [x] `M7-TM1-G1` 状态机与只降级矩阵：七状态每条合法转换生效且生命周期事件
   （kind、module_id、version、digest、origin）正确；非法转换（升级、终态复活、
   Quarantined 出口、seal 后注册、close 后变更）100% 拒绝且状态不变、拒绝有事件或
   明确错误。
-- [ ] `M7-TM1-G2` 来源信任 fail-closed：三 origin 的通过/拒绝矩阵——BuiltIn digest
+- [x] `M7-TM1-G2` 来源信任 fail-closed：三 origin 的通过/拒绝矩阵——BuiltIn digest
   钉定命中/未钉定、HostProvided allowlist 命中/在外、OutOfProcess 签名者信任/不
   信任/verifier 拒绝/verifier 不可用、签名或算法字段缺失——全部整组拒绝 →
   Quarantined + 事件、无部分状态；tombstone 同 digest 重注册（含换 module_id 同
   digest）拒绝。
-- [ ] `M7-TM1-G3` 协商触发与 generation：三类触发各自产生新 generation 与
+- [x] `M7-TM1-G3` 协商触发与 generation：三类触发各自产生新 generation 与
   `ModuleNegotiationDecided` 事件（触发源/epoch/generation/digest 齐全）；epoch
   回退拒绝、同 epoch 重申报幂等 NoOp；同输入协商 digest 确定性（`--report` 跨进程
   字节一致）。
-- [ ] `M7-TM1-G4` 不可变 snapshot 与在途结算：状态变化后旧 snapshot 值（模块集与
+- [x] `M7-TM1-G4` 不可变 snapshot 与在途结算：状态变化后旧 snapshot 值（模块集与
   digest）不变、generation 单调递增；旧 generation view 正常结算、新请求读新
   digest；跨模组 wire 名冲突激活拒绝且先 Active 者成员不受影响。
-- [ ] `M7-TM1-G5` Executor 路由与关闭：验证任务经 `submit_auto()` 且 future 必被
+- [x] `M7-TM1-G5` Executor 路由与关闭：验证任务经 `submit_auto()` 且 future 必被
   消费；正常完成、任务异常、提交拒绝、执行中取消、shutdown 全矩阵转化为明确
   结果，无吞掉的异常；`close()` 后注册/转换/协商触发全部拒绝且统计可见。
-- [ ] `M7-TM1-G6` consumer 闭包与事件 schema：新公开头可被最小外部 consumer 独立
+- [x] `M7-TM1-G6` consumer 闭包与事件 schema：新公开头可被最小外部 consumer 独立
   包含链接；两事件 payload 为版本化 JSON（`mira.tool_module.lifecycle.v1` /
   `mira.tool_module.negotiation.v1`），字段脱敏（不含 signature 原文与 secret）。
 
@@ -329,3 +329,14 @@ Independent-Verification-Agent 独立完成，共两轮：首轮抓到提交拒�
 密码学校验为宿主注入（Core 仅确定性绑定参考实现，`RULE-10`）；executor
 shutdown 进行中并发窗口的提交行为未注入竞态测试；Windows/Android 运行与
 Release/quality 由 PR CI 回填后 TM1 方可关闭。
+2026-09-19：PR CI 证据回填并关闭。PR
+[#59](https://github.com/Linductor-alkaid/mira/pull/59)（head `01de324`，合并提交
+`76eec95`）push 与 pull_request pipeline run
+[`35425708347`](https://github.com/Linductor-alkaid/mira/actions/runs/35425708347)/
+[`35425754169`](https://github.com/Linductor-alkaid/mira/actions/runs/35425754169)
+各 12 项首轮全部通过（Linux GCC/Clang Debug/Release、Windows MSVC、Android 两
+ABI、ASAN/UBSAN/TSAN、quality），master 合并提交 run
+[`35427226722`](https://github.com/Linductor-alkaid/mira/actions/runs/35427226722)
+success（12/12）。`M7-TM1-01`–`03` 与 `M7-TM1-G1`–`G6` 关闭；下一阶段为 TM2
+（LLM 暴露投影，实施前在本文件 §4.3 冻结细项与门禁）。
+

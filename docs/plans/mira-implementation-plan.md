@@ -268,8 +268,16 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    Agent 两轮独立取证（首轮抓到提交拒绝路径两处缺陷，修复后 20/20 门复验通过，
    报告跨进程字节一致 md5 `aba09395c81b616f4adc0cd3d75829ab`）。本地门禁：
    全量 ctest 85/85、三 sanitizer m7 目标零报告、四检查、clang-tidy 预检与
-   NDK r26.3 两 ABI 预演通过。PR CI 证据回填后 TM1 关闭，下一阶段为 TM2
-   （LLM 暴露投影，实施前冻结细项）；证据与限制见
+   NDK r26.3 两 ABI 预演通过。PR
+   [#59](https://github.com/Linductor-alkaid/mira/pull/59)（head `01de324`，
+   合并提交 `76eec95`）双 pipeline 各 12 项首轮全绿（push run
+   [`35425708347`](https://github.com/Linductor-alkaid/mira/actions/runs/35425708347)
+   / pull_request run
+   [`35425754169`](https://github.com/Linductor-alkaid/mira/actions/runs/35425754169)），
+   master 合并提交 run
+   [`35427226722`](https://github.com/Linductor-alkaid/mira/actions/runs/35427226722)
+   success；`M7-TM1-01`–`03` 与 `M7-TM1-G1`–`G6` 关闭，下一阶段为 TM2（LLM
+   暴露投影，实施前冻结细项）；证据与限制见
    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled，M7 保持 Blocked。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
