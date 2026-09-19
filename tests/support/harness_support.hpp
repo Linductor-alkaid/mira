@@ -37,9 +37,8 @@ class RecordingProvider final : public IModelProvider {
                                               const OperationContext &context,
                                               const ProviderInferOptions &) override {
         if (context.cancelled()) {
-            return make_model_error(ModelDomainCode::ModelCancelled,
-                                    "recording provider cancelled", false,
-                                    request.operation_id);
+            return make_model_error(ModelDomainCode::ModelCancelled, "recording provider cancelled",
+                                    false, request.operation_id);
         }
         std::unique_lock lock(mutex_);
         requests_.push_back(request);
@@ -50,8 +49,7 @@ class RecordingProvider final : public IModelProvider {
         }
         if (cursor_ >= script_.size()) {
             return make_model_error(ModelDomainCode::ModelResourceExhausted,
-                                    "recording provider is exhausted", false,
-                                    request.operation_id);
+                                    "recording provider is exhausted", false, request.operation_id);
         }
         ModelResponse response = script_[cursor_++];
         lock.unlock();

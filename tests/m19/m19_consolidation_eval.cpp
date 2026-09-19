@@ -42,8 +42,7 @@ struct FrozenConfig final {
     std::uint64_t environment_epoch = 7;
     // Pinned after the first frozen run; the harness asserts equality so the
     // dataset is checked, not assumed (same discipline as M17/M18).
-    std::string dataset_digest =
-        "a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f";
+    std::string dataset_digest = "a828a2aedb0a2550961a4deb00909554334b2a6aad00d224af73fe93310a984f";
 };
 
 [[nodiscard]] std::string digest_hex(const Sha256Digest &digest) {
@@ -51,8 +50,7 @@ struct FrozenConfig final {
     text.reserve(digest.bytes.size() * 2);
     for (const auto byte : digest.bytes) {
         std::ostringstream slot;
-        slot << std::hex << std::setw(2) << std::setfill('0')
-             << static_cast<unsigned int>(byte);
+        slot << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
         text += slot.str();
     }
     return text;
@@ -236,8 +234,7 @@ class ScriptedConsolidationProvider final : public IModelProvider {
 
     [[nodiscard]] const ModelProfile &profile() const override { return *profile_; }
 
-    [[nodiscard]] Result<ModelResponse> infer(const ModelRequest &request,
-                                              const OperationContext &,
+    [[nodiscard]] Result<ModelResponse> infer(const ModelRequest &request, const OperationContext &,
                                               const ProviderInferOptions &) override {
         ++calls_;
         if (fail_) {
@@ -374,7 +371,8 @@ struct RoundMetrics final {
                provenance_violations == other.provenance_violations &&
                marker_violations == other.marker_violations &&
                cross_session_violations == other.cross_session_violations &&
-               committed == other.committed && preference_candidates == other.preference_candidates &&
+               committed == other.committed &&
+               preference_candidates == other.preference_candidates &&
                consolidation_errors == other.consolidation_errors &&
                stale_discarded == other.stale_discarded &&
                terminal_discarded == other.terminal_discarded &&
@@ -385,16 +383,14 @@ struct RoundMetrics final {
     }
 
     [[nodiscard]] double constraint_recall() const {
-        return planted_constraints == 0
-                   ? 1.0
-                   : static_cast<double>(recalled_constraints) /
-                         static_cast<double>(planted_constraints);
+        return planted_constraints == 0 ? 1.0
+                                        : static_cast<double>(recalled_constraints) /
+                                              static_cast<double>(planted_constraints);
     }
     [[nodiscard]] double decision_recall() const {
-        return planted_decisions == 0
-                   ? 1.0
-                   : static_cast<double>(recalled_decisions) /
-                         static_cast<double>(planted_decisions);
+        return planted_decisions == 0 ? 1.0
+                                      : static_cast<double>(recalled_decisions) /
+                                            static_cast<double>(planted_decisions);
     }
     [[nodiscard]] double thread_recall() const {
         return planted_threads == 0
@@ -407,10 +403,9 @@ struct RoundMetrics final {
                    : static_cast<double>(matched_statements) / static_cast<double>(statements);
     }
     [[nodiscard]] double provenance_accuracy() const {
-        return statements == 0
-                   ? 1.0
-                   : static_cast<double>(statements - provenance_violations) /
-                         static_cast<double>(statements);
+        return statements == 0 ? 1.0
+                               : static_cast<double>(statements - provenance_violations) /
+                                     static_cast<double>(statements);
     }
 };
 
@@ -458,7 +453,8 @@ struct RoundResult final {
 
         // Degraded mode: seed one good commit, then fail every provider call.
         if (provider_fails && index == 0) {
-            const auto seeded = consolidator.consolidate(segment, make_options_for(eval_session, config));
+            const auto seeded =
+                consolidator.consolidate(segment, make_options_for(eval_session, config));
             if (!seeded.has_value()) {
                 std::cerr << "seeding consolidation failed\n";
                 std::exit(2);
@@ -477,7 +473,8 @@ struct RoundResult final {
             provider.fail_ = true;
         }
 
-        const auto consolidated = consolidator.consolidate(segment, make_options_for(eval_session, config));
+        const auto consolidated =
+            consolidator.consolidate(segment, make_options_for(eval_session, config));
         if (!consolidated.has_value()) {
             ++result.metrics.consolidation_errors;
             continue;
@@ -499,10 +496,11 @@ struct RoundResult final {
         // statement quotes its content and cites its origin.
         const auto recall_of = [&](PlantedKind kind) {
             std::size_t hits = 0;
-            const auto &sections = kind == PlantedKind::Constraint
-                                       ? candidate.constraints
-                                       : (kind == PlantedKind::Decision ? candidate.decisions
-                                                                        : candidate.unresolved_threads);
+            const auto &sections =
+                kind == PlantedKind::Constraint
+                    ? candidate.constraints
+                    : (kind == PlantedKind::Decision ? candidate.decisions
+                                                     : candidate.unresolved_threads);
             for (const auto &planted : eval_session.planted) {
                 if (planted.kind != kind) {
                     continue;
@@ -545,7 +543,8 @@ struct RoundResult final {
                 const bool provenance_ok = !statement.source_events.empty();
                 bool in_session = true;
                 for (const auto &event : statement.source_events) {
-                    if (std::find(eval_session.entry_origins.begin(), eval_session.entry_origins.end(),
+                    if (std::find(eval_session.entry_origins.begin(),
+                                  eval_session.entry_origins.end(),
                                   event) == eval_session.entry_origins.end()) {
                         in_session = false;
                     }
@@ -592,7 +591,8 @@ struct RoundResult final {
                 auto stale = checkpoint;
                 stale.through_event_sequence -= 1;
                 stale.id = conversation_checkpoint_id_from_seed(
-                    stale.session_id.to_string() + "|" + std::to_string(stale.through_event_sequence));
+                    stale.session_id.to_string() + "|" +
+                    std::to_string(stale.through_event_sequence));
                 const auto outcome = commit_conversation_checkpoint(store, stale, live);
                 if (outcome.disposition == ConversationCommitDisposition::DiscardedStale) {
                     ++result.metrics.stale_discarded;
@@ -624,20 +624,25 @@ struct RoundResult final {
 [[nodiscard]] JsonValue round_json(const RoundMetrics &metrics) {
     JsonValue::Object object;
     object.emplace_back("sessions", static_cast<std::int64_t>(metrics.sessions));
-    object.emplace_back("planted_constraints", static_cast<std::int64_t>(metrics.planted_constraints));
+    object.emplace_back("planted_constraints",
+                        static_cast<std::int64_t>(metrics.planted_constraints));
     object.emplace_back("planted_decisions", static_cast<std::int64_t>(metrics.planted_decisions));
     object.emplace_back("planted_threads", static_cast<std::int64_t>(metrics.planted_threads));
-    object.emplace_back("recalled_constraints", static_cast<std::int64_t>(metrics.recalled_constraints));
-    object.emplace_back("recalled_decisions", static_cast<std::int64_t>(metrics.recalled_decisions));
+    object.emplace_back("recalled_constraints",
+                        static_cast<std::int64_t>(metrics.recalled_constraints));
+    object.emplace_back("recalled_decisions",
+                        static_cast<std::int64_t>(metrics.recalled_decisions));
     object.emplace_back("recalled_threads", static_cast<std::int64_t>(metrics.recalled_threads));
     object.emplace_back("constraint_recall", metrics.constraint_recall());
     object.emplace_back("decision_recall", metrics.decision_recall());
     object.emplace_back("thread_recall", metrics.thread_recall());
     object.emplace_back("statements", static_cast<std::int64_t>(metrics.statements));
-    object.emplace_back("matched_statements", static_cast<std::int64_t>(metrics.matched_statements));
+    object.emplace_back("matched_statements",
+                        static_cast<std::int64_t>(metrics.matched_statements));
     object.emplace_back("precision", metrics.precision());
     object.emplace_back("provenance_accuracy", metrics.provenance_accuracy());
-    object.emplace_back("provenance_violations", static_cast<std::int64_t>(metrics.provenance_violations));
+    object.emplace_back("provenance_violations",
+                        static_cast<std::int64_t>(metrics.provenance_violations));
     object.emplace_back("marker_violations", static_cast<std::int64_t>(metrics.marker_violations));
     object.emplace_back("cross_session_violations",
                         static_cast<std::int64_t>(metrics.cross_session_violations));
@@ -647,7 +652,8 @@ struct RoundResult final {
     object.emplace_back("consolidation_errors",
                         static_cast<std::int64_t>(metrics.consolidation_errors));
     object.emplace_back("stale_discarded", static_cast<std::int64_t>(metrics.stale_discarded));
-    object.emplace_back("terminal_discarded", static_cast<std::int64_t>(metrics.terminal_discarded));
+    object.emplace_back("terminal_discarded",
+                        static_cast<std::int64_t>(metrics.terminal_discarded));
     object.emplace_back("stale_committed", static_cast<std::int64_t>(metrics.stale_committed));
     object.emplace_back("checkpoint_bytes", static_cast<std::int64_t>(metrics.checkpoint_bytes));
     object.emplace_back("presented_bytes", static_cast<std::int64_t>(metrics.presented_bytes));
@@ -707,10 +713,9 @@ int main(int argc, char **argv) {
                            std::to_string(hybrid.metrics.provenance_violations));
     }
     // D3: zero marker and cross-session leakage in every committed statement.
-    const bool d3 = hybrid.metrics.marker_violations == 0 &&
-                    hybrid.metrics.cross_session_violations == 0 &&
-                    degraded.metrics.marker_violations == 0 &&
-                    degraded.metrics.cross_session_violations == 0;
+    const bool d3 =
+        hybrid.metrics.marker_violations == 0 && hybrid.metrics.cross_session_violations == 0 &&
+        degraded.metrics.marker_violations == 0 && degraded.metrics.cross_session_violations == 0;
     if (!d3) {
         gates_ok = false;
         failures.push_back("D3: marker or cross-session leakage observed");

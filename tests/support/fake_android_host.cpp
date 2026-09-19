@@ -25,8 +25,8 @@ std::vector<std::uint8_t> synthetic_frame(std::uint64_t salt) {
     // Distinct content per capture: content-addressed artifact stores then
     // keep every frame instead of deduplicating identical synthetic frames.
     for (std::size_t index = 0; index < sizeof(salt); ++index) {
-        payload[index] = static_cast<std::uint8_t>(payload[index] ^
-                                                   ((salt >> (index * 8U)) & 0xFFU));
+        payload[index] =
+            static_cast<std::uint8_t>(payload[index] ^ ((salt >> (index * 8U)) & 0xFFU));
     }
     return payload;
 }

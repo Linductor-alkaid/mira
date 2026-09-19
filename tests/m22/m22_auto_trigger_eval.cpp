@@ -73,8 +73,7 @@ struct FrozenConfig final {
     std::uint64_t environment_epoch = 7;
     // Pinned once the generator was frozen; the harness asserts equality so
     // the dataset is checked, never assumed (M17-M21 style).
-    std::string dataset_digest =
-        "6f2ab2e57b93e1d66846100f92b91563a83f5ffd1f05b5dbf6682dc5f4911535";
+    std::string dataset_digest = "6f2ab2e57b93e1d66846100f92b91563a83f5ffd1f05b5dbf6682dc5f4911535";
 };
 
 [[nodiscard]] std::string digest_hex(const Sha256Digest &digest) {
@@ -82,8 +81,7 @@ struct FrozenConfig final {
     text.reserve(digest.bytes.size() * 2);
     for (const auto byte : digest.bytes) {
         std::ostringstream slot;
-        slot << std::hex << std::setw(2) << std::setfill('0')
-             << static_cast<unsigned int>(byte);
+        slot << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
         text += slot.str();
     }
     return text;
@@ -252,8 +250,7 @@ struct Dataset final {
     // markers/recent texts and sequences; no raw id bytes so the anchor stays
     // endian-independent, M21 methodology).
     std::vector<std::string> lines;
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         for (std::size_t signal_index = 0; signal_index < eval_session.signals.size();
              ++signal_index) {
@@ -262,14 +259,12 @@ struct Dataset final {
             for (const auto &entry : signal.recent) {
                 recent += entry.text + "@" + std::to_string(entry.sequence) + ",";
             }
-            lines.push_back("s" + std::to_string(session_index) +
-                            "|n" + std::to_string(signal_index) +
-                            "|adv=" + std::to_string(signal.advance) +
-                            "|evt=" + std::to_string(signal.events) +
-                            "|ckpt=" + std::to_string(signal.checkpoint_watermark) +
-                            "|rev=" + std::to_string(signal.checkpoint_revision) +
-                            "|mint=" + (signal.mints ? "1" : "0") +
-                            "|recent=" + recent);
+            lines.push_back(
+                "s" + std::to_string(session_index) + "|n" + std::to_string(signal_index) +
+                "|adv=" + std::to_string(signal.advance) + "|evt=" + std::to_string(signal.events) +
+                "|ckpt=" + std::to_string(signal.checkpoint_watermark) +
+                "|rev=" + std::to_string(signal.checkpoint_revision) +
+                "|mint=" + (signal.mints ? "1" : "0") + "|recent=" + recent);
         }
     }
     std::sort(lines.begin(), lines.end());
@@ -289,8 +284,7 @@ struct Dataset final {
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] ConversationStatement make_statement(const std::string &content,
-                                                   const EventId &origin,
-                                                   std::uint64_t sequence) {
+                                                   const EventId &origin, std::uint64_t sequence) {
     ConversationStatement statement;
     statement.content = content;
     statement.source_events = {origin};
@@ -299,15 +293,12 @@ struct Dataset final {
     return statement;
 }
 
-[[nodiscard]] ConversationCheckpoint make_eval_checkpoint(const SessionId &session,
-                                                          const TaskId &task,
-                                                          std::uint64_t watermark,
-                                                          std::uint64_t revision,
-                                                          std::uint64_t environment_epoch) {
+[[nodiscard]] ConversationCheckpoint
+make_eval_checkpoint(const SessionId &session, const TaskId &task, std::uint64_t watermark,
+                     std::uint64_t revision, std::uint64_t environment_epoch) {
     ConversationCheckpoint checkpoint;
-    checkpoint.id = conversation_checkpoint_id_from_seed(session.to_string() + "|" +
-                                                         std::to_string(watermark) + "|" +
-                                                         std::to_string(revision));
+    checkpoint.id = conversation_checkpoint_id_from_seed(
+        session.to_string() + "|" + std::to_string(watermark) + "|" + std::to_string(revision));
     checkpoint.session_id = session;
     checkpoint.task_id = task;
     checkpoint.task_epoch = 3;
@@ -319,18 +310,18 @@ struct Dataset final {
     SplitMix64 constraint_rng2{seed_base + 2};
     SplitMix64 decision_rng{seed_base + 3};
     SplitMix64 thread_rng{seed_base + 4};
-    checkpoint.constraints.push_back(make_statement(
-        "constraint r" + std::to_string(revision) + " confirm before sending",
-        EventId{id_from(constraint_rng, "ev")}, watermark - 2));
-    checkpoint.constraints.push_back(make_statement(
-        "constraint r" + std::to_string(revision) + " keep the quota thread open",
-        EventId{id_from(constraint_rng2, "ev")}, watermark - 1));
-    checkpoint.decisions.push_back(make_statement(
-        "decision r" + std::to_string(revision) + " use the batch provider",
-        EventId{id_from(decision_rng, "ev")}, watermark - 2));
-    checkpoint.unresolved_threads.push_back(make_statement(
-        "thread r" + std::to_string(revision) + " waiting for the quota reply",
-        EventId{id_from(thread_rng, "ev")}, watermark - 1));
+    checkpoint.constraints.push_back(
+        make_statement("constraint r" + std::to_string(revision) + " confirm before sending",
+                       EventId{id_from(constraint_rng, "ev")}, watermark - 2));
+    checkpoint.constraints.push_back(
+        make_statement("constraint r" + std::to_string(revision) + " keep the quota thread open",
+                       EventId{id_from(constraint_rng2, "ev")}, watermark - 1));
+    checkpoint.decisions.push_back(
+        make_statement("decision r" + std::to_string(revision) + " use the batch provider",
+                       EventId{id_from(decision_rng, "ev")}, watermark - 2));
+    checkpoint.unresolved_threads.push_back(
+        make_statement("thread r" + std::to_string(revision) + " waiting for the quota reply",
+                       EventId{id_from(thread_rng, "ev")}, watermark - 1));
     checkpoint.summary = "revision " + std::to_string(revision);
     checkpoint.confidence = 0.9;
     for (const auto *statements :
@@ -347,10 +338,10 @@ struct Dataset final {
     return checkpoint;
 }
 
-[[nodiscard]] WorkingContextRefreshInput make_refresh_input(
-    const ConversationCheckpoint &checkpoint, const WorkingContextIdentity &identity,
-    const WorkingContextCommitState &live, std::uint64_t reported_events,
-    std::vector<ConversationSegmentEntry> recent) {
+[[nodiscard]] WorkingContextRefreshInput
+make_refresh_input(const ConversationCheckpoint &checkpoint, const WorkingContextIdentity &identity,
+                   const WorkingContextCommitState &live, std::uint64_t reported_events,
+                   std::vector<ConversationSegmentEntry> recent) {
     WorkingContextRefreshInput input;
     input.checkpoint = checkpoint;
     input.identity = identity;
@@ -381,8 +372,7 @@ struct Dataset final {
     return live;
 }
 
-[[nodiscard]] std::vector<ConversationSegmentEntry>
-recent_entries(const SignalSpec &signal) {
+[[nodiscard]] std::vector<ConversationSegmentEntry> recent_entries(const SignalSpec &signal) {
     std::vector<ConversationSegmentEntry> entries;
     entries.reserve(signal.recent.size());
     for (const auto &spec : signal.recent) {
@@ -397,8 +387,8 @@ recent_entries(const SignalSpec &signal) {
 // Two deterministic recent entries bounded by the given checkpoint watermark
 // (sequences never run past it, so the curator's input pre-check passes on
 // every round).
-[[nodiscard]] std::vector<ConversationSegmentEntry>
-pair_recent(std::uint64_t watermark, std::uint64_t salt) {
+[[nodiscard]] std::vector<ConversationSegmentEntry> pair_recent(std::uint64_t watermark,
+                                                                std::uint64_t salt) {
     std::vector<ConversationSegmentEntry> entries;
     entries.reserve(2);
     for (std::size_t slot = 0; slot < 2; ++slot) {
@@ -412,7 +402,6 @@ pair_recent(std::uint64_t watermark, std::uint64_t salt) {
     }
     return entries;
 }
-
 
 // ---------------------------------------------------------------------------
 // Deterministic gate (absorb / coexistence / shutdown rounds): entry is
@@ -477,9 +466,8 @@ class ScriptedCuratorProvider final : public IModelProvider {
     };
 
     ScriptedCuratorProvider()
-        : profile_(std::make_shared<ModelProfile>(
-              mira::testing::make_profile(ProtocolDialect::OpenAIResponsesV1,
-                                          "https://m22-auto-eval.test"))) {}
+        : profile_(std::make_shared<ModelProfile>(mira::testing::make_profile(
+              ProtocolDialect::OpenAIResponsesV1, "https://m22-auto-eval.test"))) {}
 
     [[nodiscard]] const ModelProfile &profile() const override { return *profile_; }
 
@@ -496,8 +484,8 @@ class ScriptedCuratorProvider final : public IModelProvider {
         // number of entries the script computed for this call. Disabled
         // (expected_entries_ == 0) for the failure-injection behaviors.
         if (expected_entries_ != 0 &&
-            last_transcript_.find("; " + std::to_string(expected_entries_) +
-                                 " numbered entries") == std::string::npos) {
+            last_transcript_.find("; " + std::to_string(expected_entries_) + " numbered entries") ==
+                std::string::npos) {
             Error mismatch;
             mismatch.code = ErrorCode::Internal;
             mismatch.domain = "test";
@@ -597,8 +585,8 @@ constexpr std::size_t kSectionCount = 8;
 
 [[nodiscard]] std::array<const std::vector<WorkingContextItem> *, kSectionCount>
 previous_sections(const WorkingContextSnapshot &snapshot) {
-    return {&snapshot.constraints, &snapshot.decisions, &snapshot.open_issues,
-            &snapshot.active_tasks, &snapshot.verified_facts, &snapshot.failed_attempts,
+    return {&snapshot.constraints,    &snapshot.decisions,      &snapshot.open_issues,
+            &snapshot.active_tasks,   &snapshot.verified_facts, &snapshot.failed_attempts,
             &snapshot.important_refs, &snapshot.next_actions};
 }
 
@@ -665,10 +653,9 @@ struct ScriptedItem final {
     return "[" + joined + "]";
 }
 
-[[nodiscard]] std::string
-output_json(const std::vector<ScriptedItem> (&sections)[kSectionCount]) {
+[[nodiscard]] std::string output_json(const std::vector<ScriptedItem> (&sections)[kSectionCount]) {
     static constexpr const char *kOutputKeys[kSectionCount] = {
-        "constraints", "decisions", "open_issues", "active_tasks",
+        "constraints",    "decisions",       "open_issues",    "active_tasks",
         "verified_facts", "failed_attempts", "important_refs", "next_actions"};
     std::string json = "{\"confidence\":0.95";
     for (std::size_t section = 0; section < kSectionCount; ++section) {
@@ -711,11 +698,12 @@ output_json(const std::vector<ScriptedItem> (&sections)[kSectionCount]) {
                                    {layout.prev_base[0] + index},
                                    (*previous_all[0])[index].confidence});
         }
-        sections[0].push_back(
-            {checkpoint.constraints.front().content, {layout.ckpt_base[0]}, 0.9});
+        sections[0].push_back({checkpoint.constraints.front().content, {layout.ckpt_base[0]}, 0.9});
         sections[1].push_back({"decision superseded " + tag + " (replaces the prior decision)",
-                               {layout.prev_base[1], layout.ckpt_base[1]}, 0.9});
-        sections[2].push_back({(*previous_all[2]).front().content, {layout.prev_base[2]},
+                               {layout.prev_base[1], layout.ckpt_base[1]},
+                               0.9});
+        sections[2].push_back({(*previous_all[2]).front().content,
+                               {layout.prev_base[2]},
                                (*previous_all[2]).front().confidence});
         sections[2].push_back(
             {checkpoint.unresolved_threads.front().content, {layout.ckpt_base[2]}, 0.9});
@@ -736,8 +724,8 @@ output_json(const std::vector<ScriptedItem> (&sections)[kSectionCount]) {
 
 using AutoFuture = std::shared_future<Result<WorkingContextCommitOutcome>>;
 
-[[nodiscard]] Result<WorkingContextCommitOutcome>
-consume_caller_future(const AutoFuture &future, std::uint64_t &defects) {
+[[nodiscard]] Result<WorkingContextCommitOutcome> consume_caller_future(const AutoFuture &future,
+                                                                        std::uint64_t &defects) {
     try {
         return future.get();
     } catch (const std::future_error &) {
@@ -812,7 +800,6 @@ scripted_fire(WorkingContextAutoCurator &auto_curator, ScriptedCuratorProvider &
     }
     return committed.value();
 }
-
 
 // ---------------------------------------------------------------------------
 // Counters (one group per gate, M22 §4.3)
@@ -977,8 +964,8 @@ void run_pure_table(const FrozenConfig &config, Counters &counters) {
     };
     for (const Case &item : cases) {
         ++counters.pure_table_cases;
-        const auto decision = evaluate_working_context_trigger(policy, item.last_attempt,
-                                                               item.events, item.current);
+        const auto decision =
+            evaluate_working_context_trigger(policy, item.last_attempt, item.events, item.current);
         if (decision.refresh != item.refresh || decision.kind != item.kind) {
             ++counters.pure_table_failures;
         }
@@ -999,8 +986,8 @@ struct ChainRun final {
 };
 
 [[nodiscard]] ChainRun run_auto_chain(const Dataset &dataset, const FrozenConfig &config,
-                                      ScriptedCuratorProvider &provider,
-                                      executor::Executor &exec, Counters &counters) {
+                                      ScriptedCuratorProvider &provider, executor::Executor &exec,
+                                      Counters &counters) {
     ChainRun run;
     run.committed_json.resize(dataset.sessions.size());
     run.settled_trajectory.resize(dataset.sessions.size());
@@ -1013,8 +1000,7 @@ struct ChainRun final {
     WorkingContextAutoCurator auto_curator(supervisor, curator, store, policy,
                                            ContextCurationOptions{});
 
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         // The oracle mirror of the M22 §4.2 per-session-chain state.
         std::uint64_t mirror_last_attempt = 0;
@@ -1027,10 +1013,9 @@ struct ChainRun final {
             const auto &signal = eval_session.signals[signal_index];
             ++counters.chain_signals;
             mirror_events += signal.events;
-            const auto checkpoint =
-                make_eval_checkpoint(eval_session.session, eval_session.task,
-                                     signal.checkpoint_watermark, signal.checkpoint_revision,
-                                     config.environment_epoch);
+            const auto checkpoint = make_eval_checkpoint(
+                eval_session.session, eval_session.task, signal.checkpoint_watermark,
+                signal.checkpoint_revision, config.environment_epoch);
             const auto entries = recent_entries(signal);
             const auto identity = make_identity(eval_session, config, config.environment_epoch);
             const auto live = make_live(eval_session, config, config.environment_epoch);
@@ -1061,10 +1046,9 @@ struct ChainRun final {
             const auto calls_before = provider.calls();
             const auto stats_before = auto_curator.stats();
 
-            auto result =
-                auto_curator.on_signal(eval_session.session,
-                                       make_refresh_input(checkpoint, identity, live,
-                                                          signal.events, entries));
+            auto result = auto_curator.on_signal(
+                eval_session.session,
+                make_refresh_input(checkpoint, identity, live, signal.events, entries));
             const bool fired = result.has_value();
             if (fired != predicted_fire) {
                 ++counters.fire_prediction_mismatches;
@@ -1089,12 +1073,11 @@ struct ChainRun final {
                 continue;
             }
             const WorkingContextAutoStats stats = auto_curator.stats();
-            const bool watermark_kind = stats.fires_watermark - stats_before.fires_watermark == 1 &&
-                                        stats.fires_event_count - stats_before.fires_event_count ==
-                                            0;
-            const bool event_kind =
-                stats.fires_event_count - stats_before.fires_event_count == 1 &&
-                stats.fires_watermark - stats_before.fires_watermark == 0;
+            const bool watermark_kind =
+                stats.fires_watermark - stats_before.fires_watermark == 1 &&
+                stats.fires_event_count - stats_before.fires_event_count == 0;
+            const bool event_kind = stats.fires_event_count - stats_before.fires_event_count == 1 &&
+                                    stats.fires_watermark - stats_before.fires_watermark == 0;
             const bool kind_matches =
                 (watermark_kind && decision.kind == WorkingContextTriggerKind::Watermark) ||
                 (event_kind && decision.kind == WorkingContextTriggerKind::EventCount);
@@ -1145,14 +1128,12 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
     ContextMemorySupervisor supervisor(exec);
     WorkingContextAutoCurator auto_curator(supervisor, curator, store);
 
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
         const auto live = make_live(eval_session, config, config.environment_epoch);
-        const auto first =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                 config.environment_epoch);
+        const auto first = make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
+                                                config.environment_epoch);
         const auto entries = pair_recent(8, session_index + 1);
         ++counters.absorb_sessions;
 
@@ -1166,8 +1147,7 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
         gate.reset();
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Gate);
         auto result = auto_curator.on_signal(eval_session.session,
-                                             make_refresh_input(first, identity, live, 0,
-                                                                entries));
+                                             make_refresh_input(first, identity, live, 0, entries));
         if (!result.has_value()) {
             ++counters.refire_missing;
             continue;
@@ -1180,11 +1160,10 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
         // queues a duplicate curator call.
         for (std::uint64_t index = 0; index < 3; ++index) {
             const auto carried =
-                make_eval_checkpoint(eval_session.session, eval_session.task, 8 + index,
-                                     2 + index, config.environment_epoch);
-            auto absorbed = auto_curator.on_signal(eval_session.session,
-                                                   make_refresh_input(carried, identity, live, 6,
-                                                                      {}));
+                make_eval_checkpoint(eval_session.session, eval_session.task, 8 + index, 2 + index,
+                                     config.environment_epoch);
+            auto absorbed = auto_curator.on_signal(
+                eval_session.session, make_refresh_input(carried, identity, live, 6, {}));
             if (absorbed.has_value()) {
                 ++counters.schedules_while_blocked;
             }
@@ -1202,14 +1181,13 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
 
         // The next threshold-crossing signal refires exactly once, carrying
         // the latest checkpoint (16), never an absorbed intermediate input.
-        const auto latest =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 16, 9,
-                                 config.environment_epoch);
+        const auto latest = make_eval_checkpoint(eval_session.session, eval_session.task, 16, 9,
+                                                 config.environment_epoch);
         const auto refire_calls = provider.calls();
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
-        const auto committed = scripted_fire(auto_curator, provider, store, eval_session.session,
-                                             latest, identity, live, 0, "refire",
-                                             counters.caller_future_defects);
+        const auto committed =
+            scripted_fire(auto_curator, provider, store, eval_session.session, latest, identity,
+                          live, 0, "refire", counters.caller_future_defects);
         if (provider.calls() - refire_calls != 1 || !committed.has_value() ||
             committed->through_event_sequence != 16) {
             ++counters.refire_missing;
@@ -1230,8 +1208,7 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
 void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
                      ScriptedCuratorProvider &provider, executor::Executor &exec,
                      Counters &counters) {
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
         const auto live = make_live(eval_session, config, config.environment_epoch);
@@ -1241,19 +1218,17 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
         WorkingContextAutoCurator auto_curator(supervisor, curator, store);
 
         // (a) Forced fire below every threshold at the task boundary.
-        const auto boundary =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 4, 1,
-                                 config.environment_epoch);
+        const auto boundary = make_eval_checkpoint(eval_session.session, eval_session.task, 4, 1,
+                                                   config.environment_epoch);
         {
             TranscriptLayout layout;
-            provider.set_script(plan_output(nullptr, boundary, 2, "forced", layout),
-                                layout.total);
+            provider.set_script(plan_output(nullptr, boundary, 2, "forced", layout), layout.total);
             provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
         }
         const auto committed_before = auto_curator.stats().committed;
-        auto future = auto_curator.flush(eval_session.session,
-                                         make_refresh_input(boundary, identity, live, 0,
-                                                            pair_recent(4, session_index + 1)));
+        auto future = auto_curator.flush(
+            eval_session.session,
+            make_refresh_input(boundary, identity, live, 0, pair_recent(4, session_index + 1)));
         ++counters.forced_fires;
         const auto forced_outcome = consume_caller_future(future, counters.caller_future_defects);
         if (!await_settlement(auto_curator, eval_session.session)) {
@@ -1302,9 +1277,8 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
                                             : std::string("<none>");
         WorkingContextCommitState terminal_live = live;
         terminal_live.session_terminal = true;
-        const auto late =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 12, 2,
-                                 config.environment_epoch);
+        const auto late = make_eval_checkpoint(eval_session.session, eval_session.task, 12, 2,
+                                               config.environment_epoch);
         {
             TranscriptLayout layout;
             const WorkingContextSnapshot *previous_pointer =
@@ -1315,10 +1289,9 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
             provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
         }
         const auto terminal_before = auto_curator.stats().discarded_terminal;
-        auto late_result = auto_curator.on_signal(eval_session.session,
-                                                  make_refresh_input(late, identity,
-                                                                     terminal_live, 0,
-                                                                     pair_recent(12, 100)));
+        auto late_result = auto_curator.on_signal(
+            eval_session.session,
+            make_refresh_input(late, identity, terminal_live, 0, pair_recent(12, 100)));
         if (late_result.has_value()) {
             (void)consume_caller_future(late_result.value(), counters.caller_future_defects);
             (void)await_settlement(auto_curator, eval_session.session);
@@ -1327,10 +1300,10 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
             ++counters.terminal_late_not_discarded;
         }
         const auto latest_after_late = store.latest(eval_session.session);
-        const std::string after_json = latest_after_late.has_value() &&
-                                               latest_after_late.value().has_value()
-                                           ? normalized_json(latest_after_late.value().value())
-                                           : std::string("<none>");
+        const std::string after_json =
+            latest_after_late.has_value() && latest_after_late.value().has_value()
+                ? normalized_json(latest_after_late.value().value())
+                : std::string("<none>");
         if (after_json != before_json) {
             ++counters.terminal_store_moves;
         }
@@ -1341,8 +1314,7 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
     // forced refresh fires beside it, and the monotonic commit discipline
     // lands the store exactly on the flush watermark with no conflict. One
     // coordinator per session keeps the scenario self-contained.
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
         const auto live = make_live(eval_session, config, config.environment_epoch);
@@ -1356,22 +1328,19 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
         options.deadline = std::chrono::milliseconds(50);
         WorkingContextAutoCurator auto_curator(supervisor, curator, store,
                                                WorkingContextTriggerPolicy{}, options);
-        const auto policy_checkpoint =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                 config.environment_epoch);
-        const auto boundary =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
-                                 config.environment_epoch);
+        const auto policy_checkpoint = make_eval_checkpoint(eval_session.session, eval_session.task,
+                                                            8, 1, config.environment_epoch);
+        const auto boundary = make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
+                                                   config.environment_epoch);
         // The policy refresh blocks in the gate; the store stays empty, so
         // the forced refresh's script is a fresh-chain plan.
         TranscriptLayout layout;
         provider.set_script(plan_output(nullptr, policy_checkpoint, 2, "coexist", layout),
                             layout.total);
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Gate);
-        auto policy_result = auto_curator.on_signal(eval_session.session,
-                                                    make_refresh_input(policy_checkpoint, identity,
-                                                                       live, 0,
-                                                                       pair_recent(8, 200)));
+        auto policy_result = auto_curator.on_signal(
+            eval_session.session,
+            make_refresh_input(policy_checkpoint, identity, live, 0, pair_recent(8, 200)));
         if (!policy_result.has_value()) {
             ++counters.coexistence_final_mismatches;
             continue;
@@ -1379,9 +1348,9 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
         gate.wait_entered(1);
         provider.set_script(plan_output(nullptr, boundary, 2, "coexist-flush", layout),
                             layout.total);
-        auto flush_future = auto_curator.flush(eval_session.session,
-                                               make_refresh_input(boundary, identity, live, 0,
-                                                                  pair_recent(16, 300)));
+        auto flush_future =
+            auto_curator.flush(eval_session.session, make_refresh_input(boundary, identity, live, 0,
+                                                                        pair_recent(16, 300)));
         ++counters.forced_fires;
         gate.wait_entered(2);
         gate.release();
@@ -1426,8 +1395,8 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
         std::chrono::milliseconds deadline;
     };
     const ClassCase classes[] = {
-        {"provider-error", ScriptedCuratorProvider::Behavior::ProviderError,
-         ErrorCode::Unavailable, std::chrono::milliseconds(10'000)},
+        {"provider-error", ScriptedCuratorProvider::Behavior::ProviderError, ErrorCode::Unavailable,
+         std::chrono::milliseconds(10'000)},
         {"malformed-json", ScriptedCuratorProvider::Behavior::MalformedJson,
          ErrorCode::InvalidModelOutput, std::chrono::milliseconds(10'000)},
         {"refusal", ScriptedCuratorProvider::Behavior::Refusal, ErrorCode::InvalidModelOutput,
@@ -1456,9 +1425,8 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
             provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
 
             // Baseline commit at watermark 8.
-            const auto baseline =
-                make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                     config.environment_epoch);
+            const auto baseline = make_eval_checkpoint(eval_session.session, eval_session.task, 8,
+                                                       1, config.environment_epoch);
             const auto baseline_committed =
                 scripted_fire(auto_curator, provider, store, eval_session.session, baseline,
                               identity, live, 0, "baseline", counters.caller_future_defects);
@@ -1471,9 +1439,8 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
 
             // Failing fire at watermark 16: the real script keeps the
             // transcript guard happy; the behavior class fails the run.
-            const auto failing =
-                make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
-                                     config.environment_epoch);
+            const auto failing = make_eval_checkpoint(eval_session.session, eval_session.task, 16,
+                                                      2, config.environment_epoch);
             {
                 TranscriptLayout layout;
                 provider.set_script(
@@ -1481,16 +1448,15 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
                     layout.total);
             }
             provider.set_behavior(failure.behavior);
-            auto result = auto_curator.on_signal(eval_session.session,
-                                                 make_refresh_input(failing, identity, live, 0,
-                                                                    pair_recent(16, 400)));
+            auto result = auto_curator.on_signal(
+                eval_session.session,
+                make_refresh_input(failing, identity, live, 0, pair_recent(16, 400)));
             if (!result.has_value()) {
                 ++counters.failure_wrong_code;
             } else {
                 const auto error_outcome =
                     consume_caller_future(result.value(), counters.caller_future_defects);
-                if (error_outcome.has_value() ||
-                    error_outcome.error().code != failure.expected) {
+                if (error_outcome.has_value() || error_outcome.error().code != failure.expected) {
                     ++counters.failure_wrong_code;
                 }
             }
@@ -1500,10 +1466,10 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
             auto_curator.drain(eval_session.session);
             const auto after_failure = auto_curator.stats();
             const auto current_latest = store.latest(eval_session.session);
-            const std::string after = current_latest.has_value() &&
-                                              current_latest.value().has_value()
-                                          ? normalized_json(current_latest.value().value())
-                                          : std::string("<none>");
+            const std::string after =
+                current_latest.has_value() && current_latest.value().has_value()
+                    ? normalized_json(current_latest.value().value())
+                    : std::string("<none>");
             if (after != before) {
                 ++counters.failure_store_moves;
             }
@@ -1515,19 +1481,18 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
             // retry) while the streak stands.
             provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
             std::uint64_t signals_before_retry = 0;
-            result = auto_curator.on_signal(eval_session.session,
-                                            make_refresh_input(failing, identity, live, 5,
-                                                               pair_recent(16, 500)));
+            result = auto_curator.on_signal(
+                eval_session.session,
+                make_refresh_input(failing, identity, live, 5, pair_recent(16, 500)));
             ++signals_before_retry;
             if (result.has_value()) {
                 ++counters.tight_retries;
             }
-            const auto small_step =
-                make_eval_checkpoint(eval_session.session, eval_session.task, 18, 3,
-                                     config.environment_epoch);
-            result = auto_curator.on_signal(eval_session.session,
-                                            make_refresh_input(small_step, identity, live, 0,
-                                                               pair_recent(18, 600)));
+            const auto small_step = make_eval_checkpoint(eval_session.session, eval_session.task,
+                                                         18, 3, config.environment_epoch);
+            result = auto_curator.on_signal(
+                eval_session.session,
+                make_refresh_input(small_step, identity, live, 0, pair_recent(18, 600)));
             ++signals_before_retry;
             if (result.has_value()) {
                 ++counters.tight_retries;
@@ -1535,9 +1500,9 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
 
             // The failed boundary flush is a real retry (forced, not a no-op).
             const auto forced_before = auto_curator.stats().forced_flushes;
-            auto flush_future = auto_curator.flush(eval_session.session,
-                                                   make_refresh_input(failing, identity, live, 0,
-                                                                      pair_recent(16, 700)));
+            auto flush_future = auto_curator.flush(
+                eval_session.session,
+                make_refresh_input(failing, identity, live, 0, pair_recent(16, 700)));
             const auto flush_outcome =
                 consume_caller_future(flush_future, counters.caller_future_defects);
             if (!await_settlement(auto_curator, eval_session.session)) {
@@ -1555,12 +1520,11 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
 
             // The next threshold crossing retries through the policy path and
             // succeeds, keeping the streak at zero.
-            const auto retry =
-                make_eval_checkpoint(eval_session.session, eval_session.task, 24, 4,
-                                     config.environment_epoch);
+            const auto retry = make_eval_checkpoint(eval_session.session, eval_session.task, 24, 4,
+                                                    config.environment_epoch);
             const auto retry_committed =
-                scripted_fire(auto_curator, provider, store, eval_session.session, retry,
-                              identity, live, 0, "retry", counters.caller_future_defects);
+                scripted_fire(auto_curator, provider, store, eval_session.session, retry, identity,
+                              live, 0, "retry", counters.caller_future_defects);
             if (!retry_committed.has_value()) {
                 ++counters.retry_misses;
             }
@@ -1591,14 +1555,12 @@ void run_previous_round(const Dataset &dataset, const FrozenConfig &config,
     ContextMemorySupervisor supervisor(exec);
     WorkingContextAutoCurator auto_curator(supervisor, curator, store);
 
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
         const auto live = make_live(eval_session, config, config.environment_epoch);
-        const auto first =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                 config.environment_epoch);
+        const auto first = make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
+                                                config.environment_epoch);
 
         // Fresh chain: the transcript renders no prev: entries.
         const auto fresh_committed =
@@ -1614,9 +1576,8 @@ void run_previous_round(const Dataset &dataset, const FrozenConfig &config,
 
         // Same chain: the transcript cites previous entries and the committed
         // chain accumulates both checkpoints.
-        const auto second =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
-                                 config.environment_epoch);
+        const auto second = make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
+                                                 config.environment_epoch);
         const auto same_committed =
             scripted_fire(auto_curator, provider, store, eval_session.session, second, identity,
                           live, 0, "prev1", counters.caller_future_defects);
@@ -1632,15 +1593,13 @@ void run_previous_round(const Dataset &dataset, const FrozenConfig &config,
         // chain starts without a previous snapshot.
         const WorkingContextIdentity bumped_identity = make_identity(eval_session, config, 8);
         const WorkingContextCommitState bumped_live = make_live(eval_session, config, 8);
-        const auto bumped =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 16, 3, 8);
+        const auto bumped = make_eval_checkpoint(eval_session.session, eval_session.task, 16, 3, 8);
         TranscriptLayout layout;
         provider.set_script(plan_output(nullptr, bumped, 2, "prev2", layout), layout.total);
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
-        auto result = auto_curator.on_signal(eval_session.session,
-                                             make_refresh_input(bumped, bumped_identity,
-                                                                bumped_live, 16,
-                                                                pair_recent(16, 800)));
+        auto result = auto_curator.on_signal(
+            eval_session.session,
+            make_refresh_input(bumped, bumped_identity, bumped_live, 16, pair_recent(16, 800)));
         if (!result.has_value()) {
             // Without the settled reset the covered watermark would have
             // swallowed the signal entirely.
@@ -1680,8 +1639,7 @@ void run_shutdown_round(const Dataset &dataset, const FrozenConfig &config,
     provider.arm_gate(gate);
     GateReleaser releaser{gate};
     provider.set_script("{}", 0);
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
         const auto live = make_live(eval_session, config, config.environment_epoch);
@@ -1696,12 +1654,11 @@ void run_shutdown_round(const Dataset &dataset, const FrozenConfig &config,
         gate.reset();
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Gate);
         provider.set_park_after_gate(true);
-        const auto first =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                 config.environment_epoch);
-        auto result = auto_curator.on_signal(eval_session.session,
-                                             make_refresh_input(first, identity, live, 0,
-                                                                pair_recent(8, 900)));
+        const auto first = make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
+                                                config.environment_epoch);
+        auto result = auto_curator.on_signal(
+            eval_session.session,
+            make_refresh_input(first, identity, live, 0, pair_recent(8, 900)));
         if (!result.has_value()) {
             ++counters.shutdown_cancel_wrong;
             continue;
@@ -1734,9 +1691,8 @@ void run_shutdown_round(const Dataset &dataset, const FrozenConfig &config,
         // curator calls.
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Ok);
         const auto calls_before = provider.calls();
-        const auto next =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
-                                 config.environment_epoch);
+        const auto next = make_eval_checkpoint(eval_session.session, eval_session.task, 16, 2,
+                                               config.environment_epoch);
         auto rejected = auto_curator.on_signal(eval_session.session,
                                                make_refresh_input(next, identity, live, 0, {}));
         if (rejected.has_value()) {
@@ -1786,9 +1742,8 @@ void run_rejection_round(const Dataset &dataset, const FrozenConfig &config,
     // Fill the two tracking slots with committed fires.
     for (std::size_t session_index = 0; session_index < 2; ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
-        const auto checkpoint =
-            make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
-                                 config.environment_epoch);
+        const auto checkpoint = make_eval_checkpoint(eval_session.session, eval_session.task, 8, 1,
+                                                     config.environment_epoch);
         const auto committed =
             scripted_fire(auto_curator, provider, store, eval_session.session, checkpoint,
                           make_identity(eval_session, config, config.environment_epoch),
@@ -1804,14 +1759,12 @@ void run_rejection_round(const Dataset &dataset, const FrozenConfig &config,
     const auto &third_session = dataset.sessions[2];
     const auto third_identity = make_identity(third_session, config, config.environment_epoch);
     const auto third_live = make_live(third_session, config, config.environment_epoch);
-    const auto third_checkpoint =
-        make_eval_checkpoint(third_session.session, third_session.task, 8, 1,
-                             config.environment_epoch);
+    const auto third_checkpoint = make_eval_checkpoint(third_session.session, third_session.task, 8,
+                                                       1, config.environment_epoch);
     const auto calls_before = provider.calls();
-    auto over_capacity = auto_curator.on_signal(third_session.session,
-                                                make_refresh_input(third_checkpoint,
-                                                                   third_identity, third_live, 0,
-                                                                   {}));
+    auto over_capacity = auto_curator.on_signal(
+        third_session.session,
+        make_refresh_input(third_checkpoint, third_identity, third_live, 0, {}));
     if (!over_capacity.has_value()) {
         ++counters.capacity_rejection_missing;
     } else {
@@ -1822,11 +1775,10 @@ void run_rejection_round(const Dataset &dataset, const FrozenConfig &config,
             ++counters.capacity_rejection_missing;
         }
     }
-    auto flush_over = auto_curator.flush(third_session.session,
-                                         make_refresh_input(third_checkpoint, third_identity,
-                                                            third_live, 0, {}));
-    const auto flush_rejection =
-        consume_caller_future(flush_over, counters.caller_future_defects);
+    auto flush_over =
+        auto_curator.flush(third_session.session,
+                           make_refresh_input(third_checkpoint, third_identity, third_live, 0, {}));
+    const auto flush_rejection = consume_caller_future(flush_over, counters.caller_future_defects);
     if (flush_rejection.has_value() ||
         flush_rejection.error().code != ErrorCode::ResourceExhausted) {
         ++counters.capacity_rejection_missing;
@@ -1837,9 +1789,8 @@ void run_rejection_round(const Dataset &dataset, const FrozenConfig &config,
 
     // Session mismatch: the signal's checkpoint belongs to another session.
     const auto &first_session = dataset.sessions.front();
-    const auto mismatched =
-        make_eval_checkpoint(third_session.session, third_session.task, 8, 1,
-                             config.environment_epoch);
+    const auto mismatched = make_eval_checkpoint(third_session.session, third_session.task, 8, 1,
+                                                 config.environment_epoch);
     auto mismatch_result = auto_curator.on_signal(
         first_session.session,
         make_refresh_input(mismatched,
@@ -1880,8 +1831,7 @@ int main(int argc, char **argv) {
     // kinds observable well past the gate bound, and per session one
     // zero-advance/high-event stretch plus one checkpoint gap closed by a
     // minted catch-up checkpoint.
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &signals = dataset.sessions[session_index].signals;
         std::uint64_t zero_advance = 0;
         for (std::size_t index = 10; index <= 14; ++index) {
@@ -1890,8 +1840,7 @@ int main(int argc, char **argv) {
             }
         }
         if (zero_advance != 5) {
-            std::cerr << "dataset session " << session_index
-                      << " lost the zero-advance stretch\n";
+            std::cerr << "dataset session " << session_index << " lost the zero-advance stretch\n";
             return 2;
         }
         for (std::size_t index = 20; index <= 29; ++index) {
@@ -1929,8 +1878,7 @@ int main(int argc, char **argv) {
 
     // In-process determinism (W3-G6): the replayed chain must reproduce every
     // committed payload byte for byte and every settled watermark.
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &first_rounds = chain.committed_json[session_index];
         const auto &second_rounds = replay.committed_json[session_index];
         if (first_rounds.size() != second_rounds.size()) {
@@ -1963,8 +1911,8 @@ int main(int argc, char **argv) {
             std::uint64_t settled = 0;
             for (const auto &signal : eval_session.signals) {
                 events += signal.events;
-                const auto decision = evaluate_working_context_trigger(
-                    policy, last_attempt, events, signal.checkpoint_watermark);
+                const auto decision = evaluate_working_context_trigger(policy, last_attempt, events,
+                                                                       signal.checkpoint_watermark);
                 if (decision.refresh && signal.checkpoint_watermark > settled) {
                     if (decision.kind == WorkingContextTriggerKind::Watermark) {
                         ++counters.fires_watermark;
@@ -1992,143 +1940,110 @@ int main(int argc, char **argv) {
     // W3-G1: pure-function table 100% correct; per-fire kind and inputs equal
     // the prediction; non-fire signals schedule nothing; checkpoint gaps
     // catch up; covered checkpoints never fire.
-    const bool g1 = record(counters.pure_table_failures == 0 &&
-                               counters.fire_prediction_mismatches == 0 &&
-                               counters.fire_kind_mismatches == 0 &&
-                               counters.nonfire_schedules == 0 &&
-                               counters.missed_catchups == 0 &&
-                               counters.covered_checkpoint_fires == 0 &&
-                               counters.chain_disposition_mismatches == 0 &&
-                               counters.fires_watermark >= 12 &&
-                               counters.fires_event_count >= 12,
-                           "G1: trigger fidelity violated (table " +
-                               std::to_string(counters.pure_table_failures) + "/" +
-                               std::to_string(counters.pure_table_cases) +
-                               ", prediction mismatches " +
-                               std::to_string(counters.fire_prediction_mismatches) +
-                               ", kind mismatches " +
-                               std::to_string(counters.fire_kind_mismatches) +
-                               ", non-fire schedules " +
-                               std::to_string(counters.nonfire_schedules) +
-                               ", missed catchups " + std::to_string(counters.missed_catchups) +
-                               ", covered fires " +
-                               std::to_string(counters.covered_checkpoint_fires) +
-                               ", dispositions " +
-                               std::to_string(counters.chain_disposition_mismatches) + ")");
+    const bool g1 = record(
+        counters.pure_table_failures == 0 && counters.fire_prediction_mismatches == 0 &&
+            counters.fire_kind_mismatches == 0 && counters.nonfire_schedules == 0 &&
+            counters.missed_catchups == 0 && counters.covered_checkpoint_fires == 0 &&
+            counters.chain_disposition_mismatches == 0 && counters.fires_watermark >= 12 &&
+            counters.fires_event_count >= 12,
+        "G1: trigger fidelity violated (table " + std::to_string(counters.pure_table_failures) +
+            "/" + std::to_string(counters.pure_table_cases) + ", prediction mismatches " +
+            std::to_string(counters.fire_prediction_mismatches) + ", kind mismatches " +
+            std::to_string(counters.fire_kind_mismatches) + ", non-fire schedules " +
+            std::to_string(counters.nonfire_schedules) + ", missed catchups " +
+            std::to_string(counters.missed_catchups) + ", covered fires " +
+            std::to_string(counters.covered_checkpoint_fires) + ", dispositions " +
+            std::to_string(counters.chain_disposition_mismatches) + ")");
     // W3-G2: coalescing absorbs N/N with exactly one schedule; the release
     // refires once on the latest input; flush/policy coexistence stays
     // monotonic on the flush watermark.
-    const bool g2 = record(counters.absorb_sessions == dataset.sessions.size() &&
-                               counters.absorbed_signals == 3 * dataset.sessions.size() &&
-                               counters.schedules_while_blocked == 0 &&
-                               counters.refire_missing == 0 &&
-                               counters.refire_stale_input == 0 &&
-                               counters.coexistence_final_mismatches == 0 &&
-                               counters.coexistence_conflicts == 0,
-                           "G2: coalescing violated (absorbed " +
-                               std::to_string(counters.absorbed_signals) + "/" +
-                               std::to_string(3 * dataset.sessions.size()) +
-                               ", blocked schedules " +
-                               std::to_string(counters.schedules_while_blocked) +
-                               ", refire missing " + std::to_string(counters.refire_missing) +
-                               ", stale refires " + std::to_string(counters.refire_stale_input) +
-                               ", coexistence mismatches " +
-                               std::to_string(counters.coexistence_final_mismatches) + ")");
+    const bool g2 =
+        record(counters.absorb_sessions == dataset.sessions.size() &&
+                   counters.absorbed_signals == 3 * dataset.sessions.size() &&
+                   counters.schedules_while_blocked == 0 && counters.refire_missing == 0 &&
+                   counters.refire_stale_input == 0 && counters.coexistence_final_mismatches == 0 &&
+                   counters.coexistence_conflicts == 0,
+               "G2: coalescing violated (absorbed " + std::to_string(counters.absorbed_signals) +
+                   "/" + std::to_string(3 * dataset.sessions.size()) + ", blocked schedules " +
+                   std::to_string(counters.schedules_while_blocked) + ", refire missing " +
+                   std::to_string(counters.refire_missing) + ", stale refires " +
+                   std::to_string(counters.refire_stale_input) + ", coexistence mismatches " +
+                   std::to_string(counters.coexistence_final_mismatches) + ")");
     // W3-G3: forced flush fires below threshold and commits; the covered
     // boundary short-circuits with zero curator calls; terminal lateness is
     // discarded without moving the store; every returned future is
     // consumable.
-    const bool g3 = record(counters.forced_fires == 2 * dataset.sessions.size() &&
-                               counters.forced_not_committed == 0 &&
-                               counters.boundary_noops == dataset.sessions.size() &&
-                               counters.noop_wrong_reason == 0 &&
-                               counters.noop_wrong_committed == 0 &&
-                               counters.noop_curator_calls == 0 &&
-                               counters.terminal_late_not_discarded == 0 &&
-                               counters.terminal_store_moves == 0 &&
-                               counters.caller_future_defects == 0,
-                           "G3: forced flush/future ownership violated (forced " +
-                               std::to_string(counters.forced_fires) + ", not committed " +
-                               std::to_string(counters.forced_not_committed) + ", noops " +
-                               std::to_string(counters.boundary_noops) + ", noop reasons " +
-                               std::to_string(counters.noop_wrong_reason) +
-                               ", noop committed " +
-                               std::to_string(counters.noop_wrong_committed) +
-                               ", noop curator calls " +
-                               std::to_string(counters.noop_curator_calls) +
-                               ", terminal not discarded " +
-                               std::to_string(counters.terminal_late_not_discarded) +
-                               ", terminal store moves " +
-                               std::to_string(counters.terminal_store_moves) +
-                               ", caller future defects " +
-                               std::to_string(counters.caller_future_defects) + ")");
+    const bool g3 = record(
+        counters.forced_fires == 2 * dataset.sessions.size() &&
+            counters.forced_not_committed == 0 &&
+            counters.boundary_noops == dataset.sessions.size() && counters.noop_wrong_reason == 0 &&
+            counters.noop_wrong_committed == 0 && counters.noop_curator_calls == 0 &&
+            counters.terminal_late_not_discarded == 0 && counters.terminal_store_moves == 0 &&
+            counters.caller_future_defects == 0,
+        "G3: forced flush/future ownership violated (forced " +
+            std::to_string(counters.forced_fires) + ", not committed " +
+            std::to_string(counters.forced_not_committed) + ", noops " +
+            std::to_string(counters.boundary_noops) + ", noop reasons " +
+            std::to_string(counters.noop_wrong_reason) + ", noop committed " +
+            std::to_string(counters.noop_wrong_committed) + ", noop curator calls " +
+            std::to_string(counters.noop_curator_calls) + ", terminal not discarded " +
+            std::to_string(counters.terminal_late_not_discarded) + ", terminal store moves " +
+            std::to_string(counters.terminal_store_moves) + ", caller future defects " +
+            std::to_string(counters.caller_future_defects) + ")");
     // W3-G4: every failure group resolves with the correct error, keeps the
     // store byte-identical, never tight-retries, retries on the next crossing
     // and resets the streak; a failing boundary flush is a real retry.
-    const bool g4 = record(counters.failure_groups == 5 * dataset.sessions.size() &&
-                               counters.failure_wrong_code == 0 &&
-                               counters.failure_store_moves == 0 &&
-                               counters.tight_retries == 0 && counters.retry_misses == 0 &&
-                               counters.retry_streak_not_reset == 0 &&
-                               counters.failing_flush_noops == 0 &&
-                               counters.retry_intervals.size() == 5 * dataset.sessions.size(),
-                           "G4: failure fallback violated (groups " +
-                               std::to_string(counters.failure_groups) + ", wrong codes " +
-                               std::to_string(counters.failure_wrong_code) + ", store moves " +
-                               std::to_string(counters.failure_store_moves) +
-                               ", tight retries " + std::to_string(counters.tight_retries) +
-                               ", retry misses " + std::to_string(counters.retry_misses) +
-                               ", streak not reset " +
-                               std::to_string(counters.retry_streak_not_reset) +
-                               ", flush noops " + std::to_string(counters.failing_flush_noops) +
-                               ")");
+    const bool g4 =
+        record(counters.failure_groups == 5 * dataset.sessions.size() &&
+                   counters.failure_wrong_code == 0 && counters.failure_store_moves == 0 &&
+                   counters.tight_retries == 0 && counters.retry_misses == 0 &&
+                   counters.retry_streak_not_reset == 0 && counters.failing_flush_noops == 0 &&
+                   counters.retry_intervals.size() == 5 * dataset.sessions.size(),
+               "G4: failure fallback violated (groups " + std::to_string(counters.failure_groups) +
+                   ", wrong codes " + std::to_string(counters.failure_wrong_code) +
+                   ", store moves " + std::to_string(counters.failure_store_moves) +
+                   ", tight retries " + std::to_string(counters.tight_retries) + ", retry misses " +
+                   std::to_string(counters.retry_misses) + ", streak not reset " +
+                   std::to_string(counters.retry_streak_not_reset) + ", flush noops " +
+                   std::to_string(counters.failing_flush_noops) + ")");
     // W3-G5: the disposition matrix, previous selection and rejections.
     // Three fresh-chain observations per session: the first fire, the epoch
     // bump's transcript and the epoch bump's committed chain.
-    const bool g5 = record(counters.previous_fresh_ok == 3 * dataset.sessions.size() &&
-                               counters.previous_same_chain_ok == dataset.sessions.size() &&
-                               counters.previous_epoch_not_null == 0 &&
-                               counters.previous_same_chain_wrong == 0 &&
-                               counters.rejection_missing == 0 &&
-                               counters.capacity_rejection_missing == 0,
-                           "G5: previous selection/rejections violated (fresh ok " +
-                               std::to_string(counters.previous_fresh_ok) + ", same-chain ok " +
-                               std::to_string(counters.previous_same_chain_ok) +
-                               ", epoch previous non-null " +
-                               std::to_string(counters.previous_epoch_not_null) +
-                               ", same-chain wrong " +
-                               std::to_string(counters.previous_same_chain_wrong) +
-                               ", rejection missing " +
-                               std::to_string(counters.rejection_missing) +
-                               ", capacity missing " +
-                               std::to_string(counters.capacity_rejection_missing) + ")");
+    const bool g5 = record(
+        counters.previous_fresh_ok == 3 * dataset.sessions.size() &&
+            counters.previous_same_chain_ok == dataset.sessions.size() &&
+            counters.previous_epoch_not_null == 0 && counters.previous_same_chain_wrong == 0 &&
+            counters.rejection_missing == 0 && counters.capacity_rejection_missing == 0,
+        "G5: previous selection/rejections violated (fresh ok " +
+            std::to_string(counters.previous_fresh_ok) + ", same-chain ok " +
+            std::to_string(counters.previous_same_chain_ok) + ", epoch previous non-null " +
+            std::to_string(counters.previous_epoch_not_null) + ", same-chain wrong " +
+            std::to_string(counters.previous_same_chain_wrong) + ", rejection missing " +
+            std::to_string(counters.rejection_missing) + ", capacity missing " +
+            std::to_string(counters.capacity_rejection_missing) + ")");
     // W3-G6: shutdown cancellation and post-close rejection with zero
     // schedules; full-chain replay is snapshot-identical.
-    const bool g6 = record(counters.shutdown_sessions == dataset.sessions.size() &&
-                               counters.shutdown_cancel_wrong == 0 &&
-                               counters.shutdown_post_close_schedules == 0 &&
-                               counters.shutdown_post_close_accepted == 0 &&
-                               counters.replay_identical == counters.replay_pairs &&
-                               counters.replay_trajectory_mismatches == 0,
-                           "G6: shutdown/determinism violated (cancel wrong " +
-                               std::to_string(counters.shutdown_cancel_wrong) +
-                               ", post-close schedules " +
-                               std::to_string(counters.shutdown_post_close_schedules) +
-                               ", post-close accepted " +
-                               std::to_string(counters.shutdown_post_close_accepted) +
-                               ", replay identical " +
-                               std::to_string(counters.replay_identical) + "/" +
-                               std::to_string(counters.replay_pairs) +
-                               ", trajectory mismatches " +
-                               std::to_string(counters.replay_trajectory_mismatches) + ")");
+    const bool g6 = record(
+        counters.shutdown_sessions == dataset.sessions.size() &&
+            counters.shutdown_cancel_wrong == 0 && counters.shutdown_post_close_schedules == 0 &&
+            counters.shutdown_post_close_accepted == 0 &&
+            counters.replay_identical == counters.replay_pairs &&
+            counters.replay_trajectory_mismatches == 0,
+        "G6: shutdown/determinism violated (cancel wrong " +
+            std::to_string(counters.shutdown_cancel_wrong) + ", post-close schedules " +
+            std::to_string(counters.shutdown_post_close_schedules) + ", post-close accepted " +
+            std::to_string(counters.shutdown_post_close_accepted) + ", replay identical " +
+            std::to_string(counters.replay_identical) + "/" +
+            std::to_string(counters.replay_pairs) + ", trajectory mismatches " +
+            std::to_string(counters.replay_trajectory_mismatches) + ")");
 
     JsonValue::Object report;
     report.emplace_back("schema", std::string("mira.m22.working-context-auto-trigger-eval.v1"));
     JsonValue::Object environment;
-    environment.emplace_back("trigger_policy", JsonValue(JsonValue::Object{
-                                                   {"watermark_interval", std::int64_t{8}},
-                                                   {"event_count_interval", std::int64_t{16}},
-                                                   {"max_tracked_sessions", std::int64_t{64}}}));
+    environment.emplace_back(
+        "trigger_policy", JsonValue(JsonValue::Object{{"watermark_interval", std::int64_t{8}},
+                                                      {"event_count_interval", std::int64_t{16}},
+                                                      {"max_tracked_sessions", std::int64_t{64}}}));
     environment.emplace_back("pipeline", std::string("auto-curator->supervisor-deferrable->"
                                                      "provider-curator->commit"));
     report.emplace_back("environment", JsonValue(std::move(environment)));
@@ -2157,13 +2072,13 @@ int main(int argc, char **argv) {
     }
     report.emplace_back("chain_digests", JsonValue(std::move(digests)));
     JsonValue::Object trajectories;
-    for (std::size_t session_index = 0; session_index < dataset.sessions.size();
-         ++session_index) {
+    for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         JsonValue::Array trajectory;
         for (const std::uint64_t watermark : replay.settled_trajectory[session_index]) {
             trajectory.emplace_back(static_cast<std::int64_t>(watermark));
         }
-        trajectories.emplace_back("s" + std::to_string(session_index), JsonValue(std::move(trajectory)));
+        trajectories.emplace_back("s" + std::to_string(session_index),
+                                  JsonValue(std::move(trajectory)));
     }
     report.emplace_back("settled_trajectories", JsonValue(std::move(trajectories)));
     report.emplace_back("curator_calls_total", static_cast<std::int64_t>(provider.calls()));

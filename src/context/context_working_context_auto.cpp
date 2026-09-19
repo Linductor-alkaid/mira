@@ -195,12 +195,13 @@ class WorkingContextAutoCurator::Impl final {
         if (!latest) {
             return Result<std::optional<WorkingContextSnapshot>>(latest.error());
         }
-        if (latest.value() && same_chain(identity, latest.value()->task_id,
-                                         latest.value()->task_epoch,
-                                         latest.value()->environment_epoch)) {
+        if (latest.value() &&
+            same_chain(identity, latest.value()->task_id, latest.value()->task_epoch,
+                       latest.value()->environment_epoch)) {
             return Result<std::optional<WorkingContextSnapshot>>(latest.value());
         }
-        return Result<std::optional<WorkingContextSnapshot>>(std::optional<WorkingContextSnapshot>());
+        return Result<std::optional<WorkingContextSnapshot>>(
+            std::optional<WorkingContextSnapshot>());
     }
 
     // Schedules one curation through the supervisor's Deferrable route and
@@ -421,17 +422,13 @@ WorkingContextAutoCurator::flush(const SessionId &session, WorkingContextRefresh
     return impl_->flush(session, std::move(input));
 }
 
-void WorkingContextAutoCurator::drain(const SessionId &session) {
-    impl_->drain_session(session);
-}
+void WorkingContextAutoCurator::drain(const SessionId &session) { impl_->drain_session(session); }
 
-std::optional<WorkingContextSessionView> WorkingContextAutoCurator::session_view(
-    const SessionId &session) const {
+std::optional<WorkingContextSessionView>
+WorkingContextAutoCurator::session_view(const SessionId &session) const {
     return impl_->session_view(session);
 }
 
-WorkingContextAutoStats WorkingContextAutoCurator::stats() const {
-    return impl_->stats();
-}
+WorkingContextAutoStats WorkingContextAutoCurator::stats() const { return impl_->stats(); }
 
 } // namespace mira

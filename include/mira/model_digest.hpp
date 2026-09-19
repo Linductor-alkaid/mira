@@ -16,7 +16,10 @@ namespace mira {
 struct WireDigestRules final {
     // Header names (case-insensitive) replaced by "[redacted]" before hashing.
     std::vector<std::string> redacted_headers = {
-        "authorization", "x-api-key", "cookie", "proxy-authorization",
+        "authorization",
+        "x-api-key",
+        "cookie",
+        "proxy-authorization",
     };
     // Query parameter names (case-insensitive) dropped before hashing.
     std::vector<std::string> redacted_query_parameters = {
@@ -30,9 +33,10 @@ extern const WireDigestRules kDefaultWireDigestRules;
 
 // Computes the wire request digest after applying the exclusion rules. The
 // input is the exact JSON body plus headers the transport would send.
-[[nodiscard]] Hash wire_request_digest(const JsonValue &wire_body,
-                                       const std::vector<std::pair<std::string, std::string>> &headers,
-                                       const WireDigestRules &rules = kDefaultWireDigestRules);
+[[nodiscard]] Hash
+wire_request_digest(const JsonValue &wire_body,
+                    const std::vector<std::pair<std::string, std::string>> &headers,
+                    const WireDigestRules &rules = kDefaultWireDigestRules);
 
 // Prompt digest over authoritative and untrusted input; artifact parts
 // contribute their stored digest, never payload bytes.
@@ -50,8 +54,9 @@ extern const WireDigestRules kDefaultWireDigestRules;
 
 // Replaces secret-bearing content with "[redacted]" markers. Used before any
 // wire payload or header set enters an event, log or diagnostic artifact.
-[[nodiscard]] JsonValue sanitize_wire_for_events(const JsonValue &wire_body,
-                                                 const WireDigestRules &rules = kDefaultWireDigestRules);
+[[nodiscard]] JsonValue
+sanitize_wire_for_events(const JsonValue &wire_body,
+                         const WireDigestRules &rules = kDefaultWireDigestRules);
 
 [[nodiscard]] std::vector<std::pair<std::string, std::string>>
 sanitize_headers_for_events(const std::vector<std::pair<std::string, std::string>> &headers,

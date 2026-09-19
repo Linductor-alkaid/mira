@@ -17,8 +17,7 @@ using namespace mira::testing;
 
 // Reads the carrier task id of one run from the recorded events so tests can
 // assert the two-view invariant (task terminal <=> run terminal).
-[[nodiscard]] std::optional<TaskId> carrier_task(const IEventStore &store,
-                                                 const SessionId &session,
+[[nodiscard]] std::optional<TaskId> carrier_task(const IEventStore &store, const SessionId &session,
                                                  const WorkflowRunId &run_id) {
     EventQuery query;
     query.session_id = session;
@@ -57,8 +56,7 @@ int async_drive_waits_to_completion() {
     auto workflow = fixture.make_workflow();
 
     auto definition = base_definition("async");
-    definition.steps = {tool_step("counter", std::nullopt),
-                        tool_step("counter", std::nullopt)};
+    definition.steps = {tool_step("counter", std::nullopt), tool_step("counter", std::nullopt)};
     const auto created =
         workflow->create_run(definition, JsonValue{JsonValue::Object{}}, std::nullopt);
     MIRA_CHECK(created.has_value());
@@ -174,8 +172,7 @@ int cancel_is_idempotent_and_isolates_late_completions() {
     auto workflow = fixture.make_workflow();
 
     auto definition = base_definition("cancel-flow");
-    definition.steps = {tool_step("gate", std::nullopt),
-                        tool_step("gate", std::nullopt)};
+    definition.steps = {tool_step("gate", std::nullopt), tool_step("gate", std::nullopt)};
 
     const auto created =
         workflow->create_run(definition, JsonValue{JsonValue::Object{}}, std::nullopt);
@@ -222,8 +219,7 @@ int takeover_suspends_and_release_resumes() {
     auto workflow = fixture.make_workflow();
 
     auto definition = base_definition("takeover-flow");
-    definition.steps = {tool_step("gate", std::nullopt),
-                        tool_step("gate", std::nullopt)};
+    definition.steps = {tool_step("gate", std::nullopt), tool_step("gate", std::nullopt)};
     const auto created =
         workflow->create_run(definition, JsonValue{JsonValue::Object{}}, std::nullopt);
     MIRA_CHECK(created.has_value());

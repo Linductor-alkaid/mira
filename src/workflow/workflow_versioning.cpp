@@ -34,10 +34,9 @@ std::string workflow_validation_result_name(WorkflowValidationResult result) {
 }
 
 Result<WorkflowValidationResult> parse_workflow_validation_result(std::string_view name) {
-    for (auto result : {WorkflowValidationResult::NotValidated,
-                        WorkflowValidationResult::DryRunPassed,
-                        WorkflowValidationResult::Validated,
-                        WorkflowValidationResult::Rejected}) {
+    for (auto result :
+         {WorkflowValidationResult::NotValidated, WorkflowValidationResult::DryRunPassed,
+          WorkflowValidationResult::Validated, WorkflowValidationResult::Rejected}) {
         if (workflow_validation_result_name(result) == name) {
             return result;
         }
@@ -61,7 +60,8 @@ Result<void> append_workflow_version(WorkflowVersionHistory &history,
     if (record.actor.size() > kMaxActorBytes || record.reason.size() > kMaxReasonBytes) {
         return versioning_error(ErrorCode::InvalidArgument, "actor or reason exceeds limit");
     }
-    if (record.validation != WorkflowValidationResult::NotValidated && !record.validation_evidence) {
+    if (record.validation != WorkflowValidationResult::NotValidated &&
+        !record.validation_evidence) {
         return versioning_error(ErrorCode::InvalidArgument,
                                 "validated records must reference validation evidence");
     }

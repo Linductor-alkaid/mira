@@ -27,18 +27,18 @@ struct SemanticVersion final {
                                       const SemanticVersion &) noexcept = default;
 };
 
-#define MIRA_DEFINE_MODEL_ID(name)                                                                    \
-    struct name final {                                                                               \
-        Id128 value{};                                                                                \
-        static name generate() { return name{Id128::generate()}; }                                    \
-        static std::optional<name> parse(std::string_view text) noexcept {                            \
-            const auto parsed = Id128::parse(text);                                                   \
-            return parsed ? std::optional<name>(name{*parsed}) : std::nullopt;                        \
-        }                                                                                             \
-        [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }                         \
-        [[nodiscard]] std::string to_string() const { return value.to_string(); }                     \
-        friend constexpr bool operator==(const name &, const name &) noexcept = default;              \
-        friend constexpr auto operator<=>(const name &, const name &) noexcept = default;             \
+#define MIRA_DEFINE_MODEL_ID(name)                                                                 \
+    struct name final {                                                                            \
+        Id128 value{};                                                                             \
+        static name generate() { return name{Id128::generate()}; }                                 \
+        static std::optional<name> parse(std::string_view text) noexcept {                         \
+            const auto parsed = Id128::parse(text);                                                \
+            return parsed ? std::optional<name>(name{*parsed}) : std::nullopt;                     \
+        }                                                                                          \
+        [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }                      \
+        [[nodiscard]] std::string to_string() const { return value.to_string(); }                  \
+        friend constexpr bool operator==(const name &, const name &) noexcept = default;           \
+        friend constexpr auto operator<=>(const name &, const name &) noexcept = default;          \
     }
 
 MIRA_DEFINE_MODEL_ID(ModelRequestId);
@@ -147,7 +147,7 @@ struct ModelGenerationOptions final {
 struct ExposedToolSpec final {
     ToolId tool_id;
     SemanticVersion version;
-    std::string wire_name;       // Provider-visible alias, unique per request.
+    std::string wire_name; // Provider-visible alias, unique per request.
     std::string description;
     JsonSchema parameters_schema;
     Hash spec_digest{};

@@ -65,8 +65,8 @@ using AutoFuture = std::shared_future<Result<WorkingContextCommitOutcome>>;
 // in `defects` instead of terminating the run so the remaining semantics
 // still verify. Tests keep a standing MIRA_CHECK on the defect count, so the
 // suite stays red while the deviation exists.
-[[nodiscard]] Result<WorkingContextCommitOutcome>
-consume_caller_future(const AutoFuture &future, std::size_t &defects) {
+[[nodiscard]] Result<WorkingContextCommitOutcome> consume_caller_future(const AutoFuture &future,
+                                                                        std::size_t &defects) {
     try {
         return future.get();
     } catch (const std::future_error &) {
@@ -112,13 +112,9 @@ consume_caller_future(const AutoFuture &future, std::size_t &defects) {
     return SessionId{id_from_seed(seed)};
 }
 
-[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) {
-    return TaskId{id_from_seed(seed)};
-}
+[[nodiscard]] TaskId task_from_seed(std::uint64_t seed) { return TaskId{id_from_seed(seed)}; }
 
-[[nodiscard]] EventId event_from_seed(std::uint64_t seed) {
-    return EventId{id_from_seed(seed)};
-}
+[[nodiscard]] EventId event_from_seed(std::uint64_t seed) { return EventId{id_from_seed(seed)}; }
 
 [[nodiscard]] ConversationStatement make_statement(std::string content, std::uint64_t event_seed,
                                                    std::uint64_t sequence) {
@@ -131,28 +127,27 @@ consume_caller_future(const AutoFuture &future, std::size_t &defects) {
 }
 
 // Deterministic checkpoint builder standing in for the M19 commit pipeline.
-[[nodiscard]] ConversationCheckpoint make_checkpoint(const SessionId &session,
-                                                     const TaskId &task, std::uint64_t watermark,
+[[nodiscard]] ConversationCheckpoint make_checkpoint(const SessionId &session, const TaskId &task,
+                                                     std::uint64_t watermark,
                                                      std::uint64_t revision) {
     ConversationCheckpoint checkpoint;
-    checkpoint.id = conversation_checkpoint_id_from_seed(session.to_string() + "|" +
-                                                         std::to_string(watermark) + "|" +
-                                                         std::to_string(revision));
+    checkpoint.id = conversation_checkpoint_id_from_seed(
+        session.to_string() + "|" + std::to_string(watermark) + "|" + std::to_string(revision));
     checkpoint.session_id = session;
     checkpoint.task_id = task;
     checkpoint.task_epoch = 3;
     checkpoint.environment_epoch = 7;
     checkpoint.through_event_sequence = watermark;
     checkpoint.created_at = Timestamp::now();
-    checkpoint.constraints.push_back(make_statement(
-        "constraint r" + std::to_string(revision) + " confirm before sending", watermark + 1,
-        watermark - 1));
+    checkpoint.constraints.push_back(
+        make_statement("constraint r" + std::to_string(revision) + " confirm before sending",
+                       watermark + 1, watermark - 1));
     checkpoint.decisions.push_back(
         make_statement("decision r" + std::to_string(revision) + " use batch provider",
                        watermark + 2, watermark - 1));
-    checkpoint.unresolved_threads.push_back(make_statement(
-        "thread r" + std::to_string(revision) + " waiting for quota reply", watermark + 3,
-        watermark - 1));
+    checkpoint.unresolved_threads.push_back(
+        make_statement("thread r" + std::to_string(revision) + " waiting for quota reply",
+                       watermark + 3, watermark - 1));
     checkpoint.summary = "revision " + std::to_string(revision);
     checkpoint.source_events = {event_from_seed(watermark + 1), event_from_seed(watermark + 2),
                                 event_from_seed(watermark + 3)};
@@ -364,9 +359,7 @@ class ScriptedAutoCurator final : public IContextCurator {
         park_cv_.wait(lock, [this] { return parked_; });
     }
 
-    [[nodiscard]] std::uint64_t calls() const {
-        return calls_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t calls() const { return calls_.load(std::memory_order_acquire); }
 
     [[nodiscard]] std::optional<CallRecord> record(std::size_t index) const {
         std::lock_guard lock(record_mutex_);
@@ -406,9 +399,8 @@ class FailureStubProvider final : public IModelProvider {
     };
 
     FailureStubProvider()
-        : profile_(std::make_shared<ModelProfile>(
-              mira::testing::make_profile(ProtocolDialect::OpenAIResponsesV1,
-                                          "https://m22-auto.test"))) {}
+        : profile_(std::make_shared<ModelProfile>(mira::testing::make_profile(
+              ProtocolDialect::OpenAIResponsesV1, "https://m22-auto.test"))) {}
 
     [[nodiscard]] const ModelProfile &profile() const override { return *profile_; }
 
@@ -474,7 +466,8 @@ class FailureStubProvider final : public IModelProvider {
         }
         sources_json += std::to_string(sources[index]);
     }
-    return "{\"content\":\"" + content + "\",\"sources\":[" + sources_json + "],\"confidence\":0.9}";
+    return "{\"content\":\"" + content + "\",\"sources\":[" + sources_json +
+           "],\"confidence\":0.9}";
 }
 
 // Valid curation output that works on a fresh chain (citation 0 is the first
@@ -1094,8 +1087,7 @@ int flush_branches() {
 
         // Session mismatch resolves an InvalidArgument error future (also a
         // coordinator-minted future).
-        const auto other_session_checkpoint =
-            make_checkpoint(session_from_seed(999), task, 12, 2);
+        const auto other_session_checkpoint = make_checkpoint(session_from_seed(999), task, 12, 2);
         auto rejected =
             auto_curator.flush(session, make_input(other_session_checkpoint, identity, live, 0));
         const auto rejection = consume_caller_future(rejected, caller_defects);
@@ -1233,8 +1225,8 @@ int failure_fallback_five_classes() {
          ErrorCode::InvalidModelOutput, std::chrono::milliseconds(10'000)},
         {"refusal", FailureStubProvider::Behavior::Refusal, ErrorCode::InvalidModelOutput,
          std::chrono::milliseconds(10'000)},
-        {"deadline", FailureStubProvider::Behavior::SleepPastDeadline,
-         ErrorCode::DeadlineExceeded, std::chrono::milliseconds(20)},
+        {"deadline", FailureStubProvider::Behavior::SleepPastDeadline, ErrorCode::DeadlineExceeded,
+         std::chrono::milliseconds(20)},
         {"cancel", FailureStubProvider::Behavior::ReturnCancelled, ErrorCode::Cancelled,
          std::chrono::milliseconds(10'000)},
     };
@@ -1294,9 +1286,8 @@ int failure_fallback_five_classes() {
             provider.set_behavior(FailureStubProvider::Behavior::Ok);
             result = auto_curator.on_signal(session, make_input(failing, identity, live, 5));
             MIRA_CHECK(!result.has_value());
-            result = auto_curator.on_signal(session,
-                                            make_input(make_checkpoint(session, task, 18, 3),
-                                                       identity, live, 0));
+            result = auto_curator.on_signal(
+                session, make_input(make_checkpoint(session, task, 18, 3), identity, live, 0));
             MIRA_CHECK(!result.has_value());
             MIRA_CHECK(auto_curator.session_view(session)->consecutive_failures == 1);
             MIRA_CHECK(provider.calls() == 2);
@@ -1388,8 +1379,8 @@ int previous_selection_and_epoch_reset() {
         bumped_live.environment_epoch = 8;
         ConversationCheckpoint bumped = make_checkpoint(session, task, 16, 3);
         bumped.environment_epoch = 8;
-        result = auto_curator.on_signal(session,
-                                        make_input(bumped, bumped_identity, bumped_live, 16));
+        result =
+            auto_curator.on_signal(session, make_input(bumped, bumped_identity, bumped_live, 16));
         MIRA_CHECK(result.has_value());
         (void)consume_caller_future(*result, caller_defects);
         MIRA_CHECK(await_settlement(auto_curator, session));

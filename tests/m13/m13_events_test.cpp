@@ -155,9 +155,9 @@ int offline_replay_of_learning_events_stays_side_effect_free() {
 } // namespace
 
 int main() {
-    const auto scenarios = std::to_array(
-        {learning_payloads_round_trip, learning_payloads_fail_closed,
-         offline_replay_of_learning_events_stays_side_effect_free});
+    const auto scenarios =
+        std::to_array({learning_payloads_round_trip, learning_payloads_fail_closed,
+                       offline_replay_of_learning_events_stays_side_effect_free});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

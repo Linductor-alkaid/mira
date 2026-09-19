@@ -1,5 +1,5 @@
-#include <mira/model_tool.hpp>
 #include <mira/model_digest.hpp>
+#include <mira/model_tool.hpp>
 
 #include <algorithm>
 #include <array>
@@ -22,16 +22,25 @@ namespace {
 
 bool is_known_hosted_tool_name(std::string_view wire_name) {
     static const std::array<std::string_view, 12> kHosted = {
-        "web_search", "web_search_preview", "file_search", "code_interpreter",
-        "computer_use_preview", "computer-use", "mcp", "bash", "shell", "terminal",
-        "image_generation", "canvas",
+        "web_search",
+        "web_search_preview",
+        "file_search",
+        "code_interpreter",
+        "computer_use_preview",
+        "computer-use",
+        "mcp",
+        "bash",
+        "shell",
+        "terminal",
+        "image_generation",
+        "canvas",
     };
     return std::find(kHosted.begin(), kHosted.end(), wire_name) != kHosted.end();
 }
 
 OperationId derive_tool_operation_id(const ModelRequestId &request_id,
-                                    const ProviderToolCallId &call_id, const ToolId &tool_id,
-                                    const Hash &arguments_digest) {
+                                     const ProviderToolCallId &call_id, const ToolId &tool_id,
+                                     const Hash &arguments_digest) {
     JsonValue::Object root;
     root.emplace_back("request_id", request_id.to_string());
     root.emplace_back("provider_call_id", call_id.value);
@@ -67,7 +76,8 @@ Result<ToolProposalBatch> resolve_tool_calls(const ModelRequest &request,
         if (exposed == request.tools.end()) {
             if (is_known_hosted_tool_name(call->provider_name)) {
                 return bridge_error(ModelDomainCode::ProtocolViolation,
-                                    "hosted provider tool was not requested: " + call->provider_name);
+                                    "hosted provider tool was not requested: " +
+                                        call->provider_name);
             }
             return bridge_error(ModelDomainCode::ProtocolViolation,
                                 "tool call references a tool that was not exposed");
@@ -94,8 +104,7 @@ Result<ToolProposalBatch> resolve_tool_calls(const ModelRequest &request,
         // Duplicate call IDs: identical digest collapses, differing digest is a
         // protocol violation rather than a "best guess" pick.
         const auto existing = std::find_if(
-            batch.proposals.begin(), batch.proposals.end(),
-            [&](const ToolProposal &proposal) {
+            batch.proposals.begin(), batch.proposals.end(), [&](const ToolProposal &proposal) {
                 return proposal.provider_call_id == call->provider_call_id;
             });
         if (existing != batch.proposals.end()) {
@@ -116,17 +125,16 @@ Result<ToolProposalBatch> resolve_tool_calls(const ModelRequest &request,
         proposal.tool_version = exposed->version;
         proposal.arguments = call->arguments;
         proposal.arguments_digest = digest;
-        proposal.operation_id =
-            derive_tool_operation_id(request.request_id, call->provider_call_id, exposed->tool_id,
-                                     digest);
+        proposal.operation_id = derive_tool_operation_id(request.request_id, call->provider_call_id,
+                                                         exposed->tool_id, digest);
         proposal.has_side_effects = exposed->has_side_effects;
         batch.proposals.push_back(std::move(proposal));
     }
     return batch;
 }
 
-Result<std::vector<JsonValue>> build_tool_result_input(
-    ProtocolDialect dialect, std::span<const ToolExecutionRecord> records) {
+Result<std::vector<JsonValue>>
+build_tool_result_input(ProtocolDialect dialect, std::span<const ToolExecutionRecord> records) {
     std::vector<JsonValue> items;
     for (const auto &record : records) {
         if (record.provider_call_id.value.empty()) {

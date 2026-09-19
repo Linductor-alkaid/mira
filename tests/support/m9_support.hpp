@@ -28,8 +28,8 @@ using mira::adapters::simulator::SimulatorSetup;
 
 // register_tool takes the spec and handler separately; the tests hold
 // registrations as one value.
-[[nodiscard]] inline Result<void>
-register_registration(BuiltinToolRegistry &registry, BuiltinToolRegistration registration) {
+[[nodiscard]] inline Result<void> register_registration(BuiltinToolRegistry &registry,
+                                                        BuiltinToolRegistration registration) {
     return registry.register_tool(std::move(registration.spec), std::move(registration.handler));
 }
 
@@ -100,7 +100,8 @@ struct CountingTool final {
             "type": "object",
             "properties": {"payload": {"type": "string"}},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                             .value()};
         registration.spec.has_side_effects = side_effects;
         registration.handler = [this, result](const JsonValue &,
                                               const OperationContext &) -> Result<JsonValue> {
@@ -139,7 +140,8 @@ struct GatedTool final {
             "type": "object",
             "properties": {"payload": {"type": "string"}},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                             .value()};
         registration.spec.has_side_effects = side_effects;
         registration.handler = [this](const JsonValue &,
                                       const OperationContext &context) -> Result<JsonValue> {
@@ -263,9 +265,8 @@ class ObservationCountingEnvironment final : public IEnvironment {
     return step;
 }
 
-[[nodiscard]] inline WorkflowPredicate step_result_predicate(const StepId &step,
-                                                             WorkflowPredicateOp op,
-                                                             JsonValue value) {
+[[nodiscard]] inline WorkflowPredicate
+step_result_predicate(const StepId &step, WorkflowPredicateOp op, JsonValue value) {
     WorkflowPredicate predicate;
     predicate.signal = "step_result:" + step.to_string();
     predicate.op = op;
@@ -273,9 +274,8 @@ class ObservationCountingEnvironment final : public IEnvironment {
     return predicate;
 }
 
-[[nodiscard]] inline WorkflowPredicate parameter_predicate(const std::string &name,
-                                                           WorkflowPredicateOp op,
-                                                           JsonValue value) {
+[[nodiscard]] inline WorkflowPredicate
+parameter_predicate(const std::string &name, WorkflowPredicateOp op, JsonValue value) {
     WorkflowPredicate predicate;
     predicate.signal = "run_parameter:" + name;
     predicate.op = op;

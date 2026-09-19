@@ -312,8 +312,7 @@ class Parser final {
             if (low.value() < 0xDC00U || low.value() > 0xDFFFU) {
                 return json_error("invalid utf-16 surrogate pair");
             }
-            const auto combined =
-                0x10000U + ((high - 0xD800U) << 10U) + (low.value() - 0xDC00U);
+            const auto combined = 0x10000U + ((high - 0xD800U) << 10U) + (low.value() - 0xDC00U);
             return encode_utf8(combined);
         }
         if (high >= 0xDC00U && high <= 0xDFFFU) {

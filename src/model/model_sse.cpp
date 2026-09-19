@@ -62,14 +62,12 @@ Result<std::vector<SseMessage>> SseFramingParser::process_line_buffer() {
         }
         // A trailing CR could be the first half of a CRLF pair; wait for the
         // next byte instead of emitting a spurious blank line.
-        if (carriage != std::string::npos &&
-            (newline == std::string::npos || carriage < newline) &&
+        if (carriage != std::string::npos && (newline == std::string::npos || carriage < newline) &&
             carriage + 1 == buffer_.size()) {
             break;
         }
         std::size_t line_length = 0;
-        if (carriage != std::string::npos &&
-            (newline == std::string::npos || carriage < newline)) {
+        if (carriage != std::string::npos && (newline == std::string::npos || carriage < newline)) {
             line_length = (newline == carriage + 1) ? newline + 1 : carriage + 1;
         } else {
             line_length = newline + 1;
@@ -252,8 +250,7 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
     }
     auto parsed = parse_json(message.data);
     if (!parsed || !parsed.value().is_object()) {
-        return sse_error(ModelDomainCode::ProtocolViolation,
-                         "sse event data is not a json object");
+        return sse_error(ModelDomainCode::ProtocolViolation, "sse event data is not a json object");
     }
     const auto &data = parsed.value();
     if (auto sequence = check_remote_sequence(data); !sequence) {
@@ -340,8 +337,8 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
                              "content part event references a closed item");
         }
         std::string part_key;
-        if (const auto *index = data.find("output_index"); index != nullptr &&
-                                                           index->is_integer()) {
+        if (const auto *index = data.find("output_index");
+            index != nullptr && index->is_integer()) {
             part_key = std::to_string(index->as_integer().value());
         } else {
             part_key = "default";
@@ -408,7 +405,8 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
     if (event == "refusal.delta" || event == "refusal.done") {
         const auto *item_id = data.find("item_id");
         if (item_id == nullptr || !item_id->is_string()) {
-            return sse_error(ModelDomainCode::ProtocolViolation, "refusal event carries no item id");
+            return sse_error(ModelDomainCode::ProtocolViolation,
+                             "refusal event carries no item id");
         }
         auto *open = find_open_item(*item_id->as_string());
         if (open == nullptr || open->closed) {
@@ -447,8 +445,7 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
         }
         // Arguments are buffered only; no JSON parsing and no tool dispatch
         // may happen before the done event.
-        if (open->args.size() + delta->as_string()->size() >
-            limits_.max_arguments_buffer_bytes) {
+        if (open->args.size() + delta->as_string()->size() > limits_.max_arguments_buffer_bytes) {
             return sse_error(ModelDomainCode::ResponseTooLarge,
                              "function arguments buffer exceeded the limit");
         }

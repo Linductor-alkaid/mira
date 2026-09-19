@@ -40,8 +40,7 @@ using namespace mira::testing;
     return error;
 }
 
-[[nodiscard]] JsonValue patch_arguments(const WorkflowId &workflow_id,
-                                        const WorkflowRunId &run_id,
+[[nodiscard]] JsonValue patch_arguments(const WorkflowId &workflow_id, const WorkflowRunId &run_id,
                                         const WorkflowPatchId &patch_id,
                                         const std::vector<WorkflowPatchEntry> &entries) {
     JsonValue::Array entry_values;
@@ -64,8 +63,7 @@ using namespace mira::testing;
 }
 
 [[nodiscard]] JsonValue user_input_arguments(const WorkflowId &workflow_id,
-                                             const WorkflowRunId &run_id,
-                                             const std::string &prompt,
+                                             const WorkflowRunId &run_id, const std::string &prompt,
                                              const std::vector<WorkflowPatchEntry> &proposal) {
     JsonValue::Object root;
     root.emplace_back("workflow_id", workflow_id.to_string());
@@ -96,12 +94,12 @@ int request_user_input_tool_raises_and_resolves() {
     MIRA_CHECK(register_registration(*fixture.registry_, counter.registration()));
     auto workflow = fixture.make_workflow();
     for (auto &registration : workflow->operation_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                    registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
     for (auto &registration : workflow->decision_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                    registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
 
     auto definition = full_policy_definition("user-input");
@@ -115,10 +113,11 @@ int request_user_input_tool_raises_and_resolves() {
     }
 
     const auto context = plain_loop_context();
-    const auto asked = proposal_for(
-        *fixture.registry_, "request_user_input",
-        user_input_arguments(definition.workflow_id, created.value().run_id,
-                             "attach the weekly summary?", {parameter_set("mode", JsonValue{"weekly"})}));
+    const auto asked =
+        proposal_for(*fixture.registry_, "request_user_input",
+                     user_input_arguments(definition.workflow_id, created.value().run_id,
+                                          "attach the weekly summary?",
+                                          {parameter_set("mode", JsonValue{"weekly"})}));
     MIRA_CHECK(asked.has_value());
     auto record = fixture.registry_->execute(asked.value(), context);
     MIRA_CHECK(record.has_value() && !record.value().failed);
@@ -149,10 +148,9 @@ int request_user_input_tool_raises_and_resolves() {
     MIRA_CHECK(second_record.has_value() && second_record.value().failed);
 
     // Accept applies the proposed patch and continues to completion.
-    const auto resolved =
-        workflow->resolve_decision(created.value().run_id, decision.value().decision_id,
-                                   decision.value().payload_digest,
-                                   WorkflowDecisionResolution::Accept);
+    const auto resolved = workflow->resolve_decision(
+        created.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+        WorkflowDecisionResolution::Accept);
     MIRA_CHECK(resolved.has_value());
     gate.release.store(true);
     const auto settled = workflow->wait_run(created.value().run_id, std::chrono::seconds(10));
@@ -163,8 +161,8 @@ int request_user_input_tool_raises_and_resolves() {
     const auto raised =
         session_event_payloads(*fixture.events_, fixture.session_id_, "WorkflowDecisionRaised");
     MIRA_CHECK(raised.size() == 1);
-    const auto resolved_events = session_event_payloads(*fixture.events_, fixture.session_id_,
-                                                        "WorkflowDecisionResolved");
+    const auto resolved_events =
+        session_event_payloads(*fixture.events_, fixture.session_id_, "WorkflowDecisionResolved");
     MIRA_CHECK(resolved_events.size() == 1);
     MIRA_CHECK(*resolved_events.front().find("resolution")->as_string() == "accept");
     return 0;
@@ -178,8 +176,8 @@ int agent_prompt_reject_continues_without_the_patch() {
     MIRA_CHECK(register_registration(*fixture.registry_, counter.registration()));
     auto workflow = fixture.make_workflow();
     for (auto &registration : workflow->decision_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                    registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
 
     auto definition = full_policy_definition("prompt-reject");
@@ -203,10 +201,9 @@ int agent_prompt_reject_continues_without_the_patch() {
 
     const auto decision = workflow->pending_decision_request(created.value().run_id);
     MIRA_CHECK(decision.has_value());
-    const auto rejected =
-        workflow->resolve_decision(created.value().run_id, decision.value().decision_id,
-                                   decision.value().payload_digest,
-                                   WorkflowDecisionResolution::Reject);
+    const auto rejected = workflow->resolve_decision(
+        created.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+        WorkflowDecisionResolution::Reject);
     MIRA_CHECK(rejected.has_value());
 
     gate.release.store(true);
@@ -224,8 +221,8 @@ int request_user_input_gates_admission() {
     MIRA_CHECK(register_registration(*fixture.registry_, counter.registration()));
     auto workflow = fixture.make_workflow();
     for (auto &registration : workflow->decision_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                    registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
 
     auto definition = full_policy_definition("prompt-admission");
@@ -263,8 +260,8 @@ int patch_workflow_tool_executes_through_the_registry() {
     MIRA_CHECK(register_registration(*fixture.registry_, gate.registration()));
     auto workflow = fixture.make_workflow();
     for (auto &registration : workflow->operation_tool_registrations()) {
-        MIRA_CHECK(fixture.registry_->register_tool(std::move(registration.spec),
-                                                    registration.handler));
+        MIRA_CHECK(
+            fixture.registry_->register_tool(std::move(registration.spec), registration.handler));
     }
 
     auto definition = full_policy_definition("patch-tool");
@@ -280,10 +277,10 @@ int patch_workflow_tool_executes_through_the_registry() {
 
     const auto context = plain_loop_context();
     const auto patch_id = WorkflowPatchId::generate();
-    const auto submitted = proposal_for(
-        *fixture.registry_, "patch_workflow",
-        patch_arguments(definition.workflow_id, created.value().run_id, patch_id,
-                        {parameter_set("mode", JsonValue{"patched"})}));
+    const auto submitted =
+        proposal_for(*fixture.registry_, "patch_workflow",
+                     patch_arguments(definition.workflow_id, created.value().run_id, patch_id,
+                                     {parameter_set("mode", JsonValue{"patched"})}));
     MIRA_CHECK(submitted.has_value());
     auto record = fixture.registry_->execute(submitted.value(), context);
     MIRA_CHECK(record.has_value() && !record.value().failed);
@@ -291,10 +288,10 @@ int patch_workflow_tool_executes_through_the_registry() {
     MIRA_CHECK(record.value().result.find("run_patch_epoch")->as_integer().value() == 1);
 
     // The replay through the tool is the idempotent NoOp.
-    const auto replayed = proposal_for(
-        *fixture.registry_, "patch_workflow",
-        patch_arguments(definition.workflow_id, created.value().run_id, patch_id,
-                        {parameter_set("mode", JsonValue{"patched"})}));
+    const auto replayed =
+        proposal_for(*fixture.registry_, "patch_workflow",
+                     patch_arguments(definition.workflow_id, created.value().run_id, patch_id,
+                                     {parameter_set("mode", JsonValue{"patched"})}));
     MIRA_CHECK(replayed.has_value());
     auto replay = fixture.registry_->execute(replayed.value(), context);
     MIRA_CHECK(replay.has_value() && !replay.value().failed);
@@ -303,9 +300,8 @@ int patch_workflow_tool_executes_through_the_registry() {
     // Finish the parked run after the tool-path assertions.
     gate.release.store(true);
     MIRA_CHECK(workflow->resume_run(created.value().run_id).has_value());
-    MIRA_CHECK(workflow->wait_run(created.value().run_id, std::chrono::seconds(10))
-                   .value()
-                   .state == WorkflowRunState::Completed);
+    MIRA_CHECK(workflow->wait_run(created.value().run_id, std::chrono::seconds(10)).value().state ==
+               WorkflowRunState::Completed);
 
     // Strict runs surface the admission rejection as a failed record: a
     // paused Strict boundary rejects the patch.
@@ -330,9 +326,8 @@ int patch_workflow_tool_executes_through_the_registry() {
     MIRA_CHECK(denied_record.has_value() && denied_record.value().failed);
     strict_gate.release.store(true);
     MIRA_CHECK(workflow->resume_run(strict.value().run_id).has_value());
-    MIRA_CHECK(workflow->wait_run(strict.value().run_id, std::chrono::seconds(10))
-                   .value()
-                   .state == WorkflowRunState::Completed);
+    MIRA_CHECK(workflow->wait_run(strict.value().run_id, std::chrono::seconds(10)).value().state ==
+               WorkflowRunState::Completed);
     return 0;
 }
 
@@ -349,8 +344,7 @@ int model_initiated_patch_and_decision_end_to_end() {
     for (const auto &registration : workflow->operation_tool_registrations()) {
         if (registration.spec.wire_name == "patch_workflow") {
             patch_spec = registration.spec;
-            MIRA_CHECK(
-                fixture.registry_->register_tool(registration.spec, registration.handler));
+            MIRA_CHECK(fixture.registry_->register_tool(registration.spec, registration.handler));
         }
     }
     for (const auto &registration : workflow->decision_tool_registrations()) {
@@ -379,15 +373,13 @@ int model_initiated_patch_and_decision_end_to_end() {
     auto admission = std::make_shared<SimpleAdmissionGate>();
     gateway.set_admission_gate(admission);
     const std::vector<ModelResponse> script = {
-        tool_call_response(patch_spec,
-                           to_json_string(patch_arguments(
-                               definition.workflow_id, created.value().run_id,
-                               WorkflowPatchId::generate(),
-                               {parameter_set("mode", JsonValue{"model-patch"})}))),
-        tool_call_response(input_spec,
-                           to_json_string(user_input_arguments(
-                               definition.workflow_id, created.value().run_id,
-                               "run in quiet mode this time?", {}))),
+        tool_call_response(patch_spec, to_json_string(patch_arguments(
+                                           definition.workflow_id, created.value().run_id,
+                                           WorkflowPatchId::generate(),
+                                           {parameter_set("mode", JsonValue{"model-patch"})}))),
+        tool_call_response(input_spec, to_json_string(user_input_arguments(
+                                           definition.workflow_id, created.value().run_id,
+                                           "run in quiet mode this time?", {}))),
         text_response(R"json({"action":"done","reason":"asked the user"})json"),
     };
     gateway.register_provider(std::make_shared<RecordingProvider>(profile, script));
@@ -408,8 +400,9 @@ int model_initiated_patch_and_decision_end_to_end() {
     loop_context.task = spec.task_id;
     loop_context.started_at = Timestamp::now();
     ModelDoneVerifier verifier;
-    auto future = fixture.executor_.submit_auto(
-        [&loop, &spec, &loop_context, &verifier] { return loop.run(spec, loop_context, verifier); });
+    auto future = fixture.executor_.submit_auto([&loop, &spec, &loop_context, &verifier] {
+        return loop.run(spec, loop_context, verifier);
+    });
     const auto loop_result = future.get();
     MIRA_CHECK(loop_result.has_value());
     MIRA_CHECK(loop_result.value().outcome == LoopOutcome::Completed);
@@ -419,10 +412,9 @@ int model_initiated_patch_and_decision_end_to_end() {
     const auto decision = workflow->pending_decision_request(created.value().run_id);
     MIRA_CHECK(decision.has_value());
     MIRA_CHECK(decision.value().kind == WorkflowDecisionKind::AgentPrompt);
-    const auto resolved =
-        workflow->resolve_decision(created.value().run_id, decision.value().decision_id,
-                                   decision.value().payload_digest,
-                                   WorkflowDecisionResolution::Accept);
+    const auto resolved = workflow->resolve_decision(
+        created.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+        WorkflowDecisionResolution::Accept);
     MIRA_CHECK(resolved.has_value());
     gate.release.store(true);
     const auto settled = workflow->wait_run(created.value().run_id, std::chrono::seconds(10));

@@ -5,8 +5,8 @@
 
 namespace mira {
 
-AnalysisReplay::AnalysisReplay(IEventStore &events, ICheckpointStore *checkpoints,
-                               IMemory *memory, IArtifactStore *artifacts)
+AnalysisReplay::AnalysisReplay(IEventStore &events, ICheckpointStore *checkpoints, IMemory *memory,
+                               IArtifactStore *artifacts)
     : events_(events), checkpoints_(checkpoints), memory_(memory), artifacts_(artifacts) {}
 
 Result<AnalysisReplayReport> AnalysisReplay::inspect(TaskId task, SessionId session,
@@ -70,7 +70,8 @@ Result<AnalysisReplayReport> AnalysisReplay::inspect(TaskId task, SessionId sess
             }
         }
     } else {
-        report.note += (report.note.empty() ? std::string{} : "; ") + std::string("memory store not bound");
+        report.note +=
+            (report.note.empty() ? std::string{} : "; ") + std::string("memory store not bound");
     }
 
     // Evidence artifacts referenced by recalled memory: missing or erased

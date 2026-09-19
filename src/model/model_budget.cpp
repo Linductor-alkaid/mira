@@ -36,8 +36,7 @@ std::optional<PriceEntry> PriceTable::lookup(const std::string &model, const std
                                              std::chrono::system_clock::time_point at) const {
     std::optional<PriceEntry> best;
     for (const auto &entry : entries_) {
-        if (entry.model != model || entry.currency != currency ||
-            entry.effective_from > at) {
+        if (entry.model != model || entry.currency != currency || entry.effective_from > at) {
             continue;
         }
         if (!best.has_value() || entry.effective_from >= best->effective_from) {
@@ -67,8 +66,8 @@ std::uint64_t estimate_input_tokens(const ModelRequest &request) {
         }
     }
     for (const auto &tool : request.tools) {
-        total += static_cast<std::uint64_t>(to_json_string(tool.parameters_schema.root).size() / 3) +
-                 32;
+        total +=
+            static_cast<std::uint64_t>(to_json_string(tool.parameters_schema.root).size() / 3) + 32;
     }
     return total;
 }
@@ -143,8 +142,8 @@ Result<BudgetSettlement> BudgetLedger::reconcile(const TaskId &task, const Model
             settlement.note = "cached token count exceeds reported input tokens";
             return settlement;
         }
-        const auto discount =
-            price_tokens(cached, price->input_micros_per_mtok - price->cached_input_micros_per_mtok);
+        const auto discount = price_tokens(cached, price->input_micros_per_mtok -
+                                                       price->cached_input_micros_per_mtok);
         cost -= std::min(discount, cost);
     }
     if (reported_usage.reasoning_tokens.has_value()) {
@@ -171,9 +170,9 @@ Result<BudgetSettlement> BudgetLedger::reconcile(const TaskId &task, const Model
                                     ? account.reserved.requests - release_requests
                                     : 0;
     const auto release_input = settlement.input_tokens;
-    account.reserved.input_tokens =
-        account.reserved.input_tokens > release_input ? account.reserved.input_tokens - release_input
-                                                      : 0;
+    account.reserved.input_tokens = account.reserved.input_tokens > release_input
+                                        ? account.reserved.input_tokens - release_input
+                                        : 0;
     const auto release_output = settlement.output_tokens;
     account.reserved.output_tokens = account.reserved.output_tokens > release_output
                                          ? account.reserved.output_tokens - release_output
@@ -200,9 +199,8 @@ Result<void> BudgetLedger::release(const TaskId &task, const BudgetReservation &
                              ? held.output_tokens - reservation.output_tokens
                              : 0;
     held.requests = held.requests > reservation.requests ? held.requests - reservation.requests : 0;
-    held.cost_micros = held.cost_micros > reservation.cost_micros
-                           ? held.cost_micros - reservation.cost_micros
-                           : 0;
+    held.cost_micros =
+        held.cost_micros > reservation.cost_micros ? held.cost_micros - reservation.cost_micros : 0;
     return Result<void>{};
 }
 

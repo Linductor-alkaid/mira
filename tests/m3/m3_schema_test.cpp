@@ -16,18 +16,22 @@ using namespace mira;
 }
 
 int subset_gate_rejects_unsupported_keywords() {
-    MIRA_CHECK(gate_schema_subset(parse_schema(
-                   R"({"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false})"))
-                   .has_value());
-    MIRA_CHECK(!gate_schema_subset(parse_schema(
-                    R"({"type":"object","properties":{"a":{"anyOf":[{"type":"string"}]}}})"))
-                    .has_value());
-    MIRA_CHECK(!gate_schema_subset(
-                   parse_schema(R"({"type":"object","properties":{"a":{"$ref":"#/x"}}})"))
-                   .has_value());
-    MIRA_CHECK(!gate_schema_subset(parse_schema(
-                    R"({"type":"object","properties":{"a":{"oneOf":[{"type":"string"}]}}})"))
-                    .has_value());
+    MIRA_CHECK(
+        gate_schema_subset(
+            parse_schema(
+                R"({"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false})"))
+            .has_value());
+    MIRA_CHECK(
+        !gate_schema_subset(
+             parse_schema(R"({"type":"object","properties":{"a":{"anyOf":[{"type":"string"}]}}})"))
+             .has_value());
+    MIRA_CHECK(
+        !gate_schema_subset(parse_schema(R"({"type":"object","properties":{"a":{"$ref":"#/x"}}})"))
+             .has_value());
+    MIRA_CHECK(
+        !gate_schema_subset(
+             parse_schema(R"({"type":"object","properties":{"a":{"oneOf":[{"type":"string"}]}}})"))
+             .has_value());
     // Deeply nested schemas are rejected before the request is sent.
     std::string deep = R"({"type":"object","properties":{"a":)";
     for (int index = 0; index < 12; ++index) {
@@ -55,10 +59,10 @@ int validator_covers_the_subset() {
             "required": ["action"],
             "additionalProperties": false
         })");
-    MIRA_CHECK(validate_instance_against_schema(
-                   parse_json(R"({"action":"tap","x":0.5,"tags":["a"],"note":"abcd"})").value(),
-                   schema)
-                   .empty());
+    MIRA_CHECK(
+        validate_instance_against_schema(
+            parse_json(R"({"action":"tap","x":0.5,"tags":["a"],"note":"abcd"})").value(), schema)
+            .empty());
     MIRA_CHECK(!validate_instance_against_schema(parse_json(R"({"action":"swipe"})").value(),
                                                  schema)
                     .empty()); // enum
@@ -113,8 +117,7 @@ int decision_parse_outcomes() {
     MIRA_CHECK(good.decision.has_value());
     MIRA_CHECK(good.decision->decision_digest_field ==
                decision_digest(request.output_contract.schema_id,
-                               request.output_contract.schema_version,
-                               good.decision->value));
+                               request.output_contract.schema_version, good.decision->value));
 
     auto malformed_json = parse_with_text("not json at all");
     MIRA_CHECK(malformed_json.outcome == DecisionParseOutcome::Malformed);
@@ -140,8 +143,7 @@ int decision_parse_outcomes() {
     filtered.contract_version = SchemaVersion{1, 0};
     filtered.status = ModelCompletionStatus::ContentFiltered;
     filtered.requested_model = "m";
-    MIRA_CHECK(parse_decision(request, filtered).outcome ==
-               DecisionParseOutcome::ContentFiltered);
+    MIRA_CHECK(parse_decision(request, filtered).outcome == DecisionParseOutcome::ContentFiltered);
 
     // Text mode never yields a decision.
     auto text_request = decision_request("");

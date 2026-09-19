@@ -32,8 +32,8 @@ parse_workflow_validation_result(std::string_view name);
 // parent's).
 struct WorkflowVersionRecord final {
     SemanticVersion version{1, 0, 0};
-    std::string actor;          // Who; sanitized by the caller before append.
-    std::string reason;         // Why.
+    std::string actor;  // Who; sanitized by the caller before append.
+    std::string reason; // Why.
     Sha256Digest content_digest{};
     Sha256Digest parent_digest{}; // Nil digest for the first record.
     WorkflowValidationResult validation = WorkflowValidationResult::NotValidated;

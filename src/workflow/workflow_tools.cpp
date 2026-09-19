@@ -42,12 +42,11 @@ namespace {
     return JsonValue{std::move(values)};
 }
 
-constexpr std::array<std::string_view, 5> kPolicyNames = {"strict", "recoverable",
-                                                          "agent_assisted", "interactive",
-                                                          "dry_run"};
+constexpr std::array<std::string_view, 5> kPolicyNames = {"strict", "recoverable", "agent_assisted",
+                                                          "interactive", "dry_run"};
 constexpr std::array<std::string_view, 8> kRunStateNames = {
-    "created", "running", "paused", "waiting_user", "waiting_agent", "completed", "failed",
-    "cancelled"};
+    "created",       "running",   "paused", "waiting_user",
+    "waiting_agent", "completed", "failed", "cancelled"};
 constexpr std::array<std::string_view, 3> kPatchTargets = {"run_parameters", "step_arguments",
                                                            "execution_policy"};
 constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
@@ -285,11 +284,11 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
 
 [[nodiscard]] std::vector<WorkflowOperationSpec> build_specs() {
     std::vector<WorkflowOperationSpec> specs;
-    specs.push_back(make_spec(
-        WorkflowOperation::RunWorkflow,
-        "Start one run of a workflow pinned to an ir digest; drives environment actions "
-        "through the single execution channel",
-        run_workflow_parameters_schema(), run_result_schema(), true));
+    specs.push_back(
+        make_spec(WorkflowOperation::RunWorkflow,
+                  "Start one run of a workflow pinned to an ir digest; drives environment actions "
+                  "through the single execution channel",
+                  run_workflow_parameters_schema(), run_result_schema(), true));
     specs.push_back(make_spec(WorkflowOperation::PatchWorkflow,
                               "Submit an idempotent patch to a running workflow",
                               patch_workflow_parameters_schema(), patch_result_schema(), false));
@@ -406,22 +405,20 @@ Result<void> validate_workflow_patch_entry(const WorkflowPatchEntry &entry,
     switch (entry.target) {
     case WorkflowPatchTarget::RunParameters:
         if (entry.op == WorkflowPatchOp::Skip) {
-            return tool_error(ErrorCode::InvalidArgument,
-                              "skip applies to step_arguments only");
+            return tool_error(ErrorCode::InvalidArgument, "skip applies to step_arguments only");
         }
         break;
     case WorkflowPatchTarget::StepArguments:
         break;
     case WorkflowPatchTarget::ExecutionPolicy:
         if (entry.op != WorkflowPatchOp::Set) {
-            return tool_error(ErrorCode::InvalidArgument,
-                              "execution_policy only supports set");
+            return tool_error(ErrorCode::InvalidArgument, "execution_policy only supports set");
         }
         if (entry.path != "policy") {
-            return tool_error(ErrorCode::InvalidArgument,
-                              "execution_policy path must be 'policy'");
+            return tool_error(ErrorCode::InvalidArgument, "execution_policy path must be 'policy'");
         }
-        if (!entry.value.is_string() || !parse_workflow_policy(*entry.value.as_string()).has_value()) {
+        if (!entry.value.is_string() ||
+            !parse_workflow_policy(*entry.value.as_string()).has_value()) {
             return tool_error(ErrorCode::InvalidArgument,
                               "execution_policy value must name a known policy");
         }

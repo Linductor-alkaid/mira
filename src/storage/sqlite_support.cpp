@@ -41,7 +41,8 @@ Result<sqlite3 *> open_database(const DbOpenOptions &options) {
                           ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
                           : SQLITE_OPEN_READONLY;
     sqlite3 *database = nullptr;
-    const int open_result = sqlite3_open_v2(options.path.string().c_str(), &database, flags, nullptr);
+    const int open_result =
+        sqlite3_open_v2(options.path.string().c_str(), &database, flags, nullptr);
     if (open_result != SQLITE_OK) {
         const std::string message =
             open_result == SQLITE_CANTOPEN
@@ -64,12 +65,13 @@ Result<sqlite3 *> open_database(const DbOpenOptions &options) {
     const int probe_result = sqlite3_exec(database, probe, nullptr, nullptr, &probe_error);
     if (probe_result != SQLITE_OK) {
         std::string message = "store database is not usable: ";
-        message += probe_error != nullptr ? probe_error : sqlite_error_message(probe_result, database);
+        message +=
+            probe_error != nullptr ? probe_error : sqlite_error_message(probe_result, database);
         sqlite3_free(probe_error);
         sqlite3_close_v2(database);
         Error error;
-        error.code = probe_result == SQLITE_NOTADB ? ErrorCode::InvalidArgument
-                                                   : ErrorCode::Internal;
+        error.code =
+            probe_result == SQLITE_NOTADB ? ErrorCode::InvalidArgument : ErrorCode::Internal;
         error.domain = "mira.state_store";
         error.safe_message = std::move(message);
         return error;
@@ -98,8 +100,7 @@ DatabaseHandle &DatabaseHandle::operator=(DatabaseHandle &&other) noexcept {
 }
 
 Statement::Statement(sqlite3 *database, const char *sql) {
-    const int result =
-        sqlite3_prepare_v2(database, sql, -1, &statement_, nullptr);
+    const int result = sqlite3_prepare_v2(database, sql, -1, &statement_, nullptr);
     if (result != SQLITE_OK) {
         statement_ = nullptr; // prepare failure leaves no statement to free
     }
@@ -187,9 +188,8 @@ Result<std::optional<std::string>> meta_read(sqlite3 *database, const std::strin
 }
 
 Result<void> meta_write(sqlite3 *database, const std::string &key, const std::string &value) {
-    Statement statement(
-        database, "INSERT INTO store_meta(key, value) VALUES(?1, ?2) "
-                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    Statement statement(database, "INSERT INTO store_meta(key, value) VALUES(?1, ?2) "
+                                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value");
     if (!statement.valid()) {
         return db_error("meta write prepare", SQLITE_ERROR, database);
     }
@@ -204,7 +204,8 @@ Result<void> meta_write(sqlite3 *database, const std::string &key, const std::st
 
 Result<std::vector<std::string>> list_tables(sqlite3 *database) {
     Statement statement(
-        database, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+        database,
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
     if (!statement.valid()) {
         return db_error("table list prepare", SQLITE_ERROR, database);
     }
@@ -295,9 +296,7 @@ StoreChannel::StoreChannel(executor::Executor &executor, sqlite3 *database, Conf
     }
 }
 
-StoreChannel::~StoreChannel() {
-    (void)close();
-}
+StoreChannel::~StoreChannel() { (void)close(); }
 
 Error StoreChannel::reject(const char *message, ErrorCode code) const {
     Error error;
@@ -327,8 +326,8 @@ Result<void> StoreChannel::close() noexcept {
             handle_->request_stop();
         }
         std::unique_lock lock(shared_->mutex);
-        const bool drained = shared_->done_cv.wait_for(
-            lock, std::chrono::seconds(10), [this] { return shared_->worker_done; });
+        const bool drained = shared_->done_cv.wait_for(lock, std::chrono::seconds(10),
+                                                       [this] { return shared_->worker_done; });
         if (!drained) {
             return reject("store worker did not settle during close", ErrorCode::DeadlineExceeded);
         }
@@ -348,8 +347,8 @@ std::size_t StoreChannel::pending_count() const {
     return shared_->pending.size();
 }
 
-Error store_error(ErrorCode code, std::string domain, std::int32_t domain_code,
-                  std::string message, bool retryable) {
+Error store_error(ErrorCode code, std::string domain, std::int32_t domain_code, std::string message,
+                  bool retryable) {
     Error error;
     error.code = code;
     error.domain = std::move(domain);

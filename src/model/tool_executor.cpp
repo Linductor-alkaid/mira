@@ -45,8 +45,7 @@ namespace {
     return JsonValue(std::move(root));
 }
 
-[[nodiscard]] ToolExecutionRecord failed_record(const ToolProposal &proposal,
-                                                std::string summary) {
+[[nodiscard]] ToolExecutionRecord failed_record(const ToolProposal &proposal, std::string summary) {
     ToolExecutionRecord record;
     record.provider_call_id = proposal.provider_call_id;
     record.tool_id = proposal.tool_id;
@@ -129,9 +128,10 @@ Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &pro
     BuiltinToolHandler handler;
     {
         const std::lock_guard lock(mutex_);
-        const auto found = std::find_if(
-            tools_.begin(), tools_.end(),
-            [&proposal](const Entry &entry) { return entry.spec.tool_id == proposal.tool_id; });
+        const auto found =
+            std::find_if(tools_.begin(), tools_.end(), [&proposal](const Entry &entry) {
+                return entry.spec.tool_id == proposal.tool_id;
+            });
         if (found == tools_.end()) {
             return tool_error(ErrorCode::NotFound, "tool was not registered");
         }
@@ -152,8 +152,8 @@ Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &pro
         handler = found->handler;
     }
 
-    const auto violations = validate_instance_against_schema(proposal.arguments,
-                                                             spec.parameters_schema);
+    const auto violations =
+        validate_instance_against_schema(proposal.arguments, spec.parameters_schema);
     if (!violations.empty()) {
         std::ostringstream summary;
         summary << "arguments failed schema validation at " << violations.front().path << " ("
@@ -208,8 +208,8 @@ BuiltinToolRegistration make_wait_tool() {
             return tool_error(ErrorCode::InvalidArgument, "duration_ms must be a number");
         }
         const double requested = field->as_number().value_or(0.0);
-        const auto wait_for = std::chrono::milliseconds(
-            static_cast<long long>(requested < 0.0 ? 0.0 : requested));
+        const auto wait_for =
+            std::chrono::milliseconds(static_cast<long long>(requested < 0.0 ? 0.0 : requested));
         const auto started = std::chrono::steady_clock::now();
         while (true) {
             if (context.cancelled()) {

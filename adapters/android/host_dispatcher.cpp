@@ -225,9 +225,7 @@ void HostDispatcherBridge::record_violation() {
 }
 
 HostLeaseGuard::ReleaseObserver HostDispatcherBridge::lease_release_observer() {
-    return [counter = lease_releases_]() {
-        counter->fetch_add(1, std::memory_order_relaxed);
-    };
+    return [counter = lease_releases_]() { counter->fetch_add(1, std::memory_order_relaxed); };
 }
 
 void HostDispatcherBridge::handle_capabilities_changed(const MiraHostCapabilitiesV1 &capabilities) {

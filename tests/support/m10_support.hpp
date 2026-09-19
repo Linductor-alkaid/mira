@@ -13,8 +13,8 @@ namespace mira::testing {
                                                                bool with_parameters = true) {
     auto definition = base_definition(std::move(name), with_parameters);
     definition.allowed_policies = {WorkflowPolicy::Strict, WorkflowPolicy::DryRun,
-                                   WorkflowPolicy::Recoverable,
-                                   WorkflowPolicy::AgentAssisted, WorkflowPolicy::Interactive};
+                                   WorkflowPolicy::Recoverable, WorkflowPolicy::AgentAssisted,
+                                   WorkflowPolicy::Interactive};
     return definition;
 }
 
@@ -64,8 +64,8 @@ namespace mira::testing {
 
 // Collects the parsed payloads of one event type for one session, in order.
 [[nodiscard]] inline std::vector<JsonValue> session_event_payloads(const IEventStore &store,
-                                                                    const SessionId &session,
-                                                                    const std::string &type) {
+                                                                   const SessionId &session,
+                                                                   const std::string &type) {
     std::vector<JsonValue> payloads;
     EventQuery query;
     query.session_id = session;

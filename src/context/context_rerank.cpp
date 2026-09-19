@@ -82,8 +82,8 @@ namespace {
     if (intersection == 0) {
         return 0.0;
     }
-    const double precision = static_cast<double>(intersection) /
-                             static_cast<double>(candidate_tokens.size());
+    const double precision =
+        static_cast<double>(intersection) / static_cast<double>(candidate_tokens.size());
     const double recall =
         static_cast<double>(intersection) / static_cast<double>(query_tokens.size());
     return 2.0 * precision * recall / (precision + recall);
@@ -93,8 +93,7 @@ namespace {
 
 Result<void> ContextRerankConfig::validate() const {
     if (max_output == 0 || max_output > 4'096) {
-        return rerank_error(ContextDomainCode::InvalidLimits,
-                            "rerank output bound out of range");
+        return rerank_error(ContextDomainCode::InvalidLimits, "rerank output bound out of range");
     }
     return {};
 }
@@ -152,17 +151,15 @@ TokenOverlapContextReranker::rerank(const ContextQuery &query,
     }
 
     const auto query_token_list = tokenize(query.text);
-    const std::multiset<std::string> query_tokens(query_token_list.begin(),
-                                                  query_token_list.end());
+    const std::multiset<std::string> query_tokens(query_token_list.begin(), query_token_list.end());
     std::vector<double> rerank_scores(candidates.size(), 0.0);
     std::vector<double> retrieval_scores(candidates.size(), 0.0);
     for (std::size_t index = 0; index < candidates.size(); ++index) {
         const ContextCandidate &candidate = candidates[index];
-        const std::multiset<std::string> candidate_tokens =
-            [&] {
-                const auto tokens = tokenize(candidate.text);
-                return std::multiset<std::string>(tokens.begin(), tokens.end());
-            }();
+        const std::multiset<std::string> candidate_tokens = [&] {
+            const auto tokens = tokenize(candidate.text);
+            return std::multiset<std::string>(tokens.begin(), tokens.end());
+        }();
         double score = query_candidate_f1(query_tokens, candidate_tokens);
         for (const auto &term : query.exact_terms) {
             if (contains_case_insensitive(candidate.text, term)) {
@@ -185,10 +182,9 @@ TokenOverlapContextReranker::rerank(const ContextQuery &query,
         item.candidate = candidates[index];
         item.rerank_score = rerank_scores[index];
         item.retrieval_rank = index;
-        item.fused_score = weights_.rerank * normalize(rerank_scores[index], *rerank_min,
-                                                       *rerank_max) +
-                            weights_.retrieval * normalize(retrieval_scores[index], *retrieval_min,
-                                                           *retrieval_max);
+        item.fused_score =
+            weights_.rerank * normalize(rerank_scores[index], *rerank_min, *rerank_max) +
+            weights_.retrieval * normalize(retrieval_scores[index], *retrieval_min, *retrieval_max);
         ranked.push_back(std::move(item));
     }
 

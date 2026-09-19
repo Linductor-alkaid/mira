@@ -60,10 +60,10 @@ struct BudgetReservation final {
 };
 
 enum class ReconciliationQuality : std::uint8_t {
-    Reconciled,      // Provider usage priced against the table.
-    MissingUsage,    // Reservation held; flagged for audit.
-    PartialUsage,    // Subset of counters; remainder stays reserved.
-    UnknownPrice,    // Usage known but the price table has no entry.
+    Reconciled,   // Provider usage priced against the table.
+    MissingUsage, // Reservation held; flagged for audit.
+    PartialUsage, // Subset of counters; remainder stays reserved.
+    UnknownPrice, // Usage known but the price table has no entry.
 };
 
 struct BudgetSettlement final {
@@ -87,8 +87,7 @@ class BudgetLedger final {
     // estimate exceeds what remains.
     [[nodiscard]] Result<BudgetReservation> reserve(const TaskId &task, const ModelBudget &budget,
                                                     const BudgetEstimate &estimate);
-    [[nodiscard]] Result<BudgetSettlement> reconcile(const TaskId &task,
-                                                     const ModelBudget &budget,
+    [[nodiscard]] Result<BudgetSettlement> reconcile(const TaskId &task, const ModelBudget &budget,
                                                      const ModelUsage &reported_usage,
                                                      const std::string &model);
     // Releases a reservation for a call that never produced a response.

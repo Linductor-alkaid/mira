@@ -19,15 +19,12 @@ const WorkflowLearningLimits kLimits{};
 
 int domain_mapping_is_total_and_matches_the_architecture_table() {
     // DEC-014 §10.2, line by line.
-    MIRA_CHECK(memory_domain_of(MemoryKind::EnvironmentFact) ==
-               MemoryDomain::EnvironmentModel);
-    MIRA_CHECK(memory_domain_of(MemoryKind::ApplicationFact) ==
-               MemoryDomain::EnvironmentModel);
+    MIRA_CHECK(memory_domain_of(MemoryKind::EnvironmentFact) == MemoryDomain::EnvironmentModel);
+    MIRA_CHECK(memory_domain_of(MemoryKind::ApplicationFact) == MemoryDomain::EnvironmentModel);
     MIRA_CHECK(memory_domain_of(MemoryKind::Preference) == MemoryDomain::UserModel);
     MIRA_CHECK(memory_domain_of(MemoryKind::Procedure) == MemoryDomain::ProceduralMemory);
     MIRA_CHECK(memory_domain_of(MemoryKind::SkillHint) == MemoryDomain::ProceduralMemory);
-    MIRA_CHECK(memory_domain_of(MemoryKind::RecoveryLesson) ==
-               MemoryDomain::ProceduralMemory);
+    MIRA_CHECK(memory_domain_of(MemoryKind::RecoveryLesson) == MemoryDomain::ProceduralMemory);
     MIRA_CHECK(memory_domain_of(MemoryKind::Episode) == MemoryDomain::EpisodicMemory);
 
     const auto environment = memory_kinds_of_domain(MemoryDomain::EnvironmentModel);
@@ -42,9 +39,8 @@ int domain_mapping_is_total_and_matches_the_architecture_table() {
     // Every kind maps back into its own domain's inverse set (total and
     // consistent in both directions).
     for (const auto kind : {MemoryKind::Preference, MemoryKind::EnvironmentFact,
-                            MemoryKind::ApplicationFact, MemoryKind::Episode,
-                            MemoryKind::Procedure, MemoryKind::SkillHint,
-                            MemoryKind::RecoveryLesson}) {
+                            MemoryKind::ApplicationFact, MemoryKind::Episode, MemoryKind::Procedure,
+                            MemoryKind::SkillHint, MemoryKind::RecoveryLesson}) {
         const auto kinds = memory_kinds_of_domain(memory_domain_of(kind));
         MIRA_CHECK(std::find(kinds.begin(), kinds.end(), kind) != kinds.end());
     }
@@ -52,11 +48,10 @@ int domain_mapping_is_total_and_matches_the_architecture_table() {
 }
 
 int domain_names_round_trip_and_fail_closed() {
-    for (const auto &[domain, name] :
-         {std::pair{MemoryDomain::EnvironmentModel, "environment"},
-          std::pair{MemoryDomain::UserModel, "user"},
-          std::pair{MemoryDomain::ProceduralMemory, "procedural"},
-          std::pair{MemoryDomain::EpisodicMemory, "episodic"}}) {
+    for (const auto &[domain, name] : {std::pair{MemoryDomain::EnvironmentModel, "environment"},
+                                       std::pair{MemoryDomain::UserModel, "user"},
+                                       std::pair{MemoryDomain::ProceduralMemory, "procedural"},
+                                       std::pair{MemoryDomain::EpisodicMemory, "episodic"}}) {
         MIRA_CHECK(memory_domain_name(domain) == name);
         auto parsed = parse_memory_domain(name);
         MIRA_CHECK(parsed.has_value() && parsed.value() == domain);
@@ -187,19 +182,18 @@ int lesson_contract_round_trips_and_fails_closed() {
     auto *first_action = const_cast<JsonValue *>(&(*bad_target.find("recovery")->as_array())[0]);
     first_action->set("extra", JsonValue{});
     MIRA_CHECK(!recovery_lesson_from_json(bad_target).has_value());
-    auto bad_target_name = parse_json(canonical_json_string(recovery_lesson_to_json(lesson)))
-                               .value();
+    auto bad_target_name =
+        parse_json(canonical_json_string(recovery_lesson_to_json(lesson))).value();
     auto *bad_target_entry =
         const_cast<JsonValue *>(&(*bad_target_name.find("recovery")->as_array())[0]);
     auto *bad_targets = const_cast<JsonValue *>(bad_target_entry->find("targets"));
-    (*const_cast<JsonValue::Array *>(bad_targets->as_array()))[0] =
-        JsonValue{"reformat_disk"};
+    (*const_cast<JsonValue::Array *>(bad_targets->as_array()))[0] = JsonValue{"reformat_disk"};
     MIRA_CHECK(!recovery_lesson_from_json(bad_target_name).has_value());
 
     // Neither an empty recovery without the resume mark nor the resume mark
     // with actions: exactly one form per lesson.
-    auto empty_recovery = parse_json(canonical_json_string(recovery_lesson_to_json(lesson)))
-                              .value();
+    auto empty_recovery =
+        parse_json(canonical_json_string(recovery_lesson_to_json(lesson))).value();
     *empty_recovery.find("recovery") = JsonValue{JsonValue::Array{}};
     MIRA_CHECK(!recovery_lesson_from_json(empty_recovery).has_value());
     auto both_forms = sample_lesson();
@@ -226,8 +220,7 @@ int failure_signature_sanitizes_and_round_trips() {
     spacey.reason_code = "oops it broke";
     MIRA_CHECK(!failure_signature_from_json(failure_signature_to_json(spacey)).has_value());
 
-    auto missing = parse_json(canonical_json_string(failure_signature_to_json(signature)))
-                       .value();
+    auto missing = parse_json(canonical_json_string(failure_signature_to_json(signature))).value();
     missing.set("extra", JsonValue{});
     MIRA_CHECK(!failure_signature_from_json(missing).has_value());
     return 0;
@@ -238,8 +231,7 @@ int conversions_produce_valid_verified_memory_records() {
     const EventId evidence = EventId::generate();
     const auto now = std::chrono::system_clock::time_point{std::chrono::seconds{1'700'000'000}};
     const auto scope = learning_scope();
-    auto record =
-        episode_to_memory_record(episode, scope, {evidence}, now);
+    auto record = episode_to_memory_record(episode, scope, {evidence}, now);
     MIRA_CHECK(record.validate().has_value());
     MIRA_CHECK(record.kind == MemoryKind::Episode);
     MIRA_CHECK(record.scope == scope);
@@ -249,8 +241,7 @@ int conversions_produce_valid_verified_memory_records() {
     MIRA_CHECK(record.validity.valid_from == now);
     MIRA_CHECK(record.status == MemoryStatus::Active);
     // Statement is the canonical episode JSON: it parses back losslessly.
-    MIRA_CHECK(workflow_episode_from_json(parse_json(record.statement).value()).value() ==
-               episode);
+    MIRA_CHECK(workflow_episode_from_json(parse_json(record.statement).value()).value() == episode);
 
     MemoryMutation mutation;
     mutation.id = workflow_episode_mutation_id(episode.run_id);
@@ -278,8 +269,8 @@ int lesson_record_parsing_accepts_only_canonical_statements() {
     const auto lesson = sample_lesson();
     const EventId evidence = EventId::generate();
     const auto scope = learning_scope();
-    const auto record = recovery_lesson_to_memory_record(
-        lesson, scope, {evidence}, std::chrono::system_clock::now());
+    const auto record = recovery_lesson_to_memory_record(lesson, scope, {evidence},
+                                                         std::chrono::system_clock::now());
     auto reparsed = recovery_lesson_from_record(record);
     MIRA_CHECK(reparsed.has_value());
     MIRA_CHECK(reparsed.value() == lesson);

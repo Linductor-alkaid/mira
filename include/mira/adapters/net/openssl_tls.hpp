@@ -27,9 +27,9 @@ class OpenSslTlsChannelFactory final : public ITlsChannelFactory {
     // Loads the trust store; must succeed once before create().
     [[nodiscard]] bool initialize();
 
-    [[nodiscard]] Result<std::unique_ptr<ITlsChannel>>
-    create(std::intptr_t native_handle, const std::string &host,
-           const TlsOptions &options) override;
+    [[nodiscard]] Result<std::unique_ptr<ITlsChannel>> create(std::intptr_t native_handle,
+                                                              const std::string &host,
+                                                              const TlsOptions &options) override;
 
   private:
     struct Ctx;

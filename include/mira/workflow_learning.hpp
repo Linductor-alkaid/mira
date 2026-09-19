@@ -165,10 +165,10 @@ recovery_lesson_from_json(const JsonValue &json,
 // ("it happened", not "it is useful"), provenance=evidence, validity from
 // recorded_at. `now` is caller-supplied; no clock reads. The result passes
 // MemoryRecord::validate.
-[[nodiscard]] MemoryRecord
-episode_to_memory_record(const WorkflowEpisodeRecord &episode, const MemoryScope &scope,
-                         const std::vector<EventId> &evidence,
-                         std::chrono::system_clock::time_point now);
+[[nodiscard]] MemoryRecord episode_to_memory_record(const WorkflowEpisodeRecord &episode,
+                                                    const MemoryScope &scope,
+                                                    const std::vector<EventId> &evidence,
+                                                    std::chrono::system_clock::time_point now);
 
 // Pure conversion (DEC-029 §3): kind=RecoveryLesson, Verified, 1.0. The
 // statement is the canonical lesson JSON; `recovery_lesson_from_record`

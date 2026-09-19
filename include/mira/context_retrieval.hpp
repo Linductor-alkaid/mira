@@ -227,7 +227,8 @@ class InMemoryContextIndex final : public IContextRetriever {
     [[nodiscard]] Result<void> upsert_asset(const ContextIndexAsset &asset);
     // External vector supply. Empty, oversized or non-finite vectors are
     // rejected so corrupt supply surfaces as index lag, not query poisoning.
-    [[nodiscard]] Result<void> attach_embedding(const ContextAssetId &id, ContextEmbedding embedding);
+    [[nodiscard]] Result<void> attach_embedding(const ContextAssetId &id,
+                                                ContextEmbedding embedding);
     [[nodiscard]] Result<void> drop_asset(const ContextAssetId &id);
     // Registered assets without a usable embedding.
     [[nodiscard]] std::size_t index_lag() const;
@@ -240,8 +241,8 @@ class InMemoryContextIndex final : public IContextRetriever {
     [[nodiscard]] bool has_embedding(const ContextAssetId &id) const;
     [[nodiscard]] std::optional<ContextIndexAsset> asset(const ContextAssetId &id) const;
 
-    [[nodiscard]] Result<ContextRetrievalResult>
-    retrieve(const ContextQuery &query, const RetrievalBudget &budget) override;
+    [[nodiscard]] Result<ContextRetrievalResult> retrieve(const ContextQuery &query,
+                                                          const RetrievalBudget &budget) override;
 
   private:
     class Impl;

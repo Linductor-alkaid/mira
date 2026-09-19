@@ -25,14 +25,16 @@ using namespace mira;
 int transition_table_matches_the_frozen_contract() {
     // Legal edges per DEC-020 §1.
     MIRA_CHECK(valid_workflow_run_transition(WorkflowRunState::Created, WorkflowRunState::Running));
-    MIRA_CHECK(valid_workflow_run_transition(WorkflowRunState::Created, WorkflowRunState::Cancelled));
-    for (auto target : {WorkflowRunState::Paused, WorkflowRunState::WaitingUser,
-                        WorkflowRunState::WaitingAgent, WorkflowRunState::Completed,
-                        WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
+    MIRA_CHECK(
+        valid_workflow_run_transition(WorkflowRunState::Created, WorkflowRunState::Cancelled));
+    for (auto target :
+         {WorkflowRunState::Paused, WorkflowRunState::WaitingUser, WorkflowRunState::WaitingAgent,
+          WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
         MIRA_CHECK(valid_workflow_run_transition(WorkflowRunState::Running, target));
     }
     MIRA_CHECK(valid_workflow_run_transition(WorkflowRunState::Paused, WorkflowRunState::Running));
-    MIRA_CHECK(valid_workflow_run_transition(WorkflowRunState::Paused, WorkflowRunState::Cancelled));
+    MIRA_CHECK(
+        valid_workflow_run_transition(WorkflowRunState::Paused, WorkflowRunState::Cancelled));
     MIRA_CHECK(
         valid_workflow_run_transition(WorkflowRunState::WaitingUser, WorkflowRunState::Running));
     MIRA_CHECK(
@@ -47,10 +49,10 @@ int transition_table_matches_the_frozen_contract() {
         valid_workflow_run_transition(WorkflowRunState::WaitingAgent, WorkflowRunState::Cancelled));
 
     // Exhaustive illegal edges: everything the table above does not list.
-    const WorkflowRunState all[] = {WorkflowRunState::Created,   WorkflowRunState::Running,
-                                    WorkflowRunState::Paused,    WorkflowRunState::WaitingUser,
+    const WorkflowRunState all[] = {WorkflowRunState::Created,      WorkflowRunState::Running,
+                                    WorkflowRunState::Paused,       WorkflowRunState::WaitingUser,
                                     WorkflowRunState::WaitingAgent, WorkflowRunState::Completed,
-                                    WorkflowRunState::Failed,    WorkflowRunState::Cancelled};
+                                    WorkflowRunState::Failed,       WorkflowRunState::Cancelled};
     struct Edge final {
         WorkflowRunState from;
         WorkflowRunState to;
@@ -80,9 +82,8 @@ int transition_table_matches_the_frozen_contract() {
                 continue;
             }
             const bool listed =
-                std::any_of(std::begin(legal), std::end(legal), [&](const Edge &edge) {
-                    return edge.from == from && edge.to == to;
-                });
+                std::any_of(std::begin(legal), std::end(legal),
+                            [&](const Edge &edge) { return edge.from == from && edge.to == to; });
             MIRA_CHECK(valid_workflow_run_transition(from, to) == listed);
         }
     }
@@ -90,8 +91,8 @@ int transition_table_matches_the_frozen_contract() {
 }
 
 int terminal_states_are_idempotent() {
-    for (auto terminal : {WorkflowRunState::Completed, WorkflowRunState::Failed,
-                          WorkflowRunState::Cancelled}) {
+    for (auto terminal :
+         {WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
         // Re-submitting the same terminal state is a legal NoOp.
         const auto view = make_view(terminal, 7);
         auto same = apply_workflow_run_transition(view, terminal);
@@ -100,10 +101,10 @@ int terminal_states_are_idempotent() {
         MIRA_CHECK(same.view.run_epoch == view.run_epoch);
 
         // Any other target is rejected; the view is unchanged.
-        for (auto other : {WorkflowRunState::Created, WorkflowRunState::Running,
-                           WorkflowRunState::Paused, WorkflowRunState::WaitingUser,
-                           WorkflowRunState::WaitingAgent, WorkflowRunState::Completed,
-                           WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
+        for (auto other :
+             {WorkflowRunState::Created, WorkflowRunState::Running, WorkflowRunState::Paused,
+              WorkflowRunState::WaitingUser, WorkflowRunState::WaitingAgent,
+              WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
             if (other == terminal) {
                 continue;
             }
@@ -151,8 +152,8 @@ int late_completions_settle_stale() {
                WorkflowRunCompletionDisposition::Stale);
 
     // Terminal run: any epoch, even the current one, is stale (no revival).
-    for (auto terminal : {WorkflowRunState::Completed, WorkflowRunState::Failed,
-                          WorkflowRunState::Cancelled}) {
+    for (auto terminal :
+         {WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
         for (std::uint64_t epoch = 0; epoch < 4; ++epoch) {
             MIRA_CHECK(admit_workflow_run_completion(make_view(terminal, 5), epoch) ==
                        WorkflowRunCompletionDisposition::Stale);
@@ -202,10 +203,10 @@ int task_mapping_matches_the_decided_table() {
     MIRA_CHECK(!run_task_state_compatible(WorkflowRunState::Cancelled, TaskState::Cancelling));
 
     // State names round trip.
-    for (const auto state : {WorkflowRunState::Created, WorkflowRunState::Running,
-                             WorkflowRunState::Paused, WorkflowRunState::WaitingUser,
-                             WorkflowRunState::WaitingAgent, WorkflowRunState::Completed,
-                             WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
+    for (const auto state :
+         {WorkflowRunState::Created, WorkflowRunState::Running, WorkflowRunState::Paused,
+          WorkflowRunState::WaitingUser, WorkflowRunState::WaitingAgent,
+          WorkflowRunState::Completed, WorkflowRunState::Failed, WorkflowRunState::Cancelled}) {
         auto parsed = parse_workflow_run_state(workflow_run_state_name(state));
         MIRA_CHECK(parsed.has_value() && parsed.value() == state);
     }
@@ -224,10 +225,10 @@ int policy_compatibility_gates_run_creation() {
     step.kind = WorkflowStepKind::ToolCall;
     definition.steps.push_back(step);
 
-    MIRA_CHECK(validate_workflow_policy_compatibility(definition, WorkflowPolicy::Strict)
-                   .has_value());
-    MIRA_CHECK(validate_workflow_policy_compatibility(definition, WorkflowPolicy::DryRun)
-                   .has_value());
+    MIRA_CHECK(
+        validate_workflow_policy_compatibility(definition, WorkflowPolicy::Strict).has_value());
+    MIRA_CHECK(
+        validate_workflow_policy_compatibility(definition, WorkflowPolicy::DryRun).has_value());
     // Not in the allowed set.
     auto interactive =
         validate_workflow_policy_compatibility(definition, WorkflowPolicy::Interactive);
@@ -251,10 +252,10 @@ int agent_escalation_requires_agent_capable_policy() {
     step.recovery = hook;
     definition.steps.push_back(step);
 
-    MIRA_CHECK(!validate_workflow_policy_compatibility(definition, WorkflowPolicy::Strict)
-                   .has_value());
-    MIRA_CHECK(!validate_workflow_policy_compatibility(definition, WorkflowPolicy::DryRun)
-                   .has_value());
+    MIRA_CHECK(
+        !validate_workflow_policy_compatibility(definition, WorkflowPolicy::Strict).has_value());
+    MIRA_CHECK(
+        !validate_workflow_policy_compatibility(definition, WorkflowPolicy::DryRun).has_value());
     MIRA_CHECK(validate_workflow_policy_compatibility(definition, WorkflowPolicy::Recoverable)
                    .has_value());
     return 0;

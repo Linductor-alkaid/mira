@@ -1,9 +1,9 @@
 # Mira 工具模组（ToolModule）设计
 
-> 状态：Active（TM0/TM1 已实现：TM0 契约与协商 2026-09-16 交付，TM1 Registry 生命周期
-> 2026-09-19 交付，均见 [M7](../plans/m7-tools-evaluation-platform-v1.md)；TM2 及后续阶段
-> 为规范草案）  
-> 版本：1.2  
+> 状态：Active（TM0/TM1/TM2 已实现：TM0 契约与协商 2026-09-16 交付，TM1 Registry
+> 生命周期 2026-09-19 交付，TM2 LLM 暴露投影 2026-09-19 交付，均见
+> [M7](../plans/m7-tools-evaluation-platform-v1.md)；后续阶段为规范草案）  
+> 版本：1.3  
 > 更新日期：2026-09-19  
 > 适用范围：ToolModule manifest、Capability 目录与协商、ModuleRegistry、双消费者投影  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
@@ -299,6 +299,20 @@ policy、风险与预算筛选，产出 `ExposedToolSpec` 集合（类型不变�
 `PromptProvenance.tool_snapshot_digest`（既有字段）扩展为绑定“本次视图涉及的 module
 digest 集合 + ToolSpec digest 集合”的合成 digest，保证请求与协商版本可追溯。
 
+2026-09-19（TM2 落地）：投影以纯函数 `project_tool_exposure`
+（`tool_module_exposure.hpp`）承载——输入为协商 generation、Active snapshot、协商结论
+与任务级选择，输出 per-request `ExposedToolSpec` 集合、两级排除记录
+（`ToolExclusion`：模组级 `module_unavailable`/`module_conflict`/`module_revoked`/
+`reserved_wire_name`，任务级 `task_policy`/`task_budget`）与合成
+`snapshot_digest`（绑定 generation + included module digest 集合 + 成员
+`(tool_id, spec_digest, wire_name)` 三元组集合）。成员 ToolId 由
+`(module_id, module_digest, 成员名)` 确定性派生（TM2 身份分配，无随机）；
+`ActionRisk != read_only` 映射 `has_side_effects`。active 集与协商结论的任何错配
+（缺 verdict、digest/version 不符、引用集外模组）整组 fail closed，无部分投影。
+"未注册"与"confirmation 不可用"两类理由随 policy 绑定消费者（TM4）落地，v1 投影对
+引用未注册模组的任务级排除输入显式拒绝。`ContextManager` 的逐请求组装挂接沿用其既有
+契约，投影函数为其唯一事实源。
+
 ### 8.2 蒸馏 policy model（DEC-006 的 policy candidate 路径）
 
 ModelPackage manifest 增加绑定声明：
@@ -323,6 +337,11 @@ bindings:
 
 Replay 使用事件中记录的 module digest、ToolSpec digest 与 recorded result，不加载真实
 模组、不启动 OOP 进程（扩展既有“Replay 使用 recorded ToolSpec digest”规则）。
+
+2026-09-19（TM2 落地）：绑定校验由 `verify_recorded_module_digests` 承载——记录的
+module digest 集与投影 included 集合精确相等才通过，多、少、错 digest 均为显式错误；
+暴露投影可经 `tool_exposure_to_json`（`mira.tool_module.exposure.v1`，脱敏）序列化，
+供事件与 Replay 记录。
 
 ### 8.4 一致性不变量
 
@@ -407,6 +426,9 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
   “协商结果填充的视图”，对调用协议透明。
 - Simulator 提供参考模组（契约测试与 golden 协商用例的基准）；Android Host 是首个真实
   `HostProvided` 模组目标，随 M7 Adapter 工作交付。
+  （2026-09-19 落地：`make_simulator_reference_module`（`builtin.simulator.env`，含
+  `simulator.describe_display`/`simulator.inject_tap` 两成员）经真实解析器构建并作为
+  TM2 golden 基准；Android HostProvided 模组仍按 DEC-042 保持推迟。）
 - 平台兼容性声明遵循总计划 `RULE-10`：未在目标环境验证的模组能力不得宣称支持。
 
 ## 15. 分阶段实施
@@ -429,6 +451,10 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 注入式签名验证绑定 unsigned manifest digest）、协商触发挂接（session/epoch/模组
 状态三类）与 Executor 路由的部署验证（`submit_auto` + `consume` 折叠全部拒绝面），
 见 [M7](../plans/m7-tools-evaluation-platform-v1.md) 验证记录。
+2026-09-19：TM2（LLM 暴露投影）交付——`project_tool_exposure` 投影纯函数、ToolId
+确定性派生、两级排除理由、合成 `snapshot_digest`、`wire_name` 规则 v1 冻结（§17）、
+Simulator 参考模组与 Replay digest 绑定，见
+[M7](../plans/m7-tools-evaluation-platform-v1.md) 验证记录。
 
 ## 16. 测试策略
 
@@ -448,6 +474,15 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 
 - 模组间依赖与组合（module A 扩展 module B）首期不做，仅 `conflicts_with`。
 - `wire_name` 跨模组命名规范（前缀约定 vs 全局命名机构）留待 TM2 细化。
+  （2026-09-19 收口，TM2 v1 冻结：采用**扁平 wire 命名空间 + fail-closed 唯一性门禁**，
+  不设全局命名机构——Mira 没有跨部署的中央注册处，冲突由门禁拒绝而非机构分配。规则：
+  (1) 暴露的 wire_name 为 manifest 成员名原文，Runtime 不做任何自动前缀、改名或
+  转写；(2) 跨模组唯一性由协商层（TM0：同名成员双判 `Conflict`）与激活层（TM1：后
+  激活者拒绝、先 Active 者不受影响）fail closed 承载，投影层（TM2）对漏网重名防御性
+  整组拒绝；(3) hosted provider 保留名（`is_known_hosted_tool_name`）视为保留命名
+  空间，成员撞名整组排除（`reserved_wire_name`），绝不静默改名；(4) 命名空间前缀
+  （如 `builtin.simulator.env` 的成员用 `simulator.*`）为非约束性命名约定，安全性
+  不依赖约定。规则的任何放宽需新 DEC。）
 - `HostProvided` attestation 为暂定默认值（负责人：Mira Maintainers，最迟 M7 冻结）。
   （2026-09-19 收口：M7 TM1 将「宿主显式注入 + allowlist」升格为 v1 冻结决策
   （[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 注记）；进一步 attestation

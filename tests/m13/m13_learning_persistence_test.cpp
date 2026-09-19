@@ -53,8 +53,7 @@ using namespace mira::testing;
 
 [[nodiscard]] std::uint64_t wall_ms(const Timestamp &timestamp) {
     return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            timestamp.wall.time_since_epoch())
+        std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.wall.time_since_epoch())
             .count());
 }
 
@@ -105,8 +104,8 @@ struct PersistenceHarness final {
         options.path = this->root / "learning.db";
         auto opened_store = SqliteMemoryStore::open(executor, options);
         if (!opened_store.has_value()) {
-            std::cerr << "sqlite memory store open failed: "
-                      << opened_store.error().safe_message << '\n';
+            std::cerr << "sqlite memory store open failed: " << opened_store.error().safe_message
+                      << '\n';
             std::abort();
         }
         store = std::move(opened_store).value();
@@ -198,8 +197,7 @@ void drive_scenario(PersistenceHarness &harness, ScenarioEvidence &evidence) {
         std::abort();
     }
     evidence.failed_run = run_a.value().run_id;
-    const auto settled_a =
-        harness.workflow->execute_run(run_a.value().run_id, context);
+    const auto settled_a = harness.workflow->execute_run(run_a.value().run_id, context);
     if (!settled_a.has_value() || settled_a.value().state != WorkflowRunState::Failed) {
         std::cerr << "run A did not settle Failed\n";
         std::abort();
@@ -226,8 +224,8 @@ void drive_scenario(PersistenceHarness &harness, ScenarioEvidence &evidence) {
     skip.target = WorkflowPatchTarget::StepArguments;
     skip.op = WorkflowPatchOp::Skip;
     skip.path = continuation.value().current_step->to_string();
-    const auto patched = harness.workflow->patch_run(run_b.value().run_id,
-                                                     WorkflowPatchId::generate(), {skip});
+    const auto patched =
+        harness.workflow->patch_run(run_b.value().run_id, WorkflowPatchId::generate(), {skip});
     if (!patched.has_value() || !patched.value().applied) {
         std::cerr << "run B skip patch was not applied\n";
         std::abort();
@@ -261,8 +259,7 @@ void drive_scenario(PersistenceHarness &harness, ScenarioEvidence &evidence) {
     evidence.episode_failed = fetch(workflow_episode_memory_id(run_a.value().run_id.to_string()));
     evidence.episode_recovered =
         fetch(workflow_episode_memory_id(run_b.value().run_id.to_string()));
-    evidence.lesson_recovered =
-        fetch(recovery_lesson_memory_id(run_b.value().run_id.to_string()));
+    evidence.lesson_recovered = fetch(recovery_lesson_memory_id(run_b.value().run_id.to_string()));
     evidence.db_path = harness.root / "learning.db";
 
     EventQuery query;
@@ -376,8 +373,8 @@ rebuild_episode(const std::vector<EventEnvelope> &events, const std::string &run
     return rebuilt;
 }
 
-[[nodiscard]] std::optional<RebuiltLesson>
-rebuild_lesson(const std::vector<EventEnvelope> &events, const std::string &run_id) {
+[[nodiscard]] std::optional<RebuiltLesson> rebuild_lesson(const std::vector<EventEnvelope> &events,
+                                                          const std::string &run_id) {
     std::optional<WorkflowRunStartedEvent> started;
     std::optional<std::string> failed_step;
     std::optional<WorkflowRunSettledEvent> settled;
@@ -496,8 +493,8 @@ int sqlite_records_survive_owner_rebuild() {
             auto &store = *opened.value();
 
             // Same-id reads return every persisted field unchanged.
-            const auto episode = store.get(workflow_episode_memory_id(
-                evidence.failed_run.to_string()));
+            const auto episode =
+                store.get(workflow_episode_memory_id(evidence.failed_run.to_string()));
             MIRA_CHECK(episode.has_value() && episode.value().has_value());
             const auto &reloaded = episode.value().value();
             MIRA_CHECK(reloaded.statement == evidence.episode_failed.statement);
@@ -554,8 +551,7 @@ int sqlite_records_survive_owner_rebuild() {
             // Replaying the deterministic mutation id is an idempotent NoOp:
             // a projection rebuilt from events lands on the same record
             // instead of duplicating it (DEC-030 §2).
-            const auto recovered_episode =
-                parse_episode_statement(evidence.episode_recovered);
+            const auto recovered_episode = parse_episode_statement(evidence.episode_recovered);
             const auto rebuilt_record = episode_to_memory_record(
                 recovered_episode, learning_scope(), evidence.episode_recovered.provenance,
                 evidence.episode_recovered.recorded_at);
@@ -593,12 +589,10 @@ int event_recipe_rebuild_field_evidence() {
 
     const auto episode_failed = parse_episode_statement(evidence.episode_failed);
     const auto episode_recovered = parse_episode_statement(evidence.episode_recovered);
-    const auto lesson =
-        recovery_lesson_from_record(evidence.lesson_recovered).value();
+    const auto lesson = recovery_lesson_from_record(evidence.lesson_recovered).value();
 
     // --- Episode of the terminally failed run ------------------------------
-    const auto rebuilt_a =
-        rebuild_episode(evidence.events, evidence.failed_run.to_string());
+    const auto rebuilt_a = rebuild_episode(evidence.events, evidence.failed_run.to_string());
     MIRA_CHECK(rebuilt_a.has_value());
     MIRA_CHECK(rebuilt_a.value().audit_recorded);
     // Direct-path self-consistency: the audit digest is the digest of the
@@ -620,8 +614,7 @@ int event_recipe_rebuild_field_evidence() {
     // The recovered run escalated exactly once; the recipe rebuild cannot
     // know that (no event carries the escalation count).
     MIRA_CHECK(episode_recovered.escalations == 1);
-    const auto rebuilt_b =
-        rebuild_episode(evidence.events, evidence.recovered_run.to_string());
+    const auto rebuilt_b = rebuild_episode(evidence.events, evidence.recovered_run.to_string());
     MIRA_CHECK(rebuilt_b.has_value());
     MIRA_CHECK(rebuilt_b.value().record.escalations == 0);
     // The proxied timestamp is a second clock reading of the same
@@ -636,14 +629,12 @@ int event_recipe_rebuild_field_evidence() {
 
     // Identity and provenance are fully recoverable: deterministic ids and
     // the settled-event anchor.
-    MIRA_CHECK(workflow_episode_memory_id(episode_failed.run_id) ==
-               evidence.episode_failed.id);
+    MIRA_CHECK(workflow_episode_memory_id(episode_failed.run_id) == evidence.episode_failed.id);
     MIRA_CHECK(evidence.episode_failed.provenance.size() == 1);
     MIRA_CHECK(evidence.episode_failed.provenance[0] == rebuilt_a.value().settled_event);
 
     // --- Recovery lesson of the recovered run ------------------------------
-    const auto rebuilt_lesson =
-        rebuild_lesson(evidence.events, evidence.recovered_run.to_string());
+    const auto rebuilt_lesson = rebuild_lesson(evidence.events, evidence.recovered_run.to_string());
     MIRA_CHECK(rebuilt_lesson.has_value());
     MIRA_CHECK(rebuilt_lesson.value().audit_recorded);
     MIRA_CHECK(recovery_lesson_digest(lesson) == rebuilt_lesson.value().audit_digest);
@@ -674,19 +665,15 @@ int event_recipe_rebuild_field_evidence() {
     MIRA_CHECK(!recipe_lesson.failure.step_kind.has_value());
     MIRA_CHECK(!lesson.failure.reason_code.empty());
     MIRA_CHECK(recipe_lesson.failure.reason_code.empty());
-    const auto drift_lesson =
-        recipe_lesson.recorded_at_ms > lesson.recorded_at_ms
-            ? recipe_lesson.recorded_at_ms - lesson.recorded_at_ms
-            : lesson.recorded_at_ms - recipe_lesson.recorded_at_ms;
+    const auto drift_lesson = recipe_lesson.recorded_at_ms > lesson.recorded_at_ms
+                                  ? recipe_lesson.recorded_at_ms - lesson.recorded_at_ms
+                                  : lesson.recorded_at_ms - recipe_lesson.recorded_at_ms;
     MIRA_CHECK(drift_lesson <= 60'000);
-    MIRA_CHECK(!(recovery_lesson_digest(recipe_lesson) ==
-                 rebuilt_lesson.value().audit_digest));
+    MIRA_CHECK(!(recovery_lesson_digest(recipe_lesson) == rebuilt_lesson.value().audit_digest));
 
-    MIRA_CHECK(recovery_lesson_memory_id(lesson.recovered_run_id) ==
-               evidence.lesson_recovered.id);
+    MIRA_CHECK(recovery_lesson_memory_id(lesson.recovered_run_id) == evidence.lesson_recovered.id);
     MIRA_CHECK(evidence.lesson_recovered.provenance.size() == 1);
-    MIRA_CHECK(evidence.lesson_recovered.provenance[0] ==
-               rebuilt_lesson.value().settled_event);
+    MIRA_CHECK(evidence.lesson_recovered.provenance[0] == rebuilt_lesson.value().settled_event);
     return 0;
 }
 
@@ -736,12 +723,13 @@ int slow_store_keeps_cancel_closed() {
     auto inner = std::make_shared<FakeLearningMemory>();
     auto memory = std::make_shared<SlowMemory>(inner, std::chrono::milliseconds{200});
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
+    MIRA_CHECK(
+        register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
     auto workflow = fixture.make_workflow();
     MIRA_CHECK(workflow->set_learning_context(memory, learning_scope()).has_value());
 
-    const auto run = workflow->create_run(mnt25_recoverable_definition(), JsonValue{},
-                                          std::nullopt);
+    const auto run =
+        workflow->create_run(mnt25_recoverable_definition(), JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
     OperationContext context;
     context.session = fixture.session_id_;
@@ -749,8 +737,7 @@ int slow_store_keeps_cancel_closed() {
     // The escalation drive waits out the slow retrieval query (200 ms) and
     // still reaches WaitingAgent; degradation never blocks the escalation.
     const auto escalated = workflow->execute_run(run.value().run_id, context);
-    MIRA_CHECK(escalated.has_value() &&
-               escalated.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(escalated.has_value() && escalated.value().state == WorkflowRunState::WaitingAgent);
     const auto continuation = workflow->agent_continuation(run.value().run_id);
     MIRA_CHECK(continuation.has_value());
     MIRA_CHECK(continuation.value().relevant_lessons.empty());
@@ -774,15 +761,15 @@ int slow_store_keeps_shutdown_drain_clean() {
     auto inner = std::make_shared<FakeLearningMemory>();
     auto memory = std::make_shared<SlowMemory>(inner, std::chrono::milliseconds{200});
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
+    MIRA_CHECK(
+        register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
     auto workflow = fixture.make_workflow();
     MIRA_CHECK(workflow->set_learning_context(memory, learning_scope()).has_value());
 
     // An asynchronous drive enters its failing settlement (with the slow
     // episode write) while shutdown runs concurrently: the drain budget must
     // absorb the stall and still report clean.
-    const auto run = workflow->create_run(strict_failure_definition(), JsonValue{},
-                                          std::nullopt);
+    const auto run = workflow->create_run(strict_failure_definition(), JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
     MIRA_CHECK(workflow->start_run(run.value().run_id).has_value());
     const auto report = workflow->shutdown();
@@ -796,14 +783,14 @@ int failing_store_keeps_cancel_and_shutdown_closed() {
     auto memory = std::make_shared<FakeLearningMemory>();
     memory->fail_applies = true;
     ScriptedTool tool{std::vector<int>{1}};
-    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
+    MIRA_CHECK(
+        register_registration(*fixture.registry_, tool.registration("scripted")).has_value());
     auto workflow = fixture.make_workflow();
     MIRA_CHECK(workflow->set_learning_context(memory, learning_scope()).has_value());
 
     // A failing store settles the run, discloses the miss through the audit
     // event and never un-settles the terminal state.
-    const auto run = workflow->create_run(strict_failure_definition(), JsonValue{},
-                                          std::nullopt);
+    const auto run = workflow->create_run(strict_failure_definition(), JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
     OperationContext context;
     context.session = fixture.session_id_;
@@ -817,15 +804,14 @@ int failing_store_keeps_cancel_and_shutdown_closed() {
 
     // Cancelling an unrelated created run and shutting down stay closed with
     // the store still failing.
-    const auto idle = workflow->create_run(strict_failure_definition(), JsonValue{},
-                                           std::nullopt);
+    const auto idle = workflow->create_run(strict_failure_definition(), JsonValue{}, std::nullopt);
     MIRA_CHECK(idle.has_value());
     const auto cancelled = workflow->cancel_run(idle.value().run_id);
     MIRA_CHECK(cancelled.has_value() && cancelled.value().state == WorkflowRunState::Cancelled);
     const auto report = workflow->shutdown();
     MIRA_CHECK(report.clean);
-    const auto outcomes = learning_event_outcomes(*fixture.events_, fixture.session_id_,
-                                                  "WorkflowEpisodeRecorded");
+    const auto outcomes =
+        learning_event_outcomes(*fixture.events_, fixture.session_id_, "WorkflowEpisodeRecorded");
     std::size_t failed = 0;
     for (const auto &outcome : outcomes) {
         if (outcome == "failed") {
@@ -840,12 +826,10 @@ int failing_store_keeps_cancel_and_shutdown_closed() {
 } // namespace
 
 int main() {
-    const auto scenarios = std::to_array(
-        {sqlite_records_survive_owner_rebuild,
-         event_recipe_rebuild_field_evidence,
-         slow_store_keeps_cancel_closed,
-         slow_store_keeps_shutdown_drain_clean,
-         failing_store_keeps_cancel_and_shutdown_closed});
+    const auto scenarios =
+        std::to_array({sqlite_records_survive_owner_rebuild, event_recipe_rebuild_field_evidence,
+                       slow_store_keeps_cancel_closed, slow_store_keeps_shutdown_drain_clean,
+                       failing_store_keeps_cancel_and_shutdown_closed});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

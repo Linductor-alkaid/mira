@@ -2,9 +2,9 @@
 // self-signed certificate. Built only when the OpenSSL adapter target
 // exists; skipped (not faked) elsewhere.
 
-#include <mira/adapters/net/socket_transport.hpp>
 #include "support/m3_support.hpp"
 #include "support/test.hpp"
+#include <mira/adapters/net/socket_transport.hpp>
 #ifdef MIRA_TEST_MBEDTLS
 #include <mira/adapters/net/mbedtls_tls.hpp>
 #else

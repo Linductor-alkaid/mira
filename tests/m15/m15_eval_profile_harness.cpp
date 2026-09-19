@@ -47,8 +47,7 @@ using namespace mira::testing;
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] double monotonic_ms(const Timestamp &stamp) {
-    return std::chrono::duration<double, std::milli>(stamp.monotonic.time_since_epoch())
-        .count();
+    return std::chrono::duration<double, std::milli>(stamp.monotonic.time_since_epoch()).count();
 }
 
 struct Percentiles final {
@@ -65,8 +64,8 @@ struct Percentiles final {
     }
     std::sort(samples.begin(), samples.end());
     const auto pick = [&samples](double fraction) {
-        const auto index = static_cast<std::size_t>(
-            fraction * static_cast<double>(samples.size() - 1));
+        const auto index =
+            static_cast<std::size_t>(fraction * static_cast<double>(samples.size() - 1));
         return samples[std::min(index, samples.size() - 1)];
     };
     result.p50 = pick(0.50);
@@ -87,8 +86,8 @@ struct Percentiles final {
     const double denominator = 1 + z * z / static_cast<double>(n);
     const double center = p + z * z / (2 * static_cast<double>(n));
     const double spread =
-        z * std::sqrt(p * (1 - p) / static_cast<double>(n)
-                      + z * z / (4.0 * static_cast<double>(n) * static_cast<double>(n)));
+        z * std::sqrt(p * (1 - p) / static_cast<double>(n) +
+                      z * z / (4.0 * static_cast<double>(n) * static_cast<double>(n)));
     std::ostringstream stream;
     stream.precision(3);
     stream << std::fixed << (center - spread) / denominator << ".."
@@ -142,8 +141,8 @@ struct Percentiles final {
 }
 
 [[nodiscard]] bool is_hex(char character) {
-    return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')
-           || (character >= 'A' && character <= 'F');
+    return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+           (character >= 'A' && character <= 'F');
 }
 
 // G4 normalization (profile §9.1): Id128 identifiers are generated through
@@ -152,8 +151,8 @@ struct Percentiles final {
 // shape map to first-occurrence ordinals. Equal inputs still compare equal
 // and unequal ones still diverge; sequence numbers, epochs, enum names and
 // bounded counters compare verbatim.
-[[nodiscard]] std::string
-normalize_identifiers(const std::string &payload, std::map<std::string, int> &ids) {
+[[nodiscard]] std::string normalize_identifiers(const std::string &payload,
+                                                std::map<std::string, int> &ids) {
     std::string output;
     output.reserve(payload.size());
     std::size_t index = 0;
@@ -170,9 +169,9 @@ normalize_identifiers(const std::string &payload, std::map<std::string, int> &id
         }
         const std::size_t length = end - index;
         const bool token_shape =
-            length == 32 || length == 64
-            || (length == 36 && payload[index + 8] == '-' && payload[index + 13] == '-'
-                && payload[index + 18] == '-' && payload[index + 23] == '-');
+            length == 32 || length == 64 ||
+            (length == 36 && payload[index + 8] == '-' && payload[index + 13] == '-' &&
+             payload[index + 18] == '-' && payload[index + 23] == '-');
         if (token_shape) {
             const std::string token = payload.substr(index, length);
             const auto inserted = ids.emplace(token, static_cast<int>(ids.size()));
@@ -185,9 +184,8 @@ normalize_identifiers(const std::string &payload, std::map<std::string, int> &id
     return output;
 }
 
-[[nodiscard]] std::vector<EventEnvelope> session_events(const IEventStore &store,
-                                                        const SessionId &session,
-                                                        std::uint64_t after = 0) {
+[[nodiscard]] std::vector<EventEnvelope>
+session_events(const IEventStore &store, const SessionId &session, std::uint64_t after = 0) {
     std::vector<EventEnvelope> events;
     EventQuery query;
     query.session_id = session;
@@ -315,8 +313,7 @@ class EvalFixture final {
         (void)executor_.initialize(executor_config);
         runtime_ = std::make_unique<MiraRuntime>(RuntimeConfig{2, 16, 64});
         (void)runtime_->initialize();
-        environment_ =
-            std::make_shared<SimulatorEnvironment>(SimulatorSetup::single_display());
+        environment_ = std::make_shared<SimulatorEnvironment>(SimulatorSetup::single_display());
         // The seed perturbs the environment surface (density) so the three
         // seed samples differ in observation content while staying
         // reproducible per seed.
@@ -336,11 +333,10 @@ class EvalFixture final {
         profile_ = std::make_shared<ModelProfile>(
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://eval.test"));
         router_.register_profile(profile_);
-        gateway_ =
-            std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                           ModelGatewayConfig{});
-        provider_ = std::make_shared<RecoveryScriptProvider>(
-            profile_, std::vector<ModelResponse>{});
+        gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
+                                                  ModelGatewayConfig{});
+        provider_ =
+            std::make_shared<RecoveryScriptProvider>(profile_, std::vector<ModelResponse>{});
         gateway_->register_provider(provider_);
         gateway_->set_event_store(events_, RuntimeId::generate(), session_id_);
         workflow_ = std::make_unique<WorkflowRuntime>(executor_, *runtime_, session_id_,
@@ -482,8 +478,8 @@ class KnobbedMemory final : public IMemory {
                                          const std::string &reason = "eval") {
     std::ostringstream stream;
     stream << "{\"action\":\"" << action << "\",\"x\":" << x << ",\"y\":" << y
-           << ",\"end_x\":" << (x + 0.05) << ",\"end_y\":" << (y + 0.05) << ",\"text\":\""
-           << text << "\",\"reason\":\"" << reason << "\"}";
+           << ",\"end_x\":" << (x + 0.05) << ",\"end_y\":" << (y + 0.05) << ",\"text\":\"" << text
+           << "\",\"reason\":\"" << reason << "\"}";
     return stream.str();
 }
 
@@ -491,28 +487,25 @@ class KnobbedMemory final : public IMemory {
 // Workflow-arm metric extraction
 // ---------------------------------------------------------------------------
 
-void collect_workflow_metrics(EvalFixture &fixture, RunRecord &record,
-                              std::uint64_t events_before,
+void collect_workflow_metrics(EvalFixture &fixture, RunRecord &record, std::uint64_t events_before,
                               bool waiting_agent_window = false) {
-    const auto envelopes =
-        session_events(*fixture.events_, fixture.session_id_, events_before);
+    const auto envelopes = session_events(*fixture.events_, fixture.session_id_, events_before);
     std::map<std::string, int> ids;
     std::map<std::string, double> step_started;
     std::map<std::string, double> run_started;
     std::map<std::string, int> started_runs;
     std::map<std::string, int> settled_runs;
     for (const auto &envelope : envelopes) {
-        record.normalized_events.push_back(envelope.payload.type + "|"
-                                           + normalize_identifiers(envelope.payload.data,
-                                                                   ids));
+        record.normalized_events.push_back(envelope.payload.type + "|" +
+                                           normalize_identifiers(envelope.payload.data, ids));
         if (record.debug_head.size() < 400) {
             record.debug_head += record.normalized_events.back() + "\n";
         }
         if (envelope.payload.type == "ModelRequestPrepared") {
             ++record.model_calls;
         }
-        if (envelope.payload.data.find("test-credential") != std::string::npos
-            || envelope.payload.data.find("eval repair") != std::string::npos) {
+        if (envelope.payload.data.find("test-credential") != std::string::npos ||
+            envelope.payload.data.find("eval repair") != std::string::npos) {
             record.privacy_leak = true; // G6: secrets and rationale never travel
         }
         auto payload = parse_json(envelope.payload.data);
@@ -534,8 +527,7 @@ void collect_workflow_metrics(EvalFixture &fixture, RunRecord &record,
                 const auto key = run + "|" + *step->as_string();
                 const auto began = step_started.find(key);
                 if (began != step_started.end()) {
-                    record.step_ms.push_back(monotonic_ms(envelope.timestamp)
-                                             - began->second);
+                    record.step_ms.push_back(monotonic_ms(envelope.timestamp) - began->second);
                 }
             }
         } else if (envelope.payload.type == "WorkflowRunStarted" && !run.empty()) {
@@ -555,10 +547,10 @@ void collect_workflow_metrics(EvalFixture &fixture, RunRecord &record,
                 }
                 // G5: a patched resume must carry the whole correlation
                 // chain (request -> decision -> patch, DEC-031 §7).
-                if (attempted.value().outcome == WorkflowRecoveryOutcome::PatchedAndResumed
-                    && (!attempted.value().model_request_id.has_value()
-                        || !attempted.value().decision_digest.has_value()
-                        || !attempted.value().patch_id.has_value())) {
+                if (attempted.value().outcome == WorkflowRecoveryOutcome::PatchedAndResumed &&
+                    (!attempted.value().model_request_id.has_value() ||
+                     !attempted.value().decision_digest.has_value() ||
+                     !attempted.value().patch_id.has_value())) {
                     record.correlation_ok = false;
                 }
             }
@@ -611,9 +603,8 @@ struct AgentScript final {
     bool require_message_visible = false;
 };
 
-[[nodiscard]] RunRecord
-drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::string &case_id,
-                int seed, int repeat) {
+[[nodiscard]] RunRecord drive_agent_arm(EvalFixture &fixture, const AgentScript &script,
+                                        const std::string &case_id, int seed, int repeat) {
     RunRecord record;
     record.case_id = case_id;
     record.arm = Arm::A;
@@ -640,30 +631,28 @@ drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::stri
     // counter verifier applies; bounded-failure oracles (Failed/MaxSteps)
     // use the never-satisfied verifier so the budget path is under test.
     ILoopVerifier &verifier = script.expected_outcome == LoopOutcome::Completed
-                                 ? static_cast<ILoopVerifier &>(counter)
-                                 : static_cast<ILoopVerifier &>(never);
+                                  ? static_cast<ILoopVerifier &>(counter)
+                                  : static_cast<ILoopVerifier &>(never);
     for (const auto &decision : script.decisions) {
         fixture.provider_->add_response(text_response(decision));
     }
     const auto events_before = event_count(*fixture.events_, fixture.session_id_);
     const auto started = std::chrono::steady_clock::now();
     const auto result = loop.run(spec, drive_context(fixture.session_id_), verifier);
-    record.wall_ms = std::chrono::duration<double, std::milli>(
-                         std::chrono::steady_clock::now() - started)
-                         .count();
+    record.wall_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
     if (!result.has_value()) {
         recorder.runtime_defect("agent loop error: " + result.error().safe_message);
         record.oracle_success = false;
         return record;
     }
-    const auto envelopes =
-        session_events(*fixture.events_, fixture.session_id_, events_before);
+    const auto envelopes = session_events(*fixture.events_, fixture.session_id_, events_before);
     std::map<std::string, int> ids;
     bool message_visible = false;
     for (const auto &envelope : envelopes) {
-        record.normalized_events.push_back(envelope.payload.type + "|"
-                                           + normalize_identifiers(envelope.payload.data,
-                                                                   ids));
+        record.normalized_events.push_back(envelope.payload.type + "|" +
+                                           normalize_identifiers(envelope.payload.data, ids));
         if (record.debug_head.size() < 400) {
             record.debug_head += record.normalized_events.back() + "\n";
         }
@@ -680,9 +669,9 @@ drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::stri
     record.step_ms.push_back(record.wall_ms);
     collect_script_tokens(*fixture.provider_, record);
     const auto inputs = fixture.environment_->executed_inputs().size();
-    recorder.oracle(inputs == script.expected_inputs,
-                    "inputs " + std::to_string(inputs) + " != expected "
-                        + std::to_string(script.expected_inputs));
+    recorder.oracle(inputs == script.expected_inputs, "inputs " + std::to_string(inputs) +
+                                                          " != expected " +
+                                                          std::to_string(script.expected_inputs));
     record.duplicate_side_effect = inputs > script.expected_inputs;
     recorder.oracle(result.value().outcome == script.expected_outcome,
                     "outcome " + loop_outcome_name(result.value().outcome));
@@ -694,8 +683,8 @@ drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::stri
             for (const auto &item : request.input) {
                 for (const auto &part : item.content) {
                     const auto *text = std::get_if<TextPart>(&part);
-                    if (text != nullptr
-                        && text->text.find(*script.user_message) != std::string::npos) {
+                    if (text != nullptr &&
+                        text->text.find(*script.user_message) != std::string::npos) {
                         in_request = true;
                     }
                 }
@@ -740,9 +729,9 @@ drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::stri
     const auto events_before = event_count(*fixture.events_, fixture.session_id_);
     const auto started = std::chrono::steady_clock::now();
     const auto result = loop.run(spec, context, verifier);
-    record.wall_ms = std::chrono::duration<double, std::milli>(
-                         std::chrono::steady_clock::now() - started)
-                         .count();
+    record.wall_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
     if (raise.valid()) {
         static_cast<void>(raise.get());
     }
@@ -751,13 +740,11 @@ drive_agent_arm(EvalFixture &fixture, const AgentScript &script, const std::stri
         record.oracle_success = false;
         return record;
     }
-    const auto envelopes =
-        session_events(*fixture.events_, fixture.session_id_, events_before);
+    const auto envelopes = session_events(*fixture.events_, fixture.session_id_, events_before);
     std::map<std::string, int> ids;
     for (const auto &envelope : envelopes) {
-        record.normalized_events.push_back(envelope.payload.type + "|"
-                                           + normalize_identifiers(envelope.payload.data,
-                                                                   ids));
+        record.normalized_events.push_back(envelope.payload.type + "|" +
+                                           normalize_identifiers(envelope.payload.data, ids));
         if (record.debug_head.size() < 400) {
             record.debug_head += record.normalized_events.back() + "\n";
         }
@@ -803,8 +790,7 @@ struct WorkflowScript final {
     record.repeat = repeat;
     Recorder recorder(record);
     ScriptedTool tool{script.tool_failures};
-    if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-             .has_value()) {
+    if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
         recorder.fixture("tool registration failed");
         return record;
     }
@@ -829,27 +815,24 @@ struct WorkflowScript final {
                         "escalation state " + workflow_run_state_name(driven.value().state));
         auto orchestrator = fixture.make_orchestrator();
         std::size_t decision_index = 0;
-        const std::size_t decision_count =
-            script.recovery_decisions.empty()
-                ? (script.fill_skip_decision ? 1U : 0U)
-                : script.recovery_decisions.size();
+        const std::size_t decision_count = script.recovery_decisions.empty()
+                                               ? (script.fill_skip_decision ? 1U : 0U)
+                                               : script.recovery_decisions.size();
         while (decision_index < decision_count) {
-            const auto continuation =
-                fixture.workflow_->agent_continuation(run.value().run_id);
+            const auto continuation = fixture.workflow_->agent_continuation(run.value().run_id);
             if (!continuation.has_value()) {
                 const auto mid = fixture.workflow_->run_snapshot(run.value().run_id);
-                recorder.runtime_defect(
-                    "agent_continuation missing at decision " + std::to_string(decision_index)
-                    + " state "
-                    + (mid.has_value() ? workflow_run_state_name(mid.value().state)
-                                       : std::string("unknown")));
+                recorder.runtime_defect("agent_continuation missing at decision " +
+                                        std::to_string(decision_index) + " state " +
+                                        (mid.has_value()
+                                             ? workflow_run_state_name(mid.value().state)
+                                             : std::string("unknown")));
                 break;
             }
             if (script.expect_lesson_retrieved) {
                 bool saw_lesson = false;
                 for (const auto &attached : continuation.value().relevant_lessons) {
-                    saw_lesson =
-                        saw_lesson || attached.kind == MemoryKind::RecoveryLesson;
+                    saw_lesson = saw_lesson || attached.kind == MemoryKind::RecoveryLesson;
                 }
                 recorder.oracle(saw_lesson, "expected a retrieved lesson");
             }
@@ -857,8 +840,8 @@ struct WorkflowScript final {
             if (decision_index < script.recovery_decisions.size()) {
                 decision = script.recovery_decisions[decision_index];
             } else {
-                decision = skip_step_decision(
-                    continuation.value().current_step->to_string(), "eval skip repair");
+                decision = skip_step_decision(continuation.value().current_step->to_string(),
+                                              "eval skip repair");
             }
             ++decision_index;
             fixture.provider_->add_response(text_response(decision));
@@ -877,10 +860,9 @@ struct WorkflowScript final {
                 // An ineffective repair re-drives the run; wait for the next
                 // boundary (a re-escalation or a terminal state) before the
                 // next decision.
-                const auto boundary = fixture.workflow_->wait_run(run.value().run_id,
-                                                                  std::chrono::seconds(10));
-                if (!boundary.has_value()
-                    || boundary.value().state == WorkflowRunState::Running) {
+                const auto boundary =
+                    fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
+                if (!boundary.has_value() || boundary.value().state == WorkflowRunState::Running) {
                     recorder.runtime_defect("run never reached the next boundary");
                     break;
                 }
@@ -892,23 +874,22 @@ struct WorkflowScript final {
             recorder.runtime_defect("wait_run error");
         } else if (deferred) {
             recorder.oracle(settled.value().state == WorkflowRunState::WaitingAgent,
-                            "deferred run must stay WaitingAgent, got "
-                                + workflow_run_state_name(settled.value().state));
+                            "deferred run must stay WaitingAgent, got " +
+                                workflow_run_state_name(settled.value().state));
         } else {
             recorder.oracle(settled.value().state == script.expected_state,
-                            "settled state "
-                                + workflow_run_state_name(settled.value().state));
+                            "settled state " + workflow_run_state_name(settled.value().state));
         }
         // G2 spot check: a duplicate notification is absorbed and the
         // terminal state never changes (DEC-031 §6).
         if (!deferred) {
             const auto duplicate = orchestrator->attempt_recovery(run.value().run_id);
-            recorder.oracle(duplicate.has_value()
-                                && duplicate.value().outcome == WorkflowRecoveryOutcome::Aborted,
+            recorder.oracle(duplicate.has_value() &&
+                                duplicate.value().outcome == WorkflowRecoveryOutcome::Aborted,
                             "duplicate notification must abort");
             const auto after = fixture.workflow_->run_snapshot(run.value().run_id);
-            recorder.oracle(after.has_value() && settled.has_value()
-                                && after.value().state == settled.value().state,
+            recorder.oracle(after.has_value() && settled.has_value() &&
+                                after.value().state == settled.value().state,
                             "terminal state changed after duplicate notification");
         }
         static_cast<void>(orchestrator->shutdown());
@@ -919,8 +900,8 @@ struct WorkflowScript final {
     // must match the scripted expectation exactly (no duplicate retries).
     const auto dispatches = static_cast<std::size_t>(tool.dispatches.load());
     recorder.oracle(dispatches == script.expected_dispatches,
-                    "dispatches " + std::to_string(dispatches) + " != expected "
-                        + std::to_string(script.expected_dispatches));
+                    "dispatches " + std::to_string(dispatches) + " != expected " +
+                        std::to_string(script.expected_dispatches));
     record.duplicate_side_effect = dispatches > script.expected_dispatches;
     record.oracle_success = recorder.ok();
     return record;
@@ -938,17 +919,16 @@ namespace {
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] RunRecord drive_learning_case(bool with_memory, const WorkflowDefinition &definition,
-                                            const std::string &case_id,
-                                            int seed, int repeat, bool stale_variant) {
+                                            const std::string &case_id, int seed, int repeat,
+                                            bool stale_variant) {
     RunRecord record;
     record.case_id = case_id;
     record.arm = with_memory ? Arm::D : Arm::C;
     record.seed = seed;
     record.repeat = repeat;
     Recorder recorder(record);
-    const std::string tag =
-        case_id + "-" + arm_name(record.arm) + "-s" + std::to_string(seed) + "-r"
-        + std::to_string(repeat);
+    const std::string tag = case_id + "-" + arm_name(record.arm) + "-s" + std::to_string(seed) +
+                            "-r" + std::to_string(repeat);
     EvalFixture fixture(seed, tag);
     if (with_memory && !fixture.attach_sqlite_learning()) {
         recorder.fixture("sqlite learning context failed to open");
@@ -961,13 +941,11 @@ namespace {
         // orchestrator must filter it (stale >= 1, kept == 0) and the run
         // settles through the lesson-free repair path.
         ScriptedTool tool{std::vector<int>{1}};
-        if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-                 .has_value()) {
+        if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
             recorder.fixture("tool registration failed");
             return record;
         }
-        const auto run =
-            fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
+        const auto run = fixture.workflow_->create_run(definition, JsonValue{}, std::nullopt);
         if (!run.has_value()) {
             recorder.fixture("create_run failed: " + run.error().safe_message);
             return record;
@@ -982,17 +960,15 @@ namespace {
             stale.failed_step_id = definition.steps.front().id.to_string();
             stale.failure_reason_code = "mira.eval:stale";
             stale.recorded_at_ms = 1;
-            const auto seeded = fixture.memory_->apply(
-                mutation_of(episode_to_memory_record(
-                    stale, learning_scope(), {EventId::generate()},
-                    std::chrono::system_clock::now())));
+            const auto seeded = fixture.memory_->apply(mutation_of(episode_to_memory_record(
+                stale, learning_scope(), {EventId::generate()}, std::chrono::system_clock::now())));
             recorder.oracle(seeded.has_value(), "stale seeding failed");
         }
         const auto events_before = event_count(*fixture.events_, fixture.session_id_);
-        const auto driven = fixture.workflow_->execute_run(run.value().run_id,
-                                                           drive_context(fixture.session_id_));
-        recorder.oracle(driven.has_value()
-                            && driven.value().state == WorkflowRunState::WaitingAgent,
+        const auto driven =
+            fixture.workflow_->execute_run(run.value().run_id, drive_context(fixture.session_id_));
+        recorder.oracle(driven.has_value() &&
+                            driven.value().state == WorkflowRunState::WaitingAgent,
                         "must escalate first");
         const auto continuation = fixture.workflow_->agent_continuation(run.value().run_id);
         if (continuation.has_value() && continuation.value().current_step.has_value()) {
@@ -1002,21 +978,21 @@ namespace {
             const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
             if (attempt.has_value()) {
                 if (with_memory) {
-                    recorder.oracle(attempt.value().lessons_offered >= 1
-                                        && attempt.value().lessons_stale >= 1
-                                        && attempt.value().lessons_kept == 0,
+                    recorder.oracle(attempt.value().lessons_offered >= 1 &&
+                                        attempt.value().lessons_stale >= 1 &&
+                                        attempt.value().lessons_kept == 0,
                                     "stale lesson must be offered then filtered");
                 }
-                recorder.oracle(attempt.value().outcome
-                                    == WorkflowRecoveryOutcome::PatchedAndResumed,
+                recorder.oracle(attempt.value().outcome ==
+                                    WorkflowRecoveryOutcome::PatchedAndResumed,
                                 "lesson-free repair must still work");
             } else {
                 recorder.runtime_defect("stale attempt error");
             }
-            const auto settled = fixture.workflow_->wait_run(run.value().run_id,
-                                                             std::chrono::seconds(10));
-            recorder.oracle(settled.has_value()
-                                && settled.value().state == WorkflowRunState::Completed,
+            const auto settled =
+                fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
+            recorder.oracle(settled.has_value() &&
+                                settled.value().state == WorkflowRunState::Completed,
                             "stale run must complete");
             static_cast<void>(orchestrator->shutdown());
         } else {
@@ -1038,8 +1014,7 @@ namespace {
     // consumes dispatch 1, run A fails dispatch 2 and run B dispatch 3;
     // without memory run A fails dispatch 1 and run B dispatch 2.
     ScriptedTool tool{with_memory ? std::vector<int>{1, 2, 3} : std::vector<int>{1, 2}};
-    if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-             .has_value()) {
+    if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
         recorder.fixture("tool registration failed");
         return record;
     }
@@ -1047,10 +1022,9 @@ namespace {
         const auto seed_run =
             fixture.workflow_->create_run(definition, JsonValue{}, WorkflowPolicy::Strict);
         if (seed_run.has_value()) {
-            const auto failed = fixture.workflow_->execute_run(
-                seed_run.value().run_id, drive_context(fixture.session_id_));
-            recorder.oracle(failed.has_value()
-                                && failed.value().state == WorkflowRunState::Failed,
+            const auto failed = fixture.workflow_->execute_run(seed_run.value().run_id,
+                                                               drive_context(fixture.session_id_));
+            recorder.oracle(failed.has_value() && failed.value().state == WorkflowRunState::Failed,
                             "seeding run must fail");
         } else {
             recorder.fixture("seed create_run failed: " + seed_run.error().safe_message);
@@ -1065,8 +1039,7 @@ namespace {
         return record;
     }
     const auto events_a = event_count(*fixture.events_, fixture.session_id_);
-    if (fixture.workflow_
-            ->execute_run(run_a.value().run_id, drive_context(fixture.session_id_))
+    if (fixture.workflow_->execute_run(run_a.value().run_id, drive_context(fixture.session_id_))
             .has_value()) {
         const auto continuation = fixture.workflow_->agent_continuation(run_a.value().run_id);
         if (continuation.has_value() && continuation.value().current_step.has_value()) {
@@ -1074,19 +1047,17 @@ namespace {
                 continuation.value().current_step->to_string(), "eval repair alpha")));
             auto orchestrator = fixture.make_orchestrator();
             const auto attempt = orchestrator->attempt_recovery(run_a.value().run_id);
-            recorder.oracle(attempt.has_value()
-                                && attempt.value().outcome
-                                       == WorkflowRecoveryOutcome::PatchedAndResumed,
+            recorder.oracle(attempt.has_value() && attempt.value().outcome ==
+                                                       WorkflowRecoveryOutcome::PatchedAndResumed,
                             "run A repair outcome");
             const auto settled =
                 fixture.workflow_->wait_run(run_a.value().run_id, std::chrono::seconds(10));
-            recorder.oracle(settled.has_value()
-                                && settled.value().state == WorkflowRunState::Completed,
+            recorder.oracle(settled.has_value() &&
+                                settled.value().state == WorkflowRunState::Completed,
                             "run A must complete");
             static_cast<void>(orchestrator->shutdown());
             if (with_memory) {
-                const auto lesson =
-                    fixture.workflow_->record_recovery_lesson(run_a.value().run_id);
+                const auto lesson = fixture.workflow_->record_recovery_lesson(run_a.value().run_id);
                 recorder.oracle(lesson.has_value(), "lesson recording failed");
             }
         } else {
@@ -1107,8 +1078,7 @@ namespace {
         return record;
     }
     const auto events_b = event_count(*fixture.events_, fixture.session_id_);
-    if (fixture.workflow_
-            ->execute_run(run_b.value().run_id, drive_context(fixture.session_id_))
+    if (fixture.workflow_->execute_run(run_b.value().run_id, drive_context(fixture.session_id_))
             .has_value()) {
         const auto continuation = fixture.workflow_->agent_continuation(run_b.value().run_id);
         if (continuation.has_value() && continuation.value().current_step.has_value()) {
@@ -1123,14 +1093,13 @@ namespace {
                 continuation.value().current_step->to_string(), "eval repair beta")));
             auto orchestrator = fixture.make_orchestrator();
             const auto attempt = orchestrator->attempt_recovery(run_b.value().run_id);
-            recorder.oracle(attempt.has_value()
-                                && attempt.value().outcome
-                                       == WorkflowRecoveryOutcome::PatchedAndResumed,
+            recorder.oracle(attempt.has_value() && attempt.value().outcome ==
+                                                       WorkflowRecoveryOutcome::PatchedAndResumed,
                             "run B repair outcome");
             const auto settled =
                 fixture.workflow_->wait_run(run_b.value().run_id, std::chrono::seconds(10));
-            recorder.oracle(settled.has_value()
-                                && settled.value().state == WorkflowRunState::Completed,
+            recorder.oracle(settled.has_value() &&
+                                settled.value().state == WorkflowRunState::Completed,
                             "run B must complete");
             static_cast<void>(orchestrator->shutdown());
         } else {
@@ -1155,9 +1124,9 @@ namespace {
 
 // F3 for arms C/D: unparseable decisions exhaust the repair budget and defer
 // to the host; the run must stay in WaitingAgent.
-[[nodiscard]] RunRecord
-drive_decision_invalid(EvalFixture &fixture, Arm arm, const WorkflowDefinition &definition,
-                       const std::string &case_id, int seed, int repeat) {
+[[nodiscard]] RunRecord drive_decision_invalid(EvalFixture &fixture, Arm arm,
+                                               const WorkflowDefinition &definition,
+                                               const std::string &case_id, int seed, int repeat) {
     RunRecord record;
     record.case_id = case_id;
     record.arm = arm;
@@ -1165,8 +1134,7 @@ drive_decision_invalid(EvalFixture &fixture, Arm arm, const WorkflowDefinition &
     record.repeat = repeat;
     Recorder recorder(record);
     ScriptedTool tool{std::vector<int>{1}};
-    if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-             .has_value()) {
+    if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
         recorder.fixture("tool registration failed");
         return record;
     }
@@ -1178,8 +1146,7 @@ drive_decision_invalid(EvalFixture &fixture, Arm arm, const WorkflowDefinition &
     const auto events_before = event_count(*fixture.events_, fixture.session_id_);
     const auto driven =
         fixture.workflow_->execute_run(run.value().run_id, drive_context(fixture.session_id_));
-    recorder.oracle(driven.has_value()
-                        && driven.value().state == WorkflowRunState::WaitingAgent,
+    recorder.oracle(driven.has_value() && driven.value().state == WorkflowRunState::WaitingAgent,
                     "must escalate first");
     // max_decision_repairs defaults to 1: two unparseable bodies exhaust the
     // shared repair budget and defer to the host.
@@ -1187,16 +1154,16 @@ drive_decision_invalid(EvalFixture &fixture, Arm arm, const WorkflowDefinition &
     fixture.provider_->add_response(text_response("still not a decision"));
     auto orchestrator = fixture.make_orchestrator();
     const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
-    recorder.oracle(attempt.has_value()
-                        && attempt.value().outcome == WorkflowRecoveryOutcome::DeferredToHost,
+    recorder.oracle(attempt.has_value() &&
+                        attempt.value().outcome == WorkflowRecoveryOutcome::DeferredToHost,
                     "invalid decisions must defer");
     if (attempt.has_value()) {
         recorder.oracle(attempt.value().reason_code == "decision-invalid",
                         "reason " + attempt.value().reason_code);
     }
     const auto snapshot = fixture.workflow_->run_snapshot(run.value().run_id);
-    recorder.oracle(snapshot.has_value()
-                        && snapshot.value().state == WorkflowRunState::WaitingAgent,
+    recorder.oracle(snapshot.has_value() &&
+                        snapshot.value().state == WorkflowRunState::WaitingAgent,
                     "run must stay WaitingAgent after deferral");
     static_cast<void>(orchestrator->shutdown());
     collect_workflow_metrics(fixture, record, events_before, true);
@@ -1210,24 +1177,22 @@ drive_decision_invalid(EvalFixture &fixture, Arm arm, const WorkflowDefinition &
 
 // F4 for arms C/D: a slow (200 ms) then failing store degrades retrieval to
 // empty without blocking escalation; audit outcomes stay visible.
-[[nodiscard]] RunRecord
-drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
-                   const std::string &case_id, int seed, int repeat) {
+[[nodiscard]] RunRecord drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
+                                           const std::string &case_id, int seed, int repeat) {
     RunRecord record;
     record.case_id = case_id;
     record.arm = with_memory ? Arm::D : Arm::C;
     record.seed = seed;
     record.repeat = repeat;
     Recorder recorder(record);
-    const std::string tag = case_id + "-" + arm_name(record.arm) + "-s" + std::to_string(seed)
-                            + "-r" + std::to_string(repeat);
+    const std::string tag = case_id + "-" + arm_name(record.arm) + "-s" + std::to_string(seed) +
+                            "-r" + std::to_string(repeat);
     EvalFixture fixture(seed, tag);
     std::shared_ptr<IMemory> backend = std::make_shared<FakeLearningMemory>();
     if (with_memory) {
         // The D arm keeps a real backend under the knob decorator; the F4
         // oracle is the degradation semantics, not the storage engine.
-        const auto root =
-            std::filesystem::temp_directory_path() / ("m15-eval-" + tag + ".sqlite3");
+        const auto root = std::filesystem::temp_directory_path() / ("m15-eval-" + tag + ".sqlite3");
         std::error_code ec;
         std::filesystem::remove(root, ec);
         SqliteMemoryStoreOptions options;
@@ -1243,8 +1208,7 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
         learning_scope());
     recorder.oracle(installed.has_value(), "learning context install");
     ScriptedTool tool{std::vector<int>{1}};
-    if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-             .has_value()) {
+    if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
         recorder.fixture("tool registration failed");
         return record;
     }
@@ -1258,21 +1222,18 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
     const auto driven =
         fixture.workflow_->execute_run(run.value().run_id, drive_context(fixture.session_id_));
     // A 200 ms query delay must not block the escalation path unboundedly.
-    const double escalation_ms = std::chrono::duration<double, std::milli>(
-                                      std::chrono::steady_clock::now() - started)
-                                      .count();
-    recorder.oracle(driven.has_value()
-                        && driven.value().state == WorkflowRunState::WaitingAgent,
+    const double escalation_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
+    recorder.oracle(driven.has_value() && driven.value().state == WorkflowRunState::WaitingAgent,
                     "slow store must not block escalation");
     recorder.oracle(escalation_ms < 10'000.0, "escalation took too long");
     fixture.provider_->add_response(text_response(resume_decision("retry past outage")));
     auto orchestrator = fixture.make_orchestrator();
     const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
     recorder.oracle(attempt.has_value(), "attempt during store outage");
-    const auto settled =
-        fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
-    recorder.oracle(settled.has_value()
-                        && settled.value().state == WorkflowRunState::Completed,
+    const auto settled = fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
+    recorder.oracle(settled.has_value() && settled.value().state == WorkflowRunState::Completed,
                     "run must complete past the outage");
     static_cast<void>(orchestrator->shutdown());
     collect_workflow_metrics(fixture, record, events_before, true);
@@ -1294,8 +1255,7 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
     record.repeat = repeat;
     Recorder recorder(record);
     ScriptedTool tool{std::vector<int>{1}};
-    if (!register_registration(*fixture.registry_, tool.registration("scripted"))
-             .has_value()) {
+    if (!register_registration(*fixture.registry_, tool.registration("scripted")).has_value()) {
         recorder.fixture("tool registration failed");
         return record;
     }
@@ -1307,8 +1267,7 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
     const auto events_before = event_count(*fixture.events_, fixture.session_id_);
     const auto driven =
         fixture.workflow_->execute_run(run.value().run_id, drive_context(fixture.session_id_));
-    recorder.oracle(driven.has_value()
-                        && driven.value().state == WorkflowRunState::WaitingAgent,
+    recorder.oracle(driven.has_value() && driven.value().state == WorkflowRunState::WaitingAgent,
                     "must escalate first");
     // The m14-proven deterministic shape: takeover lands before the attempt,
     // so admission itself rejects the recovery request (no autonomous
@@ -1321,9 +1280,9 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
     fixture.provider_->add_response(text_response(resume_decision("blocked by takeover")));
     auto orchestrator = fixture.make_orchestrator();
     const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
-    recorder.oracle(attempt.has_value()
-                        && attempt.value().outcome == WorkflowRecoveryOutcome::Aborted
-                        && attempt.value().reason_code == "takeover",
+    recorder.oracle(attempt.has_value() &&
+                        attempt.value().outcome == WorkflowRecoveryOutcome::Aborted &&
+                        attempt.value().reason_code == "takeover",
                     "takeover must abort the attempt");
     recorder.oracle(fixture.provider_->consumed() == 0,
                     "no response may be consumed under takeover");
@@ -1348,8 +1307,7 @@ drive_store_outage(bool with_memory, const WorkflowDefinition &definition,
     static_cast<void>(fixture.runtime_->finish_shutdown());
     static_cast<void>(fixture.executor_.shutdown(true));
     fixture.torn_down_ = true;
-    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()
-                                                     - started)
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
         .count();
 }
 
@@ -1396,8 +1354,7 @@ struct CaseDef final {
     cases.push_back({"EVP1-R1", 'R', CaseKind::Agent, {Arm::A}, r1, {}});
 
     AgentScript r2;
-    r2.decisions = {agent_decision("tap", 0.5, 0.5),
-                    agent_decision("type", 0.5, 0.5, "eval text"),
+    r2.decisions = {agent_decision("tap", 0.5, 0.5), agent_decision("type", 0.5, 0.5, "eval text"),
                     agent_decision("swipe", 0.4, 0.4)};
     r2.expected_inputs = 3;
     cases.push_back({"EVP1-R2", 'R', CaseKind::Agent, {Arm::A}, r2, {}});
@@ -1430,19 +1387,37 @@ struct CaseDef final {
     WorkflowScript w1;
     w1.policy = WorkflowPolicy::Strict;
     w1.expected_state = WorkflowRunState::Completed;
-    cases.push_back({"EVP1-W1", 'W', CaseKind::Workflow, {Arm::B}, {}, w1, false,
+    cases.push_back({"EVP1-W1",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::B},
+                     {},
+                     w1,
+                     false,
                      eval_workflow("eval-w1", WorkflowPolicy::Strict)});
     WorkflowScript w1r;
     w1r.policy = WorkflowPolicy::Recoverable;
     w1r.expected_state = WorkflowRunState::Completed;
-    cases.push_back({"EVP1-W1", 'W', CaseKind::Workflow, {Arm::C, Arm::D}, {}, w1r,
-                     false, eval_workflow("eval-w1", WorkflowPolicy::Recoverable)});
+    cases.push_back({"EVP1-W1",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::C, Arm::D},
+                     {},
+                     w1r,
+                     false,
+                     eval_workflow("eval-w1", WorkflowPolicy::Recoverable)});
 
     WorkflowScript w2b;
     w2b.policy = WorkflowPolicy::Strict;
     w2b.tool_failures = {1};
     w2b.expected_state = WorkflowRunState::Failed;
-    cases.push_back({"EVP1-W2", 'W', CaseKind::Workflow, {Arm::B}, {}, w2b, false,
+    cases.push_back({"EVP1-W2",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::B},
+                     {},
+                     w2b,
+                     false,
                      eval_workflow("eval-w2", WorkflowPolicy::Strict)});
     WorkflowScript w2r;
     w2r.policy = WorkflowPolicy::Recoverable;
@@ -1450,28 +1425,52 @@ struct CaseDef final {
     w2r.recovery_decisions = {resume_decision("retry once")};
     w2r.expected_state = WorkflowRunState::Completed;
     w2r.expected_dispatches = 2;
-    cases.push_back({"EVP1-W2", 'W', CaseKind::Workflow, {Arm::C, Arm::D}, {}, w2r,
-                     false, eval_workflow("eval-w2", WorkflowPolicy::Recoverable)});
+    cases.push_back({"EVP1-W2",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::C, Arm::D},
+                     {},
+                     w2r,
+                     false,
+                     eval_workflow("eval-w2", WorkflowPolicy::Recoverable)});
 
     WorkflowScript w3b;
     w3b.policy = WorkflowPolicy::Strict;
     w3b.tool_failures = {1};
     w3b.expected_state = WorkflowRunState::Failed;
-    cases.push_back({"EVP1-W3", 'W', CaseKind::Workflow, {Arm::B}, {}, w3b, false,
+    cases.push_back({"EVP1-W3",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::B},
+                     {},
+                     w3b,
+                     false,
                      eval_workflow("eval-w3", WorkflowPolicy::Strict)});
     WorkflowScript w3r;
     w3r.policy = WorkflowPolicy::Recoverable;
     w3r.tool_failures = {1};
     w3r.fill_skip_decision = true;
     w3r.expected_state = WorkflowRunState::Completed;
-    cases.push_back({"EVP1-W3", 'W', CaseKind::Workflow, {Arm::C, Arm::D}, {}, w3r,
-                     false, eval_workflow("eval-w3", WorkflowPolicy::Recoverable)});
+    cases.push_back({"EVP1-W3",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::C, Arm::D},
+                     {},
+                     w3r,
+                     false,
+                     eval_workflow("eval-w3", WorkflowPolicy::Recoverable)});
 
     WorkflowScript w4b;
     w4b.policy = WorkflowPolicy::Strict;
     w4b.tool_failures = {1};
     w4b.expected_state = WorkflowRunState::Failed;
-    cases.push_back({"EVP1-W4", 'W', CaseKind::Workflow, {Arm::B}, {}, w4b, false,
+    cases.push_back({"EVP1-W4",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::B},
+                     {},
+                     w4b,
+                     false,
                      eval_workflow("eval-w4", WorkflowPolicy::Strict)});
     WorkflowScript w4r;
     w4r.policy = WorkflowPolicy::Recoverable;
@@ -1480,17 +1479,35 @@ struct CaseDef final {
                               need_user_decision("defer to host")};
     w4r.expected_state = WorkflowRunState::Completed; // unused: run defers
     w4r.expected_dispatches = 2;
-    cases.push_back({"EVP1-W4", 'W', CaseKind::Workflow, {Arm::C, Arm::D}, {}, w4r,
-                     false, eval_workflow("eval-w4", WorkflowPolicy::Recoverable)});
+    cases.push_back({"EVP1-W4",
+                     'W',
+                     CaseKind::Workflow,
+                     {Arm::C, Arm::D},
+                     {},
+                     w4r,
+                     false,
+                     eval_workflow("eval-w4", WorkflowPolicy::Recoverable)});
 
-    cases.push_back({"EVP1-L1", 'L', CaseKind::Learning, {Arm::C, Arm::D}, {}, {}, false,
+    cases.push_back({"EVP1-L1",
+                     'L',
+                     CaseKind::Learning,
+                     {Arm::C, Arm::D},
+                     {},
+                     {},
+                     false,
                      eval_workflow("eval-l1", WorkflowPolicy::Recoverable)});
-    cases.push_back({"EVP1-L2", 'L', CaseKind::Learning, {Arm::C, Arm::D}, {}, {}, true,
+    cases.push_back({"EVP1-L2",
+                     'L',
+                     CaseKind::Learning,
+                     {Arm::C, Arm::D},
+                     {},
+                     {},
+                     true,
                      eval_workflow("eval-l2", WorkflowPolicy::Recoverable)});
 
     cases.push_back({"EVP1-F1", 'F', CaseKind::AgentCancel, {Arm::A}, {}, {}});
-    cases.push_back({"EVP1-F2", 'F', CaseKind::ShutdownProbe, {Arm::A, Arm::B, Arm::C, Arm::D},
-                     {}, {}});
+    cases.push_back(
+        {"EVP1-F2", 'F', CaseKind::ShutdownProbe, {Arm::A, Arm::B, Arm::C, Arm::D}, {}, {}});
 
     AgentScript f3a;
     f3a.config.max_steps = 2;
@@ -1498,12 +1515,30 @@ struct CaseDef final {
     f3a.expected_inputs = 0;
     f3a.expected_outcome = LoopOutcome::Failed;
     cases.push_back({"EVP1-F3", 'F', CaseKind::Agent, {Arm::A}, f3a, {}});
-    cases.push_back({"EVP1-F3", 'F', CaseKind::DecisionInvalid, {Arm::C, Arm::D}, {}, {},
-                     false, eval_workflow("eval-f3", WorkflowPolicy::Recoverable)});
+    cases.push_back({"EVP1-F3",
+                     'F',
+                     CaseKind::DecisionInvalid,
+                     {Arm::C, Arm::D},
+                     {},
+                     {},
+                     false,
+                     eval_workflow("eval-f3", WorkflowPolicy::Recoverable)});
 
-    cases.push_back({"EVP1-F4", 'F', CaseKind::StoreOutage, {Arm::C, Arm::D}, {}, {}, false,
+    cases.push_back({"EVP1-F4",
+                     'F',
+                     CaseKind::StoreOutage,
+                     {Arm::C, Arm::D},
+                     {},
+                     {},
+                     false,
                      eval_workflow("eval-f4", WorkflowPolicy::Recoverable)});
-    cases.push_back({"EVP1-F5", 'F', CaseKind::Takeover, {Arm::C, Arm::D}, {}, {}, false,
+    cases.push_back({"EVP1-F5",
+                     'F',
+                     CaseKind::Takeover,
+                     {Arm::C, Arm::D},
+                     {},
+                     {},
+                     false,
                      eval_workflow("eval-f5", WorkflowPolicy::Recoverable)});
 
     return cases;
@@ -1528,9 +1563,8 @@ struct CaseDef final {
 }
 
 [[nodiscard]] RunRecord execute_one(const CaseDef &def, Arm arm, int seed, int repeat) {
-    const std::string tag =
-        std::string(def.id) + "-" + arm_name(arm) + "-s" + std::to_string(seed) + "-r"
-        + std::to_string(repeat);
+    const std::string tag = std::string(def.id) + "-" + arm_name(arm) + "-s" +
+                            std::to_string(seed) + "-r" + std::to_string(repeat);
     switch (def.kind) {
     case CaseKind::Agent:
         return [&]() {
@@ -1556,8 +1590,7 @@ struct CaseDef final {
                 return record;
             }
             WorkflowScript script = def.workflow;
-            return drive_workflow_arm(fixture, script, def.definition, def.id, arm, seed,
-                                      repeat);
+            return drive_workflow_arm(fixture, script, def.definition, def.id, arm, seed, repeat);
         }();
     case CaseKind::Learning:
         return drive_learning_case(arm == Arm::D, def.definition, def.id, seed, repeat,
@@ -1574,7 +1607,8 @@ struct CaseDef final {
             EvalFixture fixture(seed, tag);
             return drive_takeover(fixture, arm, def.definition, def.id, seed, repeat);
         }();
-    case CaseKind::ShutdownProbe: break;
+    case CaseKind::ShutdownProbe:
+        break;
     }
     // F2: drive one representative scenario per arm, then measure the full
     // §11 shutdown sequence against the 120 s guardrail.
@@ -1596,8 +1630,7 @@ struct CaseDef final {
         WorkflowScript script;
         script.policy = WorkflowPolicy::Strict;
         script.expected_state = WorkflowRunState::Completed;
-        const auto settled =
-            drive_workflow_arm(fixture, script, warm, def.id, arm, seed, repeat);
+        const auto settled = drive_workflow_arm(fixture, script, warm, def.id, arm, seed, repeat);
         recorder.oracle(settled.oracle_success, "warm-up run failed");
     } else {
         if (arm == Arm::D && !fixture.attach_sqlite_learning()) {
@@ -1609,8 +1642,7 @@ struct CaseDef final {
         script.tool_failures = {1};
         script.recovery_decisions = {resume_decision("f2 warm-up repair")};
         script.expected_dispatches = 2;
-        const auto settled =
-            drive_workflow_arm(fixture, script, warm, def.id, arm, seed, repeat);
+        const auto settled = drive_workflow_arm(fixture, script, warm, def.id, arm, seed, repeat);
         recorder.oracle(settled.oracle_success, "warm-up run failed");
     }
     record.shutdown_ms = measure_shutdown(fixture);
@@ -1653,24 +1685,24 @@ struct GateSummary final {
         }
         if (record.model_calls > 64) {
             gates.budgets = false;
-            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm)
-                                              + ": model calls "
-                                              + std::to_string(record.model_calls));
+            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm) +
+                                              ": model calls " +
+                                              std::to_string(record.model_calls));
         }
         if (record.input_tokens + record.output_tokens > 2'000'000) {
             gates.budgets = false;
-            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm)
-                                              + ": token budget");
+            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm) +
+                                              ": token budget");
         }
         if (record.wall_ms > 300'000.0) {
             gates.budgets = false;
-            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm)
-                                              + ": wall clock");
+            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm) +
+                                              ": wall clock");
         }
         if (record.shutdown_ms > 120'000.0) {
             gates.budgets = false;
-            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm)
-                                              + ": shutdown guardrail");
+            gates.budget_violations.push_back(record.case_id + "/" + arm_name(record.arm) +
+                                              ": shutdown guardrail");
         }
     }
     // G4: the seed-0 triple must agree on the normalized events. Arm A is a
@@ -1703,29 +1735,25 @@ struct GateSummary final {
             if (diverged) {
                 gates.g4_determinism = false;
                 std::size_t index = 0;
-                while (index < baseline.normalized_events.size()
-                       && index < record.normalized_events.size()
-                       && baseline.normalized_events[index] == record.normalized_events[index]) {
+                while (index < baseline.normalized_events.size() &&
+                       index < record.normalized_events.size() &&
+                       baseline.normalized_events[index] == record.normalized_events[index]) {
                     ++index;
                 }
-                const auto clip = [](const std::string &value) {
-                    return value.substr(0, 300);
-                };
+                const auto clip = [](const std::string &value) { return value.substr(0, 300); };
                 gates.g4_mismatches.push_back(
-                    key + ": event " + std::to_string(index) + " baseline ["
-                    + clip(baseline.normalized_events[index]) + "] repeat ["
-                    + (index < record.normalized_events.size()
-                           ? clip(record.normalized_events[index])
-                           : std::string("<end>"))
-                    + "]");
+                    key + ": event " + std::to_string(index) + " baseline [" +
+                    clip(baseline.normalized_events[index]) + "] repeat [" +
+                    (index < record.normalized_events.size() ? clip(record.normalized_events[index])
+                                                             : std::string("<end>")) +
+                    "]");
             }
         }
     }
     return gates;
 }
 
-void append_percentiles(std::ostream &out, const std::string &indent,
-                        const Percentiles &values) {
+void append_percentiles(std::ostream &out, const std::string &indent, const Percentiles &values) {
     out << indent << "\"p50\": " << values.p50 << ", \"p95\": " << values.p95
         << ", \"p99\": " << values.p99 << ", \"max\": " << values.max;
 }
@@ -1747,8 +1775,7 @@ void append_percentiles(std::ostream &out, const std::string &indent,
         << ",\n";
     out << "    \"G4_recorded_determinism\": " << (gates.g4_determinism ? "true" : "false")
         << ",\n";
-    out << "    \"G5_event_correlation\": " << (gates.g5_correlation ? "true" : "false")
-        << ",\n";
+    out << "    \"G5_event_correlation\": " << (gates.g5_correlation ? "true" : "false") << ",\n";
     out << "    \"G6_privacy\": " << (gates.g6_privacy ? "true" : "false") << ",\n";
     out << "    \"budgets\": " << (gates.budgets ? "true" : "false") << "\n";
     out << "  },\n";
@@ -1763,8 +1790,8 @@ void append_percentiles(std::ostream &out, const std::string &indent,
     if (!gates.budget_violations.empty()) {
         out << "  \"budget_violations\": [";
         for (std::size_t index = 0; index < gates.budget_violations.size(); ++index) {
-            out << (index == 0 ? "" : ", ")
-                << "\"" << json_escape(gates.budget_violations[index]) << "\"";
+            out << (index == 0 ? "" : ", ") << "\"" << json_escape(gates.budget_violations[index])
+                << "\"";
         }
         out << "],\n";
     }
@@ -1794,8 +1821,8 @@ void append_percentiles(std::ostream &out, const std::string &indent,
             std::uint64_t calls = 0;
             std::uint32_t interventions = 0;
             for (const auto &record : records) {
-                const bool family_matches = record.case_id.size() > 5
-                                            && record.case_id[5] == family[0];
+                const bool family_matches =
+                    record.case_id.size() > 5 && record.case_id[5] == family[0];
                 if (record.arm != arm || !family_matches) {
                     continue;
                 }
@@ -1811,8 +1838,8 @@ void append_percentiles(std::ostream &out, const std::string &indent,
             }
             out << (first_family ? "" : ", ") << "\n      \"" << family << "\": {";
             first_family = false;
-            out << "\n        \"success\": \"" << success << "/" << total
-                << " (wilson95 " << wilson95(success, total) << ")\",";
+            out << "\n        \"success\": \"" << success << "/" << total << " (wilson95 "
+                << wilson95(success, total) << ")\",";
             out << "\n        \"model_calls_total\": " << calls << ",";
             out << "\n        \"human_interventions\": " << interventions << ",";
             out << "\n        \"wall_ms\": {";
@@ -1854,11 +1881,11 @@ void append_percentiles(std::ostream &out, const std::string &indent,
         out << "{\n";
         out << "    \"note\": \"report-only, no v1 pass line (DEC-034 s3)\",\n";
         out << "    \"no_memory\": {\"success\": " << l1_c->oracle_success
-            << ", \"model_calls\": " << l1_c->model_calls
-            << ", \"wall_ms\": " << l1_c->wall_ms << "},\n";
+            << ", \"model_calls\": " << l1_c->model_calls << ", \"wall_ms\": " << l1_c->wall_ms
+            << "},\n";
         out << "    \"with_memory\": {\"success\": " << l1_d->oracle_success
-            << ", \"model_calls\": " << l1_d->model_calls
-            << ", \"wall_ms\": " << l1_d->wall_ms << "}\n";
+            << ", \"model_calls\": " << l1_d->model_calls << ", \"wall_ms\": " << l1_d->wall_ms
+            << "}\n";
         out << "  },\n";
     } else {
         out << "null,\n";
@@ -1878,9 +1905,8 @@ void append_percentiles(std::ostream &out, const std::string &indent,
         }
         out << (first_failure ? "\n" : ",\n") << "    {\"case\": \"" << record.case_id
             << "\", \"arm\": \"" << arm_name(record.arm) << "\", \"seed\": " << record.seed
-            << ", \"repeat\": " << record.repeat << ", \"class\": \""
-            << record.failure_class << "\", \"detail\": \"" << json_escape(record.detail)
-            << "\"}";
+            << ", \"repeat\": " << record.repeat << ", \"class\": \"" << record.failure_class
+            << "\", \"detail\": \"" << json_escape(record.detail) << "\"}";
         first_failure = false;
     }
     out << (first_failure ? "]" : "\n  ]") << "\n";
@@ -1896,8 +1922,7 @@ void append_percentiles(std::ostream &out, const std::string &indent,
         if (line.rfind("VmRSS:", 0) == 0) {
             const auto first = line.find_first_of("0123456789");
             if (first != std::string::npos) {
-                return static_cast<std::uint64_t>(
-                    std::strtoull(line.c_str() + first, nullptr, 10));
+                return static_cast<std::uint64_t>(std::strtoull(line.c_str() + first, nullptr, 10));
             }
         }
     }
@@ -1920,16 +1945,16 @@ int run_round(const std::string &output_path, std::uint64_t round_serial,
         }
     }
     const auto gates = evaluate_gates(records);
-    const bool round_ok = gates.g1_duplicate_side_effects && gates.g2_runtime_defects
-                          && gates.g4_determinism && gates.g5_correlation
-                          && gates.g6_privacy && gates.budgets;
-    const auto report = build_report(cases, records, gates, rss_kb != nullptr ? *rss_kb
-                                                                              : std::vector<double>{});
+    const bool round_ok = gates.g1_duplicate_side_effects && gates.g2_runtime_defects &&
+                          gates.g4_determinism && gates.g5_correlation && gates.g6_privacy &&
+                          gates.budgets;
+    const auto report =
+        build_report(cases, records, gates, rss_kb != nullptr ? *rss_kb : std::vector<double>{});
     std::cout << report;
     if (!output_path.empty()) {
-        std::ofstream file(output_path + (round_serial > 1 ? "." + std::to_string(round_serial)
-                                                           : std::string())
-                           + ".json");
+        std::ofstream file(output_path +
+                           (round_serial > 1 ? "." + std::to_string(round_serial) : std::string()) +
+                           ".json");
         file << report;
     }
     if (ok != nullptr) {

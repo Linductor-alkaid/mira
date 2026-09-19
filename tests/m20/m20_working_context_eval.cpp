@@ -34,7 +34,7 @@ struct FrozenConfig final {
     std::uint64_t seed = 0x4d49'5232'3057'4354ULL; // "MIR20WCT"
     std::size_t sessions = 12;
     std::size_t chain_length = 5;
-    std::size_t watermark_stride = 8;             // watermarks 8/16/24/32/40
+    std::size_t watermark_stride = 8; // watermarks 8/16/24/32/40
     std::size_t planted_constraints = 6;
     std::size_t planted_decisions = 4;
     std::size_t planted_threads = 4;
@@ -43,8 +43,7 @@ struct FrozenConfig final {
     std::uint64_t environment_epoch = 7;
     // Pinned after the first frozen run (2026-09-14); the harness asserts
     // equality so the dataset is checked, not assumed (M17/M18/M19 style).
-    std::string dataset_digest =
-        "ed81befbc0273b80253c723f9273bf65fc932eac7a7972c9bc39c9d1b894695a";
+    std::string dataset_digest = "ed81befbc0273b80253c723f9273bf65fc932eac7a7972c9bc39c9d1b894695a";
 };
 
 [[nodiscard]] std::string digest_hex(const Sha256Digest &digest) {
@@ -52,8 +51,7 @@ struct FrozenConfig final {
     text.reserve(digest.bytes.size() * 2);
     for (const auto byte : digest.bytes) {
         std::ostringstream slot;
-        slot << std::hex << std::setw(2) << std::setfill('0')
-             << static_cast<unsigned int>(byte);
+        slot << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
         text += slot.str();
     }
     return text;
@@ -116,8 +114,7 @@ struct Dataset final {
 };
 
 [[nodiscard]] ConversationStatement make_statement(const std::string &content,
-                                                   const EventId &origin,
-                                                   std::uint64_t sequence) {
+                                                   const EventId &origin, std::uint64_t sequence) {
     ConversationStatement statement;
     statement.content = content;
     statement.source_events = {origin};
@@ -151,9 +148,9 @@ struct Dataset final {
             const std::uint64_t revision = chain_index;
             ChainCheckpoint chain_entry;
             ConversationCheckpoint &checkpoint = chain_entry.checkpoint;
-            checkpoint.id = conversation_checkpoint_id_from_seed(
-                eval_session.session.to_string() + "|" + std::to_string(watermark) + "|" +
-                std::to_string(revision));
+            checkpoint.id = conversation_checkpoint_id_from_seed(eval_session.session.to_string() +
+                                                                 "|" + std::to_string(watermark) +
+                                                                 "|" + std::to_string(revision));
             checkpoint.session_id = eval_session.session;
             checkpoint.task_id = eval_session.task;
             checkpoint.task_epoch = config.task_epoch;
@@ -173,17 +170,16 @@ struct Dataset final {
                     const std::size_t flat = chain_index * count + index;
                     // Sequenced draws: one rare_token per statement.
                     const std::string salt = rare_token(local);
-                    const std::string content =
-                        std::string(kind) + " " + token + " " + salt + " r" +
-                        std::to_string(revision) + " item" + std::to_string(index);
+                    const std::string content = std::string(kind) + " " + token + " " + salt +
+                                                " r" + std::to_string(revision) + " item" +
+                                                std::to_string(index);
                     const std::size_t event_index = flat % config.events_per_session;
                     const std::uint64_t sequence =
                         (static_cast<std::uint64_t>(flat) % watermark) + 1;
                     statements.push_back(
                         make_statement(content, eval_session.events[event_index], sequence));
                     texts.push_back(content);
-                    if (std::find(checkpoint.source_events.begin(),
-                                  checkpoint.source_events.end(),
+                    if (std::find(checkpoint.source_events.begin(), checkpoint.source_events.end(),
                                   eval_session.events[event_index]) ==
                         checkpoint.source_events.end()) {
                         checkpoint.source_events.push_back(eval_session.events[event_index]);
@@ -276,8 +272,7 @@ struct Metrics final {
                snapshots_committed == other.snapshots_committed &&
                constraint_items == other.constraint_items &&
                decision_items == other.decision_items &&
-               open_issue_items == other.open_issue_items &&
-               snapshot_bytes == other.snapshot_bytes;
+               open_issue_items == other.open_issue_items && snapshot_bytes == other.snapshot_bytes;
     }
 };
 
@@ -305,10 +300,8 @@ struct Metrics final {
 void audit_snapshot(const ChainCheckpoint &chain_entry, const WorkingContextSnapshot &snapshot,
                     Metrics &metrics) {
     const ConversationCheckpoint &checkpoint = chain_entry.checkpoint;
-    const auto same = [](const WorkingContextItem &item,
-                         const ConversationStatement &statement) {
-        return item.content == statement.content &&
-               item.source_events == statement.source_events &&
+    const auto same = [](const WorkingContextItem &item, const ConversationStatement &statement) {
+        return item.content == statement.content && item.source_events == statement.source_events &&
                item.source_sequence == statement.source_sequence &&
                item.confidence == statement.confidence;
     };
@@ -400,16 +393,14 @@ struct ChainRoundResult final {
     std::vector<std::string> final_json;
 };
 
-[[nodiscard]] ChainRoundResult run_chain_round(const Dataset &dataset,
-                                               const FrozenConfig &config) {
+[[nodiscard]] ChainRoundResult run_chain_round(const Dataset &dataset, const FrozenConfig &config) {
     ChainRoundResult result;
     InMemoryWorkingContextStore store;
     for (const auto &eval_session : dataset.sessions) {
         const auto identity = identity_for(eval_session, config);
         const auto live = live_for(eval_session, config);
         for (const auto &chain_entry : eval_session.chain) {
-            auto snapshot =
-                working_context_from_checkpoint(chain_entry.checkpoint, identity);
+            auto snapshot = working_context_from_checkpoint(chain_entry.checkpoint, identity);
             if (!snapshot) {
                 ++result.metrics.fidelity_violations;
                 continue;
@@ -452,9 +443,8 @@ struct ChainRoundResult final {
     InMemoryWorkingContextStore store;
     for (const auto &eval_session : dataset.sessions) {
         const auto &final_entry = eval_session.chain.back();
-        const auto snapshot =
-            working_context_from_checkpoint(final_entry.checkpoint,
-                                            identity_for(eval_session, config));
+        const auto snapshot = working_context_from_checkpoint(final_entry.checkpoint,
+                                                              identity_for(eval_session, config));
         if (!snapshot) {
             ++metrics.fidelity_violations;
             stored_before.emplace_back();
@@ -463,8 +453,8 @@ struct ChainRoundResult final {
         }
         // Seed the store with one commit, then replay the identical
         // candidate: the stored payload must not move.
-        const auto seeded = commit_working_context(store, snapshot.value(),
-                                                   live_for(eval_session, config));
+        const auto seeded =
+            commit_working_context(store, snapshot.value(), live_for(eval_session, config));
         if (seeded.disposition != WorkingContextCommitDisposition::Committed) {
             ++metrics.unexpected_commits;
         }
@@ -473,8 +463,8 @@ struct ChainRoundResult final {
             const std::string before =
                 to_json_string(working_context_to_json(latest.value().value()));
             stored_before.push_back(before);
-            const auto outcome = commit_working_context(store, snapshot.value(),
-                                                        live_for(eval_session, config));
+            const auto outcome =
+                commit_working_context(store, snapshot.value(), live_for(eval_session, config));
             if (outcome.disposition == WorkingContextCommitDisposition::IdempotentNoOp) {
                 ++metrics.idempotent_no_ops;
             } else {
@@ -509,9 +499,8 @@ struct ChainRoundResult final {
             continue;
         }
         (void)commit_working_context(store, seeded_snapshot.value(), live);
-        const std::string before =
-            to_json_string(working_context_to_json(
-                store.latest(eval_session.session).value().value()));
+        const std::string before = to_json_string(
+            working_context_to_json(store.latest(eval_session.session).value().value()));
 
         ConversationCheckpoint conflicting = final_entry.checkpoint;
         conflicting.constraints[0].content += " (conflicting revision)";
@@ -527,9 +516,8 @@ struct ChainRoundResult final {
         } else if (outcome.disposition == WorkingContextCommitDisposition::Committed) {
             ++metrics.unexpected_commits;
         }
-        const std::string after =
-            to_json_string(working_context_to_json(
-                store.latest(eval_session.session).value().value()));
+        const std::string after = to_json_string(
+            working_context_to_json(store.latest(eval_session.session).value().value()));
         if (before == after) {
             ++stored_unchanged;
         }
@@ -551,8 +539,7 @@ struct ChainRoundResult final {
             continue;
         }
         (void)commit_working_context(store, seeded.value(), live);
-        const auto &older_entry =
-            eval_session.chain[eval_session.chain.size() - 2];
+        const auto &older_entry = eval_session.chain[eval_session.chain.size() - 2];
         const auto older = working_context_from_checkpoint(older_entry.checkpoint, identity);
         if (!older) {
             ++metrics.fidelity_violations;
@@ -577,8 +564,7 @@ struct ChainRoundResult final {
     for (const auto &eval_session : dataset.sessions) {
         const auto identity = identity_for(eval_session, config);
         const auto &final_entry = eval_session.chain.back();
-        const auto snapshot =
-            working_context_from_checkpoint(final_entry.checkpoint, identity);
+        const auto snapshot = working_context_from_checkpoint(final_entry.checkpoint, identity);
         if (!snapshot) {
             ++metrics.fidelity_violations;
             continue;
@@ -590,27 +576,27 @@ struct ChainRoundResult final {
         WorkingContextCommitState wrong_session = live;
         SplitMix64 other_rng{config.seed};
         wrong_session.session = SessionId{id_from(other_rng, "other")};
-        if (commit_working_context(store, snapshot.value(), wrong_session)
-                .disposition != WorkingContextCommitDisposition::DiscardedStale) {
+        if (commit_working_context(store, snapshot.value(), wrong_session).disposition !=
+            WorkingContextCommitDisposition::DiscardedStale) {
             ++metrics.unexpected_commits;
         }
         WorkingContextCommitState wrong_task = live;
         SplitMix64 other_rng2{config.seed + 1};
         wrong_task.task = TaskId{id_from(other_rng2, "other")};
-        if (commit_working_context(store, snapshot.value(), wrong_task)
-                .disposition != WorkingContextCommitDisposition::DiscardedStale) {
+        if (commit_working_context(store, snapshot.value(), wrong_task).disposition !=
+            WorkingContextCommitDisposition::DiscardedStale) {
             ++metrics.unexpected_commits;
         }
         WorkingContextCommitState wrong_task_epoch = live;
         wrong_task_epoch.task_epoch = config.task_epoch + 1;
-        if (commit_working_context(store, snapshot.value(), wrong_task_epoch)
-                .disposition != WorkingContextCommitDisposition::DiscardedStale) {
+        if (commit_working_context(store, snapshot.value(), wrong_task_epoch).disposition !=
+            WorkingContextCommitDisposition::DiscardedStale) {
             ++metrics.unexpected_commits;
         }
         WorkingContextCommitState wrong_environment = live;
         wrong_environment.environment_epoch = config.environment_epoch + 1;
-        if (commit_working_context(store, snapshot.value(), wrong_environment)
-                .disposition != WorkingContextCommitDisposition::DiscardedStale) {
+        if (commit_working_context(store, snapshot.value(), wrong_environment).disposition !=
+            WorkingContextCommitDisposition::DiscardedStale) {
             ++metrics.unexpected_commits;
         }
     }
@@ -624,8 +610,7 @@ struct ChainRoundResult final {
     for (const auto &eval_session : dataset.sessions) {
         const auto identity = identity_for(eval_session, config);
         const auto &final_entry = eval_session.chain.back();
-        const auto snapshot =
-            working_context_from_checkpoint(final_entry.checkpoint, identity);
+        const auto snapshot = working_context_from_checkpoint(final_entry.checkpoint, identity);
         if (!snapshot) {
             ++metrics.fidelity_violations;
             continue;
@@ -662,8 +647,8 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
         latest.value().value().id != new_snapshot.id) {
         ++metrics.identity_violations;
     }
-    const auto at_old = store.latest_at_or_before(eval_session.session,
-                                                  old_snapshot.through_event_sequence);
+    const auto at_old =
+        store.latest_at_or_before(eval_session.session, old_snapshot.through_event_sequence);
     if (!at_old.has_value() || !at_old.value().has_value() ||
         at_old.value().value().environment_epoch != old_snapshot.environment_epoch) {
         ++metrics.identity_violations;
@@ -684,8 +669,7 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
         const auto identity = identity_for(eval_session, config);
         auto live = live_for(eval_session, config);
         const auto &first_entry = eval_session.chain.front();
-        const auto old_snapshot =
-            working_context_from_checkpoint(first_entry.checkpoint, identity);
+        const auto old_snapshot = working_context_from_checkpoint(first_entry.checkpoint, identity);
         if (!old_snapshot) {
             ++metrics.fidelity_violations;
             continue;
@@ -700,11 +684,9 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
 
         WorkingContextIdentity bumped = identity;
         bumped.environment_epoch = config.environment_epoch + 1;
-        ConversationCheckpoint bumped_checkpoint =
-            eval_session.chain[1].checkpoint;
+        ConversationCheckpoint bumped_checkpoint = eval_session.chain[1].checkpoint;
         bumped_checkpoint.environment_epoch = bumped.environment_epoch;
-        const auto new_snapshot =
-            working_context_from_checkpoint(bumped_checkpoint, bumped);
+        const auto new_snapshot = working_context_from_checkpoint(bumped_checkpoint, bumped);
         if (!new_snapshot) {
             ++metrics.fidelity_violations;
             continue;
@@ -718,8 +700,8 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
         } else {
             ++metrics.unexpected_commits;
         }
-        result_epoch_checks(store, eval_session, old_snapshot.value(), new_snapshot.value(),
-                            live, new_live, metrics);
+        result_epoch_checks(store, eval_session, old_snapshot.value(), new_snapshot.value(), live,
+                            new_live, metrics);
     }
     return metrics;
 }
@@ -737,8 +719,7 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
         const auto &final_entry = eval_session.chain.back();
         // 4+ planted threads against a two-item bound: whole-candidate
         // rejection.
-        if (working_context_from_checkpoint(final_entry.checkpoint, identity, tight)
-                .has_value()) {
+        if (working_context_from_checkpoint(final_entry.checkpoint, identity, tight).has_value()) {
             ++metrics.unexpected_commits;
         }
         // A checkpoint failing its own validation never projects.
@@ -775,25 +756,23 @@ void result_epoch_checks(InMemoryWorkingContextStore &store, const EvalSession &
     std::size_t index = 0;
     for (const auto &eval_session : dataset.sessions) {
         const auto &final_entry = eval_session.chain.back();
-        const auto snapshot =
-            working_context_from_checkpoint(final_entry.checkpoint,
-                                            identity_for(eval_session, config));
+        const auto snapshot = working_context_from_checkpoint(final_entry.checkpoint,
+                                                              identity_for(eval_session, config));
         if (!snapshot) {
             ++metrics.fidelity_violations;
             ++index;
             continue;
         }
-        const auto outcome = commit_working_context(store, snapshot.value(),
-                                                    live_for(eval_session, config));
+        const auto outcome =
+            commit_working_context(store, snapshot.value(), live_for(eval_session, config));
         if (outcome.disposition != WorkingContextCommitDisposition::Committed) {
             ++metrics.unexpected_commits;
             ++index;
             continue;
         }
         metrics.add_snapshot(snapshot.value());
-        const std::string recovered =
-            to_json_string(working_context_to_json(
-                store.latest(eval_session.session).value().value()));
+        const std::string recovered = to_json_string(
+            working_context_to_json(store.latest(eval_session.session).value().value()));
         if (index < expected_json.size() && recovered == expected_json[index]) {
             ++recovered_identical;
         }
@@ -867,18 +846,16 @@ int main(int argc, char **argv) {
 
     // W1-G1: projection fidelity — sections mirror the source checkpoint.
     const bool g1 = chain.metrics.fidelity_violations == 0 &&
-                    repeat.metrics.fidelity_violations == 0 &&
-                    recovery.fidelity_violations == 0;
+                    repeat.metrics.fidelity_violations == 0 && recovery.fidelity_violations == 0;
     if (!g1) {
         gates_ok = false;
         failures.push_back("G1: projection fidelity violations " +
                            std::to_string(chain.metrics.fidelity_violations));
     }
     // W1-G2: identity and watermark binding with deterministic re-derivation.
-    const bool g2 = chain.metrics.identity_violations == 0 &&
-                    epoch.identity_violations == 0 &&
-                    chain.metrics.snapshots_committed ==
-                        dataset.sessions.size() * config.chain_length;
+    const bool g2 =
+        chain.metrics.identity_violations == 0 && epoch.identity_violations == 0 &&
+        chain.metrics.snapshots_committed == dataset.sessions.size() * config.chain_length;
     if (!g2) {
         gates_ok = false;
         failures.push_back("G2: identity/watermark binding violations " +
@@ -890,30 +867,27 @@ int main(int argc, char **argv) {
     for (std::size_t index = 0; replays_stable && index < stored_before.size(); ++index) {
         replays_stable = replays_stable && stored_before[index] == stored_after[index];
     }
-    const std::size_t expected_commits =
-        dataset.sessions.size() * config.chain_length;
-    const bool g3 = replay.idempotent_no_ops == dataset.sessions.size() &&
-                    replay.unexpected_commits == 0 && replays_stable &&
-                    conflict.stale_discards == dataset.sessions.size() &&
-                    conflicts_unchanged == dataset.sessions.size() &&
-                    stale.stale_discards == dataset.sessions.size() &&
-                    mismatch.unexpected_commits == 0 && terminal.terminal_discards == 2 * dataset.sessions.size() &&
-                    terminal.unexpected_commits == 0 &&
-                    chain.metrics.stale_discards == 0 && chain.metrics.terminal_discards == 0 &&
-                    chain.metrics.unexpected_commits == 0 &&
-                    chain.metrics.commits == expected_commits;
+    const std::size_t expected_commits = dataset.sessions.size() * config.chain_length;
+    const bool g3 =
+        replay.idempotent_no_ops == dataset.sessions.size() && replay.unexpected_commits == 0 &&
+        replays_stable && conflict.stale_discards == dataset.sessions.size() &&
+        conflicts_unchanged == dataset.sessions.size() &&
+        stale.stale_discards == dataset.sessions.size() && mismatch.unexpected_commits == 0 &&
+        terminal.terminal_discards == 2 * dataset.sessions.size() &&
+        terminal.unexpected_commits == 0 && chain.metrics.stale_discards == 0 &&
+        chain.metrics.terminal_discards == 0 && chain.metrics.unexpected_commits == 0 &&
+        chain.metrics.commits == expected_commits;
     if (!g3) {
         gates_ok = false;
-        failures.push_back("G3: commit discipline violated (no-ops " +
-                           std::to_string(replay.idempotent_no_ops) + ", conflicts kept " +
-                           std::to_string(conflicts_unchanged) + ", stale " +
-                           std::to_string(stale.stale_discards) + ", terminal " +
-                           std::to_string(terminal.terminal_discards) + ", unexpected " +
-                           std::to_string(replay.unexpected_commits + conflict.unexpected_commits +
-                                          stale.unexpected_commits + mismatch.unexpected_commits +
-                                          terminal.unexpected_commits +
-                                          chain.metrics.unexpected_commits) +
-                           ")");
+        failures.push_back(
+            "G3: commit discipline violated (no-ops " + std::to_string(replay.idempotent_no_ops) +
+            ", conflicts kept " + std::to_string(conflicts_unchanged) + ", stale " +
+            std::to_string(stale.stale_discards) + ", terminal " +
+            std::to_string(terminal.terminal_discards) + ", unexpected " +
+            std::to_string(replay.unexpected_commits + conflict.unexpected_commits +
+                           stale.unexpected_commits + mismatch.unexpected_commits +
+                           terminal.unexpected_commits + chain.metrics.unexpected_commits) +
+            ")");
     }
     // W1-G4: epoch invalidation isolates chains.
     const bool g4 = epoch.unexpected_commits == 0 && epoch.identity_violations == 0;
@@ -929,8 +903,8 @@ int main(int argc, char **argv) {
                            std::to_string(chain.metrics.conversion_violations) + ")");
     }
     // W1-G6: determinism and recovery.
-    const bool g6 = repeat.metrics.equals(chain.metrics) &&
-                    recovered_identical == dataset.sessions.size();
+    const bool g6 =
+        repeat.metrics.equals(chain.metrics) && recovered_identical == dataset.sessions.size();
     if (!g6) {
         gates_ok = false;
         failures.push_back("G6: determinism or recovery violated (recovered " +
@@ -967,7 +941,8 @@ int main(int argc, char **argv) {
     report.emplace_back("epoch_round", metrics_json(epoch));
     report.emplace_back("bounds_round", metrics_json(bounds));
     report.emplace_back("recovery_round", metrics_json(recovery));
-    report.emplace_back("conflicts_stored_unchanged", static_cast<std::int64_t>(conflicts_unchanged));
+    report.emplace_back("conflicts_stored_unchanged",
+                        static_cast<std::int64_t>(conflicts_unchanged));
     report.emplace_back("recovered_identical", static_cast<std::int64_t>(recovered_identical));
     JsonValue::Object gates_json;
     gates_json.emplace_back("g1_projection_fidelity", g1);

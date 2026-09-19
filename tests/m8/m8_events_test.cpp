@@ -230,9 +230,8 @@ int offline_replay_of_workflow_events_has_no_side_effects() {
 
     const SessionId session = SessionId::generate();
     std::size_t sequence = 0;
-    for (const auto &payload :
-         {to_event_payload(started), to_event_payload(step_started),
-          to_event_payload(step_settled), to_event_payload(run_settled)}) {
+    for (const auto &payload : {to_event_payload(started), to_event_payload(step_started),
+                                to_event_payload(step_settled), to_event_payload(run_settled)}) {
         AppendRequest request;
         request.event_id = EventId::generate();
         request.runtime_id = RuntimeId::generate();

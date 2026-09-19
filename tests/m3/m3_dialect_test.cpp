@@ -1,8 +1,8 @@
 #include "support/m3_support.hpp"
 #include "support/test.hpp"
 
-#include <mira/model_digest.hpp>
 #include <mira/model_dialect.hpp>
+#include <mira/model_digest.hpp>
 
 #include <string>
 
@@ -54,7 +54,9 @@ int responses_request_golden() {
     request.output_contract.mode = OutputMode::StrictJsonSchema;
     request.output_contract.schema_id = SchemaId::generate();
     request.output_contract.schema.root =
-        parse_json(R"({"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false})").value();
+        parse_json(
+            R"({"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false})")
+            .value();
     request.output_contract.canonical_schema_digest =
         canonical_json_digest(request.output_contract.schema.root);
     request.generation.temperature = 0.2;
@@ -75,14 +77,12 @@ int responses_request_golden() {
 
     // Golden digest: the canonical wire form is stable.
     const auto golden = canonical_json_string(wire.value());
-    MIRA_CHECK(golden == canonical_json_string(
-                             parse_json(to_json_string(wire.value())).value()));
+    MIRA_CHECK(golden == canonical_json_string(parse_json(to_json_string(wire.value())).value()));
 
     // Tool exposure and named choice.
-    request.tools.push_back(ExposedToolSpec{ToolId::generate(), SemanticVersion{1, 0, 0}, "lookup",
-                                            "finds things",
-                                            JsonSchema{parse_json(R"({"type":"object"})").value()},
-                                            Hash{}, true});
+    request.tools.push_back(
+        ExposedToolSpec{ToolId::generate(), SemanticVersion{1, 0, 0}, "lookup", "finds things",
+                        JsonSchema{parse_json(R"({"type":"object"})").value()}, Hash{}, true});
     request.tools[0].spec_digest = tool_snapshot_digest(request.tools);
     request.tool_choice.mode = ToolChoiceMode::Named;
     request.tool_choice.required_tool = request.tools[0].tool_id;
@@ -179,7 +179,8 @@ int responses_response_golden() {
     MIRA_CHECK(!bad_args.has_value());
 
     // Incomplete with reason maps canonically.
-    wire.body = R"({"id":"r","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{}})";
+    wire.body =
+        R"({"id":"r","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{}})";
     auto incomplete = mapper.decode_response(request, profile, wire);
     MIRA_CHECK(incomplete.has_value());
     MIRA_CHECK(incomplete.value().status == ModelCompletionStatus::Incomplete);
@@ -232,8 +233,8 @@ int error_status_mapping_and_retry_after() {
     MIRA_CHECK(parse_retry_after(headers, std::chrono::milliseconds{5'000}).value() ==
                std::chrono::milliseconds{5'000});
 
-    const auto encoded = base64_encode(std::vector<std::byte>{std::byte{'M'},
-                                                              std::byte{'a'}, std::byte{'n'}});
+    const auto encoded =
+        base64_encode(std::vector<std::byte>{std::byte{'M'}, std::byte{'a'}, std::byte{'n'}});
     MIRA_CHECK(encoded == "TWFu");
     MIRA_CHECK(base64_encode(std::vector<std::byte>{std::byte{'M'}}) == "TQ==");
     MIRA_CHECK(base64_encode(std::vector<std::byte>{std::byte{'M'}, std::byte{'a'}}) == "TWE=");
@@ -353,7 +354,8 @@ int chat_completions_request_and_response() {
     MIRA_CHECK(refusal.value().status == ModelCompletionStatus::Refused);
 
     // Unknown finish reason and multi-choice bodies fail closed.
-    wire_response.body = R"({"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"x"},"finish_reason":"vibes"}],"usage":{}})";
+    wire_response.body =
+        R"({"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"x"},"finish_reason":"vibes"}],"usage":{}})";
     MIRA_CHECK(!mapper.decode_response(request, profile, wire_response).has_value());
     wire_response.body = R"({"id":"c","model":"m","choices":[],"usage":{}})";
     MIRA_CHECK(!mapper.decode_response(request, profile, wire_response).has_value());
@@ -419,8 +421,8 @@ int non_image_media_type_fails_closed() {
     }
     {
         ChatCompletionsV1Mapper mapper;
-        const auto profile = make_profile(ProtocolDialect::OpenAIChatCompletionsV1,
-                                          "https://api.test");
+        const auto profile =
+            make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test");
         auto request = base_request();
         request.input[1].content.emplace_back(image);
         std::size_t fetches = 0;

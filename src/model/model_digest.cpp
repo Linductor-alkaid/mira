@@ -46,8 +46,7 @@ namespace {
         if (text.rfind("--", 0) == 0 && rules.redact_multipart_boundary &&
             text.find("\r\n") == std::string::npos && text.size() <= 64 &&
             std::all_of(text.begin(), text.end(), [](char c) {
-                return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' ||
-                       c == '=';
+                return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '=';
             })) {
             return JsonValue("[boundary]");
         }
@@ -68,8 +67,7 @@ Hash wire_request_digest(const JsonValue &wire_body,
 
     JsonValue::Array header_json;
     for (const auto &header : sanitize_headers_for_events(headers, rules)) {
-        header_json.emplace_back(
-            JsonValue::Object{{header.first, header.second}});
+        header_json.emplace_back(JsonValue::Object{{header.first, header.second}});
     }
     envelope.emplace_back("headers", std::move(header_json));
     return canonical_json_digest(JsonValue(std::move(envelope)));
@@ -137,10 +135,10 @@ Hash tool_snapshot_digest(std::span<const ExposedToolSpec> tools) {
     for (const auto &tool : tools) {
         JsonValue::Object item;
         item.emplace_back("tool_id", tool.tool_id.to_string());
-        item.emplace_back("version",
-                          JsonValue::Object{{"major", static_cast<std::int64_t>(tool.version.major)},
-                                            {"minor", static_cast<std::int64_t>(tool.version.minor)},
-                                            {"patch", static_cast<std::int64_t>(tool.version.patch)}});
+        item.emplace_back(
+            "version", JsonValue::Object{{"major", static_cast<std::int64_t>(tool.version.major)},
+                                         {"minor", static_cast<std::int64_t>(tool.version.minor)},
+                                         {"patch", static_cast<std::int64_t>(tool.version.patch)}});
         item.emplace_back("wire_name", tool.wire_name);
         item.emplace_back("parameters", tool.parameters_schema.root);
         items.emplace_back(std::move(item));

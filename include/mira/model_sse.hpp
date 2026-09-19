@@ -87,7 +87,7 @@ struct UnvalidatedModelPreview final {
 
 // Counts and terminal classification for EventStore summaries.
 struct SseStreamStats final {
-    std::uint64_t stream_sequence = 0;     // Local monotonic sequence.
+    std::uint64_t stream_sequence = 0; // Local monotonic sequence.
     std::optional<std::int64_t> last_remote_sequence;
     std::size_t events = 0;
     std::size_t bytes = 0;

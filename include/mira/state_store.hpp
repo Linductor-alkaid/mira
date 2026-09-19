@@ -21,9 +21,9 @@ namespace mira {
 // ---------------------------------------------------------------------------
 
 enum class StoreSchemaDisposition : std::uint8_t {
-    Created,          // fresh database, schema installed at the current version
-    UpToDate,         // existing database already at the current schema
-    Migrated,         // explicit migration ran from an older compatible schema
+    Created,            // fresh database, schema installed at the current version
+    UpToDate,           // existing database already at the current schema
+    Migrated,           // explicit migration ran from an older compatible schema
     ReadOnlyDiagnostic, // schema newer than this reader: reads only, writes fail
 };
 

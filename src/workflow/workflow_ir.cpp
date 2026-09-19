@@ -51,8 +51,10 @@ const WorkflowLimits &clamp_limits(const WorkflowLimits &limits) {
 
 // Exact key-set check: every present key must be declared and (unless
 // optional) required keys must exist. Unknown fields fail closed (DEC-019).
-[[nodiscard]] Result<void> check_keys(const JsonValue &object, std::span<const std::string_view> required,
-           std::span<const std::string_view> optional, std::string_view where) {
+[[nodiscard]] Result<void> check_keys(const JsonValue &object,
+                                      std::span<const std::string_view> required,
+                                      std::span<const std::string_view> optional,
+                                      std::string_view where) {
     if (!object.is_object()) {
         return ir_error(ErrorCode::InvalidArgument, std::string{where} + " must be an object");
     }
@@ -170,8 +172,7 @@ parse_predicate(const JsonValue &json, const WorkflowLimits &limits) {
     return JsonValue{std::move(object)};
 }
 
-[[nodiscard]] Result<std::optional<WorkflowRecoveryHook>>
-parse_recovery(const JsonValue &json) {
+[[nodiscard]] Result<std::optional<WorkflowRecoveryHook>> parse_recovery(const JsonValue &json) {
     if (json.is_null()) {
         return std::optional<WorkflowRecoveryHook>{};
     }
@@ -191,8 +192,7 @@ parse_recovery(const JsonValue &json) {
     if (mode == "none") {
         hook.mode = WorkflowRecoveryHook::Mode::None;
         if (max_retries != nullptr || fallback != nullptr) {
-            return ir_error(ErrorCode::InvalidArgument,
-                            "recovery 'none' admits no further fields");
+            return ir_error(ErrorCode::InvalidArgument, "recovery 'none' admits no further fields");
         }
     } else if (mode == "retry") {
         hook.mode = WorkflowRecoveryHook::Mode::Retry;
@@ -252,8 +252,8 @@ parse_recovery(const JsonValue &json) {
     return JsonValue{std::move(object)};
 }
 
-[[nodiscard]] Result<WorkflowParameterSpec>
-parse_parameter(const JsonValue &json, const WorkflowLimits &limits) {
+[[nodiscard]] Result<WorkflowParameterSpec> parse_parameter(const JsonValue &json,
+                                                            const WorkflowLimits &limits) {
     static constexpr std::string_view kRequired[] = {"name", "type", "required"};
     static constexpr std::string_view kOptional[] = {"default", "constraints", "summary"};
     if (auto check = check_keys(json, kRequired, kOptional, "parameter"); !check.has_value()) {
@@ -309,8 +309,9 @@ parse_parameter(const JsonValue &json, const WorkflowLimits &limits) {
             return ir_error(ErrorCode::InvalidArgument, "constraints must be an object");
         }
         for (const auto &member : *constraints->as_object()) {
-            const bool known = std::any_of(std::begin(kConstraintKeys), std::end(kConstraintKeys),
-                                            [&](std::string_view key) { return key == member.first; });
+            const bool known =
+                std::any_of(std::begin(kConstraintKeys), std::end(kConstraintKeys),
+                            [&](std::string_view key) { return key == member.first; });
             if (!known) {
                 return ir_error(ErrorCode::UnsupportedVersion,
                                 std::string{"constraints: unknown field '"} + member.first + "'");
@@ -487,10 +488,9 @@ parse_parameter(const JsonValue &json, const WorkflowLimits &limits) {
         }
     }
     if (!spec.enum_values.empty()) {
-        const bool member = std::any_of(spec.enum_values.begin(), spec.enum_values.end(),
-                                        [&](const JsonValue &candidate) {
-                                            return candidate == value;
-                                        });
+        const bool member =
+            std::any_of(spec.enum_values.begin(), spec.enum_values.end(),
+                        [&](const JsonValue &candidate) { return candidate == value; });
         if (!member) {
             return make_workflow_bind_error(WorkflowBindError::ConstraintViolated,
                                             where + " outside enum");
@@ -501,15 +501,9 @@ parse_parameter(const JsonValue &json, const WorkflowLimits &limits) {
 
 [[nodiscard]] Result<WorkflowStep> parse_step(const JsonValue &json, const WorkflowLimits &limits) {
     static constexpr std::string_view kRequired[] = {"step_id", "kind"};
-    static constexpr std::string_view kOptional[] = {"name",
-                                                     "loop_head",
-                                                     "arguments",
-                                                     "precondition",
-                                                     "verification",
-                                                     "recovery",
-                                                     "max_attempts",
-                                                     "jump_to",
-                                                     "max_iterations"};
+    static constexpr std::string_view kOptional[] = {
+        "name",     "loop_head",    "arguments", "precondition",  "verification",
+        "recovery", "max_attempts", "jump_to",   "max_iterations"};
     if (auto check = check_keys(json, kRequired, kOptional, "step"); !check.has_value()) {
         return check.error();
     }
@@ -648,8 +642,7 @@ parse_parameter(const JsonValue &json, const WorkflowLimits &limits) {
     }
     if (step.jump_to.has_value()) {
         object.emplace_back("jump_to", step.jump_to->to_string());
-        object.emplace_back("max_iterations",
-                            static_cast<std::int64_t>(step.max_iterations));
+        object.emplace_back("max_iterations", static_cast<std::int64_t>(step.max_iterations));
     }
     return JsonValue{std::move(object)};
 }
@@ -675,9 +668,9 @@ std::string workflow_policy_name(WorkflowPolicy policy) {
 }
 
 Result<WorkflowPolicy> parse_workflow_policy(std::string_view name) {
-    for (auto policy : {WorkflowPolicy::Strict, WorkflowPolicy::Recoverable,
-                        WorkflowPolicy::AgentAssisted, WorkflowPolicy::Interactive,
-                        WorkflowPolicy::DryRun}) {
+    for (auto policy :
+         {WorkflowPolicy::Strict, WorkflowPolicy::Recoverable, WorkflowPolicy::AgentAssisted,
+          WorkflowPolicy::Interactive, WorkflowPolicy::DryRun}) {
         if (workflow_policy_name(policy) == name) {
             return policy;
         }
@@ -803,10 +796,8 @@ Result<WorkflowStepKind> parse_workflow_step_kind(std::string_view name) {
 JsonValue workflow_definition_to_json(const WorkflowDefinition &definition) {
     JsonValue::Object root;
     JsonValue::Object version;
-    version.emplace_back("major",
-                         static_cast<std::int64_t>(definition.schema_version.major));
-    version.emplace_back("minor",
-                         static_cast<std::int64_t>(definition.schema_version.minor));
+    version.emplace_back("major", static_cast<std::int64_t>(definition.schema_version.major));
+    version.emplace_back("minor", static_cast<std::int64_t>(definition.schema_version.minor));
     root.emplace_back("schema_version", JsonValue{std::move(version)});
     root.emplace_back("workflow_id", definition.workflow_id.to_string());
     root.emplace_back("name", definition.name);
@@ -841,8 +832,7 @@ Result<void> validate_workflow_definition(const WorkflowDefinition &definition,
     // fallback targets, policy sets, predicate shapes, limits) is rejected
     // with the decoder's error; struct-built definitions get the identical
     // fail-closed treatment as JSON-decoded ones.
-    auto decoded = workflow_definition_from_json(workflow_definition_to_json(definition),
-                                                 limits);
+    auto decoded = workflow_definition_from_json(workflow_definition_to_json(definition), limits);
     if (!decoded.has_value()) {
         return decoded.error();
     }
@@ -851,12 +841,11 @@ Result<void> validate_workflow_definition(const WorkflowDefinition &definition,
     return Result<void>{};
 }
 
-Result<WorkflowDefinition>
-workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limits) {
+Result<WorkflowDefinition> workflow_definition_from_json(const JsonValue &json,
+                                                         const WorkflowLimits &limits) {
     const WorkflowLimits &bounded = clamp_limits(limits);
-    static constexpr std::string_view kRequired[] = {"schema_version", "workflow_id", "name",
-                                                     "steps", "default_policy",
-                                                     "allowed_policies"};
+    static constexpr std::string_view kRequired[] = {
+        "schema_version", "workflow_id", "name", "steps", "default_policy", "allowed_policies"};
     static constexpr std::string_view kOptional[] = {"summary", "parameters"};
     if (auto check = check_keys(json, kRequired, kOptional, "workflow definition");
         !check.has_value()) {
@@ -874,8 +863,7 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
         return ir_error(ErrorCode::InvalidArgument, "schema_version must be an object");
     }
     static constexpr std::string_view kVersionKeys[] = {"major", "minor"};
-    if (auto check = check_keys(*version, kVersionKeys, {}, "schema_version");
-        !check.has_value()) {
+    if (auto check = check_keys(*version, kVersionKeys, {}, "schema_version"); !check.has_value()) {
         return check.error();
     }
     const auto *major = version->find("major");
@@ -924,11 +912,11 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
             if (!spec.has_value()) {
                 return spec.error();
             }
-            const bool duplicate = std::any_of(
-                definition.parameters.begin(), definition.parameters.end(),
-                [&](const WorkflowParameterSpec &existing) {
-                    return existing.name == spec.value().name;
-                });
+            const bool duplicate =
+                std::any_of(definition.parameters.begin(), definition.parameters.end(),
+                            [&](const WorkflowParameterSpec &existing) {
+                                return existing.name == spec.value().name;
+                            });
             if (duplicate) {
                 return ir_error(ErrorCode::InvalidArgument, "duplicate parameter name");
             }
@@ -947,10 +935,9 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
         if (!step.has_value()) {
             return step.error();
         }
-        const bool duplicate = std::any_of(definition.steps.begin(), definition.steps.end(),
-                                           [&](const WorkflowStep &existing) {
-                                               return existing.id == step.value().id;
-                                           });
+        const bool duplicate = std::any_of(
+            definition.steps.begin(), definition.steps.end(),
+            [&](const WorkflowStep &existing) { return existing.id == step.value().id; });
         if (duplicate) {
             return ir_error(ErrorCode::InvalidArgument, "duplicate step id");
         }
@@ -967,8 +954,7 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
     definition.default_policy = policy.value();
     const auto *allowed = json.find("allowed_policies");
     if (allowed == nullptr || !allowed->is_array() || allowed->as_array()->empty()) {
-        return ir_error(ErrorCode::InvalidArgument,
-                        "allowed_policies must be a non-empty array");
+        return ir_error(ErrorCode::InvalidArgument, "allowed_policies must be a non-empty array");
     }
     for (const auto &item : *allowed->as_array()) {
         if (!item.is_string()) {
@@ -978,19 +964,17 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
         if (!entry.has_value()) {
             return ir_error(ErrorCode::InvalidArgument, "allowed_policies member is unknown");
         }
-        const bool duplicate = std::any_of(definition.allowed_policies.begin(),
-                                           definition.allowed_policies.end(),
-                                           [&](WorkflowPolicy existing) {
-                                               return existing == entry.value();
-                                           });
+        const bool duplicate =
+            std::any_of(definition.allowed_policies.begin(), definition.allowed_policies.end(),
+                        [&](WorkflowPolicy existing) { return existing == entry.value(); });
         if (duplicate) {
             return ir_error(ErrorCode::InvalidArgument, "duplicate allowed policy");
         }
         definition.allowed_policies.push_back(entry.value());
     }
-    const bool default_allowed = std::any_of(
-        definition.allowed_policies.begin(), definition.allowed_policies.end(),
-        [&](WorkflowPolicy entry) { return entry == definition.default_policy; });
+    const bool default_allowed =
+        std::any_of(definition.allowed_policies.begin(), definition.allowed_policies.end(),
+                    [&](WorkflowPolicy entry) { return entry == definition.default_policy; });
     if (!default_allowed) {
         return ir_error(ErrorCode::InvalidArgument,
                         "default_policy must be declared in allowed_policies");
@@ -1001,10 +985,9 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
     for (std::size_t index = 0; index < definition.steps.size(); ++index) {
         const auto &step = definition.steps[index];
         if (step.kind == WorkflowStepKind::Control) {
-            const auto target = std::find_if(definition.steps.begin(), definition.steps.end(),
-                                             [&](const WorkflowStep &candidate) {
-                                                 return candidate.id == step.jump_to;
-                                             });
+            const auto target = std::find_if(
+                definition.steps.begin(), definition.steps.end(),
+                [&](const WorkflowStep &candidate) { return candidate.id == step.jump_to; });
             if (target == definition.steps.end() || !target->loop_head ||
                 std::distance(definition.steps.begin(), target) >=
                     static_cast<std::ptrdiff_t>(index)) {
@@ -1014,11 +997,11 @@ workflow_definition_from_json(const JsonValue &json, const WorkflowLimits &limit
         }
         if (step.recovery.has_value() &&
             step.recovery->mode == WorkflowRecoveryHook::Mode::FallbackStep) {
-            const auto target = std::find_if(
-                definition.steps.begin(), definition.steps.end(),
-                [&](const WorkflowStep &candidate) {
-                    return candidate.id == step.recovery->fallback_step;
-                });
+            const auto target =
+                std::find_if(definition.steps.begin(), definition.steps.end(),
+                             [&](const WorkflowStep &candidate) {
+                                 return candidate.id == step.recovery->fallback_step;
+                             });
             if (target == definition.steps.end() ||
                 std::distance(definition.steps.begin(), target) <=
                     static_cast<std::ptrdiff_t>(index)) {
@@ -1062,8 +1045,8 @@ Result<void> validate_workflow_parameter_specs(const WorkflowDefinition &definit
             if (auto check = check_constraint(spec, spec.default_value); !check.has_value()) {
                 if (check.error().domain_code ==
                     static_cast<std::int32_t>(WorkflowBindError::ConstraintViolated)) {
-                    Error error = make_workflow_bind_error(
-                        WorkflowBindError::InvalidDefault, "parameter '" + spec.name + "'");
+                    Error error = make_workflow_bind_error(WorkflowBindError::InvalidDefault,
+                                                           "parameter '" + spec.name + "'");
                     return error;
                 }
                 return check.error();
@@ -1074,18 +1057,16 @@ Result<void> validate_workflow_parameter_specs(const WorkflowDefinition &definit
 }
 
 Result<WorkflowParameterBindings> bind_workflow_parameters(const WorkflowDefinition &definition,
-                                                            const JsonValue &input) {
+                                                           const JsonValue &input) {
     if (!input.is_null() && !input.is_object()) {
         return make_workflow_bind_error(WorkflowBindError::InvalidArguments,
                                         "input must be an object");
     }
     JsonValue::Object values;
-    for (const auto &member : (input.is_object() ? *input.as_object()
-                                                 : JsonValue::Object{})) {
-        const auto spec = std::find_if(definition.parameters.begin(), definition.parameters.end(),
-                                       [&](const WorkflowParameterSpec &candidate) {
-                                           return candidate.name == member.first;
-                                       });
+    for (const auto &member : (input.is_object() ? *input.as_object() : JsonValue::Object{})) {
+        const auto spec = std::find_if(
+            definition.parameters.begin(), definition.parameters.end(),
+            [&](const WorkflowParameterSpec &candidate) { return candidate.name == member.first; });
         if (spec == definition.parameters.end()) {
             return make_workflow_bind_error(WorkflowBindError::UnknownParameter, member.first);
         }
@@ -1095,9 +1076,9 @@ Result<WorkflowParameterBindings> bind_workflow_parameters(const WorkflowDefinit
         values.emplace_back(member.first, member.second);
     }
     for (const auto &spec : definition.parameters) {
-        const bool provided =
-            std::any_of(values.begin(), values.end(),
-                        [&](const auto &entry) { return entry.first == spec.name; });
+        const bool provided = std::any_of(values.begin(), values.end(), [&](const auto &entry) {
+            return entry.first == spec.name;
+        });
         if (provided) {
             continue;
         }
@@ -1119,8 +1100,7 @@ Result<WorkflowParameterBindings> bind_workflow_parameters(const WorkflowDefinit
 
 namespace {
 
-[[nodiscard]] Result<JsonValue> resolve_references(const JsonValue &node,
-                                                   const JsonValue &values) {
+[[nodiscard]] Result<JsonValue> resolve_references(const JsonValue &node, const JsonValue &values) {
     if (node.is_object()) {
         const auto *reference = node.find("$param");
         if (reference != nullptr) {
@@ -1254,10 +1234,9 @@ Result<void> validate_workflow_predicate(const WorkflowPredicate &predicate,
     }
     const std::string kind = predicate.signal.substr(0, separator);
     const std::string reference = predicate.signal.substr(separator + 1);
-    const bool known_kind = std::any_of(std::begin(kSignalKinds), std::end(kSignalKinds),
-                                        [&](std::string_view candidate) {
-                                            return candidate == kind;
-                                        });
+    const bool known_kind =
+        std::any_of(std::begin(kSignalKinds), std::end(kSignalKinds),
+                    [&](std::string_view candidate) { return candidate == kind; });
     if (!known_kind) {
         return ir_error(ErrorCode::InvalidArgument, "predicate signal kind is unknown");
     }

@@ -27,8 +27,7 @@ enum class WorkflowOperation : std::uint8_t {
 };
 
 [[nodiscard]] std::string_view workflow_operation_wire_name(WorkflowOperation operation);
-[[nodiscard]] Result<WorkflowOperation>
-workflow_operation_from_wire_name(std::string_view name);
+[[nodiscard]] Result<WorkflowOperation> workflow_operation_from_wire_name(std::string_view name);
 
 // The wire schemas of one operation: arguments the model supplies, the
 // model-facing output, the host-facing details envelope and the unified error
@@ -51,8 +50,7 @@ struct WorkflowOperationSpec final {
 
 // The spec for one operation; UnknownOperation never occurs because the
 // overload takes the closed enum.
-[[nodiscard]] const WorkflowOperationSpec &
-workflow_operation_spec(WorkflowOperation operation);
+[[nodiscard]] const WorkflowOperationSpec &workflow_operation_spec(WorkflowOperation operation);
 
 // ---------------------------------------------------------------------------
 // Patch entry shape (DEC-021 §2 / DEC-022 §2)
@@ -77,8 +75,9 @@ struct WorkflowPatchEntry final {
 // step_arguments), non-empty bounded paths and policy values naming a known
 // policy. Whether the path names an actual parameter or step is a runtime
 // check (phase B); the schema documents that boundary.
-[[nodiscard]] Result<void> validate_workflow_patch_entry(const WorkflowPatchEntry &entry,
-                                                          const WorkflowLimits &limits = kDefaultWorkflowLimits);
+[[nodiscard]] Result<void>
+validate_workflow_patch_entry(const WorkflowPatchEntry &entry,
+                              const WorkflowLimits &limits = kDefaultWorkflowLimits);
 
 // Canonical digest of a patch: ordered entries through canonical JSON. Used
 // as the idempotency identity (same patch_id + same digest => NoOp).

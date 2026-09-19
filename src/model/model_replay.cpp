@@ -1,5 +1,5 @@
-#include <mira/model_replay.hpp>
 #include <mira/model_digest.hpp>
+#include <mira/model_replay.hpp>
 
 #include <utility>
 
@@ -13,15 +13,14 @@ Result<ModelResponse> ReplayModelProvider::infer(const ModelRequest &request,
                                                  const OperationContext &context,
                                                  const ProviderInferOptions &options) {
     if (context.cancelled()) {
-        return make_model_error(ModelDomainCode::ModelCancelled,
-                                "replay was cancelled", false, request.operation_id);
+        return make_model_error(ModelDomainCode::ModelCancelled, "replay was cancelled", false,
+                                request.operation_id);
     }
     if (options.stream) {
         // Recorded responses are terminal canonical objects; replay never
         // re-streams, so a stream request is a capability mismatch.
         return make_model_error(ModelDomainCode::CapabilityMismatch,
-                                "replay does not provide streaming", false,
-                                request.operation_id);
+                                "replay does not provide streaming", false, request.operation_id);
     }
     if (cursor_ >= script_.size()) {
         return make_model_error(ModelDomainCode::ModelResourceExhausted,

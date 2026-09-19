@@ -39,9 +39,8 @@ class RecoveryScriptProvider final : public IModelProvider {
         entered_signal_.notify_all();
         if (blocking_.load()) {
             std::unique_lock lock(block_mutex_);
-            block_signal_.wait_for(lock, std::chrono::milliseconds(10), [this] {
-                return released_.load();
-            });
+            block_signal_.wait_for(lock, std::chrono::milliseconds(10),
+                                   [this] { return released_.load(); });
             while (!released_.load()) {
                 if (context.cancelled()) {
                     break;
@@ -50,9 +49,8 @@ class RecoveryScriptProvider final : public IModelProvider {
             }
         }
         if (context.cancelled()) {
-            return make_model_error(ModelDomainCode::ModelCancelled,
-                                    "recovery provider cancelled", false,
-                                    request.operation_id);
+            return make_model_error(ModelDomainCode::ModelCancelled, "recovery provider cancelled",
+                                    false, request.operation_id);
         }
         {
             std::lock_guard lock(mutex_);
@@ -61,8 +59,7 @@ class RecoveryScriptProvider final : public IModelProvider {
         std::lock_guard lock(mutex_);
         if (cursor_ >= script_.size()) {
             return make_model_error(ModelDomainCode::ModelResourceExhausted,
-                                    "recovery provider is exhausted", false,
-                                    request.operation_id);
+                                    "recovery provider is exhausted", false, request.operation_id);
         }
         ModelResponse response = script_[cursor_++];
         response.request_id = request.request_id;
@@ -85,8 +82,7 @@ class RecoveryScriptProvider final : public IModelProvider {
     }
     void wait_entered() {
         std::unique_lock lock(block_mutex_);
-        entered_signal_.wait_for(lock, std::chrono::seconds(5),
-                                 [this] { return entered_.load(); });
+        entered_signal_.wait_for(lock, std::chrono::seconds(5), [this] { return entered_.load(); });
     }
 
     [[nodiscard]] std::vector<ModelRequest> requests() const {
@@ -146,8 +142,7 @@ class RecoveryFixture final {
                                                   PriceTable{}, ModelGatewayConfig{});
         provider_ = std::make_shared<RecoveryScriptProvider>(profile_, std::move(script));
         gateway_->register_provider(provider_);
-        gateway_->set_event_store(fixture_.events_, RuntimeId::generate(),
-                                  fixture_.session_id_);
+        gateway_->set_event_store(fixture_.events_, RuntimeId::generate(), fixture_.session_id_);
         workflow_ = fixture_.make_workflow();
     }
 
@@ -161,8 +156,8 @@ class RecoveryFixture final {
             tweak(config);
         }
         auto orchestrator = std::make_unique<WorkflowRecoveryOrchestrator>(
-            fixture_.executor_, *workflow_, *fixture_.runtime_, *gateway_,
-            fixture_.session_id_, config);
+            fixture_.executor_, *workflow_, *fixture_.runtime_, *gateway_, fixture_.session_id_,
+            config);
         orchestrator->set_event_store(fixture_.events_);
         return orchestrator;
     }
@@ -211,9 +206,9 @@ recovery_attempt_events(const MemoryEventStore &events, const SessionId &session
 }
 
 // Collects the payload JSON text of every event of one type in the session.
-[[nodiscard]] inline std::vector<std::string>
-event_payloads_of_type(const MemoryEventStore &events, const SessionId &session,
-                       std::string_view type) {
+[[nodiscard]] inline std::vector<std::string> event_payloads_of_type(const MemoryEventStore &events,
+                                                                     const SessionId &session,
+                                                                     std::string_view type) {
     EventQuery query;
     query.session_id = session;
     const auto page = events.read(query);

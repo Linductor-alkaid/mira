@@ -16,9 +16,7 @@
 namespace mira {
 
 struct OperationIdHash final {
-    std::size_t operator()(const OperationId &id) const noexcept {
-        return Id128Hash{}(id.value);
-    }
+    std::size_t operator()(const OperationId &id) const noexcept { return Id128Hash{}(id.value); }
 };
 
 // ---------------------------------------------------------------------------

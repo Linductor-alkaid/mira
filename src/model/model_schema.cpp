@@ -1,5 +1,5 @@
-#include <mira/model_schema.hpp>
 #include <mira/model_digest.hpp>
+#include <mira/model_schema.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -23,8 +23,8 @@ namespace {
 }
 
 [[nodiscard]] bool supported_keyword(std::string_view keyword) {
-    return std::find(kSupportedSchemaKeywords.begin(), kSupportedSchemaKeywords.end(),
-                     keyword) != kSupportedSchemaKeywords.end();
+    return std::find(kSupportedSchemaKeywords.begin(), kSupportedSchemaKeywords.end(), keyword) !=
+           kSupportedSchemaKeywords.end();
 }
 
 struct TypeNames {
@@ -108,13 +108,12 @@ struct Validator final {
                                           " does not match the schema type"});
             }
         }
-        if (const auto *required = schema.find("required"); required != nullptr &&
-                                                              required->is_array() &&
-                                                              instance.is_object()) {
+        if (const auto *required = schema.find("required");
+            required != nullptr && required->is_array() && instance.is_object()) {
             for (const auto &name : *required->as_array()) {
                 if (name.is_string() && instance.find(*name.as_string()) == nullptr) {
-                    violations.push_back(
-                        {path, "required", "missing required property '" + *name.as_string() + "'"});
+                    violations.push_back({path, "required",
+                                          "missing required property '" + *name.as_string() + "'"});
                 }
             }
         }
@@ -186,11 +185,13 @@ struct Validator final {
         if (instance.is_number()) {
             const auto value = instance.as_number().value();
             if (const auto *minimum = schema.find("minimum");
-                minimum != nullptr && minimum->is_number() && value < minimum->as_number().value()) {
+                minimum != nullptr && minimum->is_number() &&
+                value < minimum->as_number().value()) {
                 violations.push_back({path, "minimum", "number is below the minimum"});
             }
             if (const auto *maximum = schema.find("maximum");
-                maximum != nullptr && maximum->is_number() && value > maximum->as_number().value()) {
+                maximum != nullptr && maximum->is_number() &&
+                value > maximum->as_number().value()) {
                 violations.push_back({path, "maximum", "number is above the maximum"});
             }
         }
@@ -207,8 +208,8 @@ struct Validator final {
                 violations.push_back({path, "enum", "value is not one of the enum members"});
             }
         }
-        if (const auto *constant = schema.find("const"); constant != nullptr &&
-                                                           !(*constant == instance)) {
+        if (const auto *constant = schema.find("const");
+            constant != nullptr && !(*constant == instance)) {
             violations.push_back({path, "const", "value does not equal the const"});
         }
     }
@@ -233,14 +234,14 @@ struct Validator final {
     // Structured text output is a single JSON document, optionally fenced.
     std::string_view view = text;
     const auto trim = [](std::string_view &value) {
-        while (!value.empty() && (value.front() == ' ' || value.front() == '\n' ||
-                                  value.front() == '\r' || value.front() == '\t' ||
-                                  value.front() == '`')) {
+        while (!value.empty() &&
+               (value.front() == ' ' || value.front() == '\n' || value.front() == '\r' ||
+                value.front() == '\t' || value.front() == '`')) {
             value.remove_prefix(1);
         }
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\n' ||
-                                  value.back() == '\r' || value.back() == '\t' ||
-                                  value.back() == '`')) {
+        while (!value.empty() &&
+               (value.back() == ' ' || value.back() == '\n' || value.back() == '\r' ||
+                value.back() == '\t' || value.back() == '`')) {
             value.remove_suffix(1);
         }
     };
@@ -270,8 +271,7 @@ Result<void> gate_schema_subset(const JsonSchema &schema, const SchemaSubsetLimi
     }
 
     // Iterative walk; keeps failure messages precise per node.
-    std::vector<std::pair<const JsonValue *, std::size_t>> pending{
-        {&schema.root, 0}};
+    std::vector<std::pair<const JsonValue *, std::size_t>> pending{{&schema.root, 0}};
     while (!pending.empty()) {
         const auto [node, depth] = pending.back();
         pending.pop_back();
@@ -301,8 +301,8 @@ Result<void> gate_schema_subset(const JsonSchema &schema, const SchemaSubsetLimi
             pattern->as_string()->size() > limits.max_pattern_bytes) {
             return schema_error("schema pattern exceeds the subset limit");
         }
-        if (const auto *type = node->find("type"); type != nullptr && !type->is_string() &&
-                                                     !type->is_array()) {
+        if (const auto *type = node->find("type");
+            type != nullptr && !type->is_string() && !type->is_array()) {
             return schema_error("schema type must be a string or array of strings");
         }
         if (const auto *required = node->find("required");
@@ -427,7 +427,7 @@ DecisionParseResult parse_decision(const ModelRequest &request, const ModelRespo
     }
     result.outcome = DecisionParseOutcome::Decision;
     result.source = contract.mode == OutputMode::JsonObject ? DecisionSource::JsonObject
-                                                           : DecisionSource::TextJson;
+                                                            : DecisionSource::TextJson;
     DecisionCandidate candidate;
     candidate.schema_id = contract.schema_id;
     candidate.schema_version = contract.schema_version;
@@ -439,9 +439,9 @@ DecisionParseResult parse_decision(const ModelRequest &request, const ModelRespo
 }
 
 Result<ModelRequest> build_schema_repair_request(const ModelRequest &original,
-                                                const DecisionParseResult &failure,
-                                                const RepairPolicy &policy,
-                                                const RepairBudget &budget) {
+                                                 const DecisionParseResult &failure,
+                                                 const RepairPolicy &policy,
+                                                 const RepairBudget &budget) {
     if (budget.exhausted(policy)) {
         return schema_error("schema repair budget is exhausted");
     }
@@ -465,8 +465,9 @@ Result<ModelRequest> build_schema_repair_request(const ModelRequest &original,
         if (violations.size() >= 16) {
             break;
         }
-        violations.emplace_back(JsonValue::Object{
-            {"path", violation.path}, {"keyword", violation.keyword}, {"message", violation.message}});
+        violations.emplace_back(JsonValue::Object{{"path", violation.path},
+                                                  {"keyword", violation.keyword},
+                                                  {"message", violation.message}});
     }
     summary.emplace_back("violations", std::move(violations));
     auto summary_text = to_json_string(JsonValue(std::move(summary)));

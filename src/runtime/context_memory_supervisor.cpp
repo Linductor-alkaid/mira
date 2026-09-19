@@ -46,8 +46,8 @@ namespace {
     return "ContextMemoryOperationStarted";
 }
 
-[[nodiscard]] std::string finished_event_for(const std::string &label, bool failed,
-                                             bool cancelled, bool degraded) {
+[[nodiscard]] std::string finished_event_for(const std::string &label, bool failed, bool cancelled,
+                                             bool degraded) {
     if (failed) {
         if (label == "context_prepare") {
             return "ContextBuildFailed";
@@ -114,16 +114,15 @@ class ContextMemorySupervisor::Impl final {
   public:
     Impl(executor::Executor &executor, SupervisorConfig config, IEventStore *event_sink,
          RuntimeId runtime_id, SessionId session_id)
-        : executor_(executor), config_(config), event_sink_(event_sink),
-          runtime_id_(runtime_id), session_id_(session_id) {}
+        : executor_(executor), config_(config), event_sink_(event_sink), runtime_id_(runtime_id),
+          session_id_(session_id) {}
 
     // Returns success when the thunk was admitted; the rejection otherwise.
     // The thunk invokes `settle` (accounting + events) before resolving the
     // caller's promise, so a resolved future implies settled accounting.
     [[nodiscard]] Result<void> dispatch(
         const std::string &label, SupervisedOpClass op_class,
-        std::function<void(SupervisorToken,
-                           const std::function<void(bool, bool, bool)> &)> thunk) {
+        std::function<void(SupervisorToken, const std::function<void(bool, bool, bool)> &)> thunk) {
         {
             std::lock_guard lock(mutex_);
             if (closing_) {
@@ -140,10 +139,9 @@ class ContextMemorySupervisor::Impl final {
             ++stats_.admitted;
             emit_locked(label, started_event_for(label), op_class, "admitted");
         }
-        const SupervisorToken token =
-            op_class == SupervisedOpClass::Deferrable
-                ? SupervisorToken(deferrable_stop_)
-                : SupervisorToken{};
+        const SupervisorToken token = op_class == SupervisedOpClass::Deferrable
+                                          ? SupervisorToken(deferrable_stop_)
+                                          : SupervisorToken{};
         const auto settle = [this, label, op_class](bool failed, bool degraded, bool cancelled) {
             std::lock_guard lock(mutex_);
             if (cancelled) {
@@ -161,12 +159,12 @@ class ContextMemorySupervisor::Impl final {
                         failed ? "failed" : "completed");
         };
         try {
-            auto future = executor_.submit_auto([this, thunk = std::move(thunk), token,
-                                                 settle]() mutable {
-                thunk(token, settle);
-                std::lock_guard lock(mutex_);
-                --in_flight_;
-            });
+            auto future =
+                executor_.submit_auto([this, thunk = std::move(thunk), token, settle]() mutable {
+                    thunk(token, settle);
+                    std::lock_guard lock(mutex_);
+                    --in_flight_;
+                });
             std::lock_guard lock(mutex_);
             futures_.push_back(std::move(future));
             prune_ready_futures_locked();
@@ -244,8 +242,8 @@ class ContextMemorySupervisor::Impl final {
     }
 
     // Requires mutex_ held. Sink failures never propagate to the hot path.
-    void emit_locked(const std::string &label, const std::string &type,
-                     SupervisedOpClass op_class, const std::string &outcome) {
+    void emit_locked(const std::string &label, const std::string &type, SupervisedOpClass op_class,
+                     const std::string &outcome) {
         if (event_sink_ == nullptr || runtime_id_.is_nil() || session_id_.is_nil()) {
             return;
         }
@@ -283,9 +281,8 @@ class ContextMemorySupervisor::Impl final {
 };
 
 ContextMemorySupervisor::ContextMemorySupervisor(executor::Executor &executor,
-                                                 SupervisorConfig config,
-                                                 IEventStore *event_sink, RuntimeId runtime_id,
-                                                 SessionId session_id) {
+                                                 SupervisorConfig config, IEventStore *event_sink,
+                                                 RuntimeId runtime_id, SessionId session_id) {
     const auto valid = config.validate();
     if (!valid) {
         throw std::invalid_argument(valid.error().safe_message);
@@ -293,15 +290,13 @@ ContextMemorySupervisor::ContextMemorySupervisor(executor::Executor &executor,
     impl_ = std::make_unique<Impl>(executor, config, event_sink, runtime_id, session_id);
 }
 
-ContextMemorySupervisor::~ContextMemorySupervisor() {
-    (void)impl_->begin_shutdown();
-}
+ContextMemorySupervisor::~ContextMemorySupervisor() { (void)impl_->begin_shutdown(); }
 
 Result<void> ContextMemorySupervisor::submit_erased(
     const std::string &label, SupervisedOpClass op_class,
-    std::function<void(SupervisorToken,
-                       const std::function<void(bool failed, bool degraded, bool cancelled)>
-                           &settle)> op) {
+    std::function<void(SupervisorToken, const std::function<void(bool failed, bool degraded,
+                                                                 bool cancelled)> &settle)>
+        op) {
     return impl_->dispatch(label, op_class, std::move(op));
 }
 
@@ -326,12 +321,11 @@ ContextMemorySupervisor::schedule_memory_query(IMemory &memory, MemoryQuery quer
 std::future<Result<ContextRetrievalResult>>
 ContextMemorySupervisor::schedule_context_retrieval(IContextRetriever &retriever,
                                                     ContextQuery query, RetrievalBudget budget) {
-    return submit<ContextRetrievalResult>(
-        "context_retrieval", SupervisedOpClass::Interactive,
-        [&retriever, query = std::move(query),
-         budget](SupervisorToken) -> Result<ContextRetrievalResult> {
-            return retriever.retrieve(query, budget);
-        });
+    return submit<ContextRetrievalResult>("context_retrieval", SupervisedOpClass::Interactive,
+                                          [&retriever, query = std::move(query), budget](
+                                              SupervisorToken) -> Result<ContextRetrievalResult> {
+                                              return retriever.retrieve(query, budget);
+                                          });
 }
 
 std::future<Result<std::vector<RankedContextItem>>>
@@ -339,8 +333,8 @@ ContextMemorySupervisor::schedule_context_rerank(IContextReranker &reranker, Con
                                                  std::vector<ContextCandidate> candidates) {
     return submit<std::vector<RankedContextItem>>(
         "context_rerank", SupervisedOpClass::Interactive,
-        [&reranker, query = std::move(query),
-         candidates = std::move(candidates)](SupervisorToken) -> Result<std::vector<RankedContextItem>> {
+        [&reranker, query = std::move(query), candidates = std::move(candidates)](
+            SupervisorToken) -> Result<std::vector<RankedContextItem>> {
             return reranker.rerank(query, candidates);
         });
 }
@@ -351,9 +345,8 @@ ContextMemorySupervisor::schedule_context_consolidation(ISemanticConsolidator &c
                                                         ConsolidationOptions options) {
     return submit<ConversationCheckpoint>(
         "context_consolidation", SupervisedOpClass::Deferrable,
-        [&consolidator, segment = std::move(segment),
-         options = std::move(options)](SupervisorToken token) mutable
-        -> Result<ConversationCheckpoint> {
+        [&consolidator, segment = std::move(segment), options = std::move(options)](
+            SupervisorToken token) mutable -> Result<ConversationCheckpoint> {
             // The supervisor's stop flag becomes the cooperative cancellation
             // probe the consolidator honors (design §7); the five-tuple
             // commit validation stays the backstop for results that slip
@@ -373,9 +366,8 @@ ContextMemorySupervisor::schedule_working_context_commit(IWorkingContextStore &s
         "working_context_commit", SupervisedOpClass::Deferrable,
         // WorkingContextMergeOptions is trivially copyable: a plain capture
         // copy, no move (performance-move-const-arg).
-        [&store, checkpoint = std::move(checkpoint), identity, live, options](
-            SupervisorToken) mutable
-        -> Result<WorkingContextCommitOutcome> {
+        [&store, checkpoint = std::move(checkpoint), identity, live,
+         options](SupervisorToken) mutable -> Result<WorkingContextCommitOutcome> {
             // Deterministic projection plus monotonic commit in one
             // supervised step (design §8): the store's tuple validation is
             // the backstop for late or replayed results, so the pure merge
@@ -399,17 +391,16 @@ ContextMemorySupervisor::schedule_working_context_curate(
     return submit<WorkingContextCommitOutcome>(
         "working_context_curate", SupervisedOpClass::Deferrable,
         [&curator, &store, previous = std::move(previous), checkpoint = std::move(checkpoint),
-         events = std::move(recent_events), live,
-         options = std::move(options)](SupervisorToken token) mutable
-        -> Result<WorkingContextCommitOutcome> {
+         events = std::move(recent_events), live, options = std::move(options)](
+            SupervisorToken token) mutable -> Result<WorkingContextCommitOutcome> {
             // The supervisor's stop flag becomes the cooperative cancellation
             // probe the curator honors (design §8); the store's commit
             // validation stays the backstop for results that slip past
             // cancellation. A curator failure leaves the store untouched —
             // the caller keeps the previous snapshot (design §9).
             options.cancellation_requested = [token]() { return token.stop_requested(); };
-            auto candidate = curator.curate(previous ? &previous.value() : nullptr, checkpoint,
-                                            events, options);
+            auto candidate =
+                curator.curate(previous ? &previous.value() : nullptr, checkpoint, events, options);
             if (!candidate) {
                 return candidate.error();
             }
@@ -419,20 +410,17 @@ ContextMemorySupervisor::schedule_working_context_curate(
 
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
-    return submit<MemoryMutationResult>(
-        "mutation", SupervisedOpClass::Critical,
-        [&memory, mutation = std::move(mutation)](SupervisorToken) {
-            return memory.apply(mutation);
-        });
+    return submit<MemoryMutationResult>("mutation", SupervisedOpClass::Critical,
+                                        [&memory, mutation = std::move(mutation)](SupervisorToken) {
+                                            return memory.apply(mutation);
+                                        });
 }
 
 std::future<Result<ErasureResult>>
 ContextMemorySupervisor::schedule_erasure(IMemory &memory, ErasureRequest request) {
     return submit<ErasureResult>(
         "erasure", SupervisedOpClass::Critical,
-        [&memory, request = std::move(request)](SupervisorToken) {
-            return memory.erase(request);
-        });
+        [&memory, request = std::move(request)](SupervisorToken) { return memory.erase(request); });
 }
 
 std::future<Result<MemoryCompactionResult>>
@@ -452,12 +440,8 @@ SupervisorShutdownReport ContextMemorySupervisor::begin_shutdown() {
     return impl_->begin_shutdown();
 }
 
-bool ContextMemorySupervisor::closed() const {
-    return impl_->closed();
-}
+bool ContextMemorySupervisor::closed() const { return impl_->closed(); }
 
-SupervisorStats ContextMemorySupervisor::stats() const {
-    return impl_->stats();
-}
+SupervisorStats ContextMemorySupervisor::stats() const { return impl_->stats(); }
 
 } // namespace mira

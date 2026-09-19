@@ -90,8 +90,7 @@ class SimpleAdmissionGate final : public TaskAdmissionGate {
     [[nodiscard]] bool admit(const TaskId &task, std::uint64_t epoch) const override {
         std::lock_guard lock(mutex_);
         const auto found = entries_.find(task);
-        return found != entries_.end() && found->second.active &&
-               found->second.epoch == epoch;
+        return found != entries_.end() && found->second.active && found->second.epoch == epoch;
     }
 
   private:
@@ -109,8 +108,7 @@ class ModelGateway final {
                  ModelGatewayConfig config = ModelGatewayConfig{});
 
     void register_provider(std::shared_ptr<IModelProvider> provider);
-    void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime,
-                         SessionId session);
+    void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_admission_gate(std::shared_ptr<const TaskAdmissionGate> gate);
 
     [[nodiscard]] Result<ModelCallOutcome> infer(const ModelRequest &request,

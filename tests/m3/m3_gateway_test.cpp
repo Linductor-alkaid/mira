@@ -1,10 +1,10 @@
 #include "support/m3_support.hpp"
 #include <mira/agent_loop.hpp>
-#include <mira/security.hpp>
 #include <mira/replay.hpp>
+#include <mira/security.hpp>
 
-#include <executor/executor.hpp>
 #include "support/test.hpp"
+#include <executor/executor.hpp>
 
 #include <mira/model_gateway.hpp>
 
@@ -40,7 +40,7 @@ class GatewayFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                 ModelGatewayConfig{});
+                                                  ModelGatewayConfig{});
         gateway_->register_provider(std::make_shared<OpenAiCompatibleProvider>(
             profile_, transport_, std::make_shared<NullArtifactSource>()));
         admission_ = std::make_shared<SimpleAdmissionGate>();
@@ -100,8 +100,7 @@ int routes_validates_and_produces_decisions() {
     GatewayFixture fixture;
     fixture.admission_->activate(fixture.task_, 1);
 
-    fixture.transport_->enqueue_json(
-        200, R"({"id":"r1","status":"completed","model":"test-model",
+    fixture.transport_->enqueue_json(200, R"({"id":"r1","status":"completed","model":"test-model",
                 "output":[{"type":"message","role":"assistant","content":[
                     {"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}"}]}],
                 "usage":{"input_tokens":10,"output_tokens":4}})");
@@ -135,7 +134,8 @@ int unadmitted_epochs_produce_no_decisions() {
     // A response racing with deactivation settles but yields no decision.
     fixture.admission_->activate(fixture.task_, 1);
     fixture.transport_->enqueue_json(
-        200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
     // Deactivate before the call: admission is checked pre-send and at
     // settlement.
     fixture.admission_->deactivate(fixture.task_);
@@ -174,7 +174,8 @@ int retry_after_rate_limit_then_success() {
     limited.body = R"({"error":{"code":"rate_limited"}})";
     fixture.transport_->enqueue(std::move(limited));
     fixture.transport_->enqueue_json(
-        200, R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"home\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":2,"output_tokens":2}})");
+        200,
+        R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"home\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":2,"output_tokens":2}})");
 
     auto outcome = fixture.gateway_->infer(fixture.request(), plain_context());
     MIRA_CHECK(outcome.has_value());
@@ -249,11 +250,12 @@ int events_carry_no_prompt_or_secret_content() {
     fixture.gateway_->set_event_store(events, RuntimeId::generate(), session);
 
     fixture.transport_->enqueue_json(
-        200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"response-marker\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"response-marker\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
     auto outcome = fixture.gateway_->infer(fixture.request(), plain_context());
     MIRA_CHECK(outcome.has_value());
 
-        EventQuery query;
+    EventQuery query;
     query.session_id = session;
     auto read = events->read(query);
     MIRA_CHECK(read.has_value());
@@ -267,7 +269,6 @@ int events_carry_no_prompt_or_secret_content() {
     }
     return 0;
 }
-
 
 int bounded_provider_fallback() {
     GatewayFixture fixture;
@@ -290,7 +291,8 @@ int bounded_provider_fallback() {
         fixture.transport_->enqueue(std::move(step));
     }
     backup_transport->enqueue_json(
-        200, R"({"id":"r","status":"completed","model":"backup-model","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"fallback\"}"}]}],"usage":{"input_tokens":2,"output_tokens":1}})");
+        200,
+        R"({"id":"r","status":"completed","model":"backup-model","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"fallback\"}"}]}],"usage":{"input_tokens":2,"output_tokens":1}})");
 
     auto outcome = fixture.gateway_->infer(fixture.request(), plain_context());
     MIRA_CHECK(outcome.has_value());
@@ -312,7 +314,7 @@ class LoopLikeFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                 ModelGatewayConfig{});
+                                                  ModelGatewayConfig{});
         gateway_->register_provider(std::make_shared<OpenAiCompatibleProvider>(
             profile_, transport_, std::make_shared<NullArtifactSource>()));
         admission_ = std::make_shared<SimpleAdmissionGate>();
@@ -344,7 +346,8 @@ int untrusted_text_never_gains_prompt_authority() {
     fixture.activate();
     fixture.spec().profile_id = fixture.profile_->id;
     fixture.transport_->enqueue_json(
-        200, R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"back\",\"reason\":\"r\"}"}]}],"usage":{"input_tokens":1,"output_tokens":1}})");
 
     // An observation whose UI text carries an injection payload; it must
     // travel as untrusted user-role data and never as system prompt.
@@ -363,9 +366,9 @@ int untrusted_text_never_gains_prompt_authority() {
     observations.push_back(std::move(observation));
 
     OfflineReplayEnvironment environment(std::move(observations), {}, EnvironmentCapabilities{});
-    AgentLoop loop(std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment),
-                                                 [](auto *) {}),
-                   *fixture.gateway_, AgentLoopConfig{4, 1});
+    AgentLoop loop(
+        std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment), [](auto *) {}),
+        *fixture.gateway_, AgentLoopConfig{4, 1});
     ModelDoneVerifier verifier;
     OperationContext context;
     context.operation = OperationId::generate();
@@ -398,7 +401,6 @@ int untrusted_text_never_gains_prompt_authority() {
     MIRA_CHECK(injection_seen);
     return 0;
 }
-
 
 } // namespace
 

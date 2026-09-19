@@ -50,7 +50,8 @@ constexpr std::string_view kRecoveryLessonName = "RecoveryLesson";
     return tokens;
 }
 
-[[nodiscard]] double cosine_similarity(const std::vector<float> &lhs, const std::vector<float> &rhs) {
+[[nodiscard]] double cosine_similarity(const std::vector<float> &lhs,
+                                       const std::vector<float> &rhs) {
     double dot = 0.0;
     double lhs_norm = 0.0;
     double rhs_norm = 0.0;
@@ -79,7 +80,8 @@ constexpr std::string_view kRecoveryLessonName = "RecoveryLesson";
     return lowered.find(lowered_needle) != std::string::npos;
 }
 
-[[nodiscard]] bool text_carries_marker(std::string_view text, const std::vector<std::string> &markers) {
+[[nodiscard]] bool text_carries_marker(std::string_view text,
+                                       const std::vector<std::string> &markers) {
     for (const auto &marker : markers) {
         if (!marker.empty() && contains_case_insensitive(text, marker)) {
             return true;
@@ -146,12 +148,13 @@ Result<void> ContextIndexPolicy::validate() const {
         return retrieval_error(ContextDomainCode::InvalidItem, "asset count bound out of range");
     }
     if (max_embedding_dims == 0 || max_embedding_dims > 4'096) {
-        return retrieval_error(ContextDomainCode::InvalidItem, "embedding dimension bound out of range");
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "embedding dimension bound out of range");
     }
     for (const auto &marker : forbidden_markers) {
         if (marker.empty()) {
             return retrieval_error(ContextDomainCode::InvalidItem,
-                                    "forbidden markers must not be empty");
+                                   "forbidden markers must not be empty");
         }
     }
     return Result<void>{};
@@ -165,25 +168,27 @@ Result<void> ContextIndexAsset::validate(const ContextIndexPolicy &policy) const
         return retrieval_error(ContextDomainCode::InvalidItem, "asset text must not be empty");
     }
     if (text.size() > policy.max_asset_text_bytes) {
-        return retrieval_error(ContextDomainCode::InvalidItem, "asset text exceeds the policy bound");
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "asset text exceeds the policy bound");
     }
     if (source_events.size() > policy.max_source_events) {
-        return retrieval_error(ContextDomainCode::InvalidItem, "provenance exceeds the policy bound");
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "provenance exceeds the policy bound");
     }
     const bool session_owned = session.has_value() && !session->is_nil();
     const bool scope_owned = scope.has_value();
     if (kind == ContextAssetKind::ConversationSegment) {
         if (!session_owned || scope_owned) {
             return retrieval_error(ContextDomainCode::InvalidItem,
-                                    "conversation segments own a session and no scope");
+                                   "conversation segments own a session and no scope");
         }
     } else if (!scope_owned || session_owned) {
         return retrieval_error(ContextDomainCode::InvalidItem,
-                                "learning assets own a scope and no session");
+                               "learning assets own a scope and no session");
     }
     if (text_carries_marker(text, policy.forbidden_markers)) {
         return retrieval_error(ContextDomainCode::ForbiddenContent,
-                                "asset text carries a forbidden marker");
+                               "asset text carries a forbidden marker");
     }
     return Result<void>{};
 }
@@ -200,7 +205,7 @@ ContextEmbeddingInput context_embedding_input(const ContextIndexAsset &asset) {
 Result<void> ContextQuery::validate() const {
     if (!session.has_value() && scopes.empty()) {
         return retrieval_error(ContextDomainCode::ScopeDenied,
-                                "context queries must state a session or a scope allowlist");
+                               "context queries must state a session or a scope allowlist");
     }
     if (session.has_value() && session->is_nil()) {
         return retrieval_error(ContextDomainCode::ScopeDenied, "session grant must not be nil");
@@ -209,7 +214,7 @@ Result<void> ContextQuery::validate() const {
         if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
             scope.kind != MemoryScopeKind::Agent) {
             return retrieval_error(ContextDomainCode::ScopeDenied,
-                                    "scoped queries require a subject id");
+                                   "scoped queries require a subject id");
         }
         if (scope.subject_id.size() > 256) {
             return retrieval_error(ContextDomainCode::ScopeDenied, "scope subject id is too long");
@@ -221,16 +226,16 @@ Result<void> ContextQuery::validate() const {
     if (query_embedding.has_value()) {
         if (query_embedding->values.size() > 4'096) {
             return retrieval_error(ContextDomainCode::InvalidItem,
-                                    "query embedding exceeds dimension bounds");
+                                   "query embedding exceeds dimension bounds");
         }
         if (!std::all_of(query_embedding->values.begin(), query_embedding->values.end(),
                          [](float value) { return std::isfinite(value); })) {
             return retrieval_error(ContextDomainCode::InvalidItem,
-                                    "query embedding carries non-finite values");
+                                   "query embedding carries non-finite values");
         }
         if (query_embedding->profile_id.value.is_nil()) {
             return retrieval_error(ContextDomainCode::InvalidItem,
-                                    "query embedding requires a profile id");
+                                   "query embedding requires a profile id");
         }
     }
     return Result<void>{};
@@ -247,8 +252,7 @@ Result<void> RetrievalBudget::validate() const {
         return retrieval_error(ContextDomainCode::InvalidItem, "deadline must not be negative");
     }
     if (max_vector_scan == 0 || max_vector_scan > 1'000'000) {
-        return retrieval_error(ContextDomainCode::InvalidItem,
-                               "vector scan bound out of range");
+        return retrieval_error(ContextDomainCode::InvalidItem, "vector scan bound out of range");
     }
     return Result<void>{};
 }
@@ -269,27 +273,26 @@ class InMemoryContextIndex::Impl final {
         }
         const std::lock_guard<std::mutex> guard(mutex_);
         if (entries_.size() >= policy_.max_assets) {
-            const auto existing = std::find_if(entries_.begin(), entries_.end(),
-                                               [&asset](const IndexedAsset &entry) {
-                                                   return entry.asset.id == asset.id;
-                                               });
+            const auto existing =
+                std::find_if(entries_.begin(), entries_.end(), [&asset](const IndexedAsset &entry) {
+                    return entry.asset.id == asset.id;
+                });
             if (existing == entries_.end()) {
                 return retrieval_error(ContextDomainCode::InvalidLimits,
                                        "asset count exceeds the policy bound");
             }
         }
-        auto existing = std::find_if(entries_.begin(), entries_.end(),
-                                     [&asset](const IndexedAsset &entry) {
-                                         return entry.asset.id == asset.id;
-                                     });
+        auto existing =
+            std::find_if(entries_.begin(), entries_.end(), [&asset](const IndexedAsset &entry) {
+                return entry.asset.id == asset.id;
+            });
         if (existing != entries_.end()) {
             if (existing->asset.through_event_sequence > asset.through_event_sequence) {
                 return retrieval_error(ContextDomainCode::StaleBuild,
                                        "asset watermark must not move backwards");
             }
             if (existing->asset.through_event_sequence == asset.through_event_sequence &&
-                (existing->asset.text != asset.text ||
-                 existing->asset.kind != asset.kind)) {
+                (existing->asset.text != asset.text || existing->asset.kind != asset.kind)) {
                 return retrieval_error(ContextDomainCode::InvalidItem,
                                        "asset content changed without advancing the watermark");
             }
@@ -307,18 +310,19 @@ class InMemoryContextIndex::Impl final {
         return Result<void>{};
     }
 
-    [[nodiscard]] Result<void> attach_embedding(const ContextAssetId &id, ContextEmbedding embedding) {
+    [[nodiscard]] Result<void> attach_embedding(const ContextAssetId &id,
+                                                ContextEmbedding embedding) {
         if (!embedding_usable(embedding, policy_)) {
             return retrieval_error(ContextDomainCode::InvalidItem,
                                    "embedding is empty, oversized, non-finite or profile-less");
         }
         const std::lock_guard<std::mutex> guard(mutex_);
-        auto entry = std::find_if(entries_.begin(), entries_.end(),
-                                  [&id](const IndexedAsset &candidate) {
-                                      return candidate.asset.id == id;
-                                  });
+        auto entry =
+            std::find_if(entries_.begin(), entries_.end(),
+                         [&id](const IndexedAsset &candidate) { return candidate.asset.id == id; });
         if (entry == entries_.end()) {
-            return retrieval_error(ContextDomainCode::InvalidItem, "embedding for an unknown asset");
+            return retrieval_error(ContextDomainCode::InvalidItem,
+                                   "embedding for an unknown asset");
         }
         entry->embedding = std::move(embedding);
         return Result<void>{};
@@ -326,10 +330,9 @@ class InMemoryContextIndex::Impl final {
 
     [[nodiscard]] Result<void> drop_asset(const ContextAssetId &id) {
         const std::lock_guard<std::mutex> guard(mutex_);
-        const auto entry = std::find_if(entries_.begin(), entries_.end(),
-                                        [&id](const IndexedAsset &candidate) {
-                                            return candidate.asset.id == id;
-                                        });
+        const auto entry =
+            std::find_if(entries_.begin(), entries_.end(),
+                         [&id](const IndexedAsset &candidate) { return candidate.asset.id == id; });
         if (entry == entries_.end()) {
             return retrieval_error(ContextDomainCode::InvalidItem, "unknown asset");
         }
@@ -339,9 +342,9 @@ class InMemoryContextIndex::Impl final {
 
     [[nodiscard]] std::size_t index_lag() const {
         const std::lock_guard<std::mutex> guard(mutex_);
-        return static_cast<std::size_t>(std::count_if(
-            entries_.begin(), entries_.end(),
-            [](const IndexedAsset &entry) { return !entry.embedding.has_value(); }));
+        return static_cast<std::size_t>(
+            std::count_if(entries_.begin(), entries_.end(),
+                          [](const IndexedAsset &entry) { return !entry.embedding.has_value(); }));
     }
 
     [[nodiscard]] std::size_t clear_embeddings() {
@@ -369,19 +372,17 @@ class InMemoryContextIndex::Impl final {
 
     [[nodiscard]] bool has_embedding(const ContextAssetId &id) const {
         const std::lock_guard<std::mutex> guard(mutex_);
-        const auto entry = std::find_if(entries_.begin(), entries_.end(),
-                                        [&id](const IndexedAsset &candidate) {
-                                            return candidate.asset.id == id;
-                                        });
+        const auto entry =
+            std::find_if(entries_.begin(), entries_.end(),
+                         [&id](const IndexedAsset &candidate) { return candidate.asset.id == id; });
         return entry != entries_.end() && entry->embedding.has_value();
     }
 
     [[nodiscard]] std::optional<ContextIndexAsset> asset(const ContextAssetId &id) const {
         const std::lock_guard<std::mutex> guard(mutex_);
-        const auto entry = std::find_if(entries_.begin(), entries_.end(),
-                                        [&id](const IndexedAsset &candidate) {
-                                            return candidate.asset.id == id;
-                                        });
+        const auto entry =
+            std::find_if(entries_.begin(), entries_.end(),
+                         [&id](const IndexedAsset &candidate) { return candidate.asset.id == id; });
         if (entry == entries_.end()) {
             return std::nullopt;
         }
@@ -406,9 +407,10 @@ class InMemoryContextIndex::Impl final {
         {
             const std::lock_guard<std::mutex> guard(mutex_);
             snapshot = entries_;
-            lag = static_cast<std::size_t>(std::count_if(
-                snapshot.begin(), snapshot.end(),
-                [](const IndexedAsset &entry) { return !entry.embedding.has_value(); }));
+            lag = static_cast<std::size_t>(
+                std::count_if(snapshot.begin(), snapshot.end(), [](const IndexedAsset &entry) {
+                    return !entry.embedding.has_value();
+                }));
         }
 
         ContextRetrievalResult result;
@@ -417,9 +419,8 @@ class InMemoryContextIndex::Impl final {
         // ACL + kind universe (deny by default; never crossed by similarity).
         std::vector<const IndexedAsset *> universe;
         for (const auto &entry : snapshot) {
-            if (query.kinds.has_value() &&
-                std::find(query.kinds->begin(), query.kinds->end(), entry.asset.kind) ==
-                    query.kinds->end()) {
+            if (query.kinds.has_value() && std::find(query.kinds->begin(), query.kinds->end(),
+                                                     entry.asset.kind) == query.kinds->end()) {
                 continue;
             }
             if (entry.asset.session.has_value()) {
@@ -502,8 +503,7 @@ class InMemoryContextIndex::Impl final {
                     ++vector_errors;
                     continue;
                 }
-                const double similarity =
-                    cosine_similarity(entry.embedding->values, query_vector);
+                const double similarity = cosine_similarity(entry.embedding->values, query_vector);
                 if (similarity >= 0.0) {
                     vector_scores[entry.asset.id] = similarity;
                 }
@@ -513,7 +513,8 @@ class InMemoryContextIndex::Impl final {
             } else {
                 result.quality.vector_degraded = true;
                 result.quality.degraded = true;
-                result.quality.note = "vector index unusable; exact/lexical legs answered the query";
+                result.quality.note =
+                    "vector index unusable; exact/lexical legs answered the query";
             }
         }
 
@@ -525,8 +526,8 @@ class InMemoryContextIndex::Impl final {
 
         const bool exact_hit_any = !exact_hits.empty();
         const bool any_leg = exact_hit_any || !lexical_rank.empty() || !vector_scores.empty();
-        const bool ranking_attempted = !query.text.empty() || !query.exact_terms.empty() ||
-                                       query.query_embedding.has_value();
+        const bool ranking_attempted =
+            !query.text.empty() || !query.exact_terms.empty() || query.query_embedding.has_value();
         if (ranking_attempted && !any_leg && !result.quality.deadline_exceeded) {
             return result; // nothing matched; an empty answer beats a scope dump
         }
@@ -580,8 +581,7 @@ class InMemoryContextIndex::Impl final {
                 break;
             }
             const std::string &text = candidate.entry->asset.text;
-            const std::uint64_t tokens =
-                std::max<std::uint64_t>(16, text.size() / 4 + 8);
+            const std::uint64_t tokens = std::max<std::uint64_t>(16, text.size() / 4 + 8);
             if (result.tokens_estimate + tokens > budget.token_budget) {
                 continue;
             }
@@ -628,7 +628,7 @@ Result<void> InMemoryContextIndex::upsert_asset(const ContextIndexAsset &asset) 
 }
 
 Result<void> InMemoryContextIndex::attach_embedding(const ContextAssetId &id,
-                                                     ContextEmbedding embedding) {
+                                                    ContextEmbedding embedding) {
     return impl_->attach_embedding(id, std::move(embedding));
 }
 
@@ -715,8 +715,8 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         segment.entries = std::move(window_entries);
         segment.through_sequence = through;
         segment.asset_id = context_asset_id_from_seed(
-            "mira.conversation.segment|" + session.to_string() + "|" +
-            std::to_string(first_entry) + "|" + std::to_string(consumed));
+            "mira.conversation.segment|" + session.to_string() + "|" + std::to_string(first_entry) +
+            "|" + std::to_string(consumed));
         segments.push_back(std::move(segment));
         first_entry += consumed;
         consumed = 0;
@@ -742,12 +742,12 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
             segment.entry_count = 1;
             segment.text = truncated_line;
             segment.source_events = {entry.origin};
-            segment.entries = {ConversationSegmentEntry{truncated_line, entry.origin,
-                                                        entry.session_sequence}};
+            segment.entries = {
+                ConversationSegmentEntry{truncated_line, entry.origin, entry.session_sequence}};
             segment.through_sequence = entry.session_sequence;
-            segment.asset_id = context_asset_id_from_seed(
-                "mira.conversation.segment|" + session.to_string() + "|" +
-                std::to_string(first_entry) + "|1");
+            segment.asset_id =
+                context_asset_id_from_seed("mira.conversation.segment|" + session.to_string() +
+                                           "|" + std::to_string(first_entry) + "|1");
             segments.push_back(std::move(segment));
             first_entry += 1;
             continue;
@@ -873,11 +873,11 @@ Result<ContextCandidate> context_candidate_from_json(const JsonValue &json) {
     if (const auto *text = json.find("text"); text != nullptr && text->is_string()) {
         candidate.text = *text->as_string();
     }
-    if (const auto *session = json.find("session");
-        session != nullptr && session->is_string()) {
+    if (const auto *session = json.find("session"); session != nullptr && session->is_string()) {
         const auto parsed_session = SessionId::parse(*session->as_string());
         if (!parsed_session) {
-            return retrieval_error(ContextDomainCode::InvalidItem, "candidate session is malformed");
+            return retrieval_error(ContextDomainCode::InvalidItem,
+                                   "candidate session is malformed");
         }
         candidate.session = parsed_session;
     }

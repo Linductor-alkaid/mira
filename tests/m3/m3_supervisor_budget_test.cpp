@@ -30,9 +30,8 @@ int retry_table_covers_request_stages() {
     };
 
     // Pre-write retryable failures are safe to resend immediately.
-    auto prewrite =
-        supervisor.evaluate(transport_failure(true), RequestStage::PreWriteFailure, std::nullopt,
-                            budget, circuit);
+    auto prewrite = supervisor.evaluate(transport_failure(true), RequestStage::PreWriteFailure,
+                                        std::nullopt, budget, circuit);
     MIRA_CHECK(prewrite.action == RetryAction::RetryNow);
 
     // Pre-write non-retryable failures stop.
@@ -41,9 +40,8 @@ int retry_table_covers_request_stages() {
     MIRA_CHECK(fatal.action == RetryAction::GiveUp);
 
     // Post-write transport failures are ambiguous; no blind resend.
-    auto postwrite =
-        supervisor.evaluate(transport_failure(true), RequestStage::AwaitingResponse, std::nullopt,
-                            budget, circuit);
+    auto postwrite = supervisor.evaluate(transport_failure(true), RequestStage::AwaitingResponse,
+                                         std::nullopt, budget, circuit);
     MIRA_CHECK(postwrite.action == RetryAction::GiveUp);
 
     // Explicitly ambiguous completions stop even with retries left.
@@ -69,9 +67,8 @@ int retry_table_covers_request_stages() {
     RetryBudget capped;
     capped.max_attempts = 5;
     capped.retry_after_cap = std::chrono::milliseconds{1'000};
-    auto capped_decision = supervisor.evaluate(
-        rate_limited(), RequestStage::AwaitingResponse, std::chrono::milliseconds{60'000}, capped,
-        circuit);
+    auto capped_decision = supervisor.evaluate(rate_limited(), RequestStage::AwaitingResponse,
+                                               std::chrono::milliseconds{60'000}, capped, circuit);
     MIRA_CHECK(capped_decision.delay == std::chrono::milliseconds{1'000});
 
     // Attempt budgets stop retries regardless of stage.
@@ -88,8 +85,8 @@ int retry_table_covers_request_stages() {
     }
     MIRA_CHECK(open.state() == CircuitState::OpenCircuit);
     MIRA_CHECK(!open.admits_requests());
-    auto blocked =
-        supervisor.evaluate(rate_limited(), RequestStage::PreWriteFailure, std::nullopt, budget, open);
+    auto blocked = supervisor.evaluate(rate_limited(), RequestStage::PreWriteFailure, std::nullopt,
+                                       budget, open);
     MIRA_CHECK(blocked.action == RetryAction::GiveUp);
     return 0;
 }
@@ -124,7 +121,7 @@ int circuit_state_machine() {
 }
 
 [[nodiscard]] ModelUsage usage(std::optional<std::uint64_t> in, std::optional<std::uint64_t> out,
-                              std::optional<std::uint64_t> cached, UsageQuality quality) {
+                               std::optional<std::uint64_t> cached, UsageQuality quality) {
     ModelUsage result;
     result.input_tokens = in;
     result.output_tokens = out;
@@ -166,8 +163,8 @@ int budget_reservation_and_reconciliation() {
     MIRA_CHECK(!over.has_value());
 
     // Provider-reported usage reconciles and releases the reservation.
-    auto settled = ledger.reconcile(task, budget, usage(300, 50, 100, UsageQuality::ProviderReported),
-                                    "test-model");
+    auto settled = ledger.reconcile(
+        task, budget, usage(300, 50, 100, UsageQuality::ProviderReported), "test-model");
     MIRA_CHECK(settled.has_value());
     MIRA_CHECK(settled.value().quality == ReconciliationQuality::Reconciled);
     // cost = 300*1 + 50*2 - 100*(1 - 0.1) = 300 + 100 - 90 = 310 micros.
@@ -177,18 +174,17 @@ int budget_reservation_and_reconciliation() {
     // Missing usage keeps the reservation and flags an audit.
     const auto task2 = TaskId::generate();
     (void)ledger.reserve(task2, budget, estimate);
-    auto missing = ledger.reconcile(task2, budget, usage(std::nullopt, std::nullopt, std::nullopt,
-                                                         UsageQuality::Missing),
-                                    "test-model");
+    auto missing = ledger.reconcile(
+        task2, budget, usage(std::nullopt, std::nullopt, std::nullopt, UsageQuality::Missing),
+        "test-model");
     MIRA_CHECK(missing.value().quality == ReconciliationQuality::MissingUsage);
     MIRA_CHECK(missing.value().reserved_remainder);
 
     // Partial usage stays partially reserved.
     const auto task3 = TaskId::generate();
     (void)ledger.reserve(task3, budget, estimate);
-    auto partial = ledger.reconcile(task3, budget,
-                                    usage(std::nullopt, 20, std::nullopt, UsageQuality::Partial),
-                                    "test-model");
+    auto partial = ledger.reconcile(
+        task3, budget, usage(std::nullopt, 20, std::nullopt, UsageQuality::Partial), "test-model");
     MIRA_CHECK(partial.value().quality == ReconciliationQuality::PartialUsage);
 
     // Unknown price: usage known, cost unknown; never a fake zero.

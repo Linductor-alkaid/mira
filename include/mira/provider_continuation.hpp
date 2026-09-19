@@ -24,9 +24,9 @@ namespace mira {
 // Why a continuation stopped being usable. Codes are the contract surface.
 enum class ContinuationInvalidation : std::uint8_t {
     Valid,
-    Expired,          // TTL elapsed
-    ProviderChanged,  // different provider backend
-    ProfileChanged,   // different profile id or manifest digest
+    Expired,         // TTL elapsed
+    ProviderChanged, // different provider backend
+    ProfileChanged,  // different profile id or manifest digest
     ConversationChanged,
     TaskChanged,   // task/session binding mismatch
     EpochAdvanced, // task or environment epoch moved past the binding
@@ -60,8 +60,7 @@ struct ContinuationBinding final {
 // Evaluates a continuation against a binding. Never inspects the payload;
 // the opaque state is only ever compared by its recorded bindings.
 [[nodiscard]] ContinuationInvalidation
-evaluate_continuation(const ProviderContinuation &continuation,
-                      const ContinuationBinding &binding);
+evaluate_continuation(const ProviderContinuation &continuation, const ContinuationBinding &binding);
 
 // In-process continuation registry. All state stays rebuildable from local
 // checkpoints; recovery clears the cache instead of trusting opaque bytes
@@ -79,8 +78,7 @@ class ContinuationCache final {
     // Returns the continuation when it is still valid for the binding;
     // otherwise an error describing the invalidation. Expired and invalidated
     // entries are dropped.
-    Result<std::optional<ProviderContinuation>>
-    lookup(const ContinuationBinding &binding) const;
+    Result<std::optional<ProviderContinuation>> lookup(const ContinuationBinding &binding) const;
 
     // Cancel, takeover and process recovery paths: every cached continuation
     // becomes unusable; the next build must come from the local checkpoint.
@@ -116,8 +114,8 @@ class ContinuationCache final {
 class IFinalTokenCounter {
   public:
     virtual ~IFinalTokenCounter() = default;
-    [[nodiscard]] virtual Result<TokenEstimate>
-    count(const PreparedModelContext &prepared, const ModelProfile &profile) = 0;
+    [[nodiscard]] virtual Result<TokenEstimate> count(const PreparedModelContext &prepared,
+                                                      const ModelProfile &profile) = 0;
 };
 
 // Exact-count gate with deterministic degradation: when the capability is
@@ -128,9 +126,9 @@ class ExactCountGate final {
   public:
     explicit ExactCountGate(std::shared_ptr<IFinalTokenCounter> counter = nullptr);
 
-    [[nodiscard]] Result<TokenEstimate>
-    finalize(const PreparedModelContext &prepared, const ModelProfile &profile,
-             const TokenEstimate &conservative);
+    [[nodiscard]] Result<TokenEstimate> finalize(const PreparedModelContext &prepared,
+                                                 const ModelProfile &profile,
+                                                 const TokenEstimate &conservative);
 
     [[nodiscard]] std::uint64_t exact_successes() const noexcept;
     [[nodiscard]] std::uint64_t degraded_fallbacks() const noexcept;

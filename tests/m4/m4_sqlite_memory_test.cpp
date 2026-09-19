@@ -4,9 +4,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <iostream>
 #include <random>
 #include <thread>
-#include <iostream>
 
 #include <executor/executor.hpp>
 
@@ -59,8 +59,8 @@ std::filesystem::path temp_dir() {
     return scope;
 }
 
-[[nodiscard]] MemoryQueryResult run_query(const SqliteMemoryStore &store,
-                                          const MemoryScope &scope, std::string text = {}) {
+[[nodiscard]] MemoryQueryResult run_query(const SqliteMemoryStore &store, const MemoryScope &scope,
+                                          std::string text = {}) {
     MemoryQuery query;
     query.scopes = {scope};
     query.text = std::move(text);
@@ -262,8 +262,9 @@ int scope_acl_and_provenance_enforcement() {
 
         MIRA_CHECK(
             store.value()->apply(add_mutation(record(tenant_a, "prefers dark mode"))).has_value());
-        MIRA_CHECK(
-            store.value()->apply(add_mutation(record(shared_subject, "lives in utc+8"))).has_value());
+        MIRA_CHECK(store.value()
+                       ->apply(add_mutation(record(shared_subject, "lives in utc+8")))
+                       .has_value());
 
         // Tenant B never sees tenant A's record, even with identical content
         // and a matching subject id: scope equality is the ACL, not ranking.
@@ -374,10 +375,9 @@ int erasure_complete_and_pending_hold() {
         MIRA_CHECK(writer_result.value().write("evidence payload", 17).has_value());
         auto committed = artifacts.commit(writer_result.value());
         MIRA_CHECK(committed.has_value());
-        with_artifact.evidence = ArtifactRef{committed.value().id, committed.value().digest,
-                                             committed.value().byte_size,
-                                             committed.value().media_type,
-                                             committed.value().sensitivity};
+        with_artifact.evidence =
+            ArtifactRef{committed.value().id, committed.value().digest, committed.value().byte_size,
+                        committed.value().media_type, committed.value().sensitivity};
         MIRA_CHECK(store.value()->apply(add_mutation(with_artifact)).has_value());
         const auto plain = record(scope, "plain note");
         MIRA_CHECK(store.value()->apply(add_mutation(plain)).has_value());
@@ -438,13 +438,15 @@ int reopen_reuses_existing_schema() {
             auto store = SqliteMemoryStore::open(exec, options);
             MIRA_CHECK(store.has_value());
             MIRA_CHECK(store.value()->diagnostics().disposition == StoreSchemaDisposition::Created);
-            MIRA_CHECK(store.value()->apply(add_mutation(record(scope, "reboot at 3am"))).has_value());
+            MIRA_CHECK(
+                store.value()->apply(add_mutation(record(scope, "reboot at 3am"))).has_value());
             MIRA_CHECK(store.value()->close().has_value());
         }
         {
             auto store = SqliteMemoryStore::open(exec, options);
             MIRA_CHECK(store.has_value());
-            MIRA_CHECK(store.value()->diagnostics().disposition == StoreSchemaDisposition::UpToDate);
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::UpToDate);
             auto found = run_query(*store.value(), scope, "reboot");
             MIRA_CHECK(found.records.size() == 1);
             MIRA_CHECK(store.value()->close().has_value());

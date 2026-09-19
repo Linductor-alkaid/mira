@@ -12,8 +12,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <system_error>
 
@@ -110,8 +110,7 @@ int main() {
             return 13;
         }
 #ifdef MIRA_CONSUMER_HAS_MBEDTLS
-        mira::adapters::net::MbedTlsChannelFactory tls{
-            "/nonexistent/mira-consumer-ca.pem"};
+        mira::adapters::net::MbedTlsChannelFactory tls{"/nonexistent/mira-consumer-ca.pem"};
         if (tls.initialize()) {
             return 14; // A missing CA bundle must not initialize.
         }
@@ -149,10 +148,9 @@ int main() {
         if (!bindings.has_value()) {
             return 17;
         }
-        auto arguments = mira::resolve_step_arguments(
-            bindings.value(), definition.value().steps.front().arguments);
-        if (!arguments.has_value() ||
-            *arguments.value().find("text")->as_string() != "zhang san") {
+        auto arguments = mira::resolve_step_arguments(bindings.value(),
+                                                      definition.value().steps.front().arguments);
+        if (!arguments.has_value() || *arguments.value().find("text")->as_string() != "zhang san") {
             return 18;
         }
         mira::JsonValue run_arguments{mira::JsonValue::Object{}};
@@ -214,16 +212,15 @@ int main() {
         }
         mira::JsonValue parameters{mira::JsonValue::Object{}};
         parameters.set("contact", mira::JsonValue{std::string("zhang san")});
-        const auto created = workflows.create_run(definition.value(), parameters,
-                                                 mira::WorkflowPolicy::DryRun);
+        const auto created =
+            workflows.create_run(definition.value(), parameters, mira::WorkflowPolicy::DryRun);
         if (!created.has_value()) {
             return 24;
         }
         mira::OperationContext context;
         context.started_at = mira::Timestamp::now();
         const auto result = workflows.execute_run(created.value().run_id, context);
-        if (!result.has_value() ||
-            result.value().state != mira::WorkflowRunState::Completed) {
+        if (!result.has_value() || result.value().state != mira::WorkflowRunState::Completed) {
             return 25;
         }
 
@@ -257,8 +254,7 @@ int main() {
             return 31;
         }
         const auto parked = workflows.execute_run(started.value().run_id, context);
-        if (!parked.has_value() ||
-            parked.value().state != mira::WorkflowRunState::WaitingUser) {
+        if (!parked.has_value() || parked.value().state != mira::WorkflowRunState::WaitingUser) {
             return 32;
         }
         mira::WorkflowPatchEntry entry;
@@ -266,8 +262,8 @@ int main() {
         entry.op = mira::WorkflowPatchOp::Set;
         entry.path = "contact";
         entry.value = mira::JsonValue{std::string("resolved")};
-        const auto patched = workflows.patch_run(started.value().run_id,
-                                                 mira::WorkflowPatchId::generate(), {entry});
+        const auto patched =
+            workflows.patch_run(started.value().run_id, mira::WorkflowPatchId::generate(), {entry});
         if (!patched.has_value() || !patched.value().applied ||
             patched.value().view.run_patch_epoch != 1) {
             return 33;
@@ -278,14 +274,13 @@ int main() {
             return 34;
         }
         const auto resolved = workflows.resolve_decision(
-            started.value().run_id, decision.value().decision_id,
-            decision.value().payload_digest, mira::WorkflowDecisionResolution::Accept);
+            started.value().run_id, decision.value().decision_id, decision.value().payload_digest,
+            mira::WorkflowDecisionResolution::Accept);
         if (!resolved.has_value()) {
             return 35;
         }
         const auto settled = workflows.wait_run(started.value().run_id, std::chrono::seconds(10));
-        if (!settled.has_value() ||
-            settled.value().state != mira::WorkflowRunState::Completed) {
+        if (!settled.has_value() || settled.value().state != mira::WorkflowRunState::Completed) {
             return 36;
         }
 
@@ -294,8 +289,7 @@ int main() {
         // published through the DryRun gate and re-run from the library;
         // induction across two runs then reopens the parameter.
         auto tools = std::make_shared<mira::BuiltinToolRegistry>();
-        if (!tools->register_tool(mira::make_wait_tool().spec,
-                                  mira::make_wait_tool().handler)) {
+        if (!tools->register_tool(mira::make_wait_tool().spec, mira::make_wait_tool().handler)) {
             return 37;
         }
         workflows.set_tool_registry(tools);
@@ -319,8 +313,8 @@ int main() {
         }
         mira::JsonValue fast{mira::JsonValue::Object{}};
         fast.set("delay", mira::JsonValue{std::int64_t{5}});
-        const auto first = workflows.create_run(compilable.value(), fast,
-                                                mira::WorkflowPolicy::Strict);
+        const auto first =
+            workflows.create_run(compilable.value(), fast, mira::WorkflowPolicy::Strict);
         if (!first.has_value() ||
             !workflows.execute_run(first.value().run_id, context).has_value()) {
             return 39;
@@ -336,9 +330,8 @@ int main() {
         if (!compiled.has_value()) {
             return 41;
         }
-        const auto published = workflows.publish_validated(compiled.value(), "consumer",
-                                                           "bake observed delay",
-                                                           first.value().run_id);
+        const auto published = workflows.publish_validated(
+            compiled.value(), "consumer", "bake observed delay", first.value().run_id);
         if (!published.has_value() || published.value().idempotent) {
             return 42;
         }
@@ -351,8 +344,8 @@ int main() {
         }
         mira::JsonValue slow{mira::JsonValue::Object{}};
         slow.set("delay", mira::JsonValue{std::int64_t{7}});
-        const auto second = workflows.create_run(compilable.value(), slow,
-                                                 mira::WorkflowPolicy::Strict);
+        const auto second =
+            workflows.create_run(compilable.value(), slow, mira::WorkflowPolicy::Strict);
         if (!second.has_value() ||
             !workflows.execute_run(second.value().run_id, context).has_value()) {
             return 44;
@@ -361,8 +354,8 @@ int main() {
         if (!second_trajectory.has_value()) {
             return 45;
         }
-        const auto candidates = mira::induce_parameters(
-            {trajectory.value(), second_trajectory.value()});
+        const auto candidates =
+            mira::induce_parameters({trajectory.value(), second_trajectory.value()});
         if (!candidates.has_value() || candidates.value().size() != 1 ||
             candidates.value().front().name != "delay") {
             return 46;
@@ -370,8 +363,8 @@ int main() {
         mira::WorkflowCompileOptions derived;
         derived.workflow_id = mira::WorkflowId::generate();
         derived.name = "consumer-induced";
-        const auto induced = mira::compile_workflow(trajectory.value(), derived,
-                                                    candidates.value());
+        const auto induced =
+            mira::compile_workflow(trajectory.value(), derived, candidates.value());
         if (!induced.has_value()) {
             return 47;
         }
@@ -382,9 +375,9 @@ int main() {
         }
         mira::JsonValue override_parameters{mira::JsonValue::Object{}};
         override_parameters.set("delay", mira::JsonValue{std::int64_t{9}});
-        const auto induced_run = workflows.create_run(
-            induced.value().workflow_id, induced_publish.value().ir_digest,
-            override_parameters, mira::WorkflowPolicy::Strict);
+        const auto induced_run =
+            workflows.create_run(induced.value().workflow_id, induced_publish.value().ir_digest,
+                                 override_parameters, mira::WorkflowPolicy::Strict);
         if (!induced_run.has_value() ||
             !workflows.execute_run(induced_run.value().run_id, context).has_value()) {
             return 49;
@@ -430,10 +423,12 @@ int main() {
             "type": "object",
             "properties": {},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                                .value()};
         navigator.spec.has_side_effects = true;
-        navigator.handler = [&screen](const mira::JsonValue &,
-                                      const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+        navigator.handler =
+            [&screen](const mira::JsonValue &,
+                      const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
             screen = "inbox";
             return mira::JsonValue{"moved"};
         };
@@ -462,8 +457,7 @@ int main() {
             return 53;
         }
         const auto arrived = workflows.execute_run(navigated.value().run_id, context);
-        if (!arrived.has_value() ||
-            arrived.value().state != mira::WorkflowRunState::Completed) {
+        if (!arrived.has_value() || arrived.value().state != mira::WorkflowRunState::Completed) {
             return 54;
         }
         const auto projection = workflows.app_model_snapshot();
@@ -474,9 +468,9 @@ int main() {
         // The planner is usable directly from the installed headers too, and
         // the confidence functions are pure: decaying and re-checking the
         // exploration flag needs no runtime at all.
-        const auto planned = mira::plan_navigation(
-            model, "home", "inbox", mira::NavigationCostProfile{},
-            mira::JsonValue{mira::JsonValue::Object{}});
+        const auto planned =
+            mira::plan_navigation(model, "home", "inbox", mira::NavigationCostProfile{},
+                                  mira::JsonValue{mira::JsonValue::Object{}});
         if (!planned.has_value() || planned.value().transition_ids.size() != 1) {
             return 56;
         }
@@ -513,14 +507,14 @@ int main() {
         mira::WorkflowFailureSignature signature;
         signature.workflow_id = episode_probe.workflow_id;
         signature.step_id = episode_probe.failed_step_id.value_or(std::string{});
-        signature.reason_code = episode_probe.failure_reason_code.value_or(
-            std::string{"mira.workflow:6"});
+        signature.reason_code =
+            episode_probe.failure_reason_code.value_or(std::string{"mira.workflow:6"});
         mira::MemoryScope learning_scope;
         learning_scope.kind = mira::MemoryScopeKind::Agent;
         learning_scope.subject_id = "consumer.learning";
-        const auto probe_record = mira::episode_to_memory_record(
-            episode_probe, learning_scope, {mira::EventId::generate()},
-            std::chrono::system_clock::now());
+        const auto probe_record = mira::episode_to_memory_record(episode_probe, learning_scope,
+                                                                 {mira::EventId::generate()},
+                                                                 std::chrono::system_clock::now());
         if (!probe_record.validate().has_value()) {
             return 60;
         }
@@ -539,10 +533,9 @@ int main() {
                     const bool scope_ok = std::any_of(
                         query.scopes.begin(), query.scopes.end(),
                         [&](const mira::MemoryScope &scope) { return scope == record.scope; });
-                    const bool kind_ok =
-                        !query.kinds.has_value() ||
-                        std::find(query.kinds->begin(), query.kinds->end(), record.kind) !=
-                            query.kinds->end();
+                    const bool kind_ok = !query.kinds.has_value() ||
+                                         std::find(query.kinds->begin(), query.kinds->end(),
+                                                   record.kind) != query.kinds->end();
                     if (!scope_ok || !kind_ok) {
                         continue;
                     }
@@ -580,8 +573,7 @@ int main() {
                 result.record = mutation.proposed.id;
                 return result;
             }
-            mira::Result<mira::MemoryCompactionResult>
-            compact(const mira::MemoryScope &) override {
+            mira::Result<mira::MemoryCompactionResult> compact(const mira::MemoryScope &) override {
                 return mira::MemoryCompactionResult{};
             }
             mira::Result<mira::ErasureResult> erase(const mira::ErasureRequest &) override {
@@ -607,10 +599,12 @@ int main() {
             "type": "object",
             "properties": {"payload": {"type": "string"}},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                            .value()};
         flaky.spec.has_side_effects = false;
-        flaky.handler = [&failing_dispatches](const mira::JsonValue &,
-                                              const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+        flaky.handler =
+            [&failing_dispatches](const mira::JsonValue &,
+                                  const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
             if (++failing_dispatches <= 2) {
                 mira::Error error;
                 error.code = mira::ErrorCode::PlatformError;
@@ -638,20 +632,19 @@ int main() {
         if (!learnable.has_value()) {
             return 64;
         }
-        const auto failed_run = workflows.create_run(learnable.value(),
-                                                     mira::JsonValue{mira::JsonValue::Object{}},
-                                                     mira::WorkflowPolicy::Strict);
-        const auto failed_outcome =
-            failed_run.has_value()
-                ? workflows.execute_run(failed_run.value().run_id, context)
-                : mira::Result<mira::WorkflowRunResult>{mira::Error{}};
+        const auto failed_run =
+            workflows.create_run(learnable.value(), mira::JsonValue{mira::JsonValue::Object{}},
+                                 mira::WorkflowPolicy::Strict);
+        const auto failed_outcome = failed_run.has_value()
+                                        ? workflows.execute_run(failed_run.value().run_id, context)
+                                        : mira::Result<mira::WorkflowRunResult>{mira::Error{}};
         if (!failed_outcome.has_value() ||
             failed_outcome.value().state != mira::WorkflowRunState::Failed) {
             return 65;
         }
-        const auto recovered_run = workflows.create_run(
-            learnable.value(), mira::JsonValue{mira::JsonValue::Object{}},
-            mira::WorkflowPolicy::Recoverable);
+        const auto recovered_run =
+            workflows.create_run(learnable.value(), mira::JsonValue{mira::JsonValue::Object{}},
+                                 mira::WorkflowPolicy::Recoverable);
         if (!recovered_run.has_value()) {
             return 66;
         }
@@ -661,8 +654,7 @@ int main() {
             return 67;
         }
         const auto continuation = workflows.agent_continuation(recovered_run.value().run_id);
-        if (!continuation.has_value() ||
-            continuation.value().relevant_lessons.size() != 1 ||
+        if (!continuation.has_value() || continuation.value().relevant_lessons.size() != 1 ||
             continuation.value().relevant_lessons[0].kind != mira::MemoryKind::Episode) {
             return 68;
         }
@@ -739,7 +731,8 @@ int main() {
         recovery_provider->profile_.dialect = mira::ProtocolDialect::OpenAIResponsesV1;
         recovery_provider->profile_.endpoint_origin = "https://recovery.consumer.test";
         recovery_provider->profile_.model_selector = "consumer-recovery-model";
-        recovery_provider->profile_.capabilities.text = {true, mira::CapabilityEvidence::FixtureVerified, ""};
+        recovery_provider->profile_.capabilities.text = {
+            true, mira::CapabilityEvidence::FixtureVerified, ""};
         recovery_provider->profile_.capabilities.strict_json_schema = {
             true, mira::CapabilityEvidence::FixtureVerified, ""};
         mira::ModelResponse decision_response;
@@ -747,7 +740,8 @@ int main() {
         decision_response.status = mira::ModelCompletionStatus::Completed;
         mira::MessageOutput decision_message;
         mira::OutputTextPart decision_text;
-        decision_text.text = "{\"action\":\"need_user\",\"used_lessons\":[],\"rationale\":\"consumer probe\"}";
+        decision_text.text =
+            "{\"action\":\"need_user\",\"used_lessons\":[],\"rationale\":\"consumer probe\"}";
         decision_message.content.emplace_back(std::move(decision_text));
         decision_response.output.emplace_back(std::move(decision_message));
         decision_response.requested_model = "consumer-recovery-model";
@@ -761,8 +755,8 @@ int main() {
         mira::WorkflowRecoveryConfig recovery_config;
         recovery_config.profile_id = recovery_provider->profile_.id;
         mira::WorkflowRecoveryOrchestrator recovery{
-            host_executor, workflows, runtime, recovery_gateway, session.value().id,
-            recovery_config};
+            host_executor,    workflows,          runtime,
+            recovery_gateway, session.value().id, recovery_config};
         recovery.set_event_store(std::make_shared<mira::MemoryEventStore>());
         mira::BuiltinToolRegistration recovery_flaky;
         recovery_flaky.spec.wire_name = "consumer_recovery_flaky";
@@ -771,10 +765,12 @@ int main() {
             "type": "object",
             "properties": {"payload": {"type": "string"}},
             "additionalProperties": false
-        })json").value()};
+        })json")
+                                                                     .value()};
         recovery_flaky.spec.has_side_effects = false;
-        recovery_flaky.handler = [](const mira::JsonValue &,
-                                    const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
+        recovery_flaky.handler =
+            [](const mira::JsonValue &,
+               const mira::OperationContext &) -> mira::Result<mira::JsonValue> {
             mira::Error error;
             error.code = mira::ErrorCode::PlatformError;
             error.domain = "mira.consumer";
@@ -799,14 +795,13 @@ int main() {
         if (!recoverable.has_value()) {
             return 77;
         }
-        const auto escalating = workflows.create_run(
-            recoverable.value(), mira::JsonValue{mira::JsonValue::Object{}},
-            mira::WorkflowPolicy::Recoverable);
+        const auto escalating =
+            workflows.create_run(recoverable.value(), mira::JsonValue{mira::JsonValue::Object{}},
+                                 mira::WorkflowPolicy::Recoverable);
         if (!escalating.has_value()) {
             return 78;
         }
-        const auto wait_escalated =
-            workflows.execute_run(escalating.value().run_id, context);
+        const auto wait_escalated = workflows.execute_run(escalating.value().run_id, context);
         if (!wait_escalated.has_value() ||
             wait_escalated.value().state != mira::WorkflowRunState::WaitingAgent) {
             return 79;
@@ -815,8 +810,7 @@ int main() {
         if (!attempt.has_value() ||
             attempt.value().outcome != mira::WorkflowRecoveryOutcome::DeferredToHost ||
             attempt.value().reason_code != "decision-need-user" ||
-            !attempt.value().model_request_id.has_value() ||
-            attempt.value().lessons_offered != 0) {
+            !attempt.value().model_request_id.has_value() || attempt.value().lessons_offered != 0) {
             return 80;
         }
         const auto after_attempt = workflows.run_snapshot(escalating.value().run_id);

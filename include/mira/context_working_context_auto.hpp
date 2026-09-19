@@ -68,9 +68,9 @@ struct WorkingContextTriggerPolicy final {
 };
 
 enum class WorkingContextTriggerKind : std::uint8_t {
-    None,        // thresholds unmet (or no unsettled checkpoint): no refresh
-    Watermark,   // conversation-sequence distance reached the interval
-    EventCount,  // reported execution-event delta reached the interval
+    None,       // thresholds unmet (or no unsettled checkpoint): no refresh
+    Watermark,  // conversation-sequence distance reached the interval
+    EventCount, // reported execution-event delta reached the interval
 };
 
 [[nodiscard]] std::string working_context_trigger_kind_name(WorkingContextTriggerKind kind);
@@ -122,17 +122,17 @@ struct WorkingContextSessionView final {
 
 struct WorkingContextAutoStats final {
     std::uint64_t signals = 0;
-    std::uint64_t absorbed = 0;         // coalesced into an in-flight refresh
+    std::uint64_t absorbed = 0; // coalesced into an in-flight refresh
     std::uint64_t fires_watermark = 0;
     std::uint64_t fires_event_count = 0;
     std::uint64_t forced_flushes = 0;
-    std::uint64_t flush_noops = 0;      // "auto-refresh-current" short-circuits
+    std::uint64_t flush_noops = 0; // "auto-refresh-current" short-circuits
     std::uint64_t committed = 0;
     std::uint64_t idempotent_noops = 0;
     std::uint64_t discarded_stale = 0;
     std::uint64_t discarded_terminal = 0;
-    std::uint64_t errors = 0;           // error-resolved futures (op failures
-                                        // and rejected signals)
+    std::uint64_t errors = 0;               // error-resolved futures (op failures
+                                            // and rejected signals)
     std::uint64_t consecutive_failures = 0; // current worst session streak
 };
 

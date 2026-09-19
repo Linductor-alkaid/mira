@@ -18,12 +18,12 @@ namespace mira {
 // Stable reason codes describing what the deterministic policy decided; free
 // text never reaches the audit surface.
 enum class CandidateDisposition : std::uint8_t {
-    Applied,             // passed policy, applied through IMemory
-    PendingApproval,     // high-risk write; waits for explicit human approval
-    RejectedForbidden,   // secret markers or retention-forbidden content
-    RejectedInjection,   // untrusted instruction-shaped text
-    RejectedInvalid,     // failed record/mutation validation
-    RejectedConflict,    // store rejected (e.g. version conflict); re-plan
+    Applied,           // passed policy, applied through IMemory
+    PendingApproval,   // high-risk write; waits for explicit human approval
+    RejectedForbidden, // secret markers or retention-forbidden content
+    RejectedInjection, // untrusted instruction-shaped text
+    RejectedInvalid,   // failed record/mutation validation
+    RejectedConflict,  // store rejected (e.g. version conflict); re-plan
 };
 
 [[nodiscard]] std::string candidate_disposition_name(CandidateDisposition disposition);
@@ -57,8 +57,8 @@ struct ConsolidationPolicy final {
         "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
     // Instruction-shaped markers for untrusted/model text.
     std::vector<std::string> injection_markers = {
-        "ignore previous", "disregard previous", "you are now", "system:",
-        "new instructions:", "override policy"};
+        "ignore previous", "disregard previous", "you are now",
+        "system:",         "new instructions:",  "override policy"};
     std::size_t max_candidates_per_run = 64;
 
     [[nodiscard]] Result<void> validate() const;
@@ -92,14 +92,15 @@ class MemoryConsolidator final {
 
     // Pure synchronous pipeline; hosts run it through the Executor supervisor
     // (M4-16). Conflict retrieval and apply() use the given store.
-    [[nodiscard]] Result<ConsolidationReport>
-    consolidate(IMemory &memory, std::span<const EventEnvelope> events,
-                const MemoryScope &scope, const Timestamp &now) const;
+    [[nodiscard]] Result<ConsolidationReport> consolidate(IMemory &memory,
+                                                          std::span<const EventEnvelope> events,
+                                                          const MemoryScope &scope,
+                                                          const Timestamp &now) const;
 
     // Applies a previously pending mutation after explicit approval. The
     // mutation is unchanged from the report; approvals never rewrite content.
-    [[nodiscard]] static Result<MemoryMutationResult>
-    apply_pending(IMemory &memory, const MemoryMutation &mutation);
+    [[nodiscard]] static Result<MemoryMutationResult> apply_pending(IMemory &memory,
+                                                                    const MemoryMutation &mutation);
 
     [[nodiscard]] const ConsolidationPolicy &policy() const noexcept { return policy_; }
 

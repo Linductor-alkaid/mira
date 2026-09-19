@@ -379,8 +379,8 @@ int check_structure_observation_aggregation() {
     MIRA_CHECK(snapshot.nodes[1].text == "OK");
     MIRA_CHECK(snapshot.nodes[1].stable_hint.has_value());
     MIRA_CHECK(snapshot.nodes[1].stable_hint->hint == "com.example/ok");
-    MIRA_CHECK(mira::supports_action(snapshot.nodes[1].supported_actions,
-                                     mira::UiNodeAction::Click));
+    MIRA_CHECK(
+        mira::supports_action(snapshot.nodes[1].supported_actions, mira::UiNodeAction::Click));
     MIRA_CHECK(mira::has_state(snapshot.nodes[0].state, mira::UiNodeState::Visible));
     MIRA_CHECK(snapshot.nodes[1].bounds.left == 0.1);
     MIRA_CHECK(tree.value().structure->quality == mira::ComponentQuality::Good);
@@ -505,8 +505,7 @@ int check_frame_payload_metadata_and_store_access() {
     // The frame descriptor publishes the store record's media type, size
     // and digest; the raw host frame is honestly labeled as such (DEC-013).
     MIRA_CHECK(screen.payload_media_type == "image/x-host-frame");
-    MIRA_CHECK(screen.payload_byte_size ==
-               4ULL * 4ULL * 4ULL); // 4x4 RGBA frame from the fake host
+    MIRA_CHECK(screen.payload_byte_size == 4ULL * 4ULL * 4ULL); // 4x4 RGBA frame from the fake host
     MIRA_CHECK(screen.payload_digest != mira::Sha256Digest{});
 
     // Hosts without an injected store reopen the payload through the

@@ -608,3 +608,4 @@ mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)
 
 mira_add_test(mira_m7_tool_module_test m7/m7_tool_module_test.cpp contract)
 mira_add_test(mira_m7_tool_module_registry_test m7/m7_tool_module_registry_test.cpp contract)
+mira_add_test(mira_m7_tool_module_exposure_test m7/m7_tool_module_exposure_test.cpp contract)

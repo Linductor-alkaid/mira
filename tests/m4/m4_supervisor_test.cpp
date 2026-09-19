@@ -8,8 +8,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <stdexcept>
 #include <random>
+#include <stdexcept>
 #include <thread>
 
 #include <executor/executor.hpp>
@@ -277,8 +277,9 @@ int checkpoint_scheduling_routes_through_supervisor() {
         CheckpointCoordinator coordinator(events, checkpoints);
         ContextMemorySupervisor supervisor(exec, SupervisorConfig{}, &events, runtime, session);
 
-        auto scheduled = supervisor.schedule_checkpoint(coordinator, task, session,
-                                                        CheckpointTrigger::Pause, Timestamp::now())
+        auto scheduled = supervisor
+                             .schedule_checkpoint(coordinator, task, session,
+                                                  CheckpointTrigger::Pause, Timestamp::now())
                              .get();
         MIRA_CHECK(scheduled.has_value() && scheduled.value().has_value());
         MIRA_CHECK(scheduled.value()->goal_statement == "supervised checkpoint");

@@ -48,8 +48,8 @@ bool is_valid_vocabulary_id(std::string_view id) {
 }
 
 std::string id_charset_message(std::string_view what, std::string_view value) {
-    return std::string(what) + " is not a valid lowercase dot-separated id: '" + std::string(value) +
-           "'";
+    return std::string(what) + " is not a valid lowercase dot-separated id: '" +
+           std::string(value) + "'";
 }
 
 [[nodiscard]] JsonValue id_list_to_json(const std::vector<CapabilityId> &ids) {
@@ -167,9 +167,8 @@ parse_capability_list(const JsonValue *field, std::string_view what,
                                  std::string(what) + " must be an array");
     }
     if (array->size() > limits.max_capabilities) {
-        return make_module_error(ErrorCode::ResourceExhausted, std::string(what) +
-                                                                     " exceeds the capability " +
-                                                                     "list limit");
+        return make_module_error(ErrorCode::ResourceExhausted,
+                                 std::string(what) + " exceeds the capability " + "list limit");
     }
     std::set<std::string_view> seen;
     for (const auto &entry : *array) {
@@ -179,8 +178,7 @@ parse_capability_list(const JsonValue *field, std::string_view what,
                                      std::string(what) + " entries must be strings");
         }
         if (!is_valid_vocabulary_id(*id)) {
-            return make_module_error(ErrorCode::InvalidArgument,
-                                     id_charset_message(what, *id));
+            return make_module_error(ErrorCode::InvalidArgument, id_charset_message(what, *id));
         }
         if (!catalog.contains(*id)) {
             return make_module_error(ErrorCode::UnsupportedCapability,
@@ -351,9 +349,8 @@ parse_label_list(const JsonValue *field, std::string_view what, const ToolModule
     return tool;
 }
 
-[[nodiscard]] Result<std::uint32_t> parse_bounded_uint32(const JsonValue *field,
-                                                         std::string_view what,
-                                                         std::uint32_t maximum) {
+[[nodiscard]] Result<std::uint32_t>
+parse_bounded_uint32(const JsonValue *field, std::string_view what, std::uint32_t maximum) {
     if (field == nullptr || !field->is_integer()) {
         return make_module_error(ErrorCode::InvalidArgument,
                                  std::string(what) + " must be an integer");
@@ -367,9 +364,8 @@ parse_label_list(const JsonValue *field, std::string_view what, const ToolModule
     return static_cast<std::uint32_t>(*value);
 }
 
-[[nodiscard]] Result<std::uint64_t> parse_bounded_uint64(const JsonValue *field,
-                                                         std::string_view what,
-                                                         std::uint64_t maximum) {
+[[nodiscard]] Result<std::uint64_t>
+parse_bounded_uint64(const JsonValue *field, std::string_view what, std::uint64_t maximum) {
     if (field == nullptr || !field->is_integer()) {
         return make_module_error(ErrorCode::InvalidArgument,
                                  std::string(what) + " must be an integer");
@@ -383,15 +379,15 @@ parse_label_list(const JsonValue *field, std::string_view what, const ToolModule
     return static_cast<std::uint64_t>(*value);
 }
 
-[[nodiscard]] JsonValue capability_catalog_to_json(const std::vector<CapabilityDescriptor> &entries) {
+[[nodiscard]] JsonValue
+capability_catalog_to_json(const std::vector<CapabilityDescriptor> &entries) {
     JsonValue::Array array;
     array.reserve(entries.size());
     for (const auto &entry : entries) {
         JsonValue::Object object;
         object.emplace_back("id", entry.id);
-        object.emplace_back("kind", std::string(entry.kind == CapabilityKind::Counted
-                                                    ? "counted"
-                                                    : "boolean"));
+        object.emplace_back(
+            "kind", std::string(entry.kind == CapabilityKind::Counted ? "counted" : "boolean"));
         object.emplace_back("summary", entry.summary);
         array.emplace_back(JsonValue{std::move(object)});
     }
@@ -442,8 +438,8 @@ const CapabilityCatalog &CapabilityCatalog::core() {
                            "Environment captures observation components atomically."});
         entries.push_back({"env.perception.sources", CapabilityKind::Counted,
                            "On-device perception sources available to tools."});
-        entries.push_back({"env.screen.capture", CapabilityKind::Boolean,
-                           "Environment can capture the screen."});
+        entries.push_back(
+            {"env.screen.capture", CapabilityKind::Boolean, "Environment can capture the screen."});
         entries.push_back(
             {"env.ui.tree", CapabilityKind::Boolean, "Environment exposes a structured UI tree."});
         entries.push_back({"host.bridge.rpc", CapabilityKind::Boolean,
@@ -526,24 +522,21 @@ JsonValue semantic_version_to_json(const SemanticVersion &version) {
 
 Result<SemanticVersion> semantic_version_from_json(const JsonValue &value) {
     if (!value.is_object()) {
-        return make_module_error(ErrorCode::InvalidArgument,
-                                 "semantic version must be an object");
+        return make_module_error(ErrorCode::InvalidArgument, "semantic version must be an object");
     }
     SemanticVersion version{};
-    for (const auto &[field, target] : {std::pair{"major", &version.major},
-                                        std::pair{"minor", &version.minor},
-                                        std::pair{"patch", &version.patch}}) {
+    for (const auto &[field, target] :
+         {std::pair{"major", &version.major}, std::pair{"minor", &version.minor},
+          std::pair{"patch", &version.patch}}) {
         const auto *member = value.find(field);
         if (member == nullptr || !member->is_integer()) {
             return make_module_error(ErrorCode::InvalidArgument,
-                                     std::string("semantic version requires an integer ") +
-                                         field);
+                                     std::string("semantic version requires an integer ") + field);
         }
         const auto number = member->as_integer();
         if (!number.has_value() || *number < 0 || *number > 65535) {
             return make_module_error(ErrorCode::InvalidArgument,
-                                     std::string("semantic version ") + field +
-                                         " is out of range");
+                                     std::string("semantic version ") + field + " is out of range");
         }
         *target = static_cast<std::uint16_t>(*number);
     }
@@ -593,9 +586,9 @@ std::string_view module_status_name(ModuleStatus status) {
 // Manifest parsing
 // ---------------------------------------------------------------------------
 
-Result<ToolModuleManifest>
-parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catalog,
-                           const ToolModuleLimits &limits) {
+Result<ToolModuleManifest> parse_tool_module_manifest(const JsonValue &json,
+                                                      const CapabilityCatalog &catalog,
+                                                      const ToolModuleLimits &limits) {
     if (!json.is_object()) {
         return make_module_error(ErrorCode::InvalidArgument, "manifest must be a JSON object");
     }
@@ -606,21 +599,18 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
     }
 
     const auto *schema = json.find("schema");
-    if (schema == nullptr || !schema->is_string() ||
-        schema->as_string()->empty() ||
+    if (schema == nullptr || !schema->is_string() || schema->as_string()->empty() ||
         *schema->as_string() != kToolModuleManifestSchema) {
-        return make_module_error(ErrorCode::UnsupportedVersion, "manifest schema is not '" +
-                                                                    std::string(
-                                                                        kToolModuleManifestSchema) +
-                                                                    "'");
+        return make_module_error(ErrorCode::UnsupportedVersion,
+                                 "manifest schema is not '" +
+                                     std::string(kToolModuleManifestSchema) + "'");
     }
     const auto *schema_version = json.find("schema_version");
     if (schema_version == nullptr || !schema_version->is_string() ||
         *schema_version->as_string() != kToolModuleManifestSchemaVersion) {
-        return make_module_error(
-            ErrorCode::UnsupportedVersion,
-            "manifest schema_version must be '" + std::string(kToolModuleManifestSchemaVersion) +
-                "'");
+        return make_module_error(ErrorCode::UnsupportedVersion,
+                                 "manifest schema_version must be '" +
+                                     std::string(kToolModuleManifestSchemaVersion) + "'");
     }
 
     ToolModuleManifest manifest;
@@ -655,9 +645,8 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
     }
     const auto parsed_origin = tool_module_origin_from_name(*isolation->as_string());
     if (!parsed_origin.has_value()) {
-        return make_module_error(ErrorCode::InvalidArgument,
-                                 "origin has an unknown isolation '" +
-                                     *isolation->as_string() + "'");
+        return make_module_error(ErrorCode::InvalidArgument, "origin has an unknown isolation '" +
+                                                                 *isolation->as_string() + "'");
     }
     manifest.origin = *parsed_origin;
     const auto read_bounded_string = [origin](std::string_view field, std::string &target,
@@ -724,9 +713,8 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
         manifest.min_mira_module_abi = static_cast<std::uint32_t>(*value);
     }
 
-    auto required =
-        parse_capability_list(json.find("required_capabilities"), "required_capabilities", catalog,
-                              limits);
+    auto required = parse_capability_list(json.find("required_capabilities"),
+                                          "required_capabilities", catalog, limits);
     if (!required.has_value()) {
         return required.error();
     }
@@ -748,7 +736,10 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
                                                                  std::to_string(limits.max_tools) +
                                                                  " member tools");
     }
-    std::set<std::string_view> member_names;
+    // Copies, not views: the parsed member is moved into the manifest below,
+    // so a string_view key would dangle into the reused parse slot and
+    // misread a later equal-length short name as a duplicate.
+    std::set<std::string> member_names;
     for (const auto &entry : tool_array) {
         auto tool = parse_tool_spec(entry, catalog, limits);
         if (!tool.has_value()) {
@@ -791,9 +782,9 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
         return concurrent.error();
     }
     manifest.resources.max_total_concurrent_invocations = concurrent.value();
-    auto result_bytes = parse_bounded_uint64(resources->find("max_total_result_bytes"),
-                                             "resources.max_total_result_bytes",
-                                             limits.max_result_bytes);
+    auto result_bytes =
+        parse_bounded_uint64(resources->find("max_total_result_bytes"),
+                             "resources.max_total_result_bytes", limits.max_result_bytes);
     if (!result_bytes.has_value()) {
         return result_bytes.error();
     }
@@ -803,7 +794,8 @@ parse_tool_module_manifest(const JsonValue &json, const CapabilityCatalog &catal
 }
 
 Hash tool_module_manifest_digest(const ToolModuleManifest &manifest) {
-    return canonical_json_digest(tool_module_manifest_to_json(manifest, /*include_signature=*/true));
+    return canonical_json_digest(
+        tool_module_manifest_to_json(manifest, /*include_signature=*/true));
 }
 
 Hash tool_module_unsigned_manifest_digest(const ToolModuleManifest &manifest) {

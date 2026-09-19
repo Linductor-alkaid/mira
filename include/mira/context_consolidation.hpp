@@ -57,9 +57,10 @@ struct ConversationStatement final {
     double confidence = 0.0;
 };
 
-using ConversationConstraint = ConversationStatement; // e.g. "confirm with the user before sending to Zhang San"
-using ConversationDecision = ConversationStatement;   // e.g. "chose the overnight batch provider"
-using ConversationThread = ConversationStatement;     // e.g. "waiting for the tenant quota reply"
+using ConversationConstraint =
+    ConversationStatement; // e.g. "confirm with the user before sending to Zhang San"
+using ConversationDecision = ConversationStatement; // e.g. "chose the overnight batch provider"
+using ConversationThread = ConversationStatement;   // e.g. "waiting for the tenant quota reply"
 // Preference candidates never auto-enter a model request: promotion to
 // Memory goes through the existing `MemoryConsolidator` human-approval
 // pipeline (design §5.4; DEC-029 discipline).
@@ -96,8 +97,8 @@ struct ConsolidationOptions final {
         "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
     // Instruction-shaped markers for untrusted model text.
     std::vector<std::string> injection_markers = {
-        "ignore previous", "disregard previous", "you are now", "system:",
-        "new instructions:", "override policy"};
+        "ignore previous", "disregard previous", "you are now",
+        "system:",         "new instructions:",  "override policy"};
     // Cooperative cancellation probe owned by the operation supervisor; the
     // adapter maps it into the provider OperationContext.
     std::function<bool()> cancellation_requested;
@@ -120,8 +121,7 @@ struct ConversationCheckpointId final {
     }
     static std::optional<ConversationCheckpointId> parse(std::string_view text) noexcept {
         const auto parsed = Id128::parse(text);
-        return parsed ? std::optional<ConversationCheckpointId>(
-                            ConversationCheckpointId{*parsed})
+        return parsed ? std::optional<ConversationCheckpointId>(ConversationCheckpointId{*parsed})
                       : std::nullopt;
     }
     [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }
@@ -135,8 +135,7 @@ struct ConversationCheckpointId final {
 // Deterministic checkpoint identity: the same (session, watermark) always
 // yields the same id, so rebuilding the projection for the same conversation
 // prefix re-derives the same checkpoint instead of minting a new one.
-[[nodiscard]] ConversationCheckpointId
-conversation_checkpoint_id_from_seed(std::string_view seed);
+[[nodiscard]] ConversationCheckpointId conversation_checkpoint_id_from_seed(std::string_view seed);
 
 // Session-domain Warm projection (design §5.4). Commit semantics are ruled
 // by the five-tuple `session_id / task_id / task_epoch / environment_epoch /
@@ -283,18 +282,17 @@ struct ConversationCommitState final {
 };
 
 enum class ConversationCommitDisposition : std::uint8_t {
-    Committed,       // replaced the stored checkpoint (or none existed)
-    IdempotentNoOp,  // same watermark and digest as the stored checkpoint
-    DiscardedStale,  // five-tuple or watermark mismatch; old checkpoint kept
+    Committed,         // replaced the stored checkpoint (or none existed)
+    IdempotentNoOp,    // same watermark and digest as the stored checkpoint
+    DiscardedStale,    // five-tuple or watermark mismatch; old checkpoint kept
     DiscardedTerminal, // session/task went terminal; late results are dropped
 };
 
-[[nodiscard]] std::string conversation_commit_disposition_name(
-    ConversationCommitDisposition disposition);
+[[nodiscard]] std::string
+conversation_commit_disposition_name(ConversationCommitDisposition disposition);
 
 struct ConversationCommitOutcome final {
-    ConversationCommitDisposition disposition =
-        ConversationCommitDisposition::DiscardedStale;
+    ConversationCommitDisposition disposition = ConversationCommitDisposition::DiscardedStale;
     // Stable reason code, e.g. "task-epoch-mismatch"; free text never reaches
     // the audit surface.
     std::string reason_code;

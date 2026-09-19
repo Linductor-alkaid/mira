@@ -18,8 +18,8 @@ constexpr std::size_t kMaxInductionTrajectories = 16;
 }
 
 // RFC 6901 tokens: "" -> root, "/a/0/b" -> {a, 0, b}; ~1 -> /, ~0 -> ~.
-[[nodiscard]] std::optional<std::vector<std::string>>
-tokenize_pointer(const std::string &pointer, std::size_t max_bytes) {
+[[nodiscard]] std::optional<std::vector<std::string>> tokenize_pointer(const std::string &pointer,
+                                                                       std::size_t max_bytes) {
     if (pointer.size() > max_bytes) {
         return std::nullopt;
     }
@@ -33,9 +33,8 @@ tokenize_pointer(const std::string &pointer, std::size_t max_bytes) {
     std::size_t start = 1;
     while (true) {
         const auto end = pointer.find('/', start);
-        std::string token = pointer.substr(start, end == std::string::npos
-                                                       ? std::string::npos
-                                                       : end - start);
+        std::string token =
+            pointer.substr(start, end == std::string::npos ? std::string::npos : end - start);
         // Unescape in one pass: ~1 before ~0 per RFC 6901.
         std::string unescaped;
         for (std::size_t index = 0; index < token.size(); ++index) {
@@ -206,8 +205,8 @@ void collect_provenance(const JsonValue &raw, const JsonValue &effective,
                 continue;
             }
             if (const JsonValue *child = effective.find(member.first); child != nullptr) {
-                collect_provenance(member.second, *child, pointer + "/" + escape_token(member.first),
-                                   provenance);
+                collect_provenance(member.second, *child,
+                                   pointer + "/" + escape_token(member.first), provenance);
             }
         }
         return;
@@ -316,11 +315,10 @@ std::string workflow_candidate_provenance_name(WorkflowCandidateProvenance prove
     return "unknown";
 }
 
-Result<WorkflowCandidateProvenance>
-parse_workflow_candidate_provenance(std::string_view name) {
-    for (const auto provenance : {WorkflowCandidateProvenance::Provenance,
-                                  WorkflowCandidateProvenance::Structural,
-                                  WorkflowCandidateProvenance::Explicit}) {
+Result<WorkflowCandidateProvenance> parse_workflow_candidate_provenance(std::string_view name) {
+    for (const auto provenance :
+         {WorkflowCandidateProvenance::Provenance, WorkflowCandidateProvenance::Structural,
+          WorkflowCandidateProvenance::Explicit}) {
         if (workflow_candidate_provenance_name(provenance) == name) {
             return provenance;
         }
@@ -350,8 +348,8 @@ induce_parameters(const std::vector<WorkflowTrajectory> &trajectories,
                 return make_workflow_compile_error(WorkflowCompileError::InductSkeletonMismatch,
                                                    "trajectories differ in step skeleton");
             }
-            if (auto shape = check_shape(anchor.arguments, other.arguments,
-                                         "step " + std::to_string(index));
+            if (auto shape =
+                    check_shape(anchor.arguments, other.arguments, "step " + std::to_string(index));
                 !shape.has_value()) {
                 return shape.error();
             }
@@ -393,10 +391,10 @@ induce_parameters(const std::vector<WorkflowTrajectory> &trajectories,
                     kind = value->kind();
                     kind_known = true;
                 } else if (value->kind() != kind) {
-                    return make_workflow_compile_error(
-                        WorkflowCompileError::InductTypeMismatch,
-                        "observed values differ in type at step " + std::to_string(index) +
-                            " pointer " + site);
+                    return make_workflow_compile_error(WorkflowCompileError::InductTypeMismatch,
+                                                       "observed values differ in type at step " +
+                                                           std::to_string(index) + " pointer " +
+                                                           site);
                 }
                 observed.push_back(*value);
             }
@@ -407,10 +405,9 @@ induce_parameters(const std::vector<WorkflowTrajectory> &trajectories,
             if (!scalar_kind(kind)) {
                 continue; // null leaves are constants, not candidates (DEC-026 §1)
             }
-            const bool differs = std::any_of(observed.begin() + 1, observed.end(),
-                                             [&](const JsonValue &value) {
-                                                 return !(value == observed.front());
-                                             });
+            const bool differs =
+                std::any_of(observed.begin() + 1, observed.end(),
+                            [&](const JsonValue &value) { return !(value == observed.front()); });
             if (!differs) {
                 continue;
             }
@@ -443,8 +440,8 @@ induce_parameters(const std::vector<WorkflowTrajectory> &trajectories,
     return candidates;
 }
 
-Result<WorkflowDefinition>
-compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOptions &options) {
+Result<WorkflowDefinition> compile_workflow(const WorkflowTrajectory &trajectory,
+                                            const WorkflowCompileOptions &options) {
     return compile_workflow(trajectory, options, {}, kDefaultWorkflowLimits);
 }
 
@@ -581,15 +578,13 @@ compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOpti
             group.begin(), group.end(), [&](const WorkflowParameterCandidate *candidate) {
                 return candidate->provenance == WorkflowCandidateProvenance::Provenance;
             });
-        const bool declared = std::any_of(trajectory.source_parameters.begin(),
-                                          trajectory.source_parameters.end(),
-                                          [&](const WorkflowParameterSpec &spec) {
-                                              return spec.name == name;
-                                          });
+        const bool declared =
+            std::any_of(trajectory.source_parameters.begin(), trajectory.source_parameters.end(),
+                        [&](const WorkflowParameterSpec &spec) { return spec.name == name; });
         if (provenance && !declared) {
-            return make_workflow_compile_error(
-                WorkflowCompileError::InductCandidateInvalid,
-                "provenance candidate '" + name + "' does not match a declared parameter");
+            return make_workflow_compile_error(WorkflowCompileError::InductCandidateInvalid,
+                                               "provenance candidate '" + name +
+                                                   "' does not match a declared parameter");
         }
         if (!provenance && (declared || group.size() > 1)) {
             return make_workflow_compile_error(
@@ -601,8 +596,8 @@ compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOpti
     for (const auto &candidate : candidates) {
         const auto tokens = tokenize_pointer(candidate.pointer, limits.max_string_bytes).value();
         const JsonValue replacement(JsonValue::Object{{"$param", JsonValue{candidate.name}}});
-        auto rewritten = rewrite_leaf(definition.steps[candidate.step_index].arguments, tokens,
-                                      replacement);
+        auto rewritten =
+            rewrite_leaf(definition.steps[candidate.step_index].arguments, tokens, replacement);
         if (!rewritten.has_value()) {
             return make_workflow_compile_error(WorkflowCompileError::InductLeafNotScalar,
                                                "candidate leaf vanished during rewrite");
@@ -615,10 +610,10 @@ compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOpti
         if (declared) {
             continue; // Provenance candidate: the baked source spec is reused.
         }
-        JsonValue anchor = !candidate.observed_values.empty()
-                               ? candidate.observed_values.front()
-                               : *resolve_pointer(trajectory.steps[candidate.step_index].arguments,
-                                                  tokens);
+        JsonValue anchor =
+            !candidate.observed_values.empty()
+                ? candidate.observed_values.front()
+                : *resolve_pointer(trajectory.steps[candidate.step_index].arguments, tokens);
         const auto type = scalar_parameter_type(anchor);
         if (!type.has_value()) {
             return make_workflow_compile_error(WorkflowCompileError::InductCandidateInvalid,
@@ -629,8 +624,8 @@ compile_workflow(const WorkflowTrajectory &trajectory, const WorkflowCompileOpti
         spec.type = type.value();
         spec.required = false;
         spec.default_value = std::move(anchor);
-        spec.summary = "induced by " + workflow_candidate_provenance_name(candidate.provenance) +
-                       " induction";
+        spec.summary =
+            "induced by " + workflow_candidate_provenance_name(candidate.provenance) + " induction";
         definition.parameters.push_back(std::move(spec));
         if (definition.parameters.size() > limits.max_parameters) {
             return make_workflow_compile_error(WorkflowCompileError::InductLimitExceeded,

@@ -31,15 +31,17 @@ extern const SchemaSubsetLimits kDefaultSchemaSubsetLimits;
 // Keywords the M3 validator implements. Any other validation keyword is
 // rejected by gate_schema_subset so behavior is explicit and testable.
 inline constexpr std::array<std::string_view, 18> kSupportedSchemaKeywords = {
-    "type",       "properties", "required",    "additionalProperties", "enum",
-    "const",      "items",      "minItems",    "maxItems",             "minLength",
-    "maxLength",  "minimum",    "maximum",     "pattern",              "title",
-    "description", "$schema",   "default",
+    "type",     "properties", "required",  "additionalProperties",
+    "enum",     "const",      "items",     "minItems",
+    "maxItems", "minLength",  "maxLength", "minimum",
+    "maximum",  "pattern",    "title",     "description",
+    "$schema",  "default",
 };
 
 // Rejects schemas that use unsupported keywords or exceed the subset limits.
-[[nodiscard]] Result<void> gate_schema_subset(const JsonSchema &schema,
-                                              const SchemaSubsetLimits &limits = kDefaultSchemaSubsetLimits);
+[[nodiscard]] Result<void>
+gate_schema_subset(const JsonSchema &schema,
+                   const SchemaSubsetLimits &limits = kDefaultSchemaSubsetLimits);
 
 struct SchemaViolation final {
     std::string path;    // JSON path of the offending instance value.
@@ -119,8 +121,9 @@ struct RepairBudget final {
 // Builds the follow-up repair request for a Completed-but-malformed response.
 // The repair is a new paid operation with a new ModelRequestId that quotes a
 // bounded, redacted validation summary; it never embeds raw model output.
-[[nodiscard]] Result<ModelRequest>
-build_schema_repair_request(const ModelRequest &original, const DecisionParseResult &failure,
-                            const RepairPolicy &policy, const RepairBudget &budget);
+[[nodiscard]] Result<ModelRequest> build_schema_repair_request(const ModelRequest &original,
+                                                               const DecisionParseResult &failure,
+                                                               const RepairPolicy &policy,
+                                                               const RepairBudget &budget);
 
 } // namespace mira

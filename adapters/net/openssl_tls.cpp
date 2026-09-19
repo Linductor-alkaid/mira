@@ -167,9 +167,9 @@ bool OpenSslTlsChannelFactory::initialize() {
     return true;
 }
 
-Result<std::unique_ptr<ITlsChannel>>
-OpenSslTlsChannelFactory::create(std::intptr_t native_handle, const std::string &host,
-                                 const TlsOptions &options) {
+Result<std::unique_ptr<ITlsChannel>> OpenSslTlsChannelFactory::create(std::intptr_t native_handle,
+                                                                      const std::string &host,
+                                                                      const TlsOptions &options) {
     if (ctx_->context == nullptr) {
         return tls_error("tls factory was not initialized");
     }
