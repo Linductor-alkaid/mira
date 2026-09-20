@@ -1,15 +1,17 @@
 # Tool 稳定引用与 Skill 层设计（DEC-040 落地规范）
 
-> 状态：Active（TR0 冻结规范，已由
-> [M7](../plans/m7-tools-evaluation-platform-v1.md) TR0 阶段交付关闭（PR #63，
-> 合并提交 `a180e88`）；TR1 规范见 §17，2026-09-21 随其立项冻结；决策载体为
-> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)。本文代码
-> 片段均为契约草案，签名以实现为准）  
-> 版本：1.1  
+> 状态：Active（TR0 与 TR1 冻结规范，均已由
+> [M7](../plans/m7-tools-evaluation-platform-v1.md) 交付关闭（TR0：PR #63，
+> 合并提交 `a180e88`；TR1：PR #64，合并提交 `2833bc4`）；决策载体为
+> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)；TR2
+> （Runtime 接线与执行）在 §15 仅登记方向，进入实施前随其立项冻结细项。本文
+> 代码片段均为契约草案，签名以实现为准）  
+> 版本：1.2  
 > 更新日期：2026-09-21  
 > 负责人：Mira Maintainers  
 > 适用范围：Workflow 资产对工具的稳定逻辑引用、引用解析矩阵与兼容状态投影
-> （`Runnable`/`Degraded`/`Invalid`）的 Core 侧契约；Skill 生命周期仅登记方向  
+> （`Runnable`/`Degraded`/`Invalid`）与 Skill 发布生命周期的 Core 侧契约；
+> Runtime 接线与执行归 TR2（仅登记方向）  
 > 上位设计：[Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)、
 > [工具模组设计](tool_module_design.md)、
 > [Workflow Runtime 设计](workflow_runtime_design.md)  
@@ -277,7 +279,7 @@ TR0 全部为串行控制面内的同步纯计算（有界、无 I/O、无时钟
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | TR0 | 引用语法、提取、解析矩阵、兼容投影、准入决策与留痕产物 | §4–§13 冻结，M7 TR0 交付关闭（PR #63） |
-| TR1 | Skill 发布生命周期与 Procedure 索引投影（§17 冻结）：Skill 描述符与暴露面派生、`SkillPublicationRegistry` 发布/升级/撤销生命周期、Procedure 索引投影；纯契约层，不触碰执行路径 | §17 冻结（2026-09-21），M7 TR1 承载 |
+| TR1 | Skill 发布生命周期与 Procedure 索引投影（§17 冻结）：Skill 描述符与暴露面派生、`SkillPublicationRegistry` 发布/升级/撤销生命周期、Procedure 索引投影；纯契约层，不触碰执行路径 | §17 冻结，M7 TR1 交付关闭（PR #64） |
 | TR2 | WorkflowRuntime 接线与执行（未冻结）：库存储挂载 tool_refs 清单、`create_run` 准入消费 TR0 投影、`Degraded` 事件发射、Skill 经 Tool 通道的子 Workflow 调用执行适配（DEC-040 §3.2）与 IR 引用表达加法演进 | 仅方向；进入实施前随其立项冻结工作项、门禁与本文件增补 |
 
 TR1 约束（§17 冻结）：Skill 复用 Workflow 版本化本体，不建第二套资产体系

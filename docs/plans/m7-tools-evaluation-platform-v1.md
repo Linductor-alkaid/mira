@@ -1,15 +1,14 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 首阶段 TR0（稳定引用与
-> 兼容投影）已交付关闭；TR1（Skill 发布生命周期与 Procedure 索引投影）
-> 2026-09-21 跑前冻结细项进入实施；TR2（Runtime 接线与执行）随其立项冻结细项，
-> 不预分配编号）
+> 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 的 TR0（稳定引用与
+> 兼容投影）、TR1（Skill 发布生命周期与 Procedure 索引投影）已交付关闭；
+> TR2（Runtime 接线与执行）随其立项冻结细项，不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-21（TR1 细项冻结，进入实施）
+> 更新日期：2026-09-21（TR1 交付关闭）
 
 ## 1. 目标
 
@@ -262,9 +261,9 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `examples/minimal_consumer.cpp` 追加 TR0 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
 
-### 4.6 TR1：Skill 发布生命周期与 Procedure 索引投影（DEC-040；2026-09-21 跑前冻结细项，进入实施）
+### 4.6 TR1：Skill 发布生命周期与 Procedure 索引投影（DEC-040；2026-09-21 跑前冻结细项，同日交付关闭）
 
-- [ ] `M7-TR1-01` Skill 描述符与暴露面派生（
+- [x] `M7-TR1-01` Skill 描述符与暴露面派生（
   [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §17.1）：
   `mira.skill.descriptor.v1`——`name`（词表字符集 wire 身份）、显式 `version`、
   `source_workflow_id` + `source_ir_digest` 钉住、派生暴露面
@@ -274,7 +273,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   enum 传递、`additionalProperties=false`、逐项过 `gate_schema_subset`），
   `has_side_effects` 由 TR0 引用清单 × 视图推导（全部引用发布期可解析）；
   输入绑定与视图重名 fail closed。
-- [ ] `M7-TR1-02` 发布生命周期（§17.2）：`SkillPublicationRegistry` 宿主显式
+- [x] `M7-TR1-02` 发布生命周期（§17.2）：`SkillPublicationRegistry` 宿主显式
   发布/升级/撤销——publish 要求源 `WorkflowVersionRecord` runnable（
   `workflow_version_is_runnable`）且 `content_digest`/`workflow_id` 与定义
   一致、name 撞宿主保留名或已存在拒绝（同 name + 同 descriptor digest 幂等
@@ -282,13 +281,13 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   superseded 轨迹）；revoke 只降级不可逆、重复撤销幂等；`seal()`/`close()`
   部署窗纪律与拒绝计数；版本化事件 `mira.skill.publication.v1` 脱敏（仅身份
   /digest/有界理由，无 description 与 schema 体），sink 失败计数不阻塞。
-- [ ] `M7-TR1-03` Procedure 索引投影（§17.3）：
+- [x] `M7-TR1-03` Procedure 索引投影（§17.3）：
   `project_skill_procedure_index` 以宿主显式发布为界——未发布的 Workflow 库
   资产不自动索引（DEC-029 否决的自动写入面不复活）；statement 固定 canonical
   JSON（`mira.skill.procedure_index.v1`：身份/digest/钉住/副作用，不含
   description）；输出按 name 排序、无时钟（时间戳归 TR2 接线）、不写
   `IMemory`；statement 严格反解析可重建、重放字节一致。
-- [ ] `M7-TR1-04` 契约测试矩阵 `tests/m7/m7_tool_skill_test.cpp`（label
+- [x] `M7-TR1-04` 契约测试矩阵 `tests/m7/m7_tool_skill_test.cpp`（label
   `contract`）：覆盖 `M7-TR1-G1`–`G6` 全部门禁，`--report` 跨进程字节一致；
   `examples/minimal_consumer.cpp` 追加 TR1 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
@@ -443,31 +442,31 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 - [x] `M7-TR0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 TR0 闭包段）。
 
-### 5.6 TR1 门禁（2026-09-21 跑前冻结）
+### 5.6 TR1 门禁（2026-09-21 跑前冻结；同日交付取证）
 
-- [ ] `M7-TR1-G1` 描述符与派生矩阵：`WorkflowParameterSpec` 四类型 × 全约束
+- [x] `M7-TR1-G1` 描述符与派生矩阵：`WorkflowParameterSpec` 四类型 × 全约束
   （min/max、minLength/maxLength、pattern、enum、required、default 不进
   schema）映射与 `gate_schema_subset` 通过；`has_side_effects` 推导（全部
   read_only → false、任一带副作用 → true）；负路径（summary 空/超限、refs
   未绑定或错配、视图缺引用、视图重名、未过结构校验的定义、hosted 保留名）
   整组拒绝；descriptor digest 确定性。
-- [ ] `M7-TR1-G2` 发布生命周期矩阵：publish 正路径（钉住 ir_digest 与暴露面
+- [x] `M7-TR1-G2` 发布生命周期矩阵：publish 正路径（钉住 ir_digest 与暴露面
   digest 一致）与负矩阵（非 runnable 版本、digest/id 错配、保留名、重名、
   sealed/closed 后变更）逐例拒绝且状态不变；同 name + 同 digest 幂等 NoOp；
   upgrade 版本不递增拒绝、同 digest NoOp、superseded 轨迹正确；revoke 只
   降级、重复幂等、撤销后发布拒绝；统计可见。
-- [ ] `M7-TR1-G3` 事件与确定性：`mira.skill.publication.v1` 字段闭集与脱敏
+- [x] `M7-TR1-G3` 事件与确定性：`mira.skill.publication.v1` 字段闭集与脱敏
   （无 description/schema 体/secret）；sink 失败计数不阻塞；`--report` 跨
   进程字节一致（无时钟、无随机、canonical JSON）。
-- [ ] `M7-TR1-G4` Procedure 投影与重建：同输入同投影同排序；statement 严格
+- [x] `M7-TR1-G4` Procedure 投影与重建：同输入同投影同排序；statement 严格
   反解析回等价条目且重放字节一致；撤销/升级后投影演进正确（Revoked 条目
   显式状态、升级后钉住新 digest）；未发布 Workflow 资产不入索引（以显式
   发布为界）；无 description 泄漏。
-- [ ] `M7-TR1-G5` 组合边界：TR1 全程无执行面——`BuiltinToolRegistry` 曝光面
+- [x] `M7-TR1-G5` 组合边界：TR1 全程无执行面——`BuiltinToolRegistry` 曝光面
   与 `BuiltinToolRegistry::execute` 不受发布影响（负向断言）；发布经 TR0
   `extract_workflow_tool_references` + `derive_skill_surface` 组合链路成立；
   DEC-030 学习路径语义不变。
-- [ ] `M7-TR1-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
+- [x] `M7-TR1-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 TR1 闭包段）。
 
 ## 6. Executor 路由与关闭
@@ -800,3 +799,60 @@ success（12/12）。`M7-TR0-01`–`04` 与 `M7-TR0-G1`–`G6` 关闭；M7 已�
 投影的存储挂载、`create_run` 准入消费与 `Degraded` 事件发射接线归 TR1/首个
 消费者里程碑（本阶段交付其消费的决策与投影产物，设计 §2.2）；确定性投影口径
 非语义质量声明（`RULE-10`）；`pattern` 约束位置按设计 §7.2 保守判不兼容。
+
+2026-09-21：TR1 细项冻结并交付（DEC-040 第二阶段，前置 TR0 已关闭；与 TR0 同一
+维护者授权模式、同一日连续交付）。规范随
+[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §17
+冻结（描述符与暴露面派生、发布生命周期、Procedure 索引投影；TR2 方向收窄为
+Runtime 接线与执行）。
+
+交付 `include/mira/tool_skill.hpp` + `src/workflow/tool_skill.cpp`（入
+`mira_workflow`）：`derive_skill_surface` 暴露面确定性派生（description 取
+summary 非空有界、参数 schema 从 `WorkflowParameterSpec` 全类型映射过
+`gate_schema_subset` 且 default 不进 schema、`has_side_effects` 由 TR0 引用
+清单 × 视图推导）；`make_skill_descriptor`（词表字符集 + hosted 保留名拒绝 +
+canonical digest）与 `mira.skill.descriptor.v1` 严格 JSON 往返；
+`SkillPublicationRegistry` 宿主显式发布/升级/撤销（publish fail-closed 链：
+descriptor digest 自洽、定义结构校验、workflow_id/ir_digest 绑定、
+`resolve_workflow_version` + `workflow_version_is_runnable`（DEC-025 门禁）、
+refs 绑定、surface 重派生一致；name + descriptor 幂等 NoOp；升级严格递增 +
+superseded 轨迹 + 同 digest NoOp；撤销只降级、重复幂等；seal/close 部署窗与
+拒绝计数）；事件 `mira.skill.publication.v1` 脱敏（revoked=Critical、sink
+失败计数不阻塞）；`project_skill_procedure_index` +
+`skill_procedure_entry_from_statement`（`mira.skill.procedure_index.v1`，以
+显式发布为界——未发布库资产不入索引，statement 固定 canonical JSON、无时钟、
+严格可重建、本阶段不写 `IMemory`）。TR1 无执行面（Skill 不进
+registry/exposure/协商，G5 负向断言）。
+
+实现期修复一处（IVA 首轮发现并经主循环裁决为实现缺陷）：升级后原样重发布当前
+descriptor 被误拒 `AlreadyExists`——幂等条件冻结口径为「同 name + 同
+descriptor」（M7 `M7-TR1-02`、设计 §17.2），原实现误用整记录相等（superseded
+轨迹非空导致失配）；修复为 `status == Published && descriptor ==` 判定，复验
+经独立探针与新增断言（含 Revoked 分支回归守卫）双重取证。
+
+测试 `tests/m7/m7_tool_skill_test.cpp`（23 个 gate、430 断言，label
+`contract`；测试的编写、运行与 sanitizer 取证由 Independent-Verification-
+Agent 独立完成，共两轮：首轮 23/23 全绿并抓出上述幂等缺陷，主循环修复后复验
+23/23 全绿，测试文件 md5 `0bb49b3eed6d455104be33402126195a`）。取证要点：G1
+四类型 × 全约束映射 + 保留名/边界负矩阵；G2 发布全负矩阵逐例拒绝 + 幂等 +
+seal/close 窗口 + 计数；G3 注入 sink 事件闭字段集脱敏 + 失败隔离；G4 投影
+确定性/重建/演进（升级钉新 digest、Revoked 显式状态、未发布资产零泄漏）；
+G5 registry 曝光与执行不受发布影响 + TR0→TR1 组合链。`--report` 跨进程与跨
+四构建树字节一致（md5 `e8a91ca5e030df1584250dcb964fa1a3`，4069 字节）。本地
+门禁：全量 ctest **89/89**（原 88 + 本里程碑 1 目标）、format/docs/
+platform-boundary/sbom 四检查通过（format 真实检查 223 文件）、clang-tidy
+18.1.8 预检新库源零违例、本机 NDK r26.3 两 ABI（arm64-v8a/x86_64）交叉编译
+`mira_core`+`mira_workflow` 通过且 TR1 符号在库。PR
+[#64](https://github.com/Linductor-alkaid/mira/pull/64)（head `8159e24`，
+合并提交 `2833bc4`）双 pipeline run
+[`35528677082`](https://github.com/Linductor-alkaid/mira/actions/runs/35528677082)/
+[`35528693696`](https://github.com/Linductor-alkaid/mira/actions/runs/35528693696)
+各 12 项首轮全部通过，master 合并提交 run
+[`35530911707`](https://github.com/Linductor-alkaid/mira/actions/runs/35530911707)
+success（12/12）。`M7-TR1-01`–`04` 与 `M7-TR1-G1`–`G6` 关闭；M7 已立项阶段为
+TM0–TM2 + MCP 准入 + TR0 + TR1，后续阶段（TR2：WorkflowRuntime 接线与执行——
+库存储挂载 tool_refs、`create_run` 准入消费、`Degraded` 事件发射、Skill 经
+Tool 通道的子 Workflow 调用执行适配、IR 引用表达加法演进）立项时增补。限制
+与未执行项：Procedure statement 落库 `IMemory`（scope/ACL/检索/时间戳）、
+Skill 执行面与 `create_run` 接线归 TR2（本阶段无从验证，设计 §17.4）；发布
+即索引的口径使索引面限于宿主显式动作（规则性限制，放宽需新 DEC）。

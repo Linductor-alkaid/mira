@@ -3,12 +3,12 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-21（DEC-040 第二阶段 TR1「Skill 发布生命周期与 Procedure
-> 索引投影」跑前冻结工作项 `M7-TR1-01`–`04` 与门禁 `M7-TR1-G1`–`G6` 后进入
-> 实施：Skill 描述符（钉住源 Workflow id + `ir_digest`）与暴露面确定性派生、
-> `SkillPublicationRegistry` 宿主显式发布/升级/撤销生命周期、Procedure 索引
-> 投影（以显式发布为界、可重建）；规范随
+> 索引投影」交付关闭：Skill 描述符（钉住源 Workflow id + `ir_digest`）与暴露面
+> 确定性派生、`SkillPublicationRegistry` 宿主显式发布/升级/撤销生命周期、
+> Procedure 索引投影（以显式发布为界、可重建）；规范见
 > [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
-> §17 冻结，详见 §4.1 第 14 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> §17，IVA 两轮取证 23/23 gate 全绿，PR CI 24/24（PR #64，`2833bc4`），详见
+> §4.1 第 14 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
 > 此前 2026-09-21（DEC-040 首阶段 TR0「Tool 稳定引用与兼容投影」交付关闭：
 > 引用语法 v1 冻结（钉住 spec digest / 跟随最新）、Workflow 引用清单提取、解析
 > 矩阵与 `Runnable`/`Degraded`/`Invalid` 确定性兼容投影、`Invalid` 准入拒绝决策
@@ -401,8 +401,8 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     演进，实施前冻结细项）；证据与限制见
     [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
-14. DEC-040 第二阶段 TR1 立项入口（2026-09-21）：TR0 关闭后依 M7 §4.6 冻结
-    TR1 细项（`M7-TR1-01`–`04`）与门禁（`M7-TR1-G1`–`G6`）并进入实施：
+14. DEC-040 第二阶段 TR1 立项与交付入口（2026-09-21）：TR0 关闭后依 M7 §4.6
+    冻结 TR1 细项（`M7-TR1-01`–`04`）与门禁（`M7-TR1-G1`–`G6`）并交付：
     Skill 描述符 `mira.skill.descriptor.v1`（name wire 身份、显式版本、源
     Workflow id + `ir_digest` 钉住、暴露面确定性派生——description 取
     summary、参数 schema 从 `WorkflowParameterSpec` 映射过
@@ -414,9 +414,22 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     自动索引，DEC-029 否决的自动写入面不复活；statement 固定 canonical
     JSON、无时钟、可重建、不写 `IMemory`）。TR1 无执行面（Skill 不进
     registry/exposure，子 Workflow 调用执行与 `create_run` 准入消费、
-    `Degraded` 事件发射、IR 引用表达加法演进归 TR2，实施前冻结细项）；
-    规范见 [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
-    §17；交付证据见 [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+    `Degraded` 事件发射、IR 引用表达加法演进归 TR2，实施前冻结细项）。
+    测试由 Independent-Verification-Agent 两轮独立取证（23 gate/430 断言，
+    四树全绿、三 sanitizer 零报告、`--report` 跨树 md5
+    `e8a91ca5e030df1584250dcb964fa1a3`；首轮发现升级后原样重发布当前
+    descriptor 被误拒的幂等缺陷，裁决为实现缺陷并修复，经独立探针与新增
+    断言复验）。本地门禁：全量 ctest 89/89、四检查（format 223 文件）、
+    clang-tidy 零违例、NDK 两 ABI 编译且符号在库。PR
+    [#64](https://github.com/Linductor-alkaid/mira/pull/64)（head `8159e24`，
+    合并提交 `2833bc4`）双 pipeline run
+    [`35528677082`](https://github.com/Linductor-alkaid/mira/actions/runs/35528677082)/
+    [`35528693696`](https://github.com/Linductor-alkaid/mira/actions/runs/35528693696)
+    各 12 项首轮全部通过，master 合并提交 run
+    [`35530911707`](https://github.com/Linductor-alkaid/mira/actions/runs/35530911707)
+    success；`M7-TR1-01`–`04` 与 `M7-TR1-G1`–`G6` 关闭，下一阶段为 DEC-040
+    TR2（WorkflowRuntime 接线与执行，实施前冻结细项）；证据与限制见
+    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
