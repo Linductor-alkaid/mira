@@ -1,6 +1,10 @@
 # DEC-040：Tool 稳定引用、兼容状态与 Skill 层级——能力身份的连续抽象
 
-> 状态：Accepted（方向冻结；实现未开始）
+> 状态：Accepted（方向冻结；首阶段 TR0——稳定引用与兼容投影——2026-09-20 依
+> [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+> 冻结细项并由 [M7](../plans/m7-tools-evaluation-platform-v1.md) 承载交付，引用
+> 语法 v1 随该阶段冻结；TR1——Skill 生命周期与 Procedure 索引投影——随后续
+> 阶段立项）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #56](https://github.com/Linductor-alkaid/mira/issues/56)
@@ -144,4 +148,7 @@ DEC-019 的 `ToolCall` 步骤以实参树内保留成员 `"tool"`（wire 名字�
 - [Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
   （Skill 定位、W-03/W-04/W-06）
 - [工具模组设计](../design/tool_module_design.md)
-- 专项设计与里程碑文件随首阶段立项交付（引用语法冻结是该阶段的退出条件之一）。
+- [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+  （TR0 阶段规范；引用语法 v1、提取、解析矩阵与兼容投影随该阶段冻结）
+- 里程碑文件随首阶段立项交付（引用语法冻结是 TR0 的退出条件之一；TR1——Skill
+  生命周期与 Procedure 索引投影——随后续阶段立项冻结）。

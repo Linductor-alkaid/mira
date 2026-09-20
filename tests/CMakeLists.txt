@@ -607,9 +607,33 @@ mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)
 # MCP admission stage (DEC-039): listing -> out-of-process module conversion,
 # session lifecycle downgrade-only mapping, DEC-015-consistent dispatcher and
 # cancellation/deadline/shutdown closure; gates M7-MCP-G1..G6.
+# TR0 stable references (DEC-040): reference syntax, refs-manifest extraction,
+# resolution matrix and the Runnable/Degraded/Invalid compatibility projection;
+# gates M7-TR0-G1..G6.
 # ---------------------------------------------------------------------------
 
 mira_add_test(mira_m7_tool_module_test m7/m7_tool_module_test.cpp contract)
 mira_add_test(mira_m7_tool_module_registry_test m7/m7_tool_module_registry_test.cpp contract)
 mira_add_test(mira_m7_tool_module_exposure_test m7/m7_tool_module_exposure_test.cpp contract)
 mira_add_test(mira_m7_tool_module_mcp_test m7/m7_tool_module_mcp_test.cpp contract)
+
+# The TR0 stable reference layer (DEC-040) is a workflow-plane contract: it
+# consumes WorkflowDefinition plus the core exposure view, so it compiles into
+# Mira::workflow and its gate matrix links the workflow library like the
+# M9/M14 helpers do.
+function(mira_add_m7_reference_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "contract" TIMEOUT 90)
+endfunction()
+mira_add_m7_reference_test(mira_m7_tool_reference_test m7/m7_tool_reference_test.cpp)

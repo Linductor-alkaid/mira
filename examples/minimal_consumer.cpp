@@ -4,6 +4,7 @@
 #include <mira/tool_module_exposure.hpp>
 #include <mira/tool_module_mcp.hpp>
 #include <mira/tool_module_registry.hpp>
+#include <mira/tool_reference.hpp>
 #include <mira/version.hpp>
 
 #include <chrono>
@@ -144,6 +145,65 @@ int main() {
         dispatcher.value()->close(std::chrono::milliseconds{50});
     if (close_report.still_pending != 0) {
         return 10;
+    }
+
+    // M7-TR0-G6 consumer closure: the stable reference header must be
+    // includable and linkable from the same minimal consumer. The reference
+    // layer is a workflow-plane contract (DEC-040), so this closure links
+    // Mira::workflow while still exercising only serial-plane pure functions:
+    // a reference round trip, an extraction against a one-tool view and the
+    // compatibility projection.
+    const auto parsed_reference = mira::parse_tool_reference(
+        "toolref:sample.read@1b1c90825e0d740692239b0bc408ed0d3ae12b525a8058d7f2b6f3d3f0f0f0f0");
+    if (!parsed_reference.has_value() ||
+        parsed_reference.value().mode != mira::ToolReferenceMode::PinnedDigest ||
+        mira::tool_reference_to_string(parsed_reference.value()) !=
+            "toolref:sample.read@"
+            "1b1c90825e0d740692239b0bc408ed0d3ae12b525a8058d7f2b6f3d3f0f0f0f0") {
+        return 11;
+    }
+    const auto follow_reference = mira::parse_tool_reference("toolref:sample.read");
+    if (!follow_reference.has_value() ||
+        follow_reference.value().mode != mira::ToolReferenceMode::FollowLatest) {
+        return 11;
+    }
+
+    mira::WorkflowDefinition definition;
+    definition.schema_version = mira::SchemaVersion{1, 0};
+    definition.workflow_id = mira::WorkflowId::generate();
+    definition.name = "consumer.sample";
+    definition.default_policy = mira::WorkflowPolicy::Strict;
+    definition.allowed_policies = {mira::WorkflowPolicy::Strict};
+    mira::WorkflowStep step;
+    step.id = mira::StepId::generate();
+    step.name = "read";
+    step.kind = mira::WorkflowStepKind::ToolCall;
+    step.arguments = mira::JsonValue{
+        mira::JsonValue::Object{{"tool", mira::JsonValue{std::string("sample.read")}}}};
+    definition.steps.push_back(step);
+
+    mira::ExposedToolSpec spec;
+    spec.tool_id = mira::ToolId::generate();
+    spec.wire_name = "sample.read";
+    spec.parameters_schema = mira::JsonSchema{
+        mira::JsonValue{mira::JsonValue::Object{{"type", mira::JsonValue{std::string("object")}}}}};
+    spec.spec_digest = mira::digest_string("sample.read/v1");
+    const std::vector<mira::ExposedToolSpec> view{spec};
+    const auto manifest = mira::extract_workflow_tool_references(definition, view);
+    if (!manifest.has_value() || manifest.value().entries.size() != 1 ||
+        manifest.value().entries.front().mode != mira::ToolReferenceMode::PinnedDigest) {
+        return 11;
+    }
+    const auto projection =
+        mira::project_workflow_tool_compatibility(definition, manifest.value(), view);
+    if (!projection.has_value() ||
+        projection.value().state != mira::WorkflowToolCompatState::Runnable) {
+        return 11;
+    }
+    const mira::WorkflowToolCompatDecision decision =
+        mira::admit_workflow_run_by_tool_compat(projection.value());
+    if (!decision.admitted) {
+        return 11;
     }
     return 0;
 }

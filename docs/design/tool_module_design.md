@@ -462,6 +462,12 @@ Simulator 参考模组与 Replay digest 绑定，见
 宿主 transport 执行适配与 DEC-015 同源门禁，专项规范见
 [MCP 准入设计](mcp_tool_admission_design.md)，交付记录见
 [M7](../plans/m7-tools-evaluation-platform-v1.md)。
+2026-09-20：DEC-040 首阶段 TR0（Tool 稳定引用与兼容投影）立项——引用语法 v1、
+Workflow 引用清单提取、解析矩阵与 `Runnable`/`Degraded`/`Invalid` 兼容投影、
+`Invalid` 准入拒绝决策与 `Degraded` 留痕产物；本表投影消费者（§8）自此增加
+「Workflow 准入」一类，专项规范见
+[Tool 稳定引用与 Skill 设计](tool_reference_and_skill_design.md)，交付记录见
+[M7](../plans/m7-tools-evaluation-platform-v1.md)。
 
 ## 16. 测试策略
 

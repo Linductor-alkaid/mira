@@ -2,7 +2,14 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-20（M7 MCP 准入阶段（DEC-039 首个实现阶段）跑前冻结工作项
+> 更新日期：2026-09-20（DEC-040 首阶段 TR0「Tool 稳定引用与兼容投影」跑前冻结
+> 工作项 `M7-TR0-01`–`04` 与门禁 `M7-TR0-G1`–`G6` 后进入实施：引用语法 v1 冻结
+> （钉住 spec digest / 跟随最新）、Workflow 引用清单提取、解析矩阵与
+> `Runnable`/`Degraded`/`Invalid` 确定性兼容投影、`Invalid` 准入拒绝决策与
+> `Degraded` 留痕产物；专项设计 [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+> 随立项交付，TR1（Skill 生命周期与 Procedure 索引投影）随后续立项，详见 §4.1
+> 第 13 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> 此前 2026-09-20（M7 MCP 准入阶段（DEC-039 首个实现阶段）跑前冻结工作项
 > `M7-MCP-01`–`04` 与门禁 `M7-MCP-G1`–`G6` 后交付：MCP `tools/list` 受控子集 →
 > `out_of_process` 模组 manifest 的确定性转换（经真实 TM0 解析器）、会话生命周期
 > 只降级映射、宿主 transport 执行适配与 DEC-015 同源门禁、在途调用取消/deadline/
@@ -357,6 +364,20 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    success；`M7-MCP-01`–`04` 与 `M7-MCP-G1`–`G6` 关闭，下一阶段为 DEC-040
    稳定引用与 Skill（实施前冻结细项）；证据与限制见
    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+
+13. DEC-040 首阶段 TR0 立项入口（2026-09-20）：MCP 准入关闭后依 M7 §4.5 冻结
+    TR0 细项（`M7-TR0-01`–`04`）与门禁（`M7-TR0-G1`–`G6`）并进入实施（DEC-040
+    首个实现阶段，前置「模组体系落地」已满足）：专项设计
+    [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+    随立项交付；引用语法 v1 冻结（`toolref:<wire-name>` 跟随 / `@<spec digest>`
+    钉住，受治理词表字符集跨源同命名空间；版本约束钉住不进 v1）；引用清单工件
+    `mira.workflow.tool_refs.v1`（发布期观察、绑定 `definition_digest`、IR v1
+    零改动）；解析矩阵与兼容状态投影（`Runnable`/`Degraded`/`Invalid` 确定性
+    重算，骨架可绑定判定复用 M3 严格 schema 校验器零漂移）；`Invalid` 准入拒绝
+    决策与 `Degraded` 留痕投影 `mira.workflow.tool_compat.v1`（脱敏）；投影不进
+    执行路径，DEC-015 语义不变。TR1（Skill 生命周期、Procedure 索引投影、
+    Runtime 接线与 IR 引用表达加法演进）随后续立项；交付证据见
+    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
@@ -786,7 +807,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-037](../decisions/DEC-037-temporal-policy.md) | Temporal Policy——高频条件策略的经验固化方向（Issue #50；统一 Policy 抽象，Stage T1–T6） | Accepted（方向；实现未开始；T2/T3/T6 受 DEC-011 门禁） | Stage T1 逐阶段另行立项 |
 | [DEC-038](../decisions/DEC-038-unified-behavior-trace.md) | 统一 Behavior Trace——执行轨迹的三层语义投影（Issue #55/#56；L0 事件/L1 语义行为/L2 narrative，承接 DEC-026 §4 轨迹抽取非目标） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 | [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义已由 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 完成；实现随 M7 的 MCP 阶段（TM0–TM2 之后）立项 |
-| [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；实现未开始） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |
+| [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；首阶段 TR0 稳定引用与兼容投影由 [M7](m7-tools-evaluation-platform-v1.md) TR0 承载（引用语法 v1 随该阶段冻结）；TR1 Skill 生命周期随后续阶段立项） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |
 | [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 | [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
 
