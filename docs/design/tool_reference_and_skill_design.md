@@ -1,12 +1,13 @@
 # Tool 稳定引用与 Skill 层设计（DEC-040 落地规范）
 
-> 状态：Active（TR0 冻结规范；决策载体为
-> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)；实现载体为
-> [M7](../plans/m7-tools-evaluation-platform-v1.md) 的 TR0 阶段；TR1（Skill 生命周期
-> 与 Procedure 索引投影）在本文 §15 仅登记方向，进入实施前随其立项冻结细项。本文
-> 代码片段均为契约草案，签名以实现为准）  
+> 状态：Active（TR0 冻结规范，已由
+> [M7](../plans/m7-tools-evaluation-platform-v1.md) TR0 阶段交付关闭（PR #63，
+> 合并提交 `a180e88`）；决策载体为
+> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)；TR1（Skill
+> 生命周期与 Procedure 索引投影）在本文 §15 仅登记方向，进入实施前随其立项
+> 冻结细项。本文代码片段均为契约草案，签名以实现为准）  
 > 版本：1.0  
-> 更新日期：2026-09-20  
+> 更新日期：2026-09-21  
 > 负责人：Mira Maintainers  
 > 适用范围：Workflow 资产对工具的稳定逻辑引用、引用解析矩阵与兼容状态投影
 > （`Runnable`/`Degraded`/`Invalid`）的 Core 侧契约；Skill 生命周期仅登记方向  

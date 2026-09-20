@@ -1,14 +1,14 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1/TM2 与 MCP 准入阶段（DEC-039）已交付关闭；DEC-040 首阶段
-> TR0（稳定引用与兼容投影）2026-09-20 跑前冻结细项进入实施；TR1（Skill 生命周期
-> 与 Procedure 索引投影）随其立项冻结细项，不预分配编号）
+> 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 首阶段 TR0（稳定引用与
+> 兼容投影）已交付关闭；TR1（Skill 生命周期与 Procedure 索引投影）随其立项冻结
+> 细项，不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-20（TR0 细项冻结，进入实施）
+> 更新日期：2026-09-21（TR0 交付关闭）
 
 ## 1. 目标
 
@@ -220,9 +220,9 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `examples/minimal_consumer.cpp` 追加 MCP 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
 
-### 4.5 TR0：稳定引用与兼容投影（DEC-040 首阶段；2026-09-20 跑前冻结细项，进入实施）
+### 4.5 TR0：稳定引用与兼容投影（DEC-040 首阶段；2026-09-21 跑前冻结细项，同日交付关闭）
 
-- [ ] `M7-TR0-01` 引用语法 v1 冻结与解析（
+- [x] `M7-TR0-01` 引用语法 v1 冻结与解析（
   [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §4）：
   `toolref:<wire-name>`（跟随最新）/ `toolref:<wire-name>@<64 位小写十六进制>`
   （钉住成员 spec digest，内容寻址）；wire 名字符集与模组词表同源，三来源
@@ -230,14 +230,14 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   字符集、digest 形态、长度、空白、大写十六进制全矩阵拒绝），规范形态唯一、
   往返无损；错误 domain `mira.tool_reference`。基于版本约束的钉住不进 v1
   （设计 §4.3 裁决），未来引入按加法演进处理。
-- [ ] `M7-TR0-02` 引用清单提取工件（设计 §5）：`extract_workflow_tool_references`
+- [x] `M7-TR0-02` 引用清单提取工件（设计 §5）：`extract_workflow_tool_references`
   从经校验的 `WorkflowDefinition` 的 ToolCall 步骤（IR v1 `arguments["tool"]`）
   确定性提取 `mira.workflow.tool_refs.v1` 清单——绑定 `workflow_id` +
   `definition_digest`；提取选项默认模式 + 逐 wire 名覆盖（重复/空名拒绝）；
   钉住条目记录当时视图观察到的 spec digest，两模式均要求发布期可解析（引用
   不存在工具 fail closed）；视图重复 wire 名防御性拒绝；无 ToolCall 步骤产出
   确定空清单；JSON 严格往返无损；IR v1 schema 零改动。
-- [ ] `M7-TR0-03` 解析矩阵与兼容状态投影（设计 §6/§7/§8）：
+- [x] `M7-TR0-03` 解析矩阵与兼容状态投影（设计 §6/§7/§8）：
   `project_workflow_tool_compatibility` 以清单 × 当前暴露视图逐条目产出
   `Resolved`/`EvolvedCompatible`/`EvolvedIncompatible`/`Unresolved`（钉住
   digest 失配经「占位符按型实例化 + 既有严格 schema 校验器」做骨架可绑定判定，
@@ -248,7 +248,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `mira.workflow.tool_compat.v1` 版本化 JSON 脱敏（无 schema 体、描述原文与
   secret）；
   投影不进入执行路径，DEC-015 执行期校验语义不变。
-- [ ] `M7-TR0-04` 契约测试矩阵 `tests/m7/m7_tool_reference_test.cpp`（label
+- [x] `M7-TR0-04` 契约测试矩阵 `tests/m7/m7_tool_reference_test.cpp`（label
   `contract`）：覆盖 `M7-TR0-G1`–`G6` 全部门禁，`--report` 跨进程字节一致；
   `examples/minimal_consumer.cpp` 追加 TR0 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
@@ -373,33 +373,33 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 - [x] `M7-MCP-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 MCP 闭包段）。
 
-### 5.5 TR0 门禁（2026-09-20 跑前冻结）
+### 5.5 TR0 门禁（2026-09-21 跑前冻结；同日交付取证）
 
-- [ ] `M7-TR0-G1` 引用语法与解析矩阵：两种模式 golden 形态与规范往返（含真实
+- [x] `M7-TR0-G1` 引用语法与解析矩阵：两种模式 golden 形态与规范往返（含真实
   spec digest 的钉住形态）；负矩阵（scheme 缺失/错误、空串、词表字符集违规、
   digest 缺失/非 64 位/大写/非十六进制、尾部字符、内嵌空白、超长、首尾点）逐例
   fail closed，错误 domain `mira.tool_reference`；模式名闭合集。
-- [ ] `M7-TR0-G2` 提取与钉住观察：以真实 `BuiltinToolRegistry` 曝光视图驱动
+- [x] `M7-TR0-G2` 提取与钉住观察：以真实 `BuiltinToolRegistry` 曝光视图驱动
   提取——ToolCall 步骤逐条目提取、钉住条目记录视图 spec digest、逐工具覆盖与
   默认模式生效；负路径（`arguments["tool"]` 缺失/非字符串/字符集违规、视图外
   wire 名、未过结构校验的定义、选项重复/空覆盖名、视图重复 wire 名）整组拒绝
   无部分清单；清单绑定 `definition_digest` 且 `verify_workflow_tool_refs`
   通过/错配显式失败；无 ToolCall 定义产出确定空清单；JSON 往返无损。
-- [ ] `M7-TR0-G3` 解析矩阵与状态聚合：钉住/跟随 × 存在/消失/digest 演进全矩阵
+- [x] `M7-TR0-G3` 解析矩阵与状态聚合：钉住/跟随 × 存在/消失/digest 演进全矩阵
   条目结论正确；聚合规则（任一 Unresolved/EvolvedIncompatible → Invalid，孤立
   EvolvedCompatible → Degraded，全 Resolved → Runnable，空清单 → Runnable）
   逐分支断言；清单-定义错配（workflow_id、definition_digest）整组拒绝。
-- [ ] `M7-TR0-G4` 骨架可绑定判定与确定性：占位符按型实例化语义（`$param` 位置
+- [x] `M7-TR0-G4` 骨架可绑定判定与确定性：占位符按型实例化语义（`$param` 位置
   类型变化仍兼容、新增必填属性 → 不兼容、具体值类型收紧 → 不兼容、enum 收窄
   违例 → 不兼容、数组/嵌套对象递归）；detail 含首个违例 path/keyword 且有界；
   同输入同投影 digest，`--report` 跨进程字节一致（无时钟、无随机、canonical
   JSON）；投影对视图重复 wire 名 fail closed。
-- [ ] `M7-TR0-G5` 准入决策、留痕脱敏与 DEC-015 组合：`Invalid` → 拒绝且 reason
+- [x] `M7-TR0-G5` 准入决策、留痕脱敏与 DEC-015 组合：`Invalid` → 拒绝且 reason
   指向首个未通过条目；`Degraded` → 放行 + 留痕投影 `mira.workflow.tool_compat.v1`
   仅含身份/digest/结论与有界 detail（无 schema 体、无描述原文、无 secret）；
   `Runnable` → 放行无留痕要求；组合负向——准入 `Degraded` 的引用在执行期
   `BuiltinToolRegistry` 身份校验下仍被拒绝（投影不豁免执行期门禁）。
-- [ ] `M7-TR0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
+- [x] `M7-TR0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 TR0 闭包段）。
 
 ## 6. Executor 路由与关闭
@@ -671,3 +671,64 @@ success（12/12）。`M7-MCP-01`–`04` 与 `M7-MCP-G1`–`G6` 关闭；M7 已�
 TM0–TM2 + MCP 准入，后续阶段（DEC-040）立项时增补。
 
 
+
+2026-09-21：TR0 细项冻结并交付（DEC-040 首个实现阶段，前置「模组体系落地」已
+满足；维护者指令「依设计与计划推进下一步开发」，与 TM0–TM2、MCP 准入同一授权
+模式）。立项同步交付专项设计
+[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+（引用语法 v1、提取、解析矩阵、兼容投影、准入与留痕、DEC-015 边界、TR1 方向
+预告；基于版本约束的钉住不进 v1 的裁决见该文 §4.3）。
+
+交付 `include/mira/tool_reference.hpp` +
+`src/workflow/tool_reference.cpp`——**入 `mira_workflow`**：引用层消费
+`WorkflowDefinition` + `ExposedToolSpec` 暴露视图，属 Workflow 资产面，依赖
+方向 workflow→core 不变（`mira_core` 不含 IR 实现，不能承载）；最小 consumer
+闭包相应链接 `Mira::workflow`，仍不触碰 Executor API。契约：`parse_tool_reference`
+/`tool_reference_to_string` 引用语法 v1（跟随/钉住 spec digest，词表字符集，
+fail-closed，domain `mira.tool_reference`，domain_code 1/2/3）；
+`extract_workflow_tool_references` 提取 `mira.workflow.tool_refs.v1` 清单
+（绑定 workflow_id + `definition_digest`、发布期可解析 fail closed、钉住观察
+digest、逐 wire 名模式覆盖、严格 JSON 往返、`verify_workflow_tool_refs` 绑定
+校验、IR v1 零改动）；`project_workflow_tool_compatibility` 解析矩阵与
+`Runnable`/`Degraded`/`Invalid` 聚合（骨架可绑定判定 = `$param` 占位符按型
+实例化后交既有 M3 严格 schema 校验器 `validate_instance_against_schema`，准入
+期与派发路径同一校验器零漂移）；`admit_workflow_run_by_tool_compat` 准入决策
+与 `mira.workflow.tool_compat.v1` 脱敏留痕投影；DEC-015 执行期校验不变并组合
+负向入测。
+
+实现期修复一处（IVA 首轮发现）：`toolref:<name>@`（`@` 后 digest 缺失）被
+误判为跟随模式接受，违反设计 §4.2「`@` 后缺失一律拒绝」；修复为记录
+`has_digest_part` 后空 digest 走 `parse_pinned_digest` 失败路径，复验零测试
+改动。
+
+测试 `tests/m7/m7_tool_reference_test.cpp`（21 个 gate、约 239 断言，label
+`contract`；测试的编写、运行与 sanitizer 取证由 Independent-Verification-
+Agent 独立完成，共两轮：首轮 G1 负矩阵抓到上述解析缺陷（其余 39 例负路径与
+全部正路径通过），主循环修复后复验 21/21 全绿，交付测试文件 md5
+`2733d4b8f1b5246f48aef07dbd235f6c`）。取证要点：G1 含 40 例负矩阵；G2 以真实
+`BuiltinToolRegistry` 曝光视图驱动提取并覆盖 JSON 变异拒绝；G3 钉住/跟随 ×
+存在/失配/消失全矩阵与聚合逐分支；G4 实例化语义（类型变化兼容、新增必填/
+类型收紧/enum 收窄不兼容、detail 与校验器首违例逐字一致、有界）；G5 准入
+reason 指向首个未通过条目、留痕 JSON 闭字段集脱敏、DEC-015 组合负向（Degraded
+准入后旧身份提案仍被 `BuiltinToolRegistry` 拒绝）。`--report` 跨进程与跨四
+构建树（debug/asan/ubsan/tsan）字节一致（md5
+`4c4d8c72654e3211d6f9b6e3f7901666`，3773 字节）。本地门禁：全量 ctest
+**88/88**（原 87 + 本里程碑 1 目标）、format/docs/platform-boundary/sbom 四
+检查通过（format 真实检查 220 文件）、clang-tidy 18.1.8 预检新库源零违例、
+本机 NDK r26.3 两 ABI（arm64-v8a/x86_64）交叉编译 `mira_core`+`mira_workflow`
+通过且 TR0 符号在库。PR
+[#63](https://github.com/Linductor-alkaid/mira/pull/63)（head `4313cc1`，
+格式修复 `522bfb3`，合并提交 `a180e88`）：首轮 push run
+[`35520589859`](https://github.com/Linductor-alkaid/mira/actions/runs/35520589859)
+quality 失败——IVA 交付的测试文件未过 clang-format（唯一违例文件，纯空白
+重排，`--report` md5 不变佐证行为中性），`522bfb3` 修复后第二轮双 pipeline
+run [`35522450999`](https://github.com/Linductor-alkaid/mira/actions/runs/35522450999)/
+[`35522453203`](https://github.com/Linductor-alkaid/mira/actions/runs/35522453203)
+各 12 项全部通过；master 合并提交 run
+[`35523751427`](https://github.com/Linductor-alkaid/mira/actions/runs/35523751427)
+success（12/12）。`M7-TR0-01`–`04` 与 `M7-TR0-G1`–`G6` 关闭；M7 已立项阶段
+为 TM0–TM2 + MCP 准入 + TR0，后续阶段（TR1：Skill 生命周期、Procedure 索引
+投影、Runtime 接线与 IR 引用表达加法演进）立项时增补。限制与未执行项：清单/
+投影的存储挂载、`create_run` 准入消费与 `Degraded` 事件发射接线归 TR1/首个
+消费者里程碑（本阶段交付其消费的决策与投影产物，设计 §2.2）；确定性投影口径
+非语义质量声明（`RULE-10`）；`pattern` 约束位置按设计 §7.2 保守判不兼容。

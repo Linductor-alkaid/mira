@@ -1,9 +1,9 @@
 # DEC-040：Tool 稳定引用、兼容状态与 Skill 层级——能力身份的连续抽象
 
-> 状态：Accepted（方向冻结；首阶段 TR0——稳定引用与兼容投影——2026-09-20 依
+> 状态：Accepted（方向冻结；首阶段 TR0——稳定引用与兼容投影——2026-09-21 依
 > [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
-> 冻结细项并由 [M7](../plans/m7-tools-evaluation-platform-v1.md) 承载交付，引用
-> 语法 v1 随该阶段冻结；TR1——Skill 生命周期与 Procedure 索引投影——随后续
+> 冻结细项并由 [M7](../plans/m7-tools-evaluation-platform-v1.md) TR0 交付关闭，
+> 引用语法 v1 随该阶段冻结；TR1——Skill 生命周期与 Procedure 索引投影——随后续
 > 阶段立项）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
