@@ -261,6 +261,21 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   （`~TaskMonitor` 析构与 `execute_task` 持锁读取竞争）、[executor#185](https://github.com/Linductor-alkaid/executor/issues/185)
   （`test_lockfree_mpsc` 测试自身竞争）、[executor#188](https://github.com/Linductor-alkaid/executor/issues/188)
   （benchmark 并行负载偶发，建议 `RUN_SERIAL`）。均不属 Mira 使用面，不阻塞本项。
+- [ ] `MNT-202609-34` 将 `third_party/executor` 固定版本从 `e2dc8ca`
+  （`v0.4.0-100-ge2dc8ca`）升级到 `v0.5.0`（`2ae4fc8`，上游 11 个提交）。动机：上游把
+  Mira 当前所处的开发线正式定稿发布，且 4 个功能性提交逐一收敛 `MNT-202609-33` 向上游
+  登记的全部 4 项发现——[executor#187](https://github.com/Linductor-alkaid/executor/issues/187)
+  （`push_batch_exact` 批次保留被消费者误杀，0330f8f 反向保留 + `BatchWriting` 逃逸）、
+  [executor#186](https://github.com/Linductor-alkaid/executor/issues/186)（`~TaskMonitor`
+  析构竞争，9b26400 析构前锁 `mutex_`）、[executor#185](https://github.com/Linductor-alkaid/executor/issues/185)
+  （`test_lockfree_mpsc` 测试同步域，9c78ddb）、[executor#188](https://github.com/Linductor-alkaid/executor/issues/188)
+  （benchmark 测试序列化，2d4ef84，同时放宽上游 TSAN CI 子集）；其余为发布流水线、
+  版本号与文档/网站同步。契约核对：`e2dc8ca..v0.5.0` 公开 `include/` 头文件零改动
+  （`git diff --stat` 为空），Mira 编译面逐字节不变。依赖：无（独立维护项）。验收：
+  executor 自身套件全量取证，TSAN 下 `MNT-202609-33` 记录的原 4 项失败应收敛且不引入
+  新报告；Mira 门禁（debug/TSAN/ASAN/四检查目标/Android 交叉编译预演）通过；锁定信息、
+  SBOM、供应链文档与 DEC-001 引用同步；PR CI（Linux×4/Windows×2/Android×2/
+  sanitizers×3/quality）全绿后回填勾选。
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
@@ -580,3 +595,37 @@ reservation 阶段，由测试 TU 布局决定性触发；旧 pin `4fd8e60` 同�
 （thread_pool.cpp:337，持 `TaskMonitor::mutex_`），写侧 `~TaskMonitor` 无锁 clear；
 `~ExecutorManager` 虽先 `shutdown(true)`（`wait_for_completion_ex` 上限 300s），TSAN 仍报
 告该边缺失。结论与 issue 正文一致；Mira 使用面不受影响（Mira TSAN 68/68、0 报告）。
+
+2026-09-20：`MNT-202609-34` Executor 固定版本升级 `e2dc8ca` → `v0.5.0`（`2ae4fc8`，上游
+11 提交；由 Independent-Verification-Agent 独立执行全部取证，工作树即本变更分支）。动机与
+契约核对见第 3.5 节工作项；`git diff e2dc8ca v0.5.0 -- include/` 由验证代理独立复核为空。
+本地验证（Linux x86_64，gcc 13.3.0，CMake 3.28.3，NDK 26.3.11579264，14 核）：
+
+- executor 自身套件（树外 `/tmp`，Debug，`EXECUTOR_BUILD_TESTS=ON` +
+  `EXECUTOR_FETCH_GTEST=ON`）：ctest 135/140 通过；5 个 `test_api_doc_*` 失败仍为
+  相对路径伪影（`cd third_party/executor/tests/` 直跑 5/5 通过）；`test_executor_snapshot`
+  首轮 `-j4` 下 30.01s 超时一次，第二次全量与三次单独直跑、TSAN 串行均通过，判为一次性
+  调度 flake；旧 pin 已知的 `benchmark_lockfree_task_executor` `-j4` 偶发延迟断言失败
+  未复现——v0.5.0 的 benchmark `RUN_SERIAL` 序列化（#188 收敛）生效。
+- executor TSAN（`EXECUTOR_ENABLE_TSAN=ON`，`setarch x86_64 -R` 串行）：**第 5 节
+  2026-09-12 记录的原 4 项失败逐一收敛且 0 TSAN 警告**——`test_batch_integration`
+  （#187，0330f8f 反向保留 + `BatchWriting` 逃逸）、`test_executor_manager`（#186，
+  9b26400 析构前锁 `mutex_`）、`test_lockfree_mpsc`（#185，9c78ddb 同步域）、
+  `benchmark_lockfree_task_executor`（#188，2d4ef84）。v0.5.0 的 TSAN 放宽名单恰好补入
+  前三项（`tests/CMakeLists.txt` 两版对照），修复范围与失败项一一对应。剩余 6 项失败：
+  5 个 api_doc 伪影（直跑通过）+ `benchmark_thread_pool_hotpath`（30.04s 超时 + 2 条
+  TSAN 竞争，180s 重跑仍不终止并新增 3 条）——定性为**测试 harness 自身竞争**
+  （`benchmark_thread_pool_hotpath.cpp:174` 多个 in-flight 任务并发 `push_back` 同一
+  per-producer vector，与其 112 行 "workers only read" 注释不符），该文件两 pin 间零改动、
+  未列入 v0.5.0 豁免名单，属旧 pin 遗留而非本次升级引入；已于当日登记
+  [executor#194](https://github.com/Linductor-alkaid/executor/issues/194)。
+- Mira 门禁：`ctest --test-dir build/debug` 86/86（基线 69/69，含 M7 TM 阶段新增测试）；
+  ASAN 86/86、0 错误；TSAN（`setarch -R`）85/85、0 报告（`mira_m3_mbedtls_portable_test`
+  按设计禁用）；`format-check`（214 文件）/`docs-check`/`sbom-check`（机械核对
+  `executor@2ae4fc8985af` 与子模块 HEAD、lock、SBOM 三方一致）/`platform-boundary-check`
+  通过；`android-arm64-release` 交叉编译 mira_core/mira_workflow/两 Adapter/net/mbedtls
+  transport/state_store/stateful_consumer 全部通过，抽验产物为 ARM aarch64 ELF。
+
+限制与剩余：上游发布流水线两提交（tag 触发打包、Windows 生成器跟随 runner 默认）仅涉
+上游 CI，本地不覆盖；`benchmark_thread_pool_hotpath` TSAN 遗留归 #194 跟踪；Windows/
+clang/Release、Android x86_64 与 UBSAN 由 PR CI 回填，全绿后回填第 3.5 节勾选。

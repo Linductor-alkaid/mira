@@ -2,7 +2,12 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-19（M7 第二阶段 TM1「Registry 生命周期」跑前冻结工作项
+> 更新日期：2026-09-20（依赖维护 `MNT-202609-34`：Executor pin `e2dc8ca` →
+> `v0.5.0`（`2ae4fc8`）。上游把 Mira 所处开发线正式定稿发布，4 个功能提交逐一收敛
+> `MNT-202609-33` 向上游登记的 TSAN/稳定性发现 executor#185–#188；公开 `include/`
+> 头文件零改动，Mira 编译面不变。验收与证据按[维护计划](maintenance-2026-09-post-stage-f.md)
+> 登记，PR CI 全绿后回填完成。）
+> 此前 2026-09-19（M7 第二阶段 TM1「Registry 生命周期」跑前冻结工作项
 > `M7-TM1-01`–`03` 与门禁 `M7-TM1-G1`–`G6` 后交付：状态机与不可变 snapshot、
 > revoke tombstone、版本化生命周期事件、三 origin 来源信任（DEC-009
 > HostProvided allowlist 暂定默认值升格 v1 冻结）、协商触发挂接与 Executor
@@ -173,6 +178,11 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    公开契约未变，本地门禁（debug 69/69、TSAN 68/68 零报告、ASAN 69/69、四检查目标、
    Android arm64 交叉编译）、executor 自身套件、新旧 pin TSAN 对照与 PR CI 24/24
    （PR #43，`5a18df7`）全部通过；证据见[维护计划验证记录](maintenance-2026-09-post-stage-f.md)。
+   2026-09-20：`MNT-202609-34` 升级 pin `e2dc8ca` → `v0.5.0`（`2ae4fc8`）：上游将该线
+   正式定稿发布，4 个功能提交逐一收敛上述登记的 executor#185–#188（`push_batch_exact`
+   批次保留误杀、`~TaskMonitor` 析构竞争、mpsc 测试同步域、benchmark 序列化），公开
+   `include/` 头文件零改动；验收与证据按[维护计划](maintenance-2026-09-post-stage-f.md)
+   `MNT-202609-34` 登记，PR CI 全绿后回填完成。
 6. 方向登记（2026-09-12，实现未开始）：[Issue #39](https://github.com/Linductor-alkaid/mira/issues/39)
    （长会话上下文管理）与 [Issue #25](https://github.com/Linductor-alkaid/mira/issues/25)
    （Android 混合视觉 grounding）的架构改动方案已结合现状评审并冻结为
