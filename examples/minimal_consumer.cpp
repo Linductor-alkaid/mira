@@ -5,6 +5,7 @@
 #include <mira/tool_module_mcp.hpp>
 #include <mira/tool_module_registry.hpp>
 #include <mira/tool_reference.hpp>
+#include <mira/tool_skill.hpp>
 #include <mira/version.hpp>
 
 #include <chrono>
@@ -172,6 +173,7 @@ int main() {
     definition.schema_version = mira::SchemaVersion{1, 0};
     definition.workflow_id = mira::WorkflowId::generate();
     definition.name = "consumer.sample";
+    definition.summary = "Consumer sample skill.";
     definition.default_policy = mira::WorkflowPolicy::Strict;
     definition.allowed_policies = {mira::WorkflowPolicy::Strict};
     mira::WorkflowStep step;
@@ -204,6 +206,49 @@ int main() {
         mira::admit_workflow_run_by_tool_compat(projection.value());
     if (!decision.admitted) {
         return 11;
+    }
+
+    // M7-TR1-G6 consumer closure: the skill publication header must be
+    // includable and linkable from the same minimal consumer. The chain
+    // derives a skill descriptor from the TR0 manifest, publishes it through
+    // the registry against a runnable library version, exercises the
+    // downgrade-only revocation and rebuilds the Procedure index.
+    mira::WorkflowVersionHistory history;
+    history.workflow_id = definition.workflow_id;
+    mira::WorkflowVersionRecord version_record;
+    version_record.content_digest = mira::workflow_definition_digest(definition);
+    version_record.validation = mira::WorkflowValidationResult::DryRunPassed;
+    version_record.validation_evidence = version_record.content_digest;
+    if (!mira::append_workflow_version(history, version_record).has_value()) {
+        return 12;
+    }
+    const auto skill_descriptor = mira::make_skill_descriptor(definition, manifest.value(), view,
+                                                              "consumer.sample_skill", {1, 0, 0});
+    if (!skill_descriptor.has_value() || skill_descriptor.value().surface.description.empty() ||
+        !skill_descriptor.value().surface.parameters_schema.valid()) {
+        return 12;
+    }
+    mira::SkillPublicationRegistry skill_registry;
+    const auto published = skill_registry.publish_skill(skill_descriptor.value(), definition,
+                                                        manifest.value(), view, history);
+    if (!published.has_value() ||
+        published.value().status != mira::SkillPublicationStatus::Published) {
+        return 12;
+    }
+    const auto revoked = skill_registry.revoke_skill("consumer.sample_skill", "consumer closure");
+    if (!revoked.has_value() || revoked.value().status != mira::SkillPublicationStatus::Revoked) {
+        return 12;
+    }
+    const auto publications = skill_registry.publications();
+    const auto index = mira::project_skill_procedure_index(publications);
+    if (!index.has_value() || index.value().entries.size() != 1 ||
+        index.value().entries.front().status != mira::SkillPublicationStatus::Revoked) {
+        return 12;
+    }
+    const auto rebuilt =
+        mira::skill_procedure_entry_from_statement(index.value().entries.front().statement);
+    if (!rebuilt.has_value() || !(rebuilt.value() == index.value().entries.front())) {
+        return 12;
     }
     return 0;
 }

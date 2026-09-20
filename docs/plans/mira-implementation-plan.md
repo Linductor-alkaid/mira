@@ -2,7 +2,14 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-21（DEC-040 首阶段 TR0「Tool 稳定引用与兼容投影」交付关闭：
+> 更新日期：2026-09-21（DEC-040 第二阶段 TR1「Skill 发布生命周期与 Procedure
+> 索引投影」跑前冻结工作项 `M7-TR1-01`–`04` 与门禁 `M7-TR1-G1`–`G6` 后进入
+> 实施：Skill 描述符（钉住源 Workflow id + `ir_digest`）与暴露面确定性派生、
+> `SkillPublicationRegistry` 宿主显式发布/升级/撤销生命周期、Procedure 索引
+> 投影（以显式发布为界、可重建）；规范随
+> [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+> §17 冻结，详见 §4.1 第 14 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> 此前 2026-09-21（DEC-040 首阶段 TR0「Tool 稳定引用与兼容投影」交付关闭：
 > 引用语法 v1 冻结（钉住 spec digest / 跟随最新）、Workflow 引用清单提取、解析
 > 矩阵与 `Runnable`/`Degraded`/`Invalid` 确定性兼容投影、`Invalid` 准入拒绝决策
 > 与 `Degraded` 留痕产物；专项设计
@@ -393,6 +400,23 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     TR1（Skill 生命周期、Procedure 索引投影、Runtime 接线与 IR 引用表达加法
     演进，实施前冻结细项）；证据与限制见
     [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+
+14. DEC-040 第二阶段 TR1 立项入口（2026-09-21）：TR0 关闭后依 M7 §4.6 冻结
+    TR1 细项（`M7-TR1-01`–`04`）与门禁（`M7-TR1-G1`–`G6`）并进入实施：
+    Skill 描述符 `mira.skill.descriptor.v1`（name wire 身份、显式版本、源
+    Workflow id + `ir_digest` 钉住、暴露面确定性派生——description 取
+    summary、参数 schema 从 `WorkflowParameterSpec` 映射过
+    `gate_schema_subset`、副作用由 TR0 引用清单 × 视图推导）；
+    `SkillPublicationRegistry` 宿主显式发布/升级/撤销（publish_validated
+    runnable 门禁、只降级、seal/close 部署窗、幂等 NoOp、superseded 轨迹、
+    版本化事件 `mira.skill.publication.v1` 脱敏）；Procedure 索引投影
+    `mira.skill.procedure_index.v1`（以宿主显式发布为界——未发布库资产不
+    自动索引，DEC-029 否决的自动写入面不复活；statement 固定 canonical
+    JSON、无时钟、可重建、不写 `IMemory`）。TR1 无执行面（Skill 不进
+    registry/exposure，子 Workflow 调用执行与 `create_run` 准入消费、
+    `Degraded` 事件发射、IR 引用表达加法演进归 TR2，实施前冻结细项）；
+    规范见 [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+    §17；交付证据见 [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

@@ -2,11 +2,10 @@
 
 > 状态：Active（TR0 冻结规范，已由
 > [M7](../plans/m7-tools-evaluation-platform-v1.md) TR0 阶段交付关闭（PR #63，
-> 合并提交 `a180e88`）；决策载体为
-> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)；TR1（Skill
-> 生命周期与 Procedure 索引投影）在本文 §15 仅登记方向，进入实施前随其立项
-> 冻结细项。本文代码片段均为契约草案，签名以实现为准）  
-> 版本：1.0  
+> 合并提交 `a180e88`）；TR1 规范见 §17，2026-09-21 随其立项冻结；决策载体为
+> [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)。本文代码
+> 片段均为契约草案，签名以实现为准）  
+> 版本：1.1  
 > 更新日期：2026-09-21  
 > 负责人：Mira Maintainers  
 > 适用范围：Workflow 资产对工具的稳定逻辑引用、引用解析矩阵与兼容状态投影
@@ -273,16 +272,18 @@ TR0 全部为串行控制面内的同步纯计算（有界、无 I/O、无时钟
   占位符按型实例化后复用同一校验器（§7.2）。
 - **兼容状态落库为版本记录字段**：DEC-040 备选方案已否决（投影 + 事件留痕）。
 
-## 15. 分阶段与 TR1 方向（未冻结）
+## 15. 分阶段与 TR2 方向（未冻结）
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| TR0 | 引用语法、提取、解析矩阵、兼容投影、准入决策与留痕产物 | 本文 §4–§13 冻结，M7 承载交付 |
-| TR1 | Skill 发布/升级/撤销生命周期（descriptor 携带源 Workflow id 与 `ir_digest` 钉住；经 `publish_validated` 门禁后宿主显式发布为 Tool 通道成员）；Procedure 索引投影（DEC-029 推迟项承接）；WorkflowRuntime 接线（库存储挂载 + `create_run` 准入消费 + `Degraded` 事件发射）与 IR 引用表达加法演进 | 仅方向；进入实施前随其立项冻结工作项、门禁与本文件增补 |
+| TR0 | 引用语法、提取、解析矩阵、兼容投影、准入决策与留痕产物 | §4–§13 冻结，M7 TR0 交付关闭（PR #63） |
+| TR1 | Skill 发布生命周期与 Procedure 索引投影（§17 冻结）：Skill 描述符与暴露面派生、`SkillPublicationRegistry` 发布/升级/撤销生命周期、Procedure 索引投影；纯契约层，不触碰执行路径 | §17 冻结（2026-09-21），M7 TR1 承载 |
+| TR2 | WorkflowRuntime 接线与执行（未冻结）：库存储挂载 tool_refs 清单、`create_run` 准入消费 TR0 投影、`Degraded` 事件发射、Skill 经 Tool 通道的子 Workflow 调用执行适配（DEC-040 §3.2）与 IR 引用表达加法演进 | 仅方向；进入实施前随其立项冻结工作项、门禁与本文件增补 |
 
-TR1 约束预告（来自 DEC-040，未细化）：Skill 复用 Workflow 版本化本体，不建第二
-套资产体系（W-03）；编译产物不自动暴露（宿主显式发布）；Skill 与普通 Tool 同
-门禁（§6 Authority 不变）。
+TR1 约束（§17 冻结）：Skill 复用 Workflow 版本化本体，不建第二套资产体系
+（W-03）；编译产物不自动暴露，索引以宿主显式发布为界；Skill 与普通 Tool 同
+门禁（DEC-040 §6 Authority 不变）；TR1 无执行面——Skill 不进入
+`BuiltinToolRegistry`/exposure，调用执行归 TR2。
 
 ## 16. 关联文档
 
@@ -295,3 +296,70 @@ TR1 约束预告（来自 DEC-040，未细化）：Skill 复用 Workflow 版本�
 - [M7 计划](../plans/m7-tools-evaluation-platform-v1.md)（§4.5 工作项、§5.5 门禁）
 - [工具模组设计](tool_module_design.md)（§8 投影消费者、§15 阶段表）
 - [Mira 实施总计划](../plans/mira-implementation-plan.md)（§4.1 方向登记）
+
+## 17. TR1：Skill 发布生命周期与 Procedure 索引投影（2026-09-21 冻结）
+
+### 17.1 Skill 描述符与暴露面派生
+
+Skill 是「暴露为 Tool 的 Workflow」（DEC-040 §3.2）：描述符携带源 Workflow id
+与钉住的 `ir_digest`，Tool 通道暴露面从源定义确定性派生：
+
+- `mira.skill.descriptor.v1`：`name`（词表字符集 wire 身份，Skill 的稳定逻辑
+  身份）、`version`（Skill 自身显式版本，升级为显式动作）、
+  `source_workflow_id` + `source_ir_digest`（钉住）、派生暴露面
+  `SkillSurface{description, parameters_schema, has_side_effects}`、
+  canonical descriptor digest。
+- `derive_skill_surface(definition, refs, view)` 派生规则（全部确定性）：
+  - `description` = `definition.summary`（非空、有界，超限整组拒绝）；
+  - `parameters_schema` 从 `WorkflowParameterSpec` 列表映射（String→string +
+    minLength/maxLength/pattern/enum，Integer/Number→integer/number +
+    minimum/maximum，Boolean→boolean；required 参数进 `required`；
+    `additionalProperties=false`；逐项过 `gate_schema_subset`）；
+  - `has_side_effects` = TR0 引用清单 × 视图：任一被引用工具
+    `has_side_effects` 即真；全部引用须在视图可解析（发布期 fail closed）。
+- 输入绑定：refs 必须通过 `verify_workflow_tool_refs` 绑定该定义；视图重名
+  fail closed（复用 TR0 纪律）。
+
+### 17.2 发布生命周期
+
+`SkillPublicationRegistry`（串行控制面组件，镜像 TM1 纪律）承载宿主显式发布
+动作；状态 `Published -> Revoked`（只降级，无复出口），升级为同名的显式换钉：
+
+- `publish_skill`：宿主显式动作。fail closed——源定义未过结构校验、refs 未
+  绑定、源 `WorkflowVersionRecord` 非 runnable（`workflow_version_is_runnable`，
+  即未经 `publish_validated` 门禁的 DryRunPassed/Validated 版本）、记录的
+  `content_digest`/`workflow_id` 与定义不符、name 撞宿主保留名或已存在（同
+  name + 同 descriptor digest 幂等 NoOp，其余 `AlreadyExists`）、超出容量。
+- `upgrade_skill`：显式换钉。新版本号必须严格大于当前版本；新 `ir_digest`
+  经同一 runnable 校验；同 digest 升级幂等 NoOp；旧版本进 superseded 轨迹，
+  已发布描述符被替换（事件留痕）。
+- `revoke_skill`：Published -> Revoked，理由有界脱敏；重复撤销幂等；撤销后
+  不可恢复（重新发布同 name 需新注册周期——seal 后即为拒绝）。
+- 部署窗：`seal()` 后 publish/upgrade 拒绝、revoke 仍可用；`close()` 后一切
+  变更拒绝、读取仍可用；拒绝计数可见。
+- 版本化事件 `mira.skill.publication.v1`（kind: published/upgraded/revoked）：
+  仅 name/version/workflow_id/ir_digest/descriptor digest/有界理由——不含
+  description 与 schema 体；sink 失败计数不阻塞控制面。
+
+### 17.3 Procedure 索引投影
+
+承接 DEC-029 推迟项（DEC-040 §7）：**索引以宿主显式 Skill 发布为界**——未发
+布的 Workflow 库资产不自动索引（避免 DEC-029 否决的「无验收写入面」）。
+
+- `project_skill_procedure_index(publications)` → 逐发布记录的 Procedure
+  statement（canonical JSON，schema `mira.skill.procedure_index.v1`：name、
+  version、source_workflow_id、source_ir_digest、descriptor digest、
+  has_side_effects；不含 description），对齐 DEC-029「statement 固定
+  canonical JSON」纪律；输出按 name 排序。
+- 无时钟：时间戳归消费接线（TR2）；本投影只承载身份与钉住事实。
+- 可重建：statement 严格反解析回等价条目、重放字节一致（同输入同状态，
+  RULE-07 投影）。
+- 不写 `IMemory`：写入面（MemoryRecord(kind=Procedure) 的落库、scope/ACL、
+  检索）归 TR2 接线里程碑。
+
+### 17.4 明确非目标
+
+- 无执行面：Skill 不进入 `BuiltinToolRegistry`/exposure/协商；子 Workflow
+  调用执行适配归 TR2（DEC-040 §3.2，经 Tool 通道既有校验路径）。
+- 不做自动发现/推荐/自动发布；编译产物不自动成为 Skill。
+- 不改变 `workflow_learning`（DEC-030）既有语义。
