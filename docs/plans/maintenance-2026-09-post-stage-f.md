@@ -261,7 +261,7 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   （`~TaskMonitor` 析构与 `execute_task` 持锁读取竞争）、[executor#185](https://github.com/Linductor-alkaid/executor/issues/185)
   （`test_lockfree_mpsc` 测试自身竞争）、[executor#188](https://github.com/Linductor-alkaid/executor/issues/188)
   （benchmark 并行负载偶发，建议 `RUN_SERIAL`）。均不属 Mira 使用面，不阻塞本项。
-- [ ] `MNT-202609-34` 将 `third_party/executor` 固定版本从 `e2dc8ca`
+- [x] `MNT-202609-34`（Completed）将 `third_party/executor` 固定版本从 `e2dc8ca`
   （`v0.4.0-100-ge2dc8ca`）升级到 `v0.5.0`（`2ae4fc8`，上游 11 个提交）。动机：上游把
   Mira 当前所处的开发线正式定稿发布，且 4 个功能性提交逐一收敛 `MNT-202609-33` 向上游
   登记的全部 4 项发现——[executor#187](https://github.com/Linductor-alkaid/executor/issues/187)
@@ -275,7 +275,12 @@ DEC-030 §5 的重建配方已由 `MNT-202609-25` 取证：ID/provenance/身份�
   executor 自身套件全量取证，TSAN 下 `MNT-202609-33` 记录的原 4 项失败应收敛且不引入
   新报告；Mira 门禁（debug/TSAN/ASAN/四检查目标/Android 交叉编译预演）通过；锁定信息、
   SBOM、供应链文档与 DEC-001 引用同步；PR CI（Linux×4/Windows×2/Android×2/
-  sanitizers×3/quality）全绿后回填勾选。
+  sanitizers×3/quality）全绿后回填勾选。结果（2026-09-20）：PR
+  [#61](https://github.com/Linductor-alkaid/mira/pull/61)（合并提交 `ab88fc9`）CI
+  双事件 24/24 全绿（gcc/clang × Debug/Release、Windows Debug/Release、Android 两
+  ABI 交叉编译与 installed-consumer 链接、ASAN/UBSAN/TSAN、quality；runs
+  `35480719573`/`35480746136`），master 合并提交 run `35481561204` success；本地证据
+  见第 5 节 2026-09-20 记录。
 
 建议先执行 22；23、25、28 可独立准备，27 持续回收外部证据。随后按证据推进 24/26/29，
 由 30 收敛 M7。P2 不阻塞验收补齐。该顺序是本维护计划的任务优先级，不替代 DEC-011 的
@@ -627,5 +632,8 @@ reservation 阶段，由测试 TU 布局决定性触发；旧 pin `4fd8e60` 同�
   transport/state_store/stateful_consumer 全部通过，抽验产物为 ARM aarch64 ELF。
 
 限制与剩余：上游发布流水线两提交（tag 触发打包、Windows 生成器跟随 runner 默认）仅涉
-上游 CI，本地不覆盖；`benchmark_thread_pool_hotpath` TSAN 遗留归 #194 跟踪；Windows/
-clang/Release、Android x86_64 与 UBSAN 由 PR CI 回填，全绿后回填第 3.5 节勾选。
+上游 CI，本地不覆盖；`benchmark_thread_pool_hotpath` TSAN 遗留归 #194 跟踪。Windows/
+clang/Release、Android x86_64 与 UBSAN 缺口已由 PR
+[#61](https://github.com/Linductor-alkaid/mira/pull/61) CI 回填（双事件 24/24 全绿，
+runs `35480719573`/`35480746136`；合并提交 `ab88fc9`，master run `35481561204`
+success），第 3.5 节工作项已勾选。
