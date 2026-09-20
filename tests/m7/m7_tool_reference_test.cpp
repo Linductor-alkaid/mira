@@ -254,13 +254,17 @@ std::vector<RegistryTool> gate_registry_tools() {
 }
 
 WorkflowDefinition make_gate_definition() {
-    return base_definition(kWorkflowAlpha, "fixture.alpha", {
-        // Construction order deliberately differs from step_id order.
-        toolcall_step(kStepTransform, json_or_abort(R"json({"tool":"echo.transform"})json")),
-        toolcall_step(kStepRender,
-                      json_or_abort(R"json({"tool":"delta.render","scene":{"$param":"scene"}})json")),
-        toolcall_step(kStepLookup, json_or_abort(R"json({"tool":"delta.lookup","key":"k"})json")),
-    });
+    return base_definition(
+        kWorkflowAlpha, "fixture.alpha",
+        {
+            // Construction order deliberately differs from step_id order.
+            toolcall_step(kStepTransform, json_or_abort(R"json({"tool":"echo.transform"})json")),
+            toolcall_step(
+                kStepRender,
+                json_or_abort(R"json({"tool":"delta.render","scene":{"$param":"scene"}})json")),
+            toolcall_step(kStepLookup,
+                          json_or_abort(R"json({"tool":"delta.lookup","key":"k"})json")),
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -313,35 +317,33 @@ std::string build_reference_report() {
     // Resolution matrix anchors over the frozen epsilon.tool scenario.
     const ToolId tool_one = fixed_tool("000000000000000000000000000000d1");
     const ToolId tool_two = fixed_tool("000000000000000000000000000000d2");
-    const ExposedToolSpec evolved_bindable = make_spec(
-        "epsilon.tool",
-        R"json({
+    const ExposedToolSpec evolved_bindable =
+        make_spec("epsilon.tool",
+                  R"json({
             "type": "object",
             "properties": {"scene": {"type": "integer"}},
             "required": ["scene"],
             "additionalProperties": false
         })json",
-        kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
-    const ExposedToolSpec evolved_broken = make_spec(
-        "epsilon.tool",
-        R"json({
+                  kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
+    const ExposedToolSpec evolved_broken = make_spec("epsilon.tool",
+                                                     R"json({
             "type": "object",
             "properties": {"scene": {"type": "integer"}, "extra": {"type": "string"}},
             "required": ["scene", "extra"],
             "additionalProperties": false
         })json",
-        kDigestTwo, tool_two);
-    const ExposedToolSpec evolved_plain = make_spec(
-        "epsilon.tool",
-        R"json({
+                                                     kDigestTwo, tool_two);
+    const ExposedToolSpec evolved_plain = make_spec("epsilon.tool",
+                                                    R"json({
             "type": "object",
             "properties": {"scene": {"type": "string"}},
             "required": ["scene"],
             "additionalProperties": false
         })json",
-        kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
-    const ExposedToolSpec unchanged = make_spec("epsilon.tool", R"json({"type":"object"})json",
-                                                kDigestOne, tool_one);
+                                                    kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
+    const ExposedToolSpec unchanged =
+        make_spec("epsilon.tool", R"json({"type":"object"})json", kDigestOne, tool_one);
 
     JsonValue::Array matrix;
     const auto record_matrix = [&](const char *name, const MatrixResult &result) {
@@ -357,15 +359,17 @@ std::string build_reference_report() {
     record_matrix("pinned_resolved",
                   project_single(json_or_abort(R"json({"tool":"epsilon.tool"})json"),
                                  R"json({"type":"object"})json", &unchanged));
-    record_matrix("pinned_evolved_compatible",
-                  project_single(json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"),
-                                 R"json({
+    record_matrix(
+        "pinned_evolved_compatible",
+        project_single(
+            json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"),
+            R"json({
                                      "type": "object",
                                      "properties": {"scene": {"type": "string"}},
                                      "required": ["scene"],
                                      "additionalProperties": false
                                  })json",
-                                 &evolved_bindable));
+            &evolved_bindable));
     record_matrix("pinned_evolved_incompatible",
                   project_single(json_or_abort(R"json({"tool":"epsilon.tool","scene":"s"})json"),
                                  R"json({
@@ -384,26 +388,26 @@ std::string build_reference_report() {
 
     // Degraded audit artifact anchor plus its admission decision.
     {
-        const std::vector<ExposedToolSpec> publish_view{make_spec(
-            "epsilon.tool",
-            R"json({
+        const std::vector<ExposedToolSpec> publish_view{make_spec("epsilon.tool",
+                                                                  R"json({
                 "type": "object",
                 "properties": {"scene": {"type": "string"}},
                 "required": ["scene"],
                 "additionalProperties": false
             })json",
-            kDigestOne, tool_one)};
+                                                                  kDigestOne, tool_one)};
         WorkflowDefinition degraded_definition = base_definition(
             kWorkflowAlpha, "report-degraded",
-            {toolcall_step(kStepRender,
-                           json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"))});
+            {toolcall_step(
+                kStepRender,
+                json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"))});
         const WorkflowToolRefManifest degraded_manifest =
             extract_or_abort(degraded_definition, publish_view);
         const std::vector<ExposedToolSpec> current_view{evolved_bindable};
-        const WorkflowToolCompatProjection degraded = must(
-            project_workflow_tool_compatibility(degraded_definition, degraded_manifest,
-                                                current_view),
-            "report degraded projection");
+        const WorkflowToolCompatProjection degraded =
+            must(project_workflow_tool_compatibility(degraded_definition, degraded_manifest,
+                                                     current_view),
+                 "report degraded projection");
         report.emplace_back("degraded_audit_json",
                             canonical_json_string(workflow_tool_compat_to_json(degraded)));
         const WorkflowToolCompatDecision degraded_decision =
@@ -432,19 +436,19 @@ std::string build_reference_report() {
         record_decision("runnable", decision);
     }
     {
-        const std::vector<ExposedToolSpec> publish_view{make_spec(
-            "epsilon.tool",
-            R"json({
+        const std::vector<ExposedToolSpec> publish_view{make_spec("epsilon.tool",
+                                                                  R"json({
                 "type": "object",
                 "properties": {"scene": {"type": "string"}},
                 "required": ["scene"],
                 "additionalProperties": false
             })json",
-            kDigestOne, tool_one)};
+                                                                  kDigestOne, tool_one)};
         WorkflowDefinition degraded_definition = base_definition(
             kWorkflowAlpha, "report-degraded",
-            {toolcall_step(kStepRender,
-                           json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"))});
+            {toolcall_step(
+                kStepRender,
+                json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"))});
         const WorkflowToolRefManifest degraded_manifest =
             extract_or_abort(degraded_definition, publish_view);
         const std::vector<ExposedToolSpec> current_view{evolved_bindable};
@@ -459,9 +463,11 @@ std::string build_reference_report() {
             project_single(json_or_abort(R"json({"tool":"epsilon.tool"})json"),
                            R"json({"type":"object"})json", nullptr);
         WorkflowToolCompatDecision decision = admit_workflow_run_by_tool_compat(
-            WorkflowToolCompatProjection{kWorkflowAlpha, Sha256Digest{},
+            WorkflowToolCompatProjection{kWorkflowAlpha,
+                                         Sha256Digest{},
                                          WorkflowToolCompatState::Invalid,
-                                         {unresolved.entry}, unresolved.digest});
+                                         {unresolved.entry},
+                                         unresolved.digest});
         record_decision("invalid", decision);
     }
     report.emplace_back("decisions", JsonValue{std::move(decisions)});
@@ -487,9 +493,8 @@ int g1_follow_golden_round_trip() {
     MIRA_CHECK(tool_reference_to_string(reparsed.value()) == "toolref:delta.render");
 
     // Charset breadth: digits, '_' and '-' inside segments, multi-segment.
-    for (const char *golden :
-         {"toolref:delta.render", "toolref:a1_b2-c3.v2", "toolref:z9",
-          "toolref:alpha_beta.gamma-1.delta"}) {
+    for (const char *golden : {"toolref:delta.render", "toolref:a1_b2-c3.v2", "toolref:z9",
+                               "toolref:alpha_beta.gamma-1.delta"}) {
         const auto parsed = parse_tool_reference(golden);
         MIRA_CHECK(parsed.has_value());
         MIRA_CHECK(tool_reference_to_string(parsed.value()) == golden);
@@ -514,8 +519,7 @@ int g1_pinned_golden_round_trip() {
     // All-zero digest is a valid 64-lowercase-hex pin.
     const std::string zeros = "toolref:w@" + std::string(64, '0');
     const auto zero_parsed = parse_tool_reference(zeros);
-    MIRA_CHECK(zero_parsed.has_value() &&
-               zero_parsed.value().pinned_spec_digest == Hash{});
+    MIRA_CHECK(zero_parsed.has_value() && zero_parsed.value().pinned_spec_digest == Hash{});
     MIRA_CHECK(tool_reference_to_string(zero_parsed.value()) == zeros);
     return 0;
 }
@@ -746,8 +750,8 @@ int g2_binding_and_empty_manifest() {
     const auto wrong_digest = verify_workflow_tool_refs(manifest, kWorkflowAlpha, tampered);
     MIRA_CHECK(!wrong_digest.has_value());
     MIRA_CHECK(failed_in_reference_domain(wrong_digest.error(), 3));
-    MIRA_CHECK(
-        verify_workflow_tool_refs(manifest, kWorkflowAlpha, manifest.definition_digest).has_value());
+    MIRA_CHECK(verify_workflow_tool_refs(manifest, kWorkflowAlpha, manifest.definition_digest)
+                   .has_value());
 
     // A definition without ToolCall steps yields a defined empty manifest.
     const WorkflowDefinition no_tools =
@@ -849,9 +853,9 @@ int g2_json_round_trip() {
     {
         JsonValue::Object mutated;
         for (const auto &member : *encoded.as_object()) {
-            mutated.emplace_back(member.first,
-                                 member.first == "digest" ? JsonValue{std::string(64, '0')}
-                                                          : member.second);
+            mutated.emplace_back(member.first, member.first == "digest"
+                                                   ? JsonValue{std::string(64, '0')}
+                                                   : member.second);
         }
         MIRA_CHECK(rejects(JsonValue{std::move(mutated)}));
     }
@@ -909,10 +913,9 @@ int g2_json_round_trip() {
         MIRA_CHECK(rejects(resign(JsonValue{std::move(entries_not_array)})));
         JsonValue::Object mutated;
         for (const auto &member : *encoded.as_object()) {
-            mutated.emplace_back(member.first,
-                                 member.first == "workflow_id"
-                                     ? JsonValue{std::string("not-an-id")}
-                                     : member.second);
+            mutated.emplace_back(member.first, member.first == "workflow_id"
+                                                   ? JsonValue{std::string("not-an-id")}
+                                                   : member.second);
         }
         MIRA_CHECK(rejects(JsonValue{std::move(mutated)}));
     }
@@ -931,9 +934,9 @@ int g3_resolution_matrix() {
     {
         const ExposedToolSpec current =
             make_spec("epsilon.tool", R"json({"type":"object"})json", kDigestOne, tool_one);
-        const MatrixResult result = project_single(
-            json_or_abort(R"json({"tool":"epsilon.tool"})json"), R"json({"type":"object"})json",
-            &current);
+        const MatrixResult result =
+            project_single(json_or_abort(R"json({"tool":"epsilon.tool"})json"),
+                           R"json({"type":"object"})json", &current);
         MIRA_CHECK(result.entry.status == ToolReferenceCompat::Resolved);
         MIRA_CHECK(result.entry.pinned_spec_digest == kDigestOne);
         MIRA_CHECK(result.entry.current_spec_digest == kDigestOne);
@@ -943,15 +946,14 @@ int g3_resolution_matrix() {
     // Pinned x present x evolved digest x skeleton still binds ->
     // EvolvedCompatible.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"scene": {"type": "integer"}},
                 "required": ["scene"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
+                                                  kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
         const MatrixResult result = project_single(
             json_or_abort(R"json({"tool":"epsilon.tool","scene":{"$param":"scene"}})json"),
             R"json({
@@ -970,28 +972,26 @@ int g3_resolution_matrix() {
     // Pinned x present x evolved digest x skeleton no longer binds ->
     // EvolvedIncompatible with a bounded detail.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"scene": {"type": "integer"}, "extra": {"type": "string"}},
                 "required": ["scene", "extra"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
-        const MatrixResult result = project_single(
-            json_or_abort(R"json({"tool":"epsilon.tool","scene":"s"})json"),
-            R"json({
+                                                  kDigestTwo, tool_two);
+        const MatrixResult result =
+            project_single(json_or_abort(R"json({"tool":"epsilon.tool","scene":"s"})json"),
+                           R"json({
                 "type": "object",
                 "properties": {"scene": {"type": "string"}},
                 "required": ["scene"],
                 "additionalProperties": false
             })json",
-            &current);
+                           &current);
         MIRA_CHECK(result.entry.status == ToolReferenceCompat::EvolvedIncompatible);
         MIRA_CHECK(!result.entry.detail.empty());
-        MIRA_CHECK(result.entry.detail.size() <=
-                   kDefaultToolReferenceLimits.max_detail_bytes + 3);
+        MIRA_CHECK(result.entry.detail.size() <= kDefaultToolReferenceLimits.max_detail_bytes + 3);
         MIRA_CHECK(result.state == WorkflowToolCompatState::Invalid);
     }
     // Pinned x absent -> Unresolved (no current digest echoed).
@@ -1008,9 +1008,8 @@ int g3_resolution_matrix() {
         const ExposedToolSpec publish =
             make_spec("epsilon.tool", R"json({"type":"object"})json", kDigestOne, tool_one);
         const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({"type":"object","properties":{"scene":{"type":"string"}}})json", kDigestTwo,
-            tool_two, SemanticVersion{2, 0, 0});
+            "epsilon.tool", R"json({"type":"object","properties":{"scene":{"type":"string"}}})json",
+            kDigestTwo, tool_two, SemanticVersion{2, 0, 0});
         const MatrixResult result = project_single_follow(publish, &current);
         MIRA_CHECK(result.entry.status == ToolReferenceCompat::Resolved);
         MIRA_CHECK(result.entry.mode == ToolReferenceMode::FollowLatest);
@@ -1135,9 +1134,8 @@ int g3_aggregation_branches() {
         const WorkflowDefinition no_tools =
             base_definition(kWorkflowAlpha, "fixture.no_tools", {verify_step(kStepLookup)});
         const WorkflowToolRefManifest empty = extract_or_abort(no_tools, publish_view);
-        const auto projection =
-            must(project_workflow_tool_compatibility(no_tools, empty, publish_view),
-                 "empty project");
+        const auto projection = must(
+            project_workflow_tool_compatibility(no_tools, empty, publish_view), "empty project");
         MIRA_CHECK(projection.state == WorkflowToolCompatState::Runnable);
         MIRA_CHECK(projection.empty());
         MIRA_CHECK(projection.digest != Hash{});
@@ -1237,33 +1235,31 @@ int g4_placeholder_instantiation_compatible() {
     // $param position type change: string -> integer stays compatible because
     // the placeholder materializes from the CURRENT schema at its position.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"q": {"type": "integer"}},
                 "required": ["q"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
-        const MatrixResult result = project_single(
-            json_or_abort(R"json({"tool":"epsilon.tool","q":{"$param":"v"}})json"),
-            R"json({
+                                                  kDigestTwo, tool_two);
+        const MatrixResult result =
+            project_single(json_or_abort(R"json({"tool":"epsilon.tool","q":{"$param":"v"}})json"),
+                           R"json({
                 "type": "object",
                 "properties": {"q": {"type": "string"}},
                 "required": ["q"],
                 "additionalProperties": false
             })json",
-            &current);
+                           &current);
         MIRA_CHECK(result.entry.status == ToolReferenceCompat::EvolvedCompatible);
         MIRA_CHECK(result.entry.detail.empty());
     }
     // Nested object and array recursion: placeholders deep in the tree
     // materialize per position.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {
                     "cfg": {
@@ -1277,7 +1273,7 @@ int g4_placeholder_instantiation_compatible() {
                 "required": ["cfg", "tags"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result = project_single(
             json_or_abort(
                 R"json({"tool":"epsilon.tool","cfg":{"name":{"$param":"n"}},"tags":[{"$param":"t"}]})json"),
@@ -1302,15 +1298,14 @@ int g4_placeholder_instantiation_compatible() {
     // An array placeholder materializes from the current schema including a
     // raised minItems (bounded growth), so it still binds.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"tags": {"type": "array", "items": {"type": "integer"}, "minItems": 2}},
                 "required": ["tags"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result = project_single(
             json_or_abort(R"json({"tool":"epsilon.tool","tags":{"$param":"list"}})json"),
             R"json({
@@ -1326,15 +1321,14 @@ int g4_placeholder_instantiation_compatible() {
     // An enum placeholder picks the first member of the CURRENT enum, so a
     // narrowing enum alone keeps the skeleton bindable.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"mode": {"enum": ["turbo"]}},
                 "required": ["mode"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result = project_single(
             json_or_abort(R"json({"tool":"epsilon.tool","mode":{"$param":"m"}})json"),
             R"json({
@@ -1355,15 +1349,14 @@ int g4_skeleton_incompatible_matrix() {
 
     // New required property the recorded arguments never carry.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"q": {"type": "string"}, "extra": {"type": "integer"}},
                 "required": ["q", "extra"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result =
             project_single(json_or_abort(R"json({"tool":"epsilon.tool","q":"x"})json"),
                            R"json({
@@ -1394,9 +1387,8 @@ int g4_skeleton_incompatible_matrix() {
             "required": ["q"],
             "additionalProperties": false
         })json";
-        const MatrixResult result =
-            project_single(json_or_abort(R"json({"tool":"epsilon.tool","q":5})json"),
-                           published_schema, &current);
+        const MatrixResult result = project_single(
+            json_or_abort(R"json({"tool":"epsilon.tool","q":5})json"), published_schema, &current);
         MIRA_CHECK(result.entry.status == ToolReferenceCompat::EvolvedIncompatible);
         const auto violations = validate_instance_against_schema(
             json_or_abort(R"json({"q":5})json"), JsonSchema{json_or_abort(evolved_schema)});
@@ -1408,15 +1400,14 @@ int g4_skeleton_incompatible_matrix() {
     }
     // Enum narrowed so the recorded concrete value is no longer a member.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {"mode": {"enum": ["turbo"]}},
                 "required": ["mode"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result =
             project_single(json_or_abort(R"json({"tool":"epsilon.tool","mode":"fast"})json"),
                            R"json({
@@ -1432,9 +1423,8 @@ int g4_skeleton_incompatible_matrix() {
     }
     // Nested concrete value type change deep in the object tree.
     {
-        const ExposedToolSpec current = make_spec(
-            "epsilon.tool",
-            R"json({
+        const ExposedToolSpec current = make_spec("epsilon.tool",
+                                                  R"json({
                 "type": "object",
                 "properties": {
                     "cfg": {
@@ -1447,7 +1437,7 @@ int g4_skeleton_incompatible_matrix() {
                 "required": ["cfg"],
                 "additionalProperties": false
             })json",
-            kDigestTwo, tool_two);
+                                                  kDigestTwo, tool_two);
         const MatrixResult result =
             project_single(json_or_abort(R"json({"tool":"epsilon.tool","cfg":{"name":"x"}})json"),
                            R"json({
@@ -1477,13 +1467,14 @@ int g4_detail_bounded_and_first() {
     const std::string long_property(300, 'p');
     const std::string evolved_schema = R"json({
         "type": "object",
-        "properties": {")json" + long_property + R"json(": {"type": "string"}},
-        "required": [")json" + long_property + R"json("],
+        "properties": {")json" + long_property +
+                                       R"json(": {"type": "string"}},
+        "required": [")json" + long_property +
+                                       R"json("],
         "additionalProperties": false
     })json";
     const ToolId tool_two = fixed_tool("000000000000000000000000000000d2");
-    const ExposedToolSpec current =
-        make_spec("epsilon.tool", evolved_schema, kDigestTwo, tool_two);
+    const ExposedToolSpec current = make_spec("epsilon.tool", evolved_schema, kDigestTwo, tool_two);
     const MatrixResult result =
         project_single(json_or_abort(R"json({"tool":"epsilon.tool","p":1})json"),
                        R"json({
@@ -1566,9 +1557,8 @@ int g5_admission_decisions() {
 
     // Runnable -> admitted, no reason.
     {
-        const auto projection =
-            must(project_workflow_tool_compatibility(definition, manifest, publish_view),
-                 "runnable");
+        const auto projection = must(
+            project_workflow_tool_compatibility(definition, manifest, publish_view), "runnable");
         const WorkflowToolCompatDecision decision = admit_workflow_run_by_tool_compat(projection);
         MIRA_CHECK(decision.admitted);
         MIRA_CHECK(decision.state == WorkflowToolCompatState::Runnable);
@@ -1582,9 +1572,8 @@ int g5_admission_decisions() {
                 spec.spec_digest = digest_string("m7-tr0/fixture/echo.transform/v3");
             }
         }
-        const auto projection =
-            must(project_workflow_tool_compatibility(definition, manifest, degraded_view),
-                 "degraded");
+        const auto projection = must(
+            project_workflow_tool_compatibility(definition, manifest, degraded_view), "degraded");
         MIRA_CHECK(projection.state == WorkflowToolCompatState::Degraded);
         const WorkflowToolCompatDecision decision = admit_workflow_run_by_tool_compat(projection);
         MIRA_CHECK(decision.admitted);
@@ -1615,9 +1604,8 @@ int g5_admission_decisions() {
             }
             invalid_view.push_back(spec);
         }
-        const auto projection =
-            must(project_workflow_tool_compatibility(definition, manifest, invalid_view),
-                 "invalid");
+        const auto projection = must(
+            project_workflow_tool_compatibility(definition, manifest, invalid_view), "invalid");
         MIRA_CHECK(projection.state == WorkflowToolCompatState::Invalid);
         const WorkflowToolCompatDecision decision = admit_workflow_run_by_tool_compat(projection);
         MIRA_CHECK(!decision.admitted);
@@ -1638,19 +1626,21 @@ int g5_audit_projection_redaction() {
     // fields the audit artifact must never carry.
     BuiltinToolRegistry registry;
     fill_registry(registry, std::vector<RegistryTool>{
-        {{"gamma.render", "confidential-description-marker super-secret-token", R"json({
+                                {{"gamma.render",
+                                  "confidential-description-marker super-secret-token", R"json({
               "type": "object",
               "properties": {"scene": {"type": "string"}},
               "required": ["scene"],
               "additionalProperties": false,
               "title": "alpha_marker_secret_prop"
           })json",
-          true, "000000000000000000000000000000f1"}}});
+                                  true, "000000000000000000000000000000f1"}}});
     const std::vector<ExposedToolSpec> publish_view = registry.exposed_tools();
     const WorkflowDefinition definition = base_definition(
         kWorkflowAlpha, "fixture.render",
-        {toolcall_step(kStepRender, json_or_abort(
-                                        R"json({"tool":"gamma.render","scene":{"$param":"scene"}})json"))});
+        {toolcall_step(
+            kStepRender,
+            json_or_abort(R"json({"tool":"gamma.render","scene":{"$param":"scene"}})json"))});
     const WorkflowToolRefManifest manifest = extract_or_abort(definition, publish_view);
 
     std::vector<ExposedToolSpec> degraded_view = publish_view;
@@ -1664,8 +1654,7 @@ int g5_audit_projection_redaction() {
         "additionalProperties": false
     })json")};
     const auto projection =
-        must(project_workflow_tool_compatibility(definition, manifest, degraded_view),
-             "degraded");
+        must(project_workflow_tool_compatibility(definition, manifest, degraded_view), "degraded");
     MIRA_CHECK(projection.state == WorkflowToolCompatState::Degraded);
 
     const JsonValue audit = workflow_tool_compat_to_json(projection);
@@ -1679,9 +1668,9 @@ int g5_audit_projection_redaction() {
     MIRA_CHECK(digest != nullptr && digest->is_string() &&
                *digest->as_string() == projection.digest.to_string());
     // Redaction: no description text, no schema body, no secrets.
-    for (const char *marker : {"confidential-description-marker", "super-secret-token",
-                               "alpha_marker_secret_prop", "description",
-                               "parameters_schema", "title"}) {
+    for (const char *marker :
+         {"confidential-description-marker", "super-secret-token", "alpha_marker_secret_prop",
+          "description", "parameters_schema", "title"}) {
         MIRA_CHECK(serialized.find(marker) == std::string::npos);
     }
     // Closed root field set: identities, digests, state, entries, digest only.
@@ -1730,21 +1719,22 @@ int g5_dec015_execution_gate_combination() {
     // DEC-015 identity checks reject stale proposals even though the
     // compatibility projection admitted the run.
     BuiltinToolRegistry registry_v1;
-    fill_registry(registry_v1, std::vector<RegistryTool>{
-        {{"gamma.render", "render fixture v1", R"json({
+    fill_registry(registry_v1,
+                  std::vector<RegistryTool>{{{"gamma.render", "render fixture v1", R"json({
               "type": "object",
               "properties": {"scene": {"type": "string"}},
               "required": ["scene"],
               "additionalProperties": false
           })json",
-          true, "000000000000000000000000000000f1"}}});
+                                              true, "000000000000000000000000000000f1"}}});
     const ToolId tool_v1 = fixed_tool("000000000000000000000000000000f1");
     const std::vector<ExposedToolSpec> view_v1 = registry_v1.exposed_tools();
 
     const WorkflowDefinition definition = base_definition(
         kWorkflowAlpha, "fixture.render",
-        {toolcall_step(kStepRender, json_or_abort(
-                                        R"json({"tool":"gamma.render","scene":{"$param":"scene"}})json"))});
+        {toolcall_step(
+            kStepRender,
+            json_or_abort(R"json({"tool":"gamma.render","scene":{"$param":"scene"}})json"))});
     const WorkflowToolRefManifest manifest = extract_or_abort(definition, view_v1);
     MIRA_CHECK(manifest.entries.size() == 1);
     const Hash pinned_digest = manifest.entries.front().pinned_spec_digest.value();
@@ -1752,20 +1742,20 @@ int g5_dec015_execution_gate_combination() {
     // The tool evolves in the exposed view (same wire, new identity, new
     // schema): the skeleton still binds, so admission degrades to Degraded.
     BuiltinToolRegistry registry_v2;
-    fill_registry(registry_v2, std::vector<RegistryTool>{
-        {{"gamma.render", "render fixture v2", R"json({
+    fill_registry(registry_v2,
+                  std::vector<RegistryTool>{
+                      {{"gamma.render", "render fixture v2", R"json({
               "type": "object",
               "properties": {"scene": {"type": "integer"}},
               "required": ["scene"],
               "additionalProperties": false
           })json",
-          true, "000000000000000000000000000000f2", SemanticVersion{2, 0, 0}}}});
+                        true, "000000000000000000000000000000f2", SemanticVersion{2, 0, 0}}}});
     const ToolId tool_v2 = fixed_tool("000000000000000000000000000000f2");
     const std::vector<ExposedToolSpec> view_v2 = registry_v2.exposed_tools();
     MIRA_CHECK(view_v2.front().spec_digest != pinned_digest);
-    const auto projection =
-        must(project_workflow_tool_compatibility(definition, manifest, view_v2),
-             "degraded project");
+    const auto projection = must(project_workflow_tool_compatibility(definition, manifest, view_v2),
+                                 "degraded project");
     MIRA_CHECK(projection.state == WorkflowToolCompatState::Degraded);
     const WorkflowToolCompatDecision decision = admit_workflow_run_by_tool_compat(projection);
     MIRA_CHECK(decision.admitted); // admission passes...
@@ -1937,8 +1927,8 @@ int main(int argc, char **argv) {
         {"G6 public surface closure", g6_public_surface_closure},
     };
 
-    std::cout << "M7 TR0 stable tool reference verification ("
-              << sizeof(gates) / sizeof(gates[0]) << " gates)\n";
+    std::cout << "M7 TR0 stable tool reference verification (" << sizeof(gates) / sizeof(gates[0])
+              << " gates)\n";
     for (const Gate &gate : gates) {
         if (gate.run() != 0) {
             std::cerr << "FAILED gate: " << gate.name << '\n';
