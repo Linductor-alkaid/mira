@@ -2,13 +2,14 @@
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 首阶段 TR0（稳定引用与
-> 兼容投影）已交付关闭；TR1（Skill 生命周期与 Procedure 索引投影）随其立项冻结
-> 细项，不预分配编号）
+> 兼容投影）已交付关闭；TR1（Skill 发布生命周期与 Procedure 索引投影）
+> 2026-09-21 跑前冻结细项进入实施；TR2（Runtime 接线与执行）随其立项冻结细项，
+> 不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-21（TR0 交付关闭）
+> 更新日期：2026-09-21（TR1 细项冻结，进入实施）
 
 ## 1. 目标
 
@@ -50,9 +51,16 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   清单提取工件（`mira.workflow.tool_refs.v1`）、引用解析矩阵与兼容状态投影
   （`Runnable`/`Degraded`/`Invalid` 确定性重算）、`Invalid` 准入拒绝决策与
   `Degraded` 审计投影产物（[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)）。
-- **其余后续阶段**：TR1 Skill 生命周期与 Procedure 索引投影（DEC-040：Skill
-  发布/升级/撤销与 `ir_digest` 钉住、Procedure 索引投影、Runtime 接线与 IR 引用
-  表达加法演进）随各自立项在 M7 内增补工作项与门禁，不预分配编号。
+- **TR1 Skill 发布生命周期与 Procedure 索引投影（DEC-040；2026-09-21 跑前冻结
+  细项，进入实施）**：Skill 描述符（`mira.skill.descriptor.v1`，钉住源
+  Workflow id + `ir_digest`）与暴露面确定性派生、`SkillPublicationRegistry`
+  宿主显式发布/升级/撤销生命周期（runnable 门禁、只降级、部署窗）、Procedure
+  索引投影（`mira.skill.procedure_index.v1`，以显式发布为界、无时钟、可重建）
+  （[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §17）。
+- **其余后续阶段**：TR2 WorkflowRuntime 接线与执行（DEC-040：库存储挂载
+  tool_refs 清单、`create_run` 准入消费、`Degraded` 事件发射、Skill 经 Tool
+  通道的子 Workflow 调用执行适配、IR 引用表达加法演进）随其立项在 M7 内增补
+  工作项与门禁，不预分配编号。
 
 ### 2.2 非目标
 
@@ -76,7 +84,8 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   §4 受控子集、§5 转换矩阵、§6 生命周期映射、§7 执行适配、§8 不可信数据）
 - [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
   （TR0 阶段规范：§4 引用语法、§5 提取、§6/§7 解析与兼容投影、§8 准入与留痕、
-  §9 与 DEC-015 边界、§15 TR1 方向）
+  §9 与 DEC-015 边界；TR1 阶段规范：§17 Skill 描述符与发布生命周期、Procedure
+  索引投影）
 - [Model Provider 与 Tool 扩展设计](../design/model_provider_and_tool_design.md)
 - [DEC-009](../decisions/DEC-009-tool-module-boundary.md)、
   [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md)、
@@ -253,11 +262,43 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `examples/minimal_consumer.cpp` 追加 TR0 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
 
-### 4.6 其余后续阶段（立项时增补工作项与门禁）
+### 4.6 TR1：Skill 发布生命周期与 Procedure 索引投影（DEC-040；2026-09-21 跑前冻结细项，进入实施）
 
-- TR1 Skill 生命周期与 Procedure 索引投影（[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)
-  §验证方式：Skill 发布/升级/撤销与 `ir_digest` 钉住、Procedure 索引投影、
-  Runtime 接线与 IR 引用表达加法演进；方向预告见
+- [ ] `M7-TR1-01` Skill 描述符与暴露面派生（
+  [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §17.1）：
+  `mira.skill.descriptor.v1`——`name`（词表字符集 wire 身份）、显式 `version`、
+  `source_workflow_id` + `source_ir_digest` 钉住、派生暴露面
+  `SkillSurface{description, parameters_schema, has_side_effects}` 与 canonical
+  digest；`derive_skill_surface` 确定性派生——description 取 `definition.summary`
+  （非空、有界），参数 schema 从 `WorkflowParameterSpec` 全类型映射（约束与
+  enum 传递、`additionalProperties=false`、逐项过 `gate_schema_subset`），
+  `has_side_effects` 由 TR0 引用清单 × 视图推导（全部引用发布期可解析）；
+  输入绑定与视图重名 fail closed。
+- [ ] `M7-TR1-02` 发布生命周期（§17.2）：`SkillPublicationRegistry` 宿主显式
+  发布/升级/撤销——publish 要求源 `WorkflowVersionRecord` runnable（
+  `workflow_version_is_runnable`）且 `content_digest`/`workflow_id` 与定义
+  一致、name 撞宿主保留名或已存在拒绝（同 name + 同 descriptor digest 幂等
+  NoOp）；upgrade 显式换钉（新版本严格递增、同 digest 幂等 NoOp、旧版本进
+  superseded 轨迹）；revoke 只降级不可逆、重复撤销幂等；`seal()`/`close()`
+  部署窗纪律与拒绝计数；版本化事件 `mira.skill.publication.v1` 脱敏（仅身份
+  /digest/有界理由，无 description 与 schema 体），sink 失败计数不阻塞。
+- [ ] `M7-TR1-03` Procedure 索引投影（§17.3）：
+  `project_skill_procedure_index` 以宿主显式发布为界——未发布的 Workflow 库
+  资产不自动索引（DEC-029 否决的自动写入面不复活）；statement 固定 canonical
+  JSON（`mira.skill.procedure_index.v1`：身份/digest/钉住/副作用，不含
+  description）；输出按 name 排序、无时钟（时间戳归 TR2 接线）、不写
+  `IMemory`；statement 严格反解析可重建、重放字节一致。
+- [ ] `M7-TR1-04` 契约测试矩阵 `tests/m7/m7_tool_skill_test.cpp`（label
+  `contract`）：覆盖 `M7-TR1-G1`–`G6` 全部门禁，`--report` 跨进程字节一致；
+  `examples/minimal_consumer.cpp` 追加 TR1 闭包段。测试的编写、运行与
+  sanitizer 取证由 Independent-Verification-Agent 独立完成。
+
+### 4.7 其余后续阶段（立项时增补工作项与门禁）
+
+- TR2 WorkflowRuntime 接线与执行（[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)
+  §验证方式的消费者接线：库存储挂载 tool_refs 清单、`create_run` 准入消费、
+  `Degraded` 事件发射、Skill 经 Tool 通道的子 Workflow 调用执行适配、IR 引用
+  表达加法演进；方向见
   [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §15）。
 
 ## 5. 阶段门禁
@@ -401,6 +442,33 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `BuiltinToolRegistry` 身份校验下仍被拒绝（投影不豁免执行期门禁）。
 - [x] `M7-TR0-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 TR0 闭包段）。
+
+### 5.6 TR1 门禁（2026-09-21 跑前冻结）
+
+- [ ] `M7-TR1-G1` 描述符与派生矩阵：`WorkflowParameterSpec` 四类型 × 全约束
+  （min/max、minLength/maxLength、pattern、enum、required、default 不进
+  schema）映射与 `gate_schema_subset` 通过；`has_side_effects` 推导（全部
+  read_only → false、任一带副作用 → true）；负路径（summary 空/超限、refs
+  未绑定或错配、视图缺引用、视图重名、未过结构校验的定义、hosted 保留名）
+  整组拒绝；descriptor digest 确定性。
+- [ ] `M7-TR1-G2` 发布生命周期矩阵：publish 正路径（钉住 ir_digest 与暴露面
+  digest 一致）与负矩阵（非 runnable 版本、digest/id 错配、保留名、重名、
+  sealed/closed 后变更）逐例拒绝且状态不变；同 name + 同 digest 幂等 NoOp；
+  upgrade 版本不递增拒绝、同 digest NoOp、superseded 轨迹正确；revoke 只
+  降级、重复幂等、撤销后发布拒绝；统计可见。
+- [ ] `M7-TR1-G3` 事件与确定性：`mira.skill.publication.v1` 字段闭集与脱敏
+  （无 description/schema 体/secret）；sink 失败计数不阻塞；`--report` 跨
+  进程字节一致（无时钟、无随机、canonical JSON）。
+- [ ] `M7-TR1-G4` Procedure 投影与重建：同输入同投影同排序；statement 严格
+  反解析回等价条目且重放字节一致；撤销/升级后投影演进正确（Revoked 条目
+  显式状态、升级后钉住新 digest）；未发布 Workflow 资产不入索引（以显式
+  发布为界）；无 description 泄漏。
+- [ ] `M7-TR1-G5` 组合边界：TR1 全程无执行面——`BuiltinToolRegistry` 曝光面
+  与 `BuiltinToolRegistry::execute` 不受发布影响（负向断言）；发布经 TR0
+  `extract_workflow_tool_references` + `derive_skill_surface` 组合链路成立；
+  DEC-030 学习路径语义不变。
+- [ ] `M7-TR1-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
+  （`examples/minimal_consumer.cpp` 追加 TR1 闭包段）。
 
 ## 6. Executor 路由与关闭
 

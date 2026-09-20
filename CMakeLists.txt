@@ -148,6 +148,7 @@ add_library(mira_workflow
     src/workflow/workflow_learning.cpp
     src/workflow/workflow_recovery.cpp
     src/workflow/tool_reference.cpp
+    src/workflow/tool_skill.cpp
 )
 add_library(Mira::workflow ALIAS mira_workflow)
 target_include_directories(mira_workflow
