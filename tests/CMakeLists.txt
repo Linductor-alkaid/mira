@@ -604,8 +604,12 @@ mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)
 # TM1 (registry lifecycle, DEC-009/DEC-042): origin trust, state machine,
 # tombstone, negotiation trigger hooks and the Executor-routed deploy
 # verification path; gates M7-TM1-G1..G6.
+# MCP admission stage (DEC-039): listing -> out-of-process module conversion,
+# session lifecycle downgrade-only mapping, DEC-015-consistent dispatcher and
+# cancellation/deadline/shutdown closure; gates M7-MCP-G1..G6.
 # ---------------------------------------------------------------------------
 
 mira_add_test(mira_m7_tool_module_test m7/m7_tool_module_test.cpp contract)
 mira_add_test(mira_m7_tool_module_registry_test m7/m7_tool_module_registry_test.cpp contract)
 mira_add_test(mira_m7_tool_module_exposure_test m7/m7_tool_module_exposure_test.cpp contract)
+mira_add_test(mira_m7_tool_module_mcp_test m7/m7_tool_module_mcp_test.cpp contract)
