@@ -1,13 +1,14 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1/TM2 已交付关闭；后续阶段（DEC-039 MCP 准入、DEC-040 稳定引用
-> 与 Skill）随各自立项冻结细项，不预分配编号）
+> 重定义；TM0/TM1/TM2 已交付关闭；MCP 准入阶段（DEC-039）2026-09-20 跑前冻结
+> 细项并进入实施；其余后续阶段（DEC-040 稳定引用与 Skill）随各自立项冻结细项，
+> 不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-19
+> 更新日期：2026-09-20
 
 ## 1. 目标
 
@@ -40,8 +41,11 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `ExposedToolSpec`，模组级/任务级排除理由，`tool_snapshot_digest` 绑定 module
   与 ToolSpec digest，`wire_name` 跨模组规则冻结，Simulator 参考模组，Replay
   module digest 绑定。
-- **后续阶段**：MCP 准入（DEC-039：descriptor 转换矩阵、Adapter 执行适配、
-  取消/shutdown 闭合）、稳定引用与 Skill（DEC-040：引用语法、兼容状态投影、
+- **MCP 准入阶段（DEC-039）**：MCP server tool listing 受控子集 →
+  `out_of_process` 模组 manifest 的确定性转换、会话生命周期映射（部署窗准入、
+  运行期只降级）、宿主 transport 执行适配与 DEC-015 同源门禁、在途调用取消/
+  deadline/shutdown 闭合、不可信数据脱敏纪律（[MCP 准入设计](../design/mcp_tool_admission_design.md)）。
+- **其余后续阶段**：稳定引用与 Skill（DEC-040：引用语法、兼容状态投影、
   Skill 发布生命周期）随各自立项在 M7 内增补工作项与门禁，不预分配编号。
 
 ### 2.2 非目标
@@ -62,6 +66,8 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 ### 3.2 设计与决策依据
 
 - [工具模组设计](../design/tool_module_design.md)（§4–§8、§15 阶段划分）
+- [MCP 准入设计](../design/mcp_tool_admission_design.md)（MCP 阶段规范：
+  §4 受控子集、§5 转换矩阵、§6 生命周期映射、§7 执行适配、§8 不可信数据）
 - [Model Provider 与 Tool 扩展设计](../design/model_provider_and_tool_design.md)
 - [DEC-009](../decisions/DEC-009-tool-module-boundary.md)、
   [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md)、
@@ -166,11 +172,47 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   fail-closed 语义的组合测试（投影产物入 `ModelRequest.tools` 后正常解析，
   未暴露名/hosted 名仍拒绝）。
 
-### 4.4 后续阶段（立项时增补工作项与门禁）
+### 4.4 MCP 准入（DEC-039；2026-09-20 跑前冻结细项，进入实施）
 
-- MCP 工具模组准入（[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md)
-  §验证方式：descriptor 转换矩阵、模组生命周期降级、单一门禁一致性、在途取消
-  与 shutdown 闭合、脱敏与不提升权限负向）。
+- [ ] `M7-MCP-01` MCP listing 受控子集与转换纯函数 `convert_mcp_listing_to_module`
+  （[MCP 准入设计](../design/mcp_tool_admission_design.md) §4/§5）：
+  `McpToolDescriptor`（name、description、input_schema、readOnlyHint/
+  destructiveHint）与 `McpAdmissionOptions`（module_id、版本、OutOfProcess 信任
+  材料、宿主能力映射、聚合资源、逐成员风险覆盖）→ origin `out_of_process` 的
+  `ToolModuleManifest`；经**真实** `parse_tool_module_manifest` 校验（成员字符集、
+  重名、`gate_schema_subset` 同源子集、资源上限、ABI、目录内能力），任何
+  descriptor 缺陷整组拒绝（错误 domain `mira.tool_module`）。hint→ActionRisk
+  确定性映射（readOnlyHint→read_only、destructiveHint→critical、缺省→
+  user_visible）；`risk_overrides` 只允许升风险、降风险整组拒绝。同 listing +
+  同 options 产出逐字节相同 manifest 与 digest；版本化脱敏投影
+  `mira.tool_module.mcp.admission.v1`（不含 description 原文与签名材料）。
+- [ ] `M7-MCP-02` 会话生命周期映射（设计 §6）：`plan_mcp_session_action` 纯策略
+  函数按（事件 × 注册状态 × seal/close）输出 AdmitModule/RevokeModule/
+  RejectEvent/NoAction；`McpModuleAdmission` 组件绑定 catalog + registry 落地：
+  ServerConnected 仅部署窗准入（转换 → TM1 信任 → `register_module`，晋升仍由
+  宿主显式驱动），seal/close 后或同 module_id 已注册时拒绝且状态不变；
+  ServerDisconnected 与 ToolListChanged 对非终态模组映射 revoke（运行期只降级
+  不扩面，digest 进 tombstone，在途调用按旧代正常结算）；变更后的 listing 是
+  新 digest，需下一注册周期。审计复用 `mira.tool_module.lifecycle.v1`，理由
+  有界脱敏。
+- [ ] `M7-MCP-03` 执行适配（设计 §7）：宿主注入 `IMcpToolTransport`（进程外
+  I/O 与传输选型归宿主，须轮询 `McpInvocationProbe` 协作取消）；`McpToolDispatcher`
+  绑定 TM2 `ToolExposure` 快照落地 DEC-015 同源门禁——曝光内身份一致校验
+  （tool_id/wire_name/version/side effects）、OperationId 至多一次（预约-回滚
+  语义）、参数本地 schema 校验（模型可归因失败 → failed record）、取消 →
+  `Cancelled`、模组聚合并发上限调度层强制拒绝、结果字节上限。调用经
+  `submit_mcp_invocation`/`consume_mcp_invocation` 以 `submit_auto()` 承载，
+  future 必消费（正常路径即时消费、放弃路径 pending 清单由 `close()` 有界排空）；
+  deadline 取 `min(context.deadline, now + max_invocation_duration)`；提交拒绝/
+  任务异常/执行中取消/超时放弃/close 后拒绝全矩阵显式结果，无吞掉异常；不可信
+  结果纪律（§8：结果不携带 System/Developer authority、错误摘要 512 字节有界）。
+- [ ] `M7-MCP-04` 契约测试矩阵 `tests/m7/m7_tool_module_mcp_test.cpp`（label
+  `contract`）：覆盖 `M7-MCP-G1`–`G6` 全部门禁，`--report` 跨进程字节一致；
+  `examples/minimal_consumer.cpp` 追加 MCP 闭包段。测试的编写、运行与
+  sanitizer 取证由 Independent-Verification-Agent 独立完成。
+
+### 4.5 其余后续阶段（立项时增补工作项与门禁）
+
 - Tool 稳定引用与 Skill（[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)
   §验证方式：引用解析矩阵、兼容状态投影、`Invalid` 准入拒绝、Skill 生命周期、
   Procedure 索引投影）。
@@ -253,22 +295,62 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   未暴露名与 hosted 名 fail closed 语义不变；新公开头可被最小外部 consumer
   独立包含链接。
 
+### 5.4 MCP 准入门禁（2026-09-20 跑前冻结）
+
+- [ ] `M7-MCP-G1` 转换矩阵与确定性：合法 listing（多 descriptor、hint 组合）→
+  manifest 经真实解析器全绿、成员映射与 §5.1/§5.2 冻结口径一致；负路径（空/字符集
+  外成员名、重名、空/非对象/子集外 input_schema、越界描述/计数/资源、降风险
+  override、未知成员 override、OutOfProcess 信任字段缺失）逐例整组拒绝且无部分
+  状态；hint 映射三分支与宿主升风险允许/降风险拒绝；空 listing 整组拒绝（TM0
+  manifest 既有 1..256 成员上界优先，`M7-TM0-G5` 冻结契约不为本阶段放宽——
+  2026-09-20 IVA 首轮发现原「零成员合法模组」口径与 TM0 冲突后修订）；同输入
+  manifest digest 与 admission 投影跨进程字节一致。
+- [ ] `M7-MCP-G2` 生命周期只降级：部署窗 admit 全链（转换 → 信任 → register →
+  宿主 stage/activate → 协商 Available → TM2 投影含成员）；seal 后
+  ServerConnected 拒绝且状态不变；close 后一切事件拒绝；ServerDisconnected 与
+  ToolListChanged 对 Active 模组 → Revoked（digest tombstone、后续协商收敛、
+  暴露面缩小不扩大）；终态/未注册模组上的事件 NoAction 幂等；在途请求按旧
+  generation view 结算不受影响；lifecycle 事件字段脱敏（无 signature 原文、
+  无 description 原文）。
+- [ ] `M7-MCP-G3` 单一门禁一致性（DEC-015 对照）：同一正/负矩阵分别驱动 MCP
+  dispatcher 与 `BuiltinToolRegistry`——身份失配（wire/version/side effects）、
+  重复 OperationId、参数 schema 违例 → failed record、handler/transport 错误 →
+  failed record、取消 → `Cancelled`——两者接受/拒绝面逐条一致。
+- [ ] `M7-MCP-G4` 取消、deadline 与 shutdown 闭合：提交拒绝（executor
+  stopping/capacity、未初始化）显式错误且 dispatched 预约回滚；transport 抛
+  异常折叠为失败记录；执行中取消经探针传播（transport 轮询 stop 后返回
+  Cancelled）；deadline 超时 → 置探针 → 有界宽限 → DeadlineExceeded 失败记录，
+  放弃的 future 由 close 排空；close 后新派发 `InvalidState` 拒绝且计数可见；
+  聚合并发上限达到 → `ResourceExhausted` 明确拒绝不排队；结果超限 → 失败记录；
+  全矩阵无吞掉的异常、无未消费 future。
+- [ ] `M7-MCP-G5` 不可信数据与脱敏：descriptor 描述超限整组拒绝（不静默截断进
+  manifest）；admission 投影与事件不含 description 原文与签名材料；transport
+  结果经 `build_tool_result_input` 回填项不携带 System/Developer authority；
+  `safe_error_summary` 512 字节有界；跨进程报告字节一致。
+- [ ] `M7-MCP-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
+  （`examples/minimal_consumer.cpp` 追加 MCP 闭包段）。
+
 ## 6. Executor 路由与关闭
 
 TM0 全部为串行控制面内的同步纯计算（协商有界、无 I/O），不新增异步路径；TM1
 的验证/安装类工作按工具模组设计 §10 以 `submit_auto()` 承载，future 必须消耗；
 TM2 投影同样是串行控制面内的同步纯计算（有界、无 I/O、无时钟），不新增异步
-路径。本里程碑不引入脱离 Executor 生命周期的线程或定时器；能力缺口先登记
+路径。MCP 准入阶段（设计 §13）：转换、策略与 admission 组件为串行控制面纯
+计算/簿记，不新增异步路径；在途 invocation 经 `submit_mcp_invocation()` 以
+`submit_auto()` 承载，future 必须消费（正常路径即时消费、被放弃的 pending 由
+dispatcher `close()` 有界排空），取消为三层协作探针（调用方 context →
+dispatcher 探针 → transport 轮询），close 归宿主 shutdown 序列第 3 步。本里程碑
+不引入脱离 Executor 生命周期的线程或定时器；能力缺口先登记
 `docs/executor_feedback/ledger.md`。
 
 ## 7. 测试矩阵
 
 | 层级 | 必测内容 |
 | --- | --- |
-| Contract | catalog/digest、派生 golden、manifest 校验矩阵、协商 golden 与 fail-closed 负向 |
-| Component（TM1 起） | 状态机、签名/allowlist 验证、tombstone、事件 |
-| Integration（TM2 起） | 暴露投影、`resolve_tool_calls` 组合、Replay digest |
-| 边界 | 输入规模上限、空集、全不可用、同输入跨进程 digest 一致 |
+| Contract | catalog/digest、派生 golden、manifest 校验矩阵、协商 golden 与 fail-closed 负向；MCP 转换矩阵与 hint 映射 |
+| Component（TM1 起） | 状态机、签名/allowlist 验证、tombstone、事件；MCP 会话生命周期映射 |
+| Integration（TM2 起） | 暴露投影、`resolve_tool_calls` 组合、Replay digest；MCP dispatcher 与 DEC-015 单一门禁对照、取消/deadline/shutdown |
+| 边界 | 输入规模上限、空集、全不可用、同输入跨进程 digest 一致；MCP 不可信描述/结果脱敏 |
 
 ## 8. 退出条件
 
@@ -456,4 +538,51 @@ push run
 [`35455012483`](https://github.com/Linductor-alkaid/mira/actions/runs/35455012483)
 success（12/12）。`M7-TM2-01`–`03` 与 `M7-TM2-G1`–`G6` 关闭；M7 已立项阶段
 （TM0–TM2）全部关闭，后续阶段（DEC-039/DEC-040）立项时增补工作项与门禁。
+
+2026-09-20：MCP 准入阶段细项冻结并交付（DEC-039 首个实现阶段，前置 TM0–TM2
+已全部关闭；维护者指令「依设计与计划推进下一步开发」，与 TM0–TM2 同一授权
+模式）。立项同步交付专项设计
+[MCP 准入设计](../design/mcp_tool_admission_design.md)（DEC-039 关联文档要求的
+首阶段产出；[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) 状态行
+与[工具模组设计](../design/tool_module_design.md) v1.4 §15/§17/§18 同步注记）。
+交付 `include/mira/tool_module_mcp.hpp` + `src/tool/tool_module_mcp.cpp`（入
+`mira_core`）：`McpToolDescriptor`/`McpServerListing` 受控子集与
+`convert_mcp_listing_to_module` 转换纯函数（组装 manifest JSON 过**真实**
+`parse_tool_module_manifest`，TM0 全部门禁原样生效；hint→ActionRisk 确定性
+映射；`risk_overrides` 只升不降；MCP 专属 fail-closed 前置检查）；脱敏投影
+`mira.tool_module.mcp.admission.v1`（不含 description 原文与签名材料）；
+`plan_mcp_session_action` 冻结策略矩阵 + `McpModuleAdmission` 部署窗准入与
+运行期只降级应用；`IMcpToolTransport`/`McpInvocationProbe`/`McpToolDispatcher`
+执行适配（DEC-015 同源门禁：曝光身份一致、OperationId 至多一次（预约-回滚）、
+参数本地校验、聚合并发/结果上限；`submit_mcp_invocation`/`consume_mcp_invocation`
+以 `submit_auto()` 承载、future 必消费、放弃路径 pending 由 `close()` 有界排空、
+deadline 取 `min(context.deadline, 上限)`、三层协作取消）。
+
+实现期裁决一处（IVA 首轮发现）：**空 listing 口径冲突**——本阶段冻结稿曾写
+「空 listing 产出零成员合法模组」，与 TM0 冻结契约 `mira.tool_module.manifest.v1`
+的 1..256 成员上界（`M7-TM0-G5`）互斥。按上位契约优先原则修订为本设计口径
+错误：空 listing 整组拒绝（拒绝理由来自真实解析器），宿主对不暴露 tool 的
+server 跳过准入；设计 §5.3/§11、本文件 `M7-MCP-G1` 与公开头注释同变更内修订
+（含更正注记），实现零改动。
+
+测试 `tests/m7/m7_tool_module_mcp_test.cpp`（25 个 gate 函数、456 断言，label
+`contract`；测试的编写、运行与 sanitizer 取证由 Independent-Verification-Agent
+独立完成，共两轮：首轮 24/25 全绿并抓出上述空 listing 缺陷；主循环裁决修订
+口径后复验 25/25 全绿）。取证要点：G1 负矩阵约 40 例整组拒绝（domain
+`mira.tool_module`）；G2 只降级矩阵（策略纯函数 84 组合 + admit 全链到 TM2 投影
++ revoke/tombstone/钉住旧代结算）；G3 与 `BuiltinToolRegistry` 的 11 行对照表
+两引擎逐条一致（DEC-015 单一门禁）；G4 取消/deadline/提交拒绝/transport 异常/
+并发与结果上限/close 排空全矩阵显式结果且无未消费 future；G5 脱敏与 authority
+负向；G6 consumer 闭包。`--report` 跨进程与跨构建树（debug/asan）字节一致
+（md5 `19b8f358f9615d2caa7415eee6b12714`）。本地门禁：全量 ctest **87/87**
+（原 86 + 本里程碑 1 目标）、ASAN/UBSAN/TSAN（TSAN 需 `setarch -R`，本机内核
+ASLR 已知启动期不兼容，非代码竞争）m7 目标 + consumer 零报告、format/docs/
+platform-boundary/sbom 四检查通过（format 真实检查 216 文件）、clang-tidy
+18.1.8 预检新库源零违例（一处 `performance-no-automatic-move` 修复后复验）、
+本机 NDK r26.3 两 ABI（arm64-v8a/x86_64）交叉编译 `mira_core`+`mira_workflow`
+通过且 MCP 符号在库。限制与未执行项：脚本化 transport 桩口径，真实 MCP
+server/传输互操作归宿主侧证据（`RULE-10`）；钉住的 Executor v0.5.0 对未初始化
+facade 接受提交（无「未初始化拒绝」折叠面可观测，测试按可观测行为钉住并注释）；
+DEC-040 引用解析组合测试归后续 DEC-040 阶段；Windows/Android 运行与
+Release/quality 由 PR CI 回填后 MCP 阶段方可关闭。
 

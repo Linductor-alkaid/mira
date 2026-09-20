@@ -123,6 +123,7 @@ add_library(mira_core
     src/tool/tool_module.cpp
     src/tool/tool_module_registry.cpp
     src/tool/tool_module_exposure.cpp
+    src/tool/tool_module_mcp.cpp
 )
 add_library(Mira::core ALIAS mira_core)
 

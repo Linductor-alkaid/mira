@@ -1,6 +1,9 @@
 # DEC-039：MCP 工具模组准入——部署时注册的外部 Tool 来源
 
-> 状态：Accepted（方向冻结；实现未开始）
+> 状态：Accepted（方向冻结；MCP 准入阶段由
+> [M7](../plans/m7-tools-evaluation-platform-v1.md) 承载：2026-09-20 依本决策冻结
+> 专项设计 [MCP 准入设计](../design/mcp_tool_admission_design.md) 与阶段工作项并
+> 进入实施；其余范围实现未开始）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #56](https://github.com/Linductor-alkaid/mira/issues/56)
@@ -142,4 +145,6 @@ DecisionParser/SafetyPolicy 单一汇合点）全部不变。本决策是 DEC-00
   [DEC-040](DEC-040-tool-reference-and-skill-layer.md)
 - [工具模组设计](../design/tool_module_design.md)（§17 开放项已同步）
 - [威胁模型与确认协议](../security/threat_model_and_confirmation.md)
-- 专项设计与里程碑文件随首阶段立项交付（实现前置：M7 重定义）。
+- 专项设计与里程碑文件随首阶段立项交付（实现前置：M7 重定义）。2026-09-20 已
+  交付：[MCP 准入设计](../design/mcp_tool_admission_design.md) 与
+  [M7](../plans/m7-tools-evaluation-platform-v1.md) §4.4/§5.4 工作项与门禁。

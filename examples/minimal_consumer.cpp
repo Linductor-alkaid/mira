@@ -2,6 +2,7 @@
 #include <mira/runtime_baseline.hpp>
 #include <mira/tool_module.hpp>
 #include <mira/tool_module_exposure.hpp>
+#include <mira/tool_module_mcp.hpp>
 #include <mira/tool_module_registry.hpp>
 #include <mira/version.hpp>
 
@@ -96,6 +97,53 @@ int main() {
     const auto reference = mira::make_simulator_reference_module();
     if (!reference.has_value() || reference.value().module_id != "builtin.simulator.env") {
         return 9;
+    }
+
+    // M7-MCP-G6 consumer closure: the MCP admission header must be includable
+    // and linkable from the same minimal consumer. The conversion, session
+    // policy and dispatcher factories are exercised without an Executor (the
+    // dispatcher itself is only constructed, never driven, here).
+    mira::McpToolDescriptor descriptor;
+    descriptor.name = "files.read";
+    descriptor.description = "Read one file through the admitted server.";
+    descriptor.input_schema = mira::JsonSchema{
+        mira::JsonValue{mira::JsonValue::Object{{"type", mira::JsonValue{std::string("object")}}}}};
+    descriptor.read_only_hint = true;
+    mira::McpServerListing listing;
+    listing.tools.push_back(descriptor);
+    mira::McpAdmissionOptions admission_options;
+    admission_options.module_id = "host.mcp.sample";
+    admission_options.signer = "sample-signer";
+    admission_options.signature_algorithm = "sample-alg";
+    admission_options.signature = "sample-signature";
+    admission_options.resources.max_total_concurrent_invocations = 1;
+    admission_options.resources.max_total_result_bytes = 4096;
+    const auto converted = mira::convert_mcp_listing_to_module(listing, admission_options, catalog);
+    if (!converted.has_value() ||
+        converted.value().origin != mira::ToolModuleOrigin::OutOfProcess ||
+        converted.value().tools.size() != 1 ||
+        converted.value().tools.front().side_effect != mira::ActionRisk::R0ReadOnly) {
+        return 10;
+    }
+    const mira::McpSessionPlan connect_plan = mira::plan_mcp_session_action(
+        mira::McpSessionEvent::ServerConnected, nullptr, false, false);
+    if (connect_plan.action != mira::McpAdmissionAction::AdmitModule) {
+        return 10;
+    }
+    const mira::JsonValue admission_projection = mira::mcp_admission_to_json(converted.value());
+    if (admission_projection.find("manifest_digest") == nullptr) {
+        return 10;
+    }
+    mira::McpDispatchLimits dispatch_limits;
+    dispatch_limits.max_concurrent_invocations = 1;
+    const auto dispatcher = mira::McpToolDispatcher::make(mira::ToolExposure{}, dispatch_limits);
+    if (!dispatcher.has_value()) {
+        return 10;
+    }
+    const mira::McpDispatcherCloseReport close_report =
+        dispatcher.value()->close(std::chrono::milliseconds{50});
+    if (close_report.still_pending != 0) {
+        return 10;
     }
     return 0;
 }
