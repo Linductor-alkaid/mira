@@ -2,7 +2,14 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-20（依赖维护 `MNT-202609-34`（Completed）：Executor pin
+> 更新日期：2026-09-20（M7 MCP 准入阶段（DEC-039 首个实现阶段）跑前冻结工作项
+> `M7-MCP-01`–`04` 与门禁 `M7-MCP-G1`–`G6` 后交付：MCP `tools/list` 受控子集 →
+> `out_of_process` 模组 manifest 的确定性转换（经真实 TM0 解析器）、会话生命周期
+> 只降级映射、宿主 transport 执行适配与 DEC-015 同源门禁、在途调用取消/deadline/
+> shutdown 闭合；专项设计 [MCP 准入设计](../design/mcp_tool_admission_design.md)
+> 随立项交付，IVA 两轮取证 25/25 gate 全绿，PR CI 24/24（PR #62，`ae7410d`），
+> 详见 §4.1 第 12 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> 此前 2026-09-20（依赖维护 `MNT-202609-34`（Completed）：Executor pin
 > `e2dc8ca` → `v0.5.0`（`2ae4fc8`）。上游把 Mira 所处开发线正式定稿发布，4 个功能
 > 提交逐一收敛 `MNT-202609-33` 向上游登记的 TSAN/稳定性发现 executor#185–#188；
 > 公开 `include/` 头文件零改动，Mira 编译面不变。本地门禁与 executor TSAN 4 项收敛
@@ -122,7 +129,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
-| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2；后续衔接 [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/Skill；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2 与 [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入已交付；后续衔接 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/Skill；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
@@ -321,6 +328,35 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
    success（12/12）。`M7-TM2-01`–`03` 与 `M7-TM2-G1`–`G6` 关闭，M7 已立项
    阶段（TM0–TM2）全部关闭，后续阶段（DEC-039/DEC-040）立项时增补；证据与
    限制见 [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+
+12. M7 MCP 准入落地入口（2026-09-20）：TM2 关闭后依 M7 §4.4 冻结 MCP 阶段
+   细项（`M7-MCP-01`–`04`）与门禁（`M7-MCP-G1`–`G6`）并交付（DEC-039 首个实现
+   阶段，前置「DEC-009 模组体系落地」已满足）：专项设计
+   [MCP 准入设计](../design/mcp_tool_admission_design.md) 随立项交付；
+   `convert_mcp_listing_to_module` 转换纯函数（受控 listing 子集经**真实** TM0
+   解析器产出 `out_of_process` 模组；hint→ActionRisk 确定性映射、宿主
+   `risk_overrides` 只升不降、fail-closed 前置检查；空 listing 整组拒绝——IVA
+   首轮发现冻结稿与 TM0 1..256 成员上界冲突，按上位契约优先修订设计并留更正
+   注记）；脱敏投影 `mira.tool_module.mcp.admission.v1`；
+   `plan_mcp_session_action`+`McpModuleAdmission` 会话生命周期只降级（部署窗
+   准入、断开/能力列表变化 revoke、变更 digest 需新注册周期）；
+   `IMcpToolTransport`/`McpToolDispatcher` 执行适配（DEC-015 同源门禁、
+   OperationId 至多一次预约-回滚、聚合资源上限；`submit_auto()` 路由 + future
+   必消费 + 协作取消/deadline/close 有界排空）。测试由 Independent-
+   Verification-Agent 两轮独立取证（25 gate/456 断言、三 sanitizer 零报告、
+   `--report` 跨进程/跨树 md5 `19b8f358f9615d2caa7415eee6b12714`、与
+   `BuiltinToolRegistry` 的 11 行 DEC-015 对照逐条一致）。本地门禁：全量 ctest
+   87/87、四检查（format 217 文件）、clang-tidy 零违例、NDK 两 ABI 编译且符号
+   在库。PR
+   [#62](https://github.com/Linductor-alkaid/mira/pull/62)（head `39884de`，合并
+   提交 `ae7410d`）双 pipeline run
+   [`35512461239`](https://github.com/Linductor-alkaid/mira/actions/runs/35512461239)/
+   [`35512472810`](https://github.com/Linductor-alkaid/mira/actions/runs/35512472810)
+   各 12 项首轮全绿，master 合并提交 run
+   [`35513574793`](https://github.com/Linductor-alkaid/mira/actions/runs/35513574793)
+   success；`M7-MCP-01`–`04` 与 `M7-MCP-G1`–`G6` 关闭，下一阶段为 DEC-040
+   稳定引用与 Skill（实施前冻结细项）；证据与限制见
+   [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

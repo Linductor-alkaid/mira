@@ -1,8 +1,8 @@
 # Mira 工具模组（ToolModule）设计
 
 > 状态：Active（TM0/TM1/TM2 已实现：TM0 契约与协商 2026-09-16 交付，TM1 Registry
-> 生命周期 2026-09-19 交付，TM2 LLM 暴露投影 2026-09-19 交付；MCP 准入阶段
-> （DEC-039）2026-09-20 立项实施，均见
+> 生命周期 2026-09-19 交付，TM2 LLM 暴露投影 2026-09-19 交付，MCP 准入阶段
+> （DEC-039）2026-09-20 交付，均见
 > [M7](../plans/m7-tools-evaluation-platform-v1.md)；其余后续阶段为规范草案）  
 > 版本：1.4  
 > 更新日期：2026-09-20  
@@ -457,7 +457,7 @@ ExecutionSupervisor 调度 → result 校验 → Verify。补充两点：
 确定性派生、两级排除理由、合成 `snapshot_digest`、`wire_name` 规则 v1 冻结（§17）、
 Simulator 参考模组与 Replay digest 绑定，见
 [M7](../plans/m7-tools-evaluation-platform-v1.md) 验证记录。
-2026-09-20：MCP 准入阶段（DEC-039）立项实施——listing 受控子集到
+2026-09-20：MCP 准入阶段（DEC-039）交付——listing 受控子集到
 `out_of_process` 模组的确定性转换（经真实解析器）、会话生命周期只降级映射、
 宿主 transport 执行适配与 DEC-015 同源门禁，专项规范见
 [MCP 准入设计](mcp_tool_admission_design.md)，交付记录见

@@ -1,14 +1,13 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
 > 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1/TM2 已交付关闭；MCP 准入阶段（DEC-039）2026-09-20 跑前冻结
-> 细项并进入实施；其余后续阶段（DEC-040 稳定引用与 Skill）随各自立项冻结细项，
-> 不预分配编号）
+> 重定义；TM0/TM1/TM2 与 MCP 准入阶段（DEC-039）已交付关闭；其余后续阶段
+> （DEC-040 稳定引用与 Skill）随各自立项冻结细项，不预分配编号）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-20
+> 更新日期：2026-09-20（MCP 准入阶段交付关闭）
 
 ## 1. 目标
 
@@ -172,9 +171,9 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   fail-closed 语义的组合测试（投影产物入 `ModelRequest.tools` 后正常解析，
   未暴露名/hosted 名仍拒绝）。
 
-### 4.4 MCP 准入（DEC-039；2026-09-20 跑前冻结细项，进入实施）
+### 4.4 MCP 准入（DEC-039；2026-09-20 跑前冻结细项，同日交付关闭）
 
-- [ ] `M7-MCP-01` MCP listing 受控子集与转换纯函数 `convert_mcp_listing_to_module`
+- [x] `M7-MCP-01` MCP listing 受控子集与转换纯函数 `convert_mcp_listing_to_module`
   （[MCP 准入设计](../design/mcp_tool_admission_design.md) §4/§5）：
   `McpToolDescriptor`（name、description、input_schema、readOnlyHint/
   destructiveHint）与 `McpAdmissionOptions`（module_id、版本、OutOfProcess 信任
@@ -186,7 +185,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   user_visible）；`risk_overrides` 只允许升风险、降风险整组拒绝。同 listing +
   同 options 产出逐字节相同 manifest 与 digest；版本化脱敏投影
   `mira.tool_module.mcp.admission.v1`（不含 description 原文与签名材料）。
-- [ ] `M7-MCP-02` 会话生命周期映射（设计 §6）：`plan_mcp_session_action` 纯策略
+- [x] `M7-MCP-02` 会话生命周期映射（设计 §6）：`plan_mcp_session_action` 纯策略
   函数按（事件 × 注册状态 × seal/close）输出 AdmitModule/RevokeModule/
   RejectEvent/NoAction；`McpModuleAdmission` 组件绑定 catalog + registry 落地：
   ServerConnected 仅部署窗准入（转换 → TM1 信任 → `register_module`，晋升仍由
@@ -195,7 +194,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   不扩面，digest 进 tombstone，在途调用按旧代正常结算）；变更后的 listing 是
   新 digest，需下一注册周期。审计复用 `mira.tool_module.lifecycle.v1`，理由
   有界脱敏。
-- [ ] `M7-MCP-03` 执行适配（设计 §7）：宿主注入 `IMcpToolTransport`（进程外
+- [x] `M7-MCP-03` 执行适配（设计 §7）：宿主注入 `IMcpToolTransport`（进程外
   I/O 与传输选型归宿主，须轮询 `McpInvocationProbe` 协作取消）；`McpToolDispatcher`
   绑定 TM2 `ToolExposure` 快照落地 DEC-015 同源门禁——曝光内身份一致校验
   （tool_id/wire_name/version/side effects）、OperationId 至多一次（预约-回滚
@@ -206,7 +205,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   deadline 取 `min(context.deadline, now + max_invocation_duration)`；提交拒绝/
   任务异常/执行中取消/超时放弃/close 后拒绝全矩阵显式结果，无吞掉异常；不可信
   结果纪律（§8：结果不携带 System/Developer authority、错误摘要 512 字节有界）。
-- [ ] `M7-MCP-04` 契约测试矩阵 `tests/m7/m7_tool_module_mcp_test.cpp`（label
+- [x] `M7-MCP-04` 契约测试矩阵 `tests/m7/m7_tool_module_mcp_test.cpp`（label
   `contract`）：覆盖 `M7-MCP-G1`–`G6` 全部门禁，`--report` 跨进程字节一致；
   `examples/minimal_consumer.cpp` 追加 MCP 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
@@ -295,9 +294,9 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   未暴露名与 hosted 名 fail closed 语义不变；新公开头可被最小外部 consumer
   独立包含链接。
 
-### 5.4 MCP 准入门禁（2026-09-20 跑前冻结）
+### 5.4 MCP 准入门禁（2026-09-20 跑前冻结；同日交付取证）
 
-- [ ] `M7-MCP-G1` 转换矩阵与确定性：合法 listing（多 descriptor、hint 组合）→
+- [x] `M7-MCP-G1` 转换矩阵与确定性：合法 listing（多 descriptor、hint 组合）→
   manifest 经真实解析器全绿、成员映射与 §5.1/§5.2 冻结口径一致；负路径（空/字符集
   外成员名、重名、空/非对象/子集外 input_schema、越界描述/计数/资源、降风险
   override、未知成员 override、OutOfProcess 信任字段缺失）逐例整组拒绝且无部分
@@ -305,29 +304,29 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   manifest 既有 1..256 成员上界优先，`M7-TM0-G5` 冻结契约不为本阶段放宽——
   2026-09-20 IVA 首轮发现原「零成员合法模组」口径与 TM0 冲突后修订）；同输入
   manifest digest 与 admission 投影跨进程字节一致。
-- [ ] `M7-MCP-G2` 生命周期只降级：部署窗 admit 全链（转换 → 信任 → register →
+- [x] `M7-MCP-G2` 生命周期只降级：部署窗 admit 全链（转换 → 信任 → register →
   宿主 stage/activate → 协商 Available → TM2 投影含成员）；seal 后
   ServerConnected 拒绝且状态不变；close 后一切事件拒绝；ServerDisconnected 与
   ToolListChanged 对 Active 模组 → Revoked（digest tombstone、后续协商收敛、
   暴露面缩小不扩大）；终态/未注册模组上的事件 NoAction 幂等；在途请求按旧
   generation view 结算不受影响；lifecycle 事件字段脱敏（无 signature 原文、
   无 description 原文）。
-- [ ] `M7-MCP-G3` 单一门禁一致性（DEC-015 对照）：同一正/负矩阵分别驱动 MCP
+- [x] `M7-MCP-G3` 单一门禁一致性（DEC-015 对照）：同一正/负矩阵分别驱动 MCP
   dispatcher 与 `BuiltinToolRegistry`——身份失配（wire/version/side effects）、
   重复 OperationId、参数 schema 违例 → failed record、handler/transport 错误 →
   failed record、取消 → `Cancelled`——两者接受/拒绝面逐条一致。
-- [ ] `M7-MCP-G4` 取消、deadline 与 shutdown 闭合：提交拒绝（executor
+- [x] `M7-MCP-G4` 取消、deadline 与 shutdown 闭合：提交拒绝（executor
   stopping/capacity、未初始化）显式错误且 dispatched 预约回滚；transport 抛
   异常折叠为失败记录；执行中取消经探针传播（transport 轮询 stop 后返回
   Cancelled）；deadline 超时 → 置探针 → 有界宽限 → DeadlineExceeded 失败记录，
   放弃的 future 由 close 排空；close 后新派发 `InvalidState` 拒绝且计数可见；
   聚合并发上限达到 → `ResourceExhausted` 明确拒绝不排队；结果超限 → 失败记录；
   全矩阵无吞掉的异常、无未消费 future。
-- [ ] `M7-MCP-G5` 不可信数据与脱敏：descriptor 描述超限整组拒绝（不静默截断进
+- [x] `M7-MCP-G5` 不可信数据与脱敏：descriptor 描述超限整组拒绝（不静默截断进
   manifest）；admission 投影与事件不含 description 原文与签名材料；transport
   结果经 `build_tool_result_input` 回填项不携带 System/Developer authority；
   `safe_error_summary` 512 字节有界；跨进程报告字节一致。
-- [ ] `M7-MCP-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
+- [x] `M7-MCP-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 MCP 闭包段）。
 
 ## 6. Executor 路由与关闭
@@ -584,5 +583,18 @@ platform-boundary/sbom 四检查通过（format 真实检查 216 文件）、cla
 server/传输互操作归宿主侧证据（`RULE-10`）；钉住的 Executor v0.5.0 对未初始化
 facade 接受提交（无「未初始化拒绝」折叠面可观测，测试按可观测行为钉住并注释）；
 DEC-040 引用解析组合测试归后续 DEC-040 阶段；Windows/Android 运行与
-Release/quality 由 PR CI 回填后 MCP 阶段方可关闭。
+Release/quality 由 PR CI 回填后 MCP 阶段方可关闭（下一条记录回填闭环）。
+
+2026-09-20：PR CI 证据回填并关闭。PR
+[#62](https://github.com/Linductor-alkaid/mira/pull/62)（head `39884de`，合并提交
+`ae7410d`）push 与 pull_request pipeline run
+[`35512461239`](https://github.com/Linductor-alkaid/mira/actions/runs/35512461239)/
+[`35512472810`](https://github.com/Linductor-alkaid/mira/actions/runs/35512472810)
+双 pipeline 各 12 项**首轮全部通过**（Linux GCC/Clang Debug/Release、Windows MSVC
+Debug/Release、Android 两 ABI、ASAN/UBSAN/TSAN、quality——format 真实检查 217
+文件），零修复复验；master 合并提交 run
+[`35513574793`](https://github.com/Linductor-alkaid/mira/actions/runs/35513574793)
+success（12/12）。`M7-MCP-01`–`04` 与 `M7-MCP-G1`–`G6` 关闭；M7 已立项阶段为
+TM0–TM2 + MCP 准入，后续阶段（DEC-040）立项时增补。
+
 

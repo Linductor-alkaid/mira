@@ -1,9 +1,9 @@
 # DEC-039：MCP 工具模组准入——部署时注册的外部 Tool 来源
 
 > 状态：Accepted（方向冻结；MCP 准入阶段由
-> [M7](../plans/m7-tools-evaluation-platform-v1.md) 承载：2026-09-20 依本决策冻结
-> 专项设计 [MCP 准入设计](../design/mcp_tool_admission_design.md) 与阶段工作项并
-> 进入实施；其余范围实现未开始）
+> [M7](../plans/m7-tools-evaluation-platform-v1.md) 承载并于 2026-09-20 交付关闭
+> （专项设计 [MCP 准入设计](../design/mcp_tool_admission_design.md)）；其余范围
+> 实现未开始）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #56](https://github.com/Linductor-alkaid/mira/issues/56)
