@@ -128,7 +128,9 @@ add_library(mira_core
 add_library(Mira::core ALIAS mira_core)
 
 # Workflow dual-path contract layer (M8, DEC-019..DEC-022), the stage-B
-# execution runtime (M9) and the stage-D compiler plane (M11, DEC-025/026):
+# execution runtime (M9), the stage-D compiler plane (M11, DEC-025/026) and
+# the DEC-040 stable tool reference layer (workflow assets referencing tool
+# exposure views):
 # IR, run state view, versioning, event payloads, operation tool schemas,
 # the WorkflowRuntime drive loop and the trajectory compiler with task
 # induction. Step dispatch and verification observations route through the
@@ -145,6 +147,7 @@ add_library(mira_workflow
     src/workflow/workflow_navigation.cpp
     src/workflow/workflow_learning.cpp
     src/workflow/workflow_recovery.cpp
+    src/workflow/tool_reference.cpp
 )
 add_library(Mira::workflow ALIAS mira_workflow)
 target_include_directories(mira_workflow
@@ -391,7 +394,10 @@ if(MIRA_WITH_MBEDTLS)
 endif()
 
 add_executable(mira_minimal_consumer examples/minimal_consumer.cpp)
-target_link_libraries(mira_minimal_consumer PRIVATE Mira::core Mira::simulator_adapter)
+# The TR0 (DEC-040) reference closure lives in the workflow library: the
+# consumer links it transitively but never touches the Executor API.
+target_link_libraries(mira_minimal_consumer PRIVATE
+    Mira::core Mira::simulator_adapter Mira::workflow)
 mira_enable_warnings(mira_minimal_consumer)
 mira_enable_sanitizers(mira_minimal_consumer)
 # M7-TM0-G6: the minimal consumer exercises the tool module contract closure
