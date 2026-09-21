@@ -42,7 +42,8 @@
 namespace mira::testing {
 
 using namespace mira;
-using namespace mira::testing;
+// No self-referencing "using namespace mira::testing" here: MSVC treats it
+// as C4515 (namespace uses itself), fatal under warnings-as-errors.
 
 // ---------------------------------------------------------------------------
 // Shared fixtures (all identities fixed; no generate() reaches asserted data)
