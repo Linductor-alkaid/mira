@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "violations": [
+    "max-file-lines:adapters/net/socket_transport.cpp",
+    "max-file-lines:src/model/model_contracts.cpp",
+    "max-file-lines:src/storage/checkpoint_store.cpp",
+    "max-file-lines:src/storage/sqlite_memory_store.cpp",
+    "max-file-lines:src/workflow/workflow_events.cpp",
+    "max-file-lines:src/workflow/workflow_ir.cpp",
+    "max-file-lines:src/workflow/workflow_runtime.cpp",
+    "max-file-lines:tests/m15/m15_eval_profile_harness.cpp",
+    "max-file-lines:tests/m21/m21_context_curator_test.cpp",
+    "max-file-lines:tests/m21/m21_curator_eval.cpp",
+    "max-file-lines:tests/m22/m22_auto_trigger_eval.cpp",
+    "max-file-lines:tests/m22/m22_auto_trigger_test.cpp",
+    "max-file-lines:tests/m7/m7_tool_module_exposure_test.cpp",
+    "max-file-lines:tests/m7/m7_tool_module_mcp_test.cpp",
+    "max-file-lines:tests/m7/m7_tool_module_registry_test.cpp",
+    "max-file-lines:tests/m7/m7_tool_reference_test.cpp",
+    "max-file-lines:tests/m7/m7_tool_skill_test.cpp"
+  ]
+}

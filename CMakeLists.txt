@@ -444,6 +444,13 @@ if(Python3_Interpreter_FOUND)
         COMMENT "Checking Mira Core platform boundary"
         VERBATIM
     )
+    add_custom_target(architecture-check
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_architecture.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Checking architecture policy (tools/architecture-policy.json)"
+        VERBATIM
+    )
 endif()
 
 add_custom_target(format-check

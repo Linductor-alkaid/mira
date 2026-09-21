@@ -59,7 +59,10 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 - **其余后续阶段**：TR2 WorkflowRuntime 接线与执行（DEC-040：库存储挂载
   tool_refs 清单、`create_run` 准入消费、`Degraded` 事件发射、Skill 经 Tool
   通道的子 Workflow 调用执行适配、IR 引用表达加法演进）随其立项在 M7 内增补
-  工作项与门禁，不预分配编号。
+  工作项与门禁，不预分配编号。立项冻结必须遵循
+  [阶段冻结与决策协议](../project/stage_freeze_protocol.md)（必答八问、决策
+  记录表与 golden 参照；架构依赖差异先登记
+  [架构策略](../../tools/architecture-policy.json)）。
 
 ### 2.2 非目标
 

@@ -141,4 +141,4 @@ jobs:
       - name: Static analysis build
         run: cmake --build build --parallel 2
       - name: Format, docs, supply chain
-        run: cmake --build build --target format-check docs-check sbom-check platform-boundary-check
+        run: cmake --build build --target format-check docs-check sbom-check platform-boundary-check architecture-check
