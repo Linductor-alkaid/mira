@@ -6,6 +6,7 @@
 #include <mira/memory_contracts.hpp>
 #include <mira/runtime.hpp>
 #include <mira/tool_executor.hpp>
+#include <mira/tool_reference.hpp>
 #include <mira/workflow_compiler.hpp>
 #include <mira/workflow_events.hpp>
 #include <mira/workflow_ir.hpp>
@@ -32,6 +33,8 @@ class Executor;
 } // namespace executor
 
 namespace mira {
+
+class SkillPublicationRegistry;
 
 // ---------------------------------------------------------------------------
 // Workflow execution runtime, stage B (workflow_runtime_design §2/§7)
@@ -65,6 +68,13 @@ struct WorkflowRuntimeConfig final {
     NavigationCostProfile nav_cost_profile;
     std::size_t nav_max_edge_evaluations = 4096;
     std::size_t nav_max_path_edges = 64;
+    // TR2 tool-reference wiring (DEC-040 §18.2, RULE-08): mounted per-version
+    // tool_refs manifests.
+    std::size_t max_mounted_tool_refs = 1024;
+    // TR2 skill execution (DEC-040 §18.3, RULE-08): Skill→sub-workflow nesting
+    // depth. A child run's depth is its parent's + 1 (agent-initiated calls
+    // start at 1); calls beyond the bound fail closed.
+    std::uint32_t max_skill_call_depth = 2;
 };
 
 // One settled step attempt as reported in WorkflowRunResult.
@@ -368,6 +378,45 @@ class WorkflowRuntime final {
     // constraint as the operation handlers.
     [[nodiscard]] std::vector<BuiltinToolRegistration> decision_tool_registrations();
 
+    // TR2 tool-reference wiring (DEC-040 §18.2). The mount table anchors a
+    // caller-extracted per-version reference manifest to a library version;
+    // create_run consumes it through the TR0 compatibility projection.
+    // attach fails closed on any binding mismatch (unknown workflow, digest
+    // not resolvable in the library, verify_workflow_tool_refs failure),
+    // re-mounts the identical manifest as an idempotent NoOp and rejects a
+    // different manifest for an already-mounted version (the publish-time
+    // observation defines the version's pins; re-anchoring is a new version).
+    [[nodiscard]] Result<void> attach_workflow_tool_refs(const WorkflowToolRefManifest &refs);
+
+    // The mounted manifest for one library version, or NotFound (unmounted).
+    [[nodiscard]] Result<WorkflowToolRefManifest>
+    workflow_tool_refs(const WorkflowId &workflow_id, const Sha256Digest &ir_digest) const;
+
+    // TR2 skill execution (DEC-040 §18.3): one BuiltIn registration per
+    // currently Published skill; the specs carry the descriptor surface and
+    // the handlers execute the source workflow as a child run through the
+    // library path (same admission, same DEC-015 gate, no exemption). The
+    // registrations capture `this` and `skills`: both must outlive the
+    // registry they are registered into, and a publication that is upgraded
+    // or revoked afterwards fails closed (identity drift) until the host
+    // re-registers.
+    [[nodiscard]] std::vector<BuiltinToolRegistration>
+    skill_tool_registrations(SkillPublicationRegistry &skills);
+
+    // TR2 Procedure memory wiring (design §18.4): projects the registry's
+    // publications and applies one idempotent Add mutation per Published
+    // entry (MemoryKind::Procedure, the canonical index statement, learning
+    // scope, deterministic mutation ids). Requires an installed learning
+    // context. Per-entry failures are counted, never thrown; Revoked entries
+    // are never written.
+    struct WorkflowProcedureSyncReport final {
+        std::uint64_t applied = 0;
+        std::uint64_t idempotent = 0;
+        std::uint64_t failed = 0;
+    };
+    [[nodiscard]] Result<WorkflowProcedureSyncReport>
+    sync_skill_procedure_index(const SkillPublicationRegistry &skills);
+
     // Stops run producers, cancels active runs through the control plane and
     // drains drive futures within the bounded budget. Never shuts the
     // executor down: the host owns it and follows with MiraRuntime shutdown
@@ -381,6 +430,11 @@ class WorkflowRuntime final {
     struct DriveFlags;
     struct AppliedPatch;
     struct PendingPatch;
+    // TR2 (DEC-040 §18.3): the dispatching run's Skill depth published onto
+    // the worker thread that runs the BuiltIn handler, so a skill handler can
+    // read its parent depth. Reset to 0 after every dispatch; never read
+    // outside dispatch_tool_invocation / execute_skill_tool_call.
+    static thread_local std::uint32_t t_skill_dispatch_depth_;
     struct VersionAppendResult final {
         Sha256Digest digest{};
         bool idempotent = false;
@@ -398,7 +452,37 @@ class WorkflowRuntime final {
                           bool dedupe);
     [[nodiscard]] Result<WorkflowRunView> create_run_locked(const WorkflowDefinition &definition,
                                                             JsonValue parameters,
-                                                            std::optional<WorkflowPolicy> policy);
+                                                            std::optional<WorkflowPolicy> policy,
+                                                            std::uint32_t skill_depth = 0);
+
+    // TR2 tool-compatibility admission gate (DEC-040 §18.2): engages under
+    // dispatching policies when a manifest is mounted for this exact
+    // definition or the definition carries v1.1 reference forms; nullopt when
+    // the gate does not engage (behavior identical to pre-TR2). The caller
+    // feeds the projection through admit_workflow_run_by_tool_compat; a
+    // Degraded verdict must be reported through emit_tool_compat_degraded.
+    [[nodiscard]] Result<std::optional<WorkflowToolCompatProjection>>
+    evaluate_tool_compat_gate(const WorkflowDefinition &definition,
+                              const std::shared_ptr<BuiltinToolRegistry> &tools);
+    // TR2: rewrites a v1.1 toolref: "tool" member to its bare wire name;
+    // nullopt when the member is not in reference form. Reference syntax
+    // failures are admission errors.
+    [[nodiscard]] static Result<std::optional<std::string>>
+    resolve_tool_reference_member(const WorkflowDefinition &definition, const JsonValue &resolved);
+    void emit_tool_compat_degraded(const WorkflowRunView &view, TaskId task,
+                                   const WorkflowToolCompatProjection &projection);
+    // TR2 skill execution entry (DEC-040 §18.3): the shared body behind every
+    // skill_tool_registrations handler.
+    [[nodiscard]] Result<JsonValue>
+    execute_skill_tool_call(SkillPublicationRegistry &skills, const std::string &name,
+                            const Hash &registered_descriptor_digest,
+                            const WorkflowId &source_workflow_id,
+                            const Sha256Digest &source_ir_digest, const JsonValue &arguments,
+                            const OperationContext &context);
+    [[nodiscard]] Result<WorkflowRunView> create_skill_child_run(const WorkflowId &workflow_id,
+                                                                 const Sha256Digest &ir_digest,
+                                                                 JsonValue parameters,
+                                                                 std::uint32_t skill_depth);
 
     // Applies one run-view transition through the frozen table under the
     // runtime mutex. Returns nullopt when applied; NoOpTerminal and Rejected
@@ -550,6 +634,14 @@ class WorkflowRuntime final {
         runs_;
     std::unordered_map<WorkflowId, WorkflowVersionHistory, StrongIdHash<WorkflowId>> library_;
     std::unordered_map<Sha256Digest, WorkflowDefinition, Sha256DigestHash> definitions_;
+    // TR2 tool-reference wiring (DEC-040 §18.2): per-version mounted
+    // manifests, keyed (workflow_id -> content digest -> manifest). Capacity
+    // bounded by WorkflowRuntimeConfig::max_mounted_tool_refs.
+    std::unordered_map<WorkflowId,
+                       std::unordered_map<Sha256Digest, WorkflowToolRefManifest, Sha256DigestHash>,
+                       StrongIdHash<WorkflowId>>
+        tool_refs_;
+    std::size_t mounted_tool_refs_ = 0;
     std::size_t active_runs_ = 0;
     std::size_t async_drives_ = 0;
     bool accepting_ = true;

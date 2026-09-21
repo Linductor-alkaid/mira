@@ -2,7 +2,17 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-21（维护轮 [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)
+> 更新日期：2026-09-22（DEC-040 第三阶段 TR2「WorkflowRuntime 接线与执行」
+> 2026-09-21 跑前冻结细项并本地交付关闭：IR v1.1 引用表达加法演进、库挂载
+> tool_refs 清单（宿主 attach + 发布门禁自动提取）、`create_run` 准入消费
+> （Invalid 拒绝 / Degraded 放行 + 事件留痕）、Skill 经同一 Tool 通道的子
+> Workflow 调用执行（DEC-015 同门禁、深度界 2）、Procedure 索引 IMemory
+> 写入接线；实现期按上位 M4 契约修订 Procedure evidence 口径并留更正注记；
+> IVA 两轮取证 18 gate/约 409 断言全绿，`--report` 跨进程 md5
+> `58cf0e9cf97260d40b073c50e7d90b86`，本地门禁 ctest 90/90 + 三 sanitizer
+> 零报告 + 四检查 + NDK 两 ABI；详见 §4.1 第 15 条与
+> [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> 此前 2026-09-21（维护轮 [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)
 > 落地：机器可检查的架构策略 `tools/architecture-policy.json` 与 CI 门禁
 > `architecture-check`、存量违规基线、[公共术语表](../project/glossary.md)、
 > [阶段冻结与决策协议](../project/stage_freeze_protocol.md)、契约四件套标准；
@@ -148,7 +158,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
-| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2 与 [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入已交付；后续衔接 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 稳定引用/Skill；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) TR0–TR2 全部交付关闭；总里程碑关闭待 TR2 的 PR CI 回填与退出条件复核；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
@@ -434,6 +444,36 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     [`35530911707`](https://github.com/Linductor-alkaid/mira/actions/runs/35530911707)
     success；`M7-TR1-01`–`04` 与 `M7-TR1-G1`–`G6` 关闭，下一阶段为 DEC-040
     TR2（WorkflowRuntime 接线与执行，实施前冻结细项）；证据与限制见
+    [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+
+15. DEC-040 第三阶段 TR2 立项与交付入口（2026-09-22）：TR1 关闭后依 M7
+    §4.7 冻结 TR2 细项（`M7-TR2-01`–`05`）与门禁（`M7-TR2-G1`–`G6`，
+    跑前冻结遵循[阶段冻结与决策协议](../project/stage_freeze_protocol.md)
+    必答八问 + 决策记录表）并交付（DEC-040 消费者接线阶段，前置 TR1 已
+    满足）：专项设计 §18 随冻结交付（文件升 v1.3）；IR reader 升 `{1,1}`
+    （v1.1 引用表达加法演进：ToolCall `arguments["tool"]` 接受 `toolref:`
+    引用，准入期重写为裸 wire 名，执行路径与 DEC-015 零感知）；refs 挂载表
+    （`attach_workflow_tool_refs` fail-closed/幂等/容量 + `publish_validated`
+    发布门禁自动提取挂载，提取失败 `tool-refs-unresolvable` 拒绝且库零变更）；
+    `create_run` 准入消费 TR0 投影（dispatching 策略 × 挂载或 v1.1 定义，
+    `Invalid` 拒绝 / `Degraded` 放行 + `mira.workflow.tool-compat-degraded.v1`
+    事件每 run 恰一次 / DryRun 与无挂载 v1.0 零漂移）；Skill 经同一
+    `BuiltinToolRegistry` 的子 Workflow 调用执行适配（DEC-040 §3.2，DEC-015
+    同门禁无豁免、嵌套深度界 `max_skill_call_depth=2`、发布缺失/Revoked/
+    descriptor 漂移 fail-closed）；Procedure 索引 IMemory 写入接线（确定性
+    mutation id 幂等、confidence 0.3、Revoked 不写）。实现期裁决一处（IVA
+    首轮发现）：M4 mutation 契约要求 Add 必带事件 evidence，冻结稿「无事件
+    provenance」口径按上位契约优先修订——sync 发射
+    `mira.workflow.procedures-synced.v1` 审计事件作为 evidence 锚，更正
+    注记落 M7 §4.7 与设计 §18.4。测试由 Independent-Verification-Agent
+    两轮独立取证（18 gate/290 MIRA_CHECK + 119 fixture 断言，debug+三
+    sanitizer 树全绿，`--report` 跨进程 md5
+    `58cf0e9cf97260d40b073c50e7d90b86`；首轮抓到上述 evidence 缺陷，修复后
+    复验）。本地门禁：全量 ctest 90/90、三 sanitizer 零报告、四检查
+    （format 225 文件）、clang-tidy 零违例、NDK 两 ABI 编译且符号在库。
+    `M7-TR2-01`–`05` 与 `M7-TR2-G1`–`G6` 关闭；M7 已立项阶段（TM0–TM2、
+    MCP 准入、TR0–TR2）全部交付，DEC-040 的三阶段计划全部落地；总里程碑
+    关闭随 PR CI 回填与退出条件复核评审；证据与限制见
     [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，

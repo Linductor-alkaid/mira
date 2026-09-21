@@ -1,14 +1,16 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
-> 状态：Planned（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
+> 状态：In Progress（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 的 TR0（稳定引用与
 > 兼容投影）、TR1（Skill 发布生命周期与 Procedure 索引投影）已交付关闭；
-> TR2（Runtime 接线与执行）随其立项冻结细项，不预分配编号）
+> TR2（Runtime 接线与执行）于 2026-09-21 跑前冻结细项（§4.7/§5.7），2026-09-22
+> 本地交付关闭（PR CI 证据待回填）。全部已立项阶段的关闭条件满足后，总里程碑
+> 关闭随 TR2 的 PR CI 回填与退出条件复核评审）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-21（TR1 交付关闭）
+> 更新日期：2026-09-22（TR2 本地交付关闭）
 
 ## 1. 目标
 
@@ -56,13 +58,20 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   宿主显式发布/升级/撤销生命周期（runnable 门禁、只降级、部署窗）、Procedure
   索引投影（`mira.skill.procedure_index.v1`，以显式发布为界、无时钟、可重建）
   （[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §17）。
-- **其余后续阶段**：TR2 WorkflowRuntime 接线与执行（DEC-040：库存储挂载
-  tool_refs 清单、`create_run` 准入消费、`Degraded` 事件发射、Skill 经 Tool
-  通道的子 Workflow 调用执行适配、IR 引用表达加法演进）随其立项在 M7 内增补
-  工作项与门禁，不预分配编号。立项冻结必须遵循
-  [阶段冻结与决策协议](../project/stage_freeze_protocol.md)（必答八问、决策
-  记录表与 golden 参照；架构依赖差异先登记
-  [架构策略](../../tools/architecture-policy.json)）。
+- **TR2 WorkflowRuntime 接线与执行（DEC-040 第三阶段；2026-09-21 跑前冻结
+  细项，进入实施）**：库存储挂载 tool_refs 清单（宿主显式 attach +
+  `publish_validated` 发布门禁自动提取挂载）、`create_run` 准入消费 TR0
+  兼容投影（`Invalid` 拒绝、`Degraded` 放行留痕）、`Degraded` 版本化事件
+  发射、IR v1.1 引用表达加法演进（`arguments["tool"]` 接受 `toolref:`
+  引用，准入期解析为裸 wire 名，执行路径零改动）、Skill 经 Tool 通道的
+  子 Workflow 调用执行适配（DEC-040 §3.2，同一 DEC-015 门禁）与 Procedure
+  索引 IMemory 写入接线（§17.3 写入面最小闭环）。冻结细项见本文件 §4.7/
+  §5.7，规范见
+  [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+  §18。冻结遵循
+  [阶段冻结与决策协议](../project/stage_freeze_protocol.md)（必答八问、
+  决策记录表与 golden 参照；架构依赖无 policy 差异——全部新代码入既有
+  `workflow` 模块，`workflow→core/executor` 已登记）。
 
 ### 2.2 非目标
 
@@ -87,7 +96,7 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
 - [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
   （TR0 阶段规范：§4 引用语法、§5 提取、§6/§7 解析与兼容投影、§8 准入与留痕、
   §9 与 DEC-015 边界；TR1 阶段规范：§17 Skill 描述符与发布生命周期、Procedure
-  索引投影）
+  索引投影；TR2 阶段规范：§18 Runtime 接线与执行）
 - [Model Provider 与 Tool 扩展设计](../design/model_provider_and_tool_design.md)
 - [DEC-009](../decisions/DEC-009-tool-module-boundary.md)、
   [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md)、
@@ -295,13 +304,104 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   `examples/minimal_consumer.cpp` 追加 TR1 闭包段。测试的编写、运行与
   sanitizer 取证由 Independent-Verification-Agent 独立完成。
 
-### 4.7 其余后续阶段（立项时增补工作项与门禁）
+### 4.7 TR2：WorkflowRuntime 接线与执行（DEC-040 第三阶段；2026-09-21 跑前冻结细项，进入实施）
 
-- TR2 WorkflowRuntime 接线与执行（[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md)
-  §验证方式的消费者接线：库存储挂载 tool_refs 清单、`create_run` 准入消费、
-  `Degraded` 事件发射、Skill 经 Tool 通道的子 Workflow 调用执行适配、IR 引用
-  表达加法演进；方向见
-  [Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md) §15）。
+冻结基线：[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+§18（随本冻结交付）。八问裁定：行为=接线 TR0/TR1 契约进 Runtime（§18.1–§18.5）；
+所有者=refs 挂载表与 run 的 skill 深度由 `WorkflowRuntime` 唯一拥有（`mutex_` 内），
+`SkillPublicationRegistry` 仍归宿主串行控制面；契约=本节 API 面 + 两类版本化
+工件/事件（新增 `mira.workflow.tool_compat_degraded.v1`，复用
+`mira.workflow.tool_refs.v1`/`mira.workflow.tool_compat.v1`）；层与依赖=全部新
+代码入 `src/workflow`（`workflow` 模块 requires `core`/`executor` 已在
+[架构策略](../../tools/architecture-policy.json) 登记，无 policy 差异、无基线
+刷新）；复用=投影/准入决策/提取全部复用 TR0 纯函数，子 run 走既有
+`create_run`/drive 路径，不新增平行执行通道；时序=门在准入时刻无状态重算、
+Degraded 事件每 run 恰一次、挂载每 (workflow_id, digest) 一次幂等、Procedure
+sync 以确定性 mutation id 幂等；Executor 路由=子 run 走既有 carrier task +
+`submit_auto()`（future 必消费），handler 内同步 drive 属有限任务，无新线程/
+定时器；验证上下文=§5.7 门禁矩阵 + `tests/m7/m7_tool_runtime_wiring_test.cpp`
+（label `contract`）。
+
+- [x] `M7-TR2-01` IR v1.1 引用表达加法演进与提取层适配（设计 §4/§5/§18.1）：
+  IR reader 版本升至 `{1,1}`——schema_version `{1,1}` 文档解码接受、`{1,0}`
+  语义逐字节不变、`{1,2}`+ 仍拒绝；v1.1 ToolCall 步骤 `arguments["tool"]`
+  允许 `toolref:<wire-name>[@<digest>]` 引用字符串（语法/TR0 v1 冻结规则原样
+  生效），v1.0 文档中该形态保持既有 fail-closed 行为（解码层两版本均不解释
+  tool 语义，只做形状校验）；准入期解析引用为裸 wire 名（执行路径与 DEC-015
+  零感知，钉住 digest 的兼容判定归 TR0 投影）；`extract_workflow_tool_references`
+  对 v1.1 定义接受引用字符串（引用自带模式优先于提取选项，钉住条目记录引用
+  自带 digest），v1.0 行为与既有 golden 不变；引用解析失败整组拒绝（错误
+  domain `mira.tool_reference`）。
+- [x] `M7-TR2-02` 库存储挂载 tool_refs 清单、`create_run` 准入消费与
+  `Degraded` 事件发射（设计 §5.1/§8/§18.2）：`WorkflowRuntime` 内
+  (workflow_id, content_digest) → `WorkflowToolRefManifest` 挂载表（mutex_
+  保护、容量上限 `max_mounted_tool_refs`）；`attach_workflow_tool_refs`
+  宿主显式挂载（绑定 fail-closed：库含该 workflow 历史、digest 可解析定义、
+  `verify_workflow_tool_refs` 通过；同 key 同 manifest digest 幂等 NoOp、
+  同 key 异 digest 拒绝）与 `workflow_tool_refs` 只读；`publish_validated`
+  发布门禁自动提取挂载（tools_ 已安装且定义含 ToolCall 步骤时、默认选项
+  PinnedDigest；提取失败 → 门禁拒绝 `publish_rejected` 事件 reason
+  `tool-refs-unresolvable` 且库零变更；tools_ 未安装 → 不提取不挂载、发布
+  行为不变——文档化限制；`publish_workflow` 不变）；`create_run` 准入消费
+  （仅 dispatching 策略）：挂载清单存在（按定义 workflow_id + content digest
+  查）则绑定校验后使用之，否则 v1.1 定义含 ToolCall 步骤时现场提取（默认
+  FollowLatest——裸 wire 名即跟随语义）；TR0 投影 × `admit_workflow_run_by_tool_compat`：
+  `Invalid` → 拒绝（reason 确定性）、`Degraded` → 放行 + 发射
+  `mira.workflow.tool_compat_degraded.v1` 事件（内嵌脱敏投影 JSON 与投影
+  digest，每 run 恰一次；新增 `workflow_tool_compat_from_json` 严格反解析）、
+  `Runnable` → 放行无事件；DryRun/非派发策略不经门禁（今日行为不变，
+  发布门禁内部 DryRun 不受影响）；无挂载的 v1.0 定义不经门禁（零漂移）。
+- [x] `M7-TR2-03` Skill 经 Tool 通道的子 Workflow 调用执行适配（DEC-040
+  §3.2、设计 §18.3）：`WorkflowRuntime::skill_tool_registrations(
+  SkillPublicationRegistry&)` 对每个 Published 发布产出一条
+  `BuiltinToolRegistration`（spec 字段取 descriptor/surface；handler 捕获
+  runtime this + registry 指针 + 注册时 descriptor digest），宿主经同一
+  `BuiltinToolRegistry::register_tool` 注册——DEC-015 全部门禁自动生效，
+  不新增执行通道或权限语义；handler 调用语义：发布缺失/Revoked/descriptor
+  digest 与注册时漂移 → failed record fail-closed（升级/撤销后须重新注册）；
+  以工具 context（取消探针保留）经库路径 `create_run(workflow_id,
+  source_ir_digest)` 创建子 run（参数=工具实参、策略=定义默认）并在 handler
+  线程同步 `execute_run` 驱动至终态；子 run 走全部既有门禁（runnable、
+  兼容门、per-step W-02、DEC-015），无豁免；嵌套深度界 `max_skill_call_depth`
+  （新 config，默认 2）：run 记录携带 skill 深度，经派发 call_id（
+  `workflow:<run_id>:…`）解析父 run 深度（父不存在 = Agent 直调 → 0），超界
+  failed record；子 run Failed → failed record（模型可归因）、Cancelled →
+  取消传播；工具结果为有界 JSON `{run_id, state, safe_summary}`；生命周期
+  约束与 operation tools 同款（runtime 与 registry 必须先于注册表消亡）。
+- [x] `M7-TR2-04` Procedure 索引 IMemory 写入接线（设计 §17.3 写入面最小
+  闭环、§18.4）：`WorkflowRuntime::sync_skill_procedure_index(registry)`——
+  需已安装 learning context（否则显式拒绝）；`project_skill_procedure_index`
+  后对 Published 条目逐条 apply Add mutation（`MemoryKind::Procedure`、
+  statement = 索引 canonical statement、learning scope、recorded_at 由接线
+  填充、确定性 mutation id（name+version+descriptor digest 派生，同
+  DEC-030 模式）保证重放幂等）；mutation evidence 按上位 M4 契约携带——
+  sync 前发射 `mira.workflow.procedures-synced.v1` 审计事件（索引 digest +
+  Published 计数）作为全部 mutation 的事件 evidence（2026-09-21 实现期
+  更正：M4 `MemoryMutation::validate` 要求 Add 必带事件 evidence，冻结稿
+  「无事件 provenance」口径按上位契约优先修订，设计 §18.4 同步注记），无
+  事件 store 时 sync 显式拒绝；confidence 保持 0.3（发布派生非运行验证）；
+  部分条目失败计入报告不中断，返回
+  `{applied, idempotent, failed}` 计数；Revoked 条目不写入；检索消费不接线
+  （无消费者，显式非目标）；DEC-030 Episode/Lesson 既有写路径语义不变。
+- [x] `M7-TR2-05` 契约测试矩阵 `tests/m7/m7_tool_runtime_wiring_test.cpp`
+  （label `contract`）：覆盖 `M7-TR2-G1`–`G6` 全部门禁，`--report` 跨进程
+  字节一致；`examples/minimal_consumer.cpp` 追加 TR2 闭包段（v1.1 定义
+  解码、引用提取、Degraded 事件 roundtrip）。测试的编写、运行与 sanitizer
+  取证由 Independent-Verification-Agent 独立完成。
+
+决策记录表（冻结裁定，依据见设计 §18）：
+
+| 决策点 | 选择 | 被否备选 | 依据 |
+| --- | --- | --- | --- |
+| 挂载表所有者 | `WorkflowRuntime` 唯一拥有（mutex_ 内 side table） | 宿主自存清单调用时传入——失去库级准入锚点，版本绑定可被调用方错配 | 设计 §5.1（挂载归消费者）、§18.2 |
+| 兼容门触发条件 | dispatching 策略 ×（挂载清单 ∨ v1.1 定义含 ToolCall） | 全策略触发——DryRun 不派发却要求 registry，破坏发布门禁内部 DryRun 与 W-04 规划语义；仅挂载触发——v1.1 定义内嵌钉住无处生效 | DEC-040 §4、§18.2 准入矩阵 |
+| IR 引用表达 | schema 1.1 接受 `toolref:` 字形，准入期解析为裸 wire 名，执行路径零改动 | 改派发路径直接识别 toolref——§14 已否决（破坏 DEC-015 零改动承诺） | 设计 §14 备选 1、§18.1 |
+| on-the-fly 提取默认模式 | FollowLatest（运行时刻裸 wire 名=跟随语义） | PinnedDigest——运行时钉住退化为「每次运行钉当前」，门永不触发 | §18.2；与发布期 PinnedDigest 锚定（publish_validated）互补 |
+| 子 run 深度界 | run 记录携带深度、经派发 call_id 传递父身份，`max_skill_call_depth=2` | 仅全局并发上限——无法表达嵌套深度；OperationContext 携带深度——公共契约扩张 | RULE-08、§18.3 |
+| Procedure 写入时机 | 宿主显式 `sync_skill_procedure_index`，Published 条目 Add 幂等 | 发布时自动写入——违背 TR1「以显式发布为界」且 registry 不持 IMemory | §17.3、TR1 G5 边界 |
+| 无 provenance 的 Procedure 置信度 | 固定 0.3（M4「untraceable 保持低置信」上界） | 携带发布事件 id 作 provenance——registry 事件 id 不归 runtime 持有，扩张 TR1 面 | M4 记录纪律、§18.4 |
+| Executor 路由 | 子 run 走既有 carrier task + `submit_auto()`；handler 内同步 drive 属有限任务 | 专用 worker/定时器——被 AGENTS.md Executor 章禁止 | M7 §6、AGENTS Executor 章 |
+| 依赖登记 | 无 policy 差异：新代码全部入 `src/workflow` | 新建模块/跨模块 requires——无依据 | architecture-policy v1 现状 |
 
 ## 5. 阶段门禁
 
@@ -471,6 +571,43 @@ MCP 工具模组准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skil
   DEC-030 学习路径语义不变。
 - [x] `M7-TR1-G6` consumer 闭包：新公开头可被最小外部 consumer 独立包含链接
   （`examples/minimal_consumer.cpp` 追加 TR1 闭包段）。
+
+### 5.7 TR2 门禁（2026-09-21 跑前冻结）
+
+- [x] `M7-TR2-G1` IR v1.1 引用表达与提取矩阵：`{1,1}` 文档解码接受且
+  roundtrip 无损（follow/pinned 两字形 golden）；`{1,0}` 文档逐字节语义
+  不变（既有 golden 全部保持）；`{1,2}` 仍拒绝；v1.0 定义中 `toolref:` 字形
+  保持既有 fail-closed（提取字符集拒绝、运行时 NotFound）；v1.1 提取——引用
+  自带模式优先于选项、钉住条目记录引用自带 digest、混合裸名+引用定义、引用
+  语法非法整组拒绝（domain `mira.tool_reference`）、digest 绑定覆盖 v1.1。
+- [x] `M7-TR2-G2` 挂载与准入消费：attach 负矩阵（未知 workflow、digest 与库
+  失配、`verify_workflow_tool_refs` 错配、同 key 异 digest、超容量）逐例拒绝
+  且状态不变，同 key 同 digest 幂等；`publish_validated` 自动挂载可读回、
+  提取失败 → 拒绝 + `publish_rejected`（reason `tool-refs-unresolvable`）+
+  库零变更、tools_ 未安装时发布行为不变；`create_run`——`Invalid` 拒绝且
+  reason 确定性、`Degraded` 放行且 `tool_compat_degraded` 事件恰一次（内嵌
+  投影经严格反解析等价、脱敏字段闭集：无 schema 体/描述原文/secret）、
+  `Runnable` 无事件、DryRun 与无挂载 v1.0 定义零门禁零漂移、执行路径
+  resolved arguments 只见裸 wire 名。
+- [x] `M7-TR2-G3` 钉住演进全矩阵与确定性：pin 相等 → `Runnable`；pin 失配 +
+  骨架可绑定 → `Degraded` + 事件；pin 失配 + 不可绑定 → `Invalid` 拒绝；wire
+  名消失 → `Invalid` 拒绝；跟随模式解析当前版本；同输入同决策同投影 digest，
+  `--report` 跨进程字节一致（无时钟、无随机、canonical JSON）。
+- [x] `M7-TR2-G4` Skill 执行适配矩阵：注册暴露面与 descriptor/surface 逐字段
+  一致且经同一 `BuiltinToolRegistry`（DEC-015 身份门禁生效）；直调子 run
+  Completed 返回 `{run_id, state, safe_summary}` 有界结果契约；子 run Failed
+  → failed record；父取消 → Cancelled 传播且子 run 终态收敛；发布缺失/Revoked
+  /descriptor 漂移 fail-closed failed record；深度界——深度 1 直调与深度 2
+  嵌套通过、深度 3 拒绝（默认 `max_skill_call_depth=2`）；子 run 同门禁
+  （子 run 钉住失配 `Invalid` → skill 调用失败，无豁免）。
+- [x] `M7-TR2-G5` Procedure 写入接线与组合边界：确定性 mutation id 重放幂等
+  （二次 sync `idempotent` 计数、store 无重复记录）；statement 与 TR1 索引
+  逐字节一致、`recorded_at` 已填充、confidence ≤ 0.3、kind=Procedure、
+  scope=learning scope；Revoked 条目零写入；无 learning context 显式拒绝；
+  DEC-030 Episode/Lesson 写路径与 `record_recovery_lesson` 语义不变（负向）。
+- [x] `M7-TR2-G6` consumer 闭包：`examples/minimal_consumer.cpp` 追加 TR2
+  闭包段并保持可独立编译链接；`mira.workflow.tool_compat_degraded.v1` 事件
+  payload builder/parser roundtrip 在 consumer 内可用。
 
 ## 6. Executor 路由与关闭
 
@@ -859,3 +996,73 @@ Tool 通道的子 Workflow 调用执行适配、IR 引用表达加法演进）�
 与未执行项：Procedure statement 落库 `IMemory`（scope/ACL/检索/时间戳）、
 Skill 执行面与 `create_run` 接线归 TR2（本阶段无从验证，设计 §17.4）；发布
 即索引的口径使索引面限于宿主显式动作（规则性限制，放宽需新 DEC）。
+
+2026-09-21/22：TR2 细项冻结并交付（DEC-040 第三阶段，前置 TR1 已关闭；维护者
+指令「依设计与计划推进下一步开发」，与 TM0–TR1 同一授权模式）。冻结遵循
+[阶段冻结与决策协议](../project/stage_freeze_protocol.md)：必答八问与决策
+记录表落档本文件 §4.7；规范随
+[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+§18 冻结（设计文件升 v1.3）；架构依赖无 policy 差异（全部新代码入 `workflow`
+模块既有 requires），基线零刷新。
+
+交付（DEC-040 §验证方式的消费者接线全量闭合）：
+`src/workflow/workflow_ir.cpp`——IR reader 升 `{1,1}`（v1.0 语义逐字节不变、
+`{1,2}`+ 仍拒绝）；`include/mira/tool_reference.hpp` +
+`src/workflow/tool_reference.cpp`——v1.1 提取接受 `toolref:` 引用字形（引用
+自带模式优先于选项、钉住记录引用自带 digest）、`workflow_tool_compat_from_json`
+严格反解析（闭字段集、digest 重算一致）；`include/mira/workflow_events.hpp` +
+`src/workflow/workflow_events.cpp`——`mira.workflow.tool-compat-degraded.v1`
+（内嵌脱敏 tool_compat 工件、parser 经严格反解析防漂移）与
+`mira.workflow.procedures-synced.v1` 两类版本化事件；
+`include/mira/workflow_runtime.hpp` + `src/workflow/tool_runtime_wiring.cpp`
+（新增编译单元，入 `mira_workflow`）+ `src/workflow/workflow_runtime.cpp`——
+refs 挂载表（`attach_workflow_tool_refs` 绑定 fail-closed/幂等/容量上限、
+`workflow_tool_refs` 只读）、`publish_validated` 发布门禁自动提取挂载（提取
+失败 → `tool-refs-unresolvable` 拒绝 + 库零变更；无 registry 不提取不挂载）、
+`create_run` 准入消费（dispatching 策略 × 挂载清单或 v1.1 定义；Invalid 拒绝、
+Degraded 放行 + 事件每 run 恰一次、Runnable 无事件、DryRun 与无挂载 v1.0
+零漂移；v1.1 引用准入期重写为裸 wire 名，执行路径与 DEC-015 零感知）、
+`skill_tool_registrations`（Published 发布 → 同一 `BuiltinToolRegistry` 的
+注册面，DEC-015 同门禁；handler 执行库路径子 run：runnable 门禁、兼容门、
+per-step 校验无豁免；发布缺失/Revoked/descriptor 漂移 fail-closed；嵌套深度
+`max_skill_call_depth=2`（run 记录携带深度、dispatch 经 thread_local 发布至
+handler 线程、guard 复位）；结果契约 `{run_id, state, safe_summary}`；取消
+协作传播）、`sync_skill_procedure_index`（确定性 mutation id 幂等、
+confidence 0.3、Revoked 不写、报告计数不中断）。
+
+实现期裁决一处（IVA 首轮发现，主循环按上位契约优先修订冻结稿并留更正注记，
+同 MCP 空清单先例）：**Procedure mutation 缺 evidence 缺陷**——M4
+`MemoryMutation::validate` 要求 Add 必带事件 evidence，冻结稿「无事件
+provenance」口径不可实现；修复为 sync 前发射 `procedures-synced` 审计事件并
+以其 id 作为全部 mutation 的 evidence（无事件 store 显式拒绝）；confidence
+保持 0.3（发布派生非运行验证）。M7 §4.7 `M7-TR2-04` 与设计 §18.4 同步更正。
+MINOR-1（IVA 记录备查）：attach 的 workflow_id 错配分支经公开 API 不可达
+（digest 绑定使其实际以 NotFound 拒绝）——防御性死分支保留，fail-closed
+性质不变。
+
+测试 `tests/m7/m7_tool_runtime_wiring_test.cpp`（18 个 gate、290 MIRA_CHECK
++ 119 fixture 断言，label `contract`，注册走 TR0/TR1 同款
+`mira_add_m7_reference_test`；测试的编写、运行与 sanitizer 取证由
+Independent-Verification-Agent 独立完成，共两轮：首轮 15/18 全绿并抓出上述
+evidence 缺陷，主循环修复后复验 18/18 全绿；IVA 另以 token 级比对核验格式
+重排语义无损）。取证要点：G1 v1.1 解码/提取矩阵 + v1.0 golden 不变；G2 attach
+负矩阵、发布门禁自动挂载与 `tool-refs-unresolvable`、Invalid 拒绝 reason、
+Degraded 事件恰一次（内嵌投影严格解析、脱敏）、DryRun 与 v1.0 零漂移、执行
+路径无 toolref 字样；G3 钉住演进全矩阵与确定性；G4 注册面逐字段、DEC-015
+提案门禁、子 run Completed/Failed/Cancelled、深度矩阵（默认 2 与 config=1
+两口径）、子 run 兼容门无豁免；G5 procedure sync 幂等/逐字节 statement/
+事件 evidence 链/无 store 拒绝/Episode 路径不变；G6 公共面与新事件闭包。
+`--report` 跨进程字节一致（md5 `58cf0e9cf97260d40b073c50e7d90b86`，
+3107 字节）。本地门禁：全量 ctest **90/90**（原 89 + 本里程碑 1 目标）、
+ASAN/UBSAN/TSAN（tsan 需 `setarch -R`，本机 ASLR 已知启动期不兼容，非代码
+竞争）三树 18 gate 完整执行零报告、format/docs/platform-boundary/sbom 四
+检查通过（format 真实检查 225 文件）、clang-tidy 18.1.8 预检全部被改库源
+零违例、本机 NDK r26.3 两 ABI（arm64-v8a/x86_64）交叉编译 `mira_core`+
+`mira_workflow` 通过且 TR2 符号在库；`examples/minimal_consumer.cpp` 追加
+TR2 闭包段（v1.1 解码 + 引用提取 + compat 严格反解析 + Degraded 事件
+roundtrip），`mira_minimal_consumer_test` 四树通过。限制与未执行项：Skill
+经 AgentLoop `ToolProposals` 直调的模型侧接线归消费者里程碑（设计 §18.5，
+本阶段 Skill 工具经同一 registry 已可被任意曝光视图消费）；兼容状态增量
+重算策略待真实规模证据（DEC-040 风险条款）；Procedure 检索接线与 Revoked
+退役传播为显式非目标；Windows/Android 运行与 Release/quality 由 PR CI
+回填后 TR2 方可关闭，M7 总里程碑关闭随 CI 回填与退出条件复核评审。

@@ -638,3 +638,8 @@ function(mira_add_m7_reference_test name source)
 endfunction()
 mira_add_m7_reference_test(mira_m7_tool_reference_test m7/m7_tool_reference_test.cpp)
 mira_add_m7_reference_test(mira_m7_tool_skill_test m7/m7_tool_skill_test.cpp)
+# TR2 runtime wiring (DEC-040 section 18): IR v1.1 reference expression, the
+# mount table, the publish-gate auto extraction, the create_run tool-compat
+# admission gate with its Degraded event, the skill execution adapters and the
+# Procedure memory sync; gates M7-TR2-G1..G6.
+mira_add_m7_reference_test(mira_m7_tool_runtime_wiring_test m7/m7_tool_runtime_wiring_test.cpp)
