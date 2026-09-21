@@ -120,8 +120,21 @@ _Avoid_: 版本号引用（钉的是 digest 而非版本号）
 
 **兼容状态投影（Compatibility Projection）**:
 引用的 `Runnable` / `Degraded` / `Invalid` 三态确定性重算；`Invalid`
-阻断准入，`Degraded` 留审计投影。
+阻断准入，`Degraded` 留审计投影。TR2 起 `create_run` 在派发策略下强制
+消费该投影（挂载清单或 IR v1.1 引用表达触发）。
 _Avoid_: 状态机（投影是可重建的派生视图，不是状态机）
+
+**Tool Refs 挂载（Tool Refs Mount）**:
+宿主显式锚定到库版本（workflow_id + content digest）的引用清单工件，
+由 `WorkflowRuntime` 保存并在 Run 准入时消费；同版本重挂同 digest 幂等、
+异 digest 拒绝，容量有界。
+_Avoid_: 兼容状态存储事实（挂载的是清单工件，状态仍按需重算）、自动挂载
+
+**Skill 调用（Skill Invocation）**:
+Skill 经同一 `BuiltinToolRegistry` 与 DEC-015 门禁暴露为 Tool，其执行是
+经库路径创建的子 Workflow run（runnable 门禁、兼容门与逐步校验无豁免，
+嵌套深度有界）。
+_Avoid_: 第二执行通道、已发布即豁免门禁
 
 **Skill（技能）**:
 以显式发布为界、钉住源 Workflow id + `ir_digest` 的可复用过程资产

@@ -3,15 +3,16 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-09-22（DEC-040 第三阶段 TR2「WorkflowRuntime 接线与执行」
-> 2026-09-21 跑前冻结细项并本地交付关闭：IR v1.1 引用表达加法演进、库挂载
+> 交付关闭（2026-09-21 跑前冻结）：IR v1.1 引用表达加法演进、库挂载
 > tool_refs 清单（宿主 attach + 发布门禁自动提取）、`create_run` 准入消费
 > （Invalid 拒绝 / Degraded 放行 + 事件留痕）、Skill 经同一 Tool 通道的子
 > Workflow 调用执行（DEC-015 同门禁、深度界 2）、Procedure 索引 IMemory
 > 写入接线；实现期按上位 M4 契约修订 Procedure evidence 口径并留更正注记；
-> IVA 两轮取证 18 gate/约 409 断言全绿，`--report` 跨进程 md5
-> `58cf0e9cf97260d40b073c50e7d90b86`，本地门禁 ctest 90/90 + 三 sanitizer
-> 零报告 + 四检查 + NDK 两 ABI；详见 §4.1 第 15 条与
-> [M7 文件](m7-tools-evaluation-platform-v1.md)。）
+> IVA 三轮取证（缺陷抓取 → 修复复验 → 拆分保真）18 gate/290 MIRA_CHECK
+> 全绿，本地门禁 ctest 91/91 + 三 sanitizer 零报告 + 五检查（含
+> `architecture-check`）+ NDK 两 ABI；PR #66 三轮 CI 后 24/24 全绿，master
+> 合并提交 run success；**M7 总里程碑同日关闭（`Completed`）**；详见 §4.1
+> 第 15 条与 [M7 文件](m7-tools-evaluation-platform-v1.md)。）
 > 此前 2026-09-21（维护轮 [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)
 > 落地：机器可检查的架构策略 `tools/architecture-policy.json` 与 CI 门禁
 > `architecture-check`、存量违规基线、[公共术语表](../project/glossary.md)、
@@ -158,7 +159,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M4](m4-context-memory-recovery.md) | Context/Memory、Replay 和恢复 | M3 | Stateful agent beta | Completed |
 | [M5](m5-local-perception-task-models.md) | 本地视觉、任务模型注册与 ONNX 推理（原范围终止） | M3 | 无（见 DEC-011） | Cancelled |
 | [M6](m6-realtime-control-takeover.md) | 连续控制、实时路径和 Human Takeover（原范围终止） | M2、M5 | 无（见 DEC-011） | Cancelled |
-| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) TR0–TR2 全部交付关闭；总里程碑关闭待 TR2 的 PR CI 回填与退出条件复核；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Planned |
+| [M7](m7-tools-evaluation-platform-v1.md) | Tool 模组体系分阶段落地（[DEC-009](../decisions/DEC-009-tool-module-boundary.md) 模组体系 TM0–TM2、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) MCP 准入与 [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) TR0–TR2 全部交付关闭；总里程碑退出条件于 2026-09-22 复核通过；范围重定义见 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） | M4；DEC-042 | Tool module alpha（分阶段锚点，非发布物） | Completed |
 | [M8](m8-workflow-contracts.md) | Workflow 双路径契约冻结（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 A） | M4 | Workflow contract alpha | Completed |
 | [M9](m9-workflow-runtime-minimal-loop.md) | Workflow Runtime 最小闭环（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 B：Strict/DryRun 执行、暂停/取消、操作工具闭环） | M8 | Workflow runtime alpha | Completed |
 | [M10](m10-workflow-intervention-and-policy-set.md) | Workflow 介入与执行策略全集（[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md) 阶段 C：策略全集、对话 patch 执行、决策点交互） | M9 | Workflow intervention alpha | Completed |
@@ -475,6 +476,22 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     MCP 准入、TR0–TR2）全部交付，DEC-040 的三阶段计划全部落地；总里程碑
     关闭随 PR CI 回填与退出条件复核评审；证据与限制见
     [M7 文件](m7-tools-evaluation-platform-v1.md) 验证记录。
+    同日：PR [#66](https://github.com/Linductor-alkaid/mira/pull/66) CI 共
+    三轮——首轮 22/24（quality：新单文件测试矩阵超 `architecture-check`
+    1200 行预算，拆分为 wiring/skill 两 TU + 共享 fixture，断言逐条保真）、
+    二轮 23/24（windows-debug：MSVC C4702 拆分遗留不可达代码 + C4515 命名
+    空间自引用，两处测试面机械修复）、三轮 head `ff654a8` 双 pipeline 各
+    12/12 全绿（push
+    [`35642649408`](https://github.com/Linductor-alkaid/mira/actions/runs/35642649408)
+    / pull_request
+    [`35642651479`](https://github.com/Linductor-alkaid/mira/actions/runs/35642651479)），
+    master 合并提交 run
+    [`35645301901`](https://github.com/Linductor-alkaid/mira/actions/runs/35645301901)
+    success（12/12）。**M7 总里程碑退出条件同日复核通过并关闭（`Completed`）**：
+    全部已立项阶段（TM0–TM2、MCP、TR0–TR2）按「冻结 → 实现 → IVA 取证 →
+    本地门禁 → PR CI」节奏关闭；`M7-01`–`M7-06` 重定义映射项全部有验证记录
+    （详见 [M7 文件](m7-tools-evaluation-platform-v1.md) §9 末条）；推迟项
+    按 DEC-042 保持推迟。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

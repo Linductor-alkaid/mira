@@ -468,6 +468,14 @@ Workflow 引用清单提取、解析矩阵与 `Runnable`/`Degraded`/`Invalid` �
 「Workflow 准入」一类，专项规范见
 [Tool 稳定引用与 Skill 设计](tool_reference_and_skill_design.md)，交付记录见
 [M7](../plans/m7-tools-evaluation-platform-v1.md)。
+2026-09-22：DEC-040 第二/第三阶段 TR1 与 TR2 交付——TR1（Skill 描述符与
+暴露面派生、`SkillPublicationRegistry` 发布/升级/撤销、Procedure 索引投影）
+与 TR2（IR v1.1 引用表达加法演进、库挂载 tool_refs 清单、`create_run` 准入
+消费、`Degraded` 事件发射、Skill 经同一 Tool 通道的子 Workflow 调用执行、
+Procedure 写入接线）；§8 投影消费者的「Workflow 准入」自此由
+`WorkflowRuntime.create_run` 强制承载，专项规范与交付记录见
+[Tool 稳定引用与 Skill 设计](tool_reference_and_skill_design.md) §17/§18 与
+[M7](../plans/m7-tools-evaluation-platform-v1.md)。
 
 ## 16. 测试策略
 

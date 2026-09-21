@@ -1,16 +1,16 @@
 # M7：Tool 模组体系（DEC-042 重定义）
 
-> 状态：In Progress（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
-> 重定义；TM0/TM1/TM2、MCP 准入阶段（DEC-039）与 DEC-040 的 TR0（稳定引用与
-> 兼容投影）、TR1（Skill 发布生命周期与 Procedure 索引投影）已交付关闭；
-> TR2（Runtime 接线与执行）于 2026-09-21 跑前冻结细项（§4.7/§5.7），2026-09-22
-> 本地交付关闭（PR CI 证据待回填）。全部已立项阶段的关闭条件满足后，总里程碑
-> 关闭随 TR2 的 PR CI 回填与退出条件复核评审）
+> 状态：Completed（2026-09-16 依 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
+> 重定义；全部已立项阶段交付关闭——TM0/TM1/TM2、MCP 准入（DEC-039）与
+> DEC-040 的 TR0（稳定引用与兼容投影）、TR1（Skill 发布生命周期与 Procedure
+> 索引投影）、TR2（Runtime 接线与执行，2026-09-21 跑前冻结 §4.7/§5.7，
+> 2026-09-22 交付关闭）。总里程碑退出条件已于 2026-09-22 复核通过（§9 末
+> 条记录）；推迟项按 DEC-042 映射保持推迟）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M4（已完成）；[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
 > 建议发布点：Tool module alpha（分阶段锚点，非发布物）
-> 更新日期：2026-09-22（TR2 本地交付关闭）
+> 更新日期：2026-09-22（TR2 交付关闭 + 总里程碑关闭复核）
 
 ## 1. 目标
 
@@ -1091,3 +1091,36 @@ MIRA_CHECK + 119 must，token 级移动无语义变化；报告段经 JSON 级 d
 更正声明：上一条记录中的单文件 90/90 与 md5 `58cf0e9c…` 为拆分前状态，
 按记录保留；本条为其后继事实。本条未执行项：拆分后的 PR CI 重跑证据待
 回填，TR2 关闭与 M7 总里程碑关闭随之评审。
+
+2026-09-22：PR CI 证据回填并关闭 TR2 与总里程碑。PR
+[#66](https://github.com/Linductor-alkaid/mira/pull/66)（head `ff654a8`，
+合并提交 `330eafd`）CI 共三轮：首轮 22/24（quality 两项因
+`architecture-check` 报 `max-file-lines` 新违例失败，见上条拆分记录）；
+二轮 23/24（windows-debug 因 MSVC C4702 不可达代码失败——拆分遗留的重复
+return，主循环删除；同轮 windows-debug 首轮还暴露 MSVC C4515
+命名空间自引用警告致命化，`tr2_wiring_support.hpp` 的
+`using namespace mira::testing` 已删）；三轮（head `ff654a8`）push run
+[`35642649408`](https://github.com/Linductor-alkaid/mira/actions/runs/35642649408)
+与 pull_request run
+[`35642651479`](https://github.com/Linductor-alkaid/mira/actions/runs/35642651479)
+各 **12/12 全部通过**（Linux GCC/Clang Debug/Release、Windows MSVC
+Debug/Release、Android 两 ABI、ASAN/UBSAN/TSAN、quality——format 226 文件
+真实检查 + architecture-check 零新违规）。master 合并提交 run
+[`35645301901`](https://github.com/Linductor-alkaid/mira/actions/runs/35645301901)
+success（12/12）。两处 CI 修复均为测试面机械修正（报告 md5 逐字节不变：
+wiring `c5d6d0c8…`、skill `d5174919…`），实现代码零改动。
+`M7-TR2-01`–`05` 与 `M7-TR2-G1`–`G6` 关闭。
+
+总里程碑关闭复核（2026-09-22）：§8 退出条件逐项核对——(1) TM0、TM1、TM2、
+MCP 准入（DEC-039）、TR0、TR1、TR2 全部已立项阶段均以「跑前冻结 → 实现 →
+IVA 独立取证 → 本地门禁 → PR CI 全绿」关闭；(2) 总计划（§4 里程碑表、
+§4.1 第 9–15 条）、[工具模组设计](../design/tool_module_design.md) §15 交付
+注记、[DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md)/
+[DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) 状态行与
+[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)
+§15/§18 已同步；(3) `M7-01`–`M7-06` 重定义映射项全部有验证记录（M7-01/04
+→ TM0 记录；M7-02/05 → TM1 记录——签名以宿主 allowlist/构建钉定 digest 的
+v1 冻结承载；M7-05 `wire_name` → TM2 记录；M7-03 → TM1；M7-06 → TM2）。
+M7 状态 `Planned` → `Completed`。推迟项（`MNT-202609-27` 证据门禁下的真实
+平台矩阵、v1.0 发布门禁等）按 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)
+映射保持推迟，不在本里程碑退出条件内。
