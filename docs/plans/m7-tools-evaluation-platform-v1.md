@@ -383,11 +383,14 @@ sync 以确定性 mutation id 幂等；Executor 路由=子 run 走既有 carrier
   部分条目失败计入报告不中断，返回
   `{applied, idempotent, failed}` 计数；Revoked 条目不写入；检索消费不接线
   （无消费者，显式非目标）；DEC-030 Episode/Lesson 既有写路径语义不变。
-- [x] `M7-TR2-05` 契约测试矩阵 `tests/m7/m7_tool_runtime_wiring_test.cpp`
-  （label `contract`）：覆盖 `M7-TR2-G1`–`G6` 全部门禁，`--report` 跨进程
-  字节一致；`examples/minimal_consumer.cpp` 追加 TR2 闭包段（v1.1 定义
-  解码、引用提取、Degraded 事件 roundtrip）。测试的编写、运行与 sanitizer
-  取证由 Independent-Verification-Agent 独立完成。
+- [x] `M7-TR2-05` 契约测试矩阵 `tests/m7/m7_tool_runtime_wiring_test.cpp` +
+  `tests/m7/m7_tool_runtime_skill_test.cpp`（共享 fixture
+  `tests/m7/tr2_wiring_support.hpp`；label `contract`；冻结原名为单文件，
+  实施期因 CI `architecture-check` 的 `max-file-lines` 预算拆分为准入域与
+  Skill 域两 TU，gate 编号与断言逐条保真）：覆盖 `M7-TR2-G1`–`G6` 全部
+  门禁，`--report` 跨进程字节一致；`examples/minimal_consumer.cpp` 追加
+  TR2 闭包段（v1.1 定义解码、引用提取、Degraded 事件 roundtrip）。测试的
+  编写、运行与 sanitizer 取证由 Independent-Verification-Agent 独立完成。
 
 决策记录表（冻结裁定，依据见设计 §18）：
 
@@ -1066,3 +1069,25 @@ roundtrip），`mira_minimal_consumer_test` 四树通过。限制与未执行项
 重算策略待真实规模证据（DEC-040 风险条款）；Procedure 检索接线与 Revoked
 退役传播为显式非目标；Windows/Android 运行与 Release/quality 由 PR CI
 回填后 TR2 方可关闭，M7 总里程碑关闭随 CI 回填与退出条件复核评审。
+
+2026-09-22：PR CI 首轮与测试拆分补正。PR
+[#66](https://github.com/Linductor-alkaid/mira/pull/66)（head `c35d45d`）双
+pipeline 各 12 项中 22 项通过，**quality 两项失败**——`architecture-check`
+（mnt-35 新门禁，本地四检查清单漏跑该项）报 1 条新违例：IVA 交付的单文件
+测试矩阵 2145 行超出 `max-file-lines` 预算 1200 行（新违规不得入基线）。
+裁决：按职责拆分测试面（不放宽门禁）——共享 fixture 抽至
+`tests/m7/tr2_wiring_support.hpp`（439 行），`m7_tool_runtime_wiring_test.cpp`
+（1030 行，引用表达与准入域 g1×3+g2×5+g3×3）与
+`m7_tool_runtime_skill_test.cpp`（810 行，Skill 执行与 Procedure 接线域
+g4×4+g5×2+g6×1）各自独立 main 与 `--report`。拆分由 Independent-
+Verification-Agent 执行并复验：18 个 gate 编号与断言逐条保真（290
+MIRA_CHECK + 119 must，token 级移动无语义变化；报告段经 JSON 级 diff 证明
+与拆分前逐字段一致，procedure 段保持 DEF-1 修复后的正确值 2/2/2）。本地
+门禁重取：全量 ctest **91/91**（89 既有 + 2 新目标）、ASAN/UBSAN/TSAN 三
+树 18 gate 完整执行零报告、`--report` 双跑字节一致（wiring md5
+`c5d6d0c873bdf76e09f9e35f5c357cbe` 2787 字节；skill md5
+`d51749195223378c6f870a6308358bcb` 376 字节）、`architecture-check` 新违规
+0（"architecture policy is clean"）、format（226 文件）/docs 检查通过。
+更正声明：上一条记录中的单文件 90/90 与 md5 `58cf0e9c…` 为拆分前状态，
+按记录保留；本条为其后继事实。本条未执行项：拆分后的 PR CI 重跑证据待
+回填，TR2 关闭与 M7 总里程碑关闭随之评审。
