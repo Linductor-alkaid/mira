@@ -128,6 +128,11 @@ Mira 必须依赖仓库中的 `third_party/executor` 管理并发任务和运行
 
 - 使用 C++20 和 CMake；公开 API 避免暴露平台类型，平台相关编译单元保持可选。
 - Core 依赖方向应指向抽象，Platform Adapter 依赖 Core 的接口，不得反向依赖。
+- 模块依赖方向、外部头族与文件规模预算由 `tools/architecture-policy.json` 单一来源声明，
+  由 `tools/check_architecture.py` 检查（CI 目标 `architecture-check`）；新增跨模块依赖、
+  登记外部头族或收紧预算前，先按 `docs/project/architecture_governance.md` 更新策略并
+  附决策记录。存量违规只经评审后人工刷新 `tools/architecture-baseline.json`，新违规一律
+  阻塞。公共术语以 `docs/project/glossary.md` 为准。
 - 所有跨线程共享状态必须有明确所有权或使用 Executor 提供的通信原语；不得依赖隐式全局
   可变状态。
 - 为状态转换、取消竞态、关闭顺序、队列拒绝、模型响应解析、动作校验和连续控制边界编写测试。

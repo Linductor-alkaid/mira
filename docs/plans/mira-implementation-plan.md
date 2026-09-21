@@ -2,7 +2,12 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-21（DEC-040 第二阶段 TR1「Skill 发布生命周期与 Procedure
+> 更新日期：2026-09-21（维护轮 [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)
+> 落地：机器可检查的架构策略 `tools/architecture-policy.json` 与 CI 门禁
+> `architecture-check`、存量违规基线、[公共术语表](../project/glossary.md)、
+> [阶段冻结与决策协议](../project/stage_freeze_protocol.md)、契约四件套标准；
+> 详见[维护计划](maintenance-2026-09-architecture-governance.md)。）
+> 此前 2026-09-21（DEC-040 第二阶段 TR1「Skill 发布生命周期与 Procedure
 > 索引投影」交付关闭：Skill 描述符（钉住源 Workflow id + `ir_digest`）与暴露面
 > 确定性派生、`SkillPublicationRegistry` 宿主显式发布/升级/撤销生命周期、
 > Procedure 索引投影（以显式发布为界、可重建）；规范见
@@ -862,6 +867,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；首阶段 TR0 稳定引用与兼容投影已由 [M7](m7-tools-evaluation-platform-v1.md) TR0 交付关闭（引用语法 v1 随该阶段冻结）；TR1 Skill 生命周期随后续阶段立项） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |
 | [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 | [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
+| [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md) | 机器可检查的架构策略、基线与契约四件套交付标准（`MNT-202609-35`–`38`；policy 单一来源 + CI 门禁 + 基线渐进治理 + 术语表 + 阶段冻结协议） | Accepted | 维护轮（2026-09 第五轮起持续生效） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
@@ -879,6 +885,9 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 - [ ] benchmark 记录硬件、OS、构建、Executor/模型配置、样本量和百分位。
 - [ ] 依赖锁定、许可证和 SBOM 可重复生成。
 - [ ] 文档、决策、计划状态和验证记录与实现同步。
+- [ ] 架构策略检查（`tools/check_architecture.py`）与平台边界检查通过；跨模块
+  依赖差异已按 [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)
+  登记或走决策记录。
 
 ## 7. 计划维护规则
 

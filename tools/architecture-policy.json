@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "_doc": "Mira 架构策略单一来源。字段说明与规则目录见 docs/project/architecture_governance.md；修改本文件即修改架构约束，必须先经决策记录（docs/decisions/）评审。存量违规只允许通过 tools/architecture-baseline.json 抑制，CI 不得自动刷新基线。",
+  "modules": [
+    {
+      "id": "core",
+      "roots": ["include/mira", "src"],
+      "requires": ["executor"]
+    },
+    {
+      "id": "workflow",
+      "roots": ["src/workflow"],
+      "requires": ["core", "executor"]
+    },
+    {
+      "id": "state_store",
+      "roots": ["src/storage"],
+      "requires": ["core", "executor", "sqlite"]
+    },
+    {
+      "id": "simulator_adapter",
+      "roots": ["adapters/simulator", "include/mira/adapters/simulator"],
+      "requires": ["core"]
+    },
+    {
+      "id": "android_adapter",
+      "roots": ["adapters/android", "include/mira/adapters/android"],
+      "requires": ["core", "executor"]
+    },
+    {
+      "id": "net_transport",
+      "roots": ["adapters/net", "include/mira/adapters/net"],
+      "requires": ["core", "executor", "mbedtls", "openssl", "platform_posix", "platform_windows"]
+    },
+    {
+      "id": "examples",
+      "roots": ["examples"],
+      "requires": ["core", "workflow", "state_store", "executor", "simulator_adapter"]
+    },
+    {
+      "id": "tests",
+      "roots": ["tests"],
+      "requires": [
+        "core",
+        "workflow",
+        "state_store",
+        "executor",
+        "sqlite",
+        "mbedtls",
+        "openssl",
+        "simulator_adapter",
+        "android_adapter",
+        "net_transport",
+        "platform_posix",
+        "platform_windows"
+      ]
+    }
+  ],
+  "external_modules": {
+    "executor": { "headers": ["executor/"] },
+    "sqlite": { "headers": ["sqlite3.h", "sqlite3ext.h"] },
+    "mbedtls": { "headers": ["mbedtls/", "psa/", "test/test_certs.h"] },
+    "openssl": { "headers": ["openssl/"] },
+    "platform_posix": {
+      "headers": [
+        "sys/",
+        "netinet/",
+        "arpa/",
+        "net/",
+        "unistd.h",
+        "pthread.h",
+        "fcntl.h",
+        "poll.h",
+        "netdb.h",
+        "dlfcn.h",
+        "termios.h"
+      ]
+    },
+    "platform_android": { "headers": ["android/", "jni.h"] },
+    "platform_windows": { "headers": ["windows.h", "winsock2.h", "ws2tcpip.h"] }
+  },
+  "global": {
+    "max_file_lines": 1200,
+    "forbid_cycles": true
+  },
+  "exceptions": []
+}

@@ -71,3 +71,7 @@ Thumbs.db
 Desktop.ini
 docs/model_provider/minimax/auth.json
 docs/model_provider/siliconflow/auth.json
+
+# Python bytecode from tooling probes (tools/*.py)
+__pycache__/
+*.pyc
