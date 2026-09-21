@@ -1,12 +1,12 @@
 # 维护计划：架构治理落地（2026-09 第五轮）
 
-> 状态：In Progress
+> 状态：Completed（2026-09-21 关闭；PR CI 20/20 取证见验证记录）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（维护轮，依据
 > [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md)）
 > 前置：无（纯治理与文档轮，不改运行时行为）
 > 建议发布点：不适用（无发布物）
-> 更新日期：2026-09-21
+> 更新日期：2026-09-21（PR #65 CI 取证回填，交付关闭）
 
 ## 1. 目标
 
@@ -77,6 +77,10 @@
   通过）
 - [x] 文档相对链接经 `docs-check` 校验通过。（2026-09-21 IVA 取证，含术语表
   与治理文档全部新增链接）
+- [x] PR CI 全绿并回填取证。（2026-09-21：[PR #65](https://github.com/Linductor-alkaid/mira/pull/65)
+  于提交 `2934f57` 触发 push 与 pull_request 两个运行共 20/20 检查通过，
+  含 `quality` job 的 architecture-check 首次远端执行；运行
+  35608096554 / 35608102909）
 
 ## 7. 验证记录
 
@@ -100,3 +104,11 @@ docs-check。主循环修复（映射改为按 policy roots 反查；链接改
 限制与补跑条件：GitHub Actions `quality` job 的远端端到端运行以本地等价
 目标取证代替（本会话不推送）；合并 PR 后由维护者按仓库惯例回填 PR CI
 证据并关闭本计划（负责人：Mira Maintainers）。
+
+2026-09-21：CI 证据回填并关闭本计划。[PR #65](https://github.com/Linductor-alkaid/mira/pull/65)
+（提交 `2934f57`）在 GitHub Actions 两个运行（push 35608096554 与
+pull_request 35608102909）共 20/20 检查通过：linux gcc/clang × Debug/Release
+8 项、windows Debug/Release 4 项、android arm64/x86_64 4 项、
+ASAN/UBSAN/TSAN 6 项、quality 2 项（format/docs/sbom/platform-boundary/
+architecture-check 首次远端执行）。此前"本地等价取证代替远端 CI"的限制
+解除，本计划所有退出条件闭合。
