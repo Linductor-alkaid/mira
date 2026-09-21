@@ -110,8 +110,6 @@ std::string build_skill_wiring_report() {
     report.emplace_back("procedure", JsonValue{std::move(procedure)});
 
     return canonical_json_string(JsonValue{std::move(report)});
-
-    return canonical_json_string(JsonValue{std::move(report)});
 }
 
 // ---------------------------------------------------------------------------
