@@ -234,4 +234,12 @@ admit_workflow_run_by_tool_compat(const WorkflowToolCompatProjection &projection
 [[nodiscard]] JsonValue
 workflow_tool_compat_to_json(const WorkflowToolCompatProjection &projection);
 
+// Strict inverse (TR2, design §18.2): closed field set, statuses/modes
+// constrained to the frozen name sets and the canonical digest recomputed over
+// the content. Unknown fields, wrong schema or a digest mismatch fail closed;
+// the tool-compat-degraded event parser uses this so an embedded projection
+// cannot drift from its digest.
+[[nodiscard]] Result<WorkflowToolCompatProjection>
+workflow_tool_compat_from_json(const JsonValue &json);
+
 } // namespace mira

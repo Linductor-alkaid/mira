@@ -1,3 +1,4 @@
+#include <mira/tool_reference.hpp>
 #include <mira/workflow_events.hpp>
 
 #include <algorithm>
@@ -118,6 +119,14 @@ constexpr std::string_view kRecoveryAttemptedKeys[] = {
     "outcome",         "reason_code",   "decision_digest",     "patch_id",     "model_request_id",
     "lessons_offered", "lessons_stale", "lessons_unparseable", "lessons_kept",
 };
+constexpr std::string_view kToolCompatDegradedKeys[] = {
+    "schema", "run_id", "workflow_id", "ir_digest", "projection",
+};
+constexpr std::string_view kProceduresSyncedKeys[] = {
+    "schema",
+    "procedure_index_digest",
+    "published_count",
+};
 
 // App Model identifiers are host contract strings (DEC-027), bounded by the
 // model limits; payloads enforce the same bound.
@@ -197,12 +206,13 @@ template <typename Id>
 
 bool is_workflow_event_type(std::string_view type) {
     static constexpr std::string_view kTypes[] = {
-        "WorkflowRunStarted",       "WorkflowStepStarted",       "WorkflowStepSettled",
-        "WorkflowRunSettled",       "WorkflowPatchProposed",     "WorkflowPatchApplied",
-        "WorkflowPatchRejected",    "WorkflowPolicySwitched",    "WorkflowDecisionRaised",
-        "WorkflowDecisionResolved", "WorkflowPublishProposed",   "WorkflowPublishApplied",
-        "WorkflowPublishRejected",  "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
-        "WorkflowEpisodeRecorded",  "WorkflowLessonRecorded",    "WorkflowRecoveryAttempted",
+        "WorkflowRunStarted",         "WorkflowStepStarted",       "WorkflowStepSettled",
+        "WorkflowRunSettled",         "WorkflowPatchProposed",     "WorkflowPatchApplied",
+        "WorkflowPatchRejected",      "WorkflowPolicySwitched",    "WorkflowDecisionRaised",
+        "WorkflowDecisionResolved",   "WorkflowPublishProposed",   "WorkflowPublishApplied",
+        "WorkflowPublishRejected",    "WorkflowNavigationPlanned", "WorkflowNavigationObserved",
+        "WorkflowEpisodeRecorded",    "WorkflowLessonRecorded",    "WorkflowRecoveryAttempted",
+        "WorkflowToolCompatDegraded", "WorkflowProceduresSynced",
     };
     return std::any_of(std::begin(kTypes), std::end(kTypes),
                        [&](std::string_view candidate) { return candidate == type; });
@@ -1411,6 +1421,100 @@ parse_workflow_recovery_attempted(const EventPayload &payload) {
             event.lessons_kept = bounded;
         }
     }
+    return event;
+}
+
+EventPayload to_event_payload(const WorkflowToolCompatDegradedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.tool-compat-degraded.v1");
+    object.emplace_back("run_id", event.run_id.to_string());
+    object.emplace_back("workflow_id", event.workflow_id.to_string());
+    object.emplace_back("ir_digest", digest_text(event.ir_digest));
+    object.emplace_back("projection", event.projection);
+    EventPayload payload;
+    payload.type = "WorkflowToolCompatDegraded";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowToolCompatDegradedEvent>
+parse_workflow_tool_compat_degraded(const EventPayload &payload) {
+    auto json = parse_payload(payload, "WorkflowToolCompatDegraded",
+                              "mira.workflow.tool-compat-degraded.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kToolCompatDegradedKeys); !check.has_value()) {
+        return check.error();
+    }
+    WorkflowToolCompatDegradedEvent event;
+    auto run_id = parse_member_id<WorkflowRunId>(json.value(), "run_id");
+    if (!run_id.has_value()) {
+        return run_id.error();
+    }
+    event.run_id = run_id.value();
+    auto workflow_id = parse_member_id<WorkflowId>(json.value(), "workflow_id");
+    if (!workflow_id.has_value()) {
+        return workflow_id.error();
+    }
+    event.workflow_id = workflow_id.value();
+    auto digest = parse_member_digest(json.value(), "ir_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.ir_digest = digest.value();
+    const auto *projection = json.value().find("projection");
+    if (projection == nullptr || !projection->is_object()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'projection' must be the tool compat artifact");
+    }
+    // The embedded artifact must survive its own strict inverse (closed field
+    // set, recomputed digest), so a drifted projection can never pass.
+    auto validated = workflow_tool_compat_from_json(*projection);
+    if (!validated.has_value()) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'projection' is not a valid tool compat artifact: " +
+                               validated.error().safe_message);
+    }
+    event.projection = *projection;
+    return event;
+}
+
+EventPayload to_event_payload(const WorkflowProceduresSyncedEvent &event) {
+    JsonValue::Object object;
+    object.emplace_back("schema", "mira.workflow.procedures-synced.v1");
+    object.emplace_back("procedure_index_digest", digest_text(event.procedure_index_digest));
+    object.emplace_back("published_count", static_cast<std::int64_t>(event.published_count));
+    EventPayload payload;
+    payload.type = "WorkflowProceduresSynced";
+    payload.data = to_json_string(JsonValue{std::move(object)});
+    payload.classification = EventClass::State;
+    return payload;
+}
+
+Result<WorkflowProceduresSyncedEvent>
+parse_workflow_procedures_synced(const EventPayload &payload) {
+    auto json =
+        parse_payload(payload, "WorkflowProceduresSynced", "mira.workflow.procedures-synced.v1");
+    if (!json.has_value()) {
+        return json.error();
+    }
+    if (auto check = check_exact_keys(json.value(), kProceduresSyncedKeys); !check.has_value()) {
+        return check.error();
+    }
+    WorkflowProceduresSyncedEvent event;
+    auto digest = parse_member_digest(json.value(), "procedure_index_digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    event.procedure_index_digest = digest.value();
+    const auto *count = json.value().find("published_count");
+    if (count == nullptr || !count->is_integer() || count->as_integer().value() < 0) {
+        return event_error(ErrorCode::InvalidArgument,
+                           "payload member 'published_count' must be a non-negative integer");
+    }
+    event.published_count = static_cast<std::uint64_t>(count->as_integer().value());
     return event;
 }
 

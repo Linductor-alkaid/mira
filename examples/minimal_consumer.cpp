@@ -7,6 +7,8 @@
 #include <mira/tool_reference.hpp>
 #include <mira/tool_skill.hpp>
 #include <mira/version.hpp>
+#include <mira/workflow_events.hpp>
+#include <mira/workflow_ir.hpp>
 
 #include <chrono>
 #include <vector>
@@ -249,6 +251,49 @@ int main() {
         mira::skill_procedure_entry_from_statement(index.value().entries.front().statement);
     if (!rebuilt.has_value() || !(rebuilt.value() == index.value().entries.front())) {
         return 12;
+    }
+
+    // M7-TR2-G6 consumer closure: the v1.1 reference expression, the
+    // tool-compat projection strict inverse and the tool-compat-degraded
+    // event round trip must be includable and linkable from the same minimal
+    // consumer (no Executor or WorkflowRuntime construction here).
+    mira::WorkflowDefinition v11 = definition;
+    v11.schema_version = mira::SchemaVersion{1, 1};
+    v11.steps.front().arguments = mira::JsonValue{
+        mira::JsonValue::Object{{"tool", mira::JsonValue{std::string("toolref:sample.read@") +
+                                                         view.front().spec_digest.to_string()}}}};
+    const auto v11_json = mira::workflow_definition_to_json(v11);
+    const auto v11_decoded = mira::workflow_definition_from_json(v11_json);
+    if (!v11_decoded.has_value() || v11_decoded.value().schema_version.minor != 1) {
+        return 13;
+    }
+    const auto v11_manifest = mira::extract_workflow_tool_references(v11_decoded.value(), view);
+    if (!v11_manifest.has_value() || v11_manifest.value().entries.size() != 1 ||
+        v11_manifest.value().entries.front().mode != mira::ToolReferenceMode::PinnedDigest) {
+        return 13;
+    }
+    const auto v11_projection =
+        mira::project_workflow_tool_compatibility(v11_decoded.value(), v11_manifest.value(), view);
+    if (!v11_projection.has_value() ||
+        v11_projection.value().state != mira::WorkflowToolCompatState::Runnable) {
+        return 13;
+    }
+    const auto projection_round_trip = mira::workflow_tool_compat_from_json(
+        mira::workflow_tool_compat_to_json(v11_projection.value()));
+    if (!projection_round_trip.has_value() ||
+        !(projection_round_trip.value().digest == v11_projection.value().digest)) {
+        return 13;
+    }
+    mira::WorkflowToolCompatDegradedEvent degraded;
+    degraded.run_id = mira::WorkflowRunId::generate();
+    degraded.workflow_id = v11.workflow_id;
+    degraded.ir_digest = mira::workflow_definition_digest(v11);
+    degraded.projection = mira::workflow_tool_compat_to_json(v11_projection.value());
+    const auto degraded_payload = mira::to_event_payload(degraded);
+    const auto degraded_parsed = mira::parse_workflow_tool_compat_degraded(degraded_payload);
+    if (!degraded_parsed.has_value() || !(degraded_parsed.value().run_id == degraded.run_id) ||
+        mira::is_workflow_event_type("WorkflowToolCompatDegraded") == false) {
+        return 13;
     }
     return 0;
 }

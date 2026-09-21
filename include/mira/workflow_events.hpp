@@ -258,6 +258,32 @@ struct WorkflowRecoveryAttemptedEvent final {
     std::uint32_t lessons_kept = 0;
 };
 
+// --- Workflow tool-compat degraded admission (State, DEC-040 §18.2, TR2) ----
+
+// Emitted exactly once per run admitted under a Degraded tool-compatibility
+// projection. The `projection` member is the sanitized
+// "mira.workflow.tool_compat.v1" artifact (workflow_tool_compat_to_json),
+// which carries its own digest; the parser re-validates it strictly, so the
+// embedded artifact cannot drift from its content. No schema bodies, tool
+// descriptions or secrets travel here or inside the projection.
+struct WorkflowToolCompatDegradedEvent final {
+    WorkflowRunId run_id;
+    WorkflowId workflow_id;
+    Sha256Digest ir_digest{};
+    JsonValue projection; // schema mira.workflow.tool_compat.v1.
+};
+
+// --- Workflow Procedure sync (State, DEC-040 §18.4, TR2) --------------------
+
+// One host-explicit Procedure index sync (skill_tool_procedure memory
+// wiring). Emitted before the memory mutations it anchors: every Add of this
+// sync references this event id as its M4 mutation evidence, and the index
+// digest binds which statement set the sync observed.
+struct WorkflowProceduresSyncedEvent final {
+    Sha256Digest procedure_index_digest{};
+    std::uint64_t published_count = 0;
+};
+
 // --- Payload builders and parsers -------------------------------------------
 
 // Builders return ready-to-append payloads with the event type and schema
@@ -280,6 +306,8 @@ struct WorkflowRecoveryAttemptedEvent final {
 [[nodiscard]] EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event);
 [[nodiscard]] EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowToolCompatDegradedEvent &event);
+[[nodiscard]] EventPayload to_event_payload(const WorkflowProceduresSyncedEvent &event);
 
 // Parsers fail closed on schema mismatch, unknown fields and malformed ids.
 // The payload data is JSON text (EventPayload::data).
@@ -319,5 +347,9 @@ parse_workflow_episode_recorded(const EventPayload &payload);
 parse_workflow_lesson_recorded(const EventPayload &payload);
 [[nodiscard]] Result<WorkflowRecoveryAttemptedEvent>
 parse_workflow_recovery_attempted(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowToolCompatDegradedEvent>
+parse_workflow_tool_compat_degraded(const EventPayload &payload);
+[[nodiscard]] Result<WorkflowProceduresSyncedEvent>
+parse_workflow_procedures_synced(const EventPayload &payload);
 
 } // namespace mira

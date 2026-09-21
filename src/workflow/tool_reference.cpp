@@ -529,6 +529,13 @@ Result<WorkflowToolRefManifest> extract_workflow_tool_references(
     }
 
     const Sha256Digest definition_digest = workflow_definition_digest(definition);
+    // TR2 (design §18.1): v1.1 definitions may carry an explicit toolref:
+    // string in the reserved "tool" member; the reference's own mode wins over
+    // the extraction options and a pinned entry records the digest the
+    // reference pins (not the view observation). v1.0 definitions keep the
+    // bare-wire-name-only behavior below, so the toolref: form fails closed on
+    // the vocabulary charset exactly as before.
+    const bool reference_form_allowed = definition.schema_version.minor >= 1;
     std::vector<WorkflowToolRefEntry> entries;
     for (const auto &step : definition.steps) {
         if (step.kind != WorkflowStepKind::ToolCall) {
@@ -539,7 +546,31 @@ Result<WorkflowToolRefManifest> extract_workflow_tool_references(
             return extraction_failed("step '" + step.id.to_string() +
                                      "' requires a string 'tool' member");
         }
-        const std::string &wire_name = *tool_member->as_string();
+        const std::string &raw_tool = *tool_member->as_string();
+        WorkflowToolRefEntry entry;
+        entry.step_id = step.id.to_string();
+        if (reference_form_allowed &&
+            raw_tool.compare(0, kToolReferenceScheme.size(), kToolReferenceScheme) == 0) {
+            auto reference = parse_tool_reference(raw_tool);
+            if (!reference.has_value()) {
+                return extraction_failed("step '" + step.id.to_string() +
+                                         "' carries an invalid tool reference");
+            }
+            const auto found = indexed.value().find(reference.value().wire_name);
+            if (found == indexed.value().end()) {
+                return extraction_failed("step '" + step.id.to_string() + "' references '" +
+                                         reference.value().wire_name +
+                                         "' which is absent from the exposure view");
+            }
+            entry.wire_name = reference.value().wire_name;
+            entry.mode = reference.value().mode;
+            if (entry.mode == ToolReferenceMode::PinnedDigest) {
+                entry.pinned_spec_digest = reference.value().pinned_spec_digest;
+            }
+            entries.push_back(std::move(entry));
+            continue;
+        }
+        const std::string &wire_name = raw_tool;
         if (wire_name.size() > limits.max_wire_name_bytes || !is_valid_vocabulary_id(wire_name)) {
             return extraction_failed("step '" + step.id.to_string() +
                                      "' carries a wire name outside the vocabulary charset");
@@ -549,8 +580,6 @@ Result<WorkflowToolRefManifest> extract_workflow_tool_references(
             return extraction_failed("step '" + step.id.to_string() + "' references '" + wire_name +
                                      "' which is absent from the exposure view");
         }
-        WorkflowToolRefEntry entry;
-        entry.step_id = step.id.to_string();
         entry.wire_name = wire_name;
         const auto override = overrides.find(wire_name);
         entry.mode = override != overrides.end() ? override->second : options.default_mode;
@@ -809,6 +838,139 @@ JsonValue workflow_tool_compat_to_json(const WorkflowToolCompatProjection &proje
     JsonValue::Object root = *content.as_object();
     root.emplace_back("digest", digest_to_json(projection.digest));
     return JsonValue{std::move(root)};
+}
+
+// Strict inverse (TR2): closed field set, canonical digest recomputed over the
+// content, statuses/modes constrained to the frozen name sets. Used by the
+// tool-compat-degraded event parser so the embedded artifact cannot drift.
+Result<WorkflowToolCompatProjection> workflow_tool_compat_from_json(const JsonValue &json) {
+    if (!json.is_object()) {
+        return invalid_reference("tool compat projection must be an object");
+    }
+    const auto *schema = json.find("schema");
+    if (schema == nullptr || !schema->is_string() ||
+        *schema->as_string() != kWorkflowToolCompatSchema) {
+        return invalid_reference("tool compat projection requires schema '" +
+                                 std::string(kWorkflowToolCompatSchema) + "'");
+    }
+    for (const auto &member : *json.as_object()) {
+        const bool known = member.first == "schema" || member.first == "workflow_id" ||
+                           member.first == "definition_digest" || member.first == "state" ||
+                           member.first == "entries" || member.first == "digest";
+        if (!known) {
+            return invalid_reference("unknown projection field '" + member.first + "'");
+        }
+    }
+    const auto *workflow_id = json.find("workflow_id");
+    if (workflow_id == nullptr || !workflow_id->is_string()) {
+        return invalid_reference("tool compat projection requires a workflow id");
+    }
+    const auto parsed_id = WorkflowId::parse(*workflow_id->as_string());
+    if (!parsed_id.has_value() || parsed_id->value.is_nil()) {
+        return invalid_reference("tool compat projection workflow id is not a valid id");
+    }
+    auto definition_digest = digest_field(json, "definition_digest");
+    if (!definition_digest.has_value()) {
+        return definition_digest.error();
+    }
+    const auto *state_value = json.find("state");
+    if (state_value == nullptr || !state_value->is_string()) {
+        return invalid_reference("tool compat projection requires a string state");
+    }
+    WorkflowToolCompatState state = WorkflowToolCompatState::Invalid;
+    if (*state_value->as_string() == "runnable") {
+        state = WorkflowToolCompatState::Runnable;
+    } else if (*state_value->as_string() == "degraded") {
+        state = WorkflowToolCompatState::Degraded;
+    } else if (*state_value->as_string() != "invalid") {
+        return invalid_reference("tool compat projection state is unknown");
+    }
+    const auto *entries_value = json.find("entries");
+    if (entries_value == nullptr || !entries_value->is_array()) {
+        return invalid_reference("tool compat projection requires an entries array");
+    }
+    WorkflowToolCompatProjection projection;
+    projection.workflow_id = *parsed_id;
+    projection.definition_digest = definition_digest.value();
+    projection.state = state;
+    for (const auto &element : *entries_value->as_array()) {
+        if (!element.is_object()) {
+            return invalid_reference("compat entry must be an object");
+        }
+        for (const auto &member : *element.as_object()) {
+            const bool known = member.first == "step_id" || member.first == "wire_name" ||
+                               member.first == "mode" || member.first == "status" ||
+                               member.first == "pinned_spec_digest" ||
+                               member.first == "current_spec_digest" || member.first == "detail";
+            if (!known) {
+                return invalid_reference("unknown compat entry field '" + member.first + "'");
+            }
+        }
+        const auto *step_id = element.find("step_id");
+        const auto *wire_name = element.find("wire_name");
+        if (step_id == nullptr || !step_id->is_string() || step_id->as_string()->empty() ||
+            wire_name == nullptr || !wire_name->is_string() ||
+            !is_valid_vocabulary_id(*wire_name->as_string())) {
+            return invalid_reference("compat entry requires a step id and a wire name");
+        }
+        auto mode = mode_field(element);
+        if (!mode.has_value()) {
+            return mode.error();
+        }
+        const auto *status_value = element.find("status");
+        if (status_value == nullptr || !status_value->is_string()) {
+            return invalid_reference("compat entry requires a string status");
+        }
+        ToolReferenceCompat status = ToolReferenceCompat::Unresolved;
+        if (*status_value->as_string() == "resolved") {
+            status = ToolReferenceCompat::Resolved;
+        } else if (*status_value->as_string() == "evolved_compatible") {
+            status = ToolReferenceCompat::EvolvedCompatible;
+        } else if (*status_value->as_string() == "evolved_incompatible") {
+            status = ToolReferenceCompat::EvolvedIncompatible;
+        } else if (*status_value->as_string() != "unresolved") {
+            return invalid_reference("compat entry status is unknown");
+        }
+        ToolRefCompatEntry entry;
+        entry.step_id = *step_id->as_string();
+        entry.wire_name = *wire_name->as_string();
+        entry.mode = mode.value();
+        entry.status = status;
+        if (element.find("pinned_spec_digest") != nullptr) {
+            auto pinned = digest_field(element, "pinned_spec_digest");
+            if (!pinned.has_value()) {
+                return pinned.error();
+            }
+            entry.pinned_spec_digest = pinned.value();
+        }
+        if (element.find("current_spec_digest") != nullptr) {
+            auto current = digest_field(element, "current_spec_digest");
+            if (!current.has_value()) {
+                return current.error();
+            }
+            entry.current_spec_digest = current.value();
+        }
+        if (const auto *detail = element.find("detail"); detail != nullptr) {
+            if (!detail->is_string()) {
+                return invalid_reference("compat entry detail must be a string");
+            }
+            entry.detail = *detail->as_string();
+        }
+        projection.entries.push_back(std::move(entry));
+    }
+    auto digest = digest_field(json, "digest");
+    if (!digest.has_value()) {
+        return digest.error();
+    }
+    std::sort(projection.entries.begin(), projection.entries.end(),
+              [](const ToolRefCompatEntry &left, const ToolRefCompatEntry &right) {
+                  return left.step_id < right.step_id;
+              });
+    projection.digest = canonical_json_digest(compat_content_to_json(projection));
+    if (digest.value() != projection.digest) {
+        return invalid_reference("tool compat projection digest does not match its content");
+    }
+    return projection;
 }
 
 } // namespace mira

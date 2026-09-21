@@ -273,6 +273,10 @@ struct WorkflowRuntime::RunRecord final {
     // §1); checkpoint handoffs do not count.
     std::uint32_t escalations = 0;
     std::uint32_t unevaluable = 0;
+    // TR2 (DEC-040 §18.3): Skill→sub-workflow nesting depth of this run.
+    // Agent-initiated runs start at 0; every skill-created child run is
+    // parent+1 and the depth beyond max_skill_call_depth fails closed.
+    std::uint32_t skill_depth = 0;
     bool interrupted = false;
     bool drive_active = false;
     // Stage F: episode write marker (idempotency beyond the store's
@@ -285,6 +289,8 @@ WorkflowRuntime::WorkflowRuntime(executor::Executor &executor, MiraRuntime &runt
                                  WorkflowRuntimeConfig config)
     : executor_(executor), runtime_(runtime), session_(session),
       environment_(std::move(environment)), config_(config), runtime_id_(RuntimeId::generate()) {}
+
+thread_local std::uint32_t WorkflowRuntime::t_skill_dispatch_depth_ = 0;
 
 WorkflowRuntime::~WorkflowRuntime() {
     if (!shut_down_) {
@@ -748,7 +754,8 @@ Result<WorkflowRunView> WorkflowRuntime::create_run(const WorkflowId &workflow_i
 
 Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinition &definition,
                                                            JsonValue parameters,
-                                                           std::optional<WorkflowPolicy> policy) {
+                                                           std::optional<WorkflowPolicy> policy,
+                                                           std::uint32_t skill_depth) {
     const auto effective = policy.value_or(definition.default_policy);
     const bool dispatches = workflow_policy_dispatches_side_effects(effective);
     if (auto compatible = validate_workflow_policy_compatibility(definition, effective);
@@ -768,6 +775,32 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
         std::lock_guard lock(mutex_);
         tools = tools_;
     }
+
+    // TR2 (DEC-040 §18.2): the tool-compatibility admission gate. It engages
+    // only for dispatching policies, and only when a reference manifest is
+    // mounted for this exact definition or the definition carries v1.1
+    // reference forms; everything else keeps its pre-TR2 behavior.
+    std::optional<WorkflowToolCompatProjection> degraded_projection;
+    if (dispatches) {
+        auto gate = evaluate_tool_compat_gate(definition, tools);
+        if (!gate.has_value()) {
+            return gate.error();
+        }
+        if (gate.value().has_value()) {
+            const auto decision = admit_workflow_run_by_tool_compat(*gate.value());
+            if (!decision.admitted) {
+                Error error;
+                error.code = ErrorCode::InvalidArgument;
+                error.domain = "mira.workflow";
+                error.safe_message = "tool compatibility admission rejected: " + decision.reason;
+                return error;
+            }
+            if (decision.state == WorkflowToolCompatState::Degraded) {
+                degraded_projection = std::move(*gate.value());
+            }
+        }
+    }
+
     std::vector<JsonValue> resolved_arguments(definition.steps.size());
     JsonValue context(JsonValue::Object{});
     if (const auto *values = bindings.value().values.as_object()) {
@@ -816,6 +849,19 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
                                       "tool_call arguments must be an object naming the target "
                                       "tool in the reserved \"tool\" member");
         }
+        // Copy before any rewrite: JsonValue::set may reallocate the object.
+        std::string wire_name = *tool_member->as_string();
+        // TR2 (DEC-040 §18.1): a v1.1 reference form resolves to its bare
+        // wire name at admission, so the execution and DEC-015 paths only
+        // ever see plain wire names.
+        auto reference = resolve_tool_reference_member(definition, resolved.value());
+        if (!reference.has_value()) {
+            return reference.error();
+        }
+        if (reference.value().has_value()) {
+            wire_name = *reference.value();
+            resolved.value().set("tool", JsonValue{wire_name});
+        }
         if (!dispatches) {
             resolved_arguments[index] = std::move(resolved.value());
             continue;
@@ -827,7 +873,7 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
         const auto exposed = tools->exposed_tools();
         const auto tool =
             std::find_if(exposed.begin(), exposed.end(), [&](const ExposedToolSpec &entry) {
-                return entry.wire_name == *tool_member->as_string();
+                return entry.wire_name == wire_name;
             });
         if (tool == exposed.end()) {
             return workflow_error(ErrorCode::NotFound, "step tool is not registered");
@@ -871,6 +917,7 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
     record->effective_parameters = record->bindings.values;
     record->task = submission.value().id;
     record->task_epoch = outcome.value().task->epoch;
+    record->skill_depth = skill_depth;
     record->attempts.assign(definition.steps.size(), 0);
     record->retries.assign(definition.steps.size(), 0);
     record->jumps.assign(definition.steps.size(), 0);
@@ -881,21 +928,30 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
     record->view.ir_digest = workflow_definition_digest(definition);
     record->view.policy = effective;
     record->view.created_at = Timestamp::now();
+    const TaskId task_id = record->task;
+    WorkflowRunView view;
 
-    std::lock_guard lock(mutex_);
-    if (!accepting_ || active_runs_ >= config_.max_active_runs) {
-        const auto rollback = runtime_.cancel_task(record->task);
-        if (rollback.has_value()) {
-            static_cast<void>(rollback.value().outcome(config_.command_timeout));
+    {
+        std::lock_guard lock(mutex_);
+        if (!accepting_ || active_runs_ >= config_.max_active_runs) {
+            const auto rollback = runtime_.cancel_task(record->task);
+            if (rollback.has_value()) {
+                static_cast<void>(rollback.value().outcome(config_.command_timeout));
+            }
+            return workflow_error(
+                accepting_ ? ErrorCode::ResourceExhausted : ErrorCode::Unavailable,
+                accepting_ ? "run table is at capacity" : "workflow runtime is shutting down",
+                accepting_);
         }
-        return workflow_error(accepting_ ? ErrorCode::ResourceExhausted : ErrorCode::Unavailable,
-                              accepting_ ? "run table is at capacity"
-                                         : "workflow runtime is shutting down",
-                              accepting_);
+        ++active_runs_;
+        view = record->view;
+        runs_.emplace(view.run_id, std::move(record));
     }
-    ++active_runs_;
-    const auto view = record->view;
-    runs_.emplace(view.run_id, std::move(record));
+    // TR2 (DEC-040 §18.2): the Degraded audit trail is emitted exactly once
+    // per admitted run, outside the runtime mutex like every event append.
+    if (degraded_projection.has_value()) {
+        emit_tool_compat_degraded(view, task_id, *degraded_projection);
+    }
     return view;
 }
 
@@ -1908,8 +1964,16 @@ Result<ToolExecutionRecord> WorkflowRuntime::dispatch_tool_invocation(
     auto tools = tools_;
     std::future<Result<ToolExecutionRecord>> future;
     try {
-        future = executor_.submit_auto(
-            [tools, proposal, context] { return tools->execute(proposal, context); });
+        future = executor_.submit_auto([tools, proposal, context, depth = run.skill_depth] {
+            // TR2 (DEC-040 §18.3): publish the dispatching run's Skill depth
+            // to the handler thread; the guard restores 0 no matter how the
+            // handler exits, so no pooled worker keeps a stale depth.
+            struct DepthGuard {
+                ~DepthGuard() { t_skill_dispatch_depth_ = 0; }
+            } guard;
+            t_skill_dispatch_depth_ = depth;
+            return tools->execute(proposal, context);
+        });
     } catch (const std::exception &exception) {
         return workflow_error(ErrorCode::ResourceExhausted, exception.what(), true);
     }
@@ -3432,6 +3496,33 @@ WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const s
     }
     emit_publish_proposed(definition.workflow_id, digest, source_run_id);
 
+    // TR2 (DEC-040 §18.2): the publish gate observes the current exposure
+    // snapshot and mounts the reference manifest with the version (design
+    // §5.2 — publishing a workflow whose tools are unresolvable is rejected,
+    // never absorbed). Without an installed registry there is no view to
+    // observe: publish stays unchanged and the host may attach explicitly.
+    std::optional<WorkflowToolRefManifest> extracted_refs;
+    const bool has_tool_calls =
+        std::any_of(definition.steps.begin(), definition.steps.end(), [](const WorkflowStep &step) {
+            return step.kind == WorkflowStepKind::ToolCall;
+        });
+    if (has_tool_calls) {
+        std::shared_ptr<BuiltinToolRegistry> gate_tools;
+        {
+            std::lock_guard lock(mutex_);
+            gate_tools = tools_;
+        }
+        if (gate_tools) {
+            const auto exposed = gate_tools->exposed_tools();
+            auto refs = extract_workflow_tool_references(definition, exposed);
+            if (!refs.has_value()) {
+                emit_publish_rejected(definition.workflow_id, digest, "tool-refs-unresolvable");
+                return refs.error();
+            }
+            extracted_refs = std::move(refs.value());
+        }
+    }
+
     // Gate drive (DEC-025 §3): a DryRun run over the draft with empty
     // parameters. Drafts entering the gate must therefore be default-complete;
     // binding failures reject the publish without touching the library.
@@ -3483,6 +3574,17 @@ WorkflowRuntime::publish_validated(const WorkflowDefinition &definition, const s
     }
     if (!appended.value().idempotent) {
         emit_publish_applied(definition.workflow_id, digest, evidence, gate_run.value().run_id);
+    }
+    // TR2 (DEC-040 §18.2): anchor the observed manifest to the appended
+    // version. Binding is guaranteed by construction (same workflow_id and
+    // content digest); only the mount capacity can fail, and the version
+    // without a mount keeps its pre-TR2 semantics.
+    if (extracted_refs.has_value()) {
+        auto mounted = attach_workflow_tool_refs(*extracted_refs);
+        if (!mounted.has_value()) {
+            emit_publish_rejected(definition.workflow_id, digest, "refs-mount-failed");
+            return mounted.error();
+        }
     }
     WorkflowPublishOutcome outcome;
     outcome.ir_digest = digest;

@@ -11,7 +11,11 @@ namespace {
 
 // Reader capability: documents must share the major and not exceed the
 // supported minor (DEC-019 §4).
-constexpr SchemaVersion kWorkflowIrReaderVersion{1, 0};
+// TR2 (DEC-040 §18.1): the reader accepts the v1.1 additive evolution, whose
+// only extension is the toolref: form inside a ToolCall step's "tool" member.
+// The decode layer never interprets that member; v1.0 documents keep their
+// byte-identical semantics and consumers gate the new form per schema version.
+constexpr SchemaVersion kWorkflowIrReaderVersion{1, 1};
 
 // Hard ceilings behind WorkflowLimits; callers may tighten, never relax.
 constexpr std::size_t kCeilingDocumentBytes = 256 * 1024;
