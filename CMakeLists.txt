@@ -90,6 +90,7 @@ add_library(mira_core
     src/context/context_working_context.cpp
     src/context/context_curator.cpp
     src/context/context_working_context_auto.cpp
+    src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
     src/observation/coordinate_transform.cpp

@@ -97,6 +97,15 @@ class MemoryConsolidator final {
                                                           const MemoryScope &scope,
                                                           const Timestamp &now) const;
 
+    // Runs the exact same policy pipeline over pre-extracted candidates — no
+    // event extraction and no model hook: candidate provenance and content
+    // are the caller's responsibility (the Working Context promotion path,
+    // M23). Over-cap input is truncated to the policy bound deterministically,
+    // the same rule consolidate() applies to its own extraction.
+    [[nodiscard]] Result<ConsolidationReport>
+    consolidate_candidates(IMemory &memory, std::vector<MemoryCandidate> candidates,
+                           const MemoryScope &scope, const Timestamp &now) const;
+
     // Applies a previously pending mutation after explicit approval. The
     // mutation is unchanged from the report; approvals never rewrite content.
     [[nodiscard]] static Result<MemoryMutationResult> apply_pending(IMemory &memory,
