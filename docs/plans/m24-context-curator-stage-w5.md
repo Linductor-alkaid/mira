@@ -1,6 +1,7 @@
 # M24：Context Curator Stage W5——Subagent Fork / Merge（快照 fork、局部 delta、curated result 与 parent merge policy）
 
-> 状态：Planned（2026-09-23 立项，工作项与门禁跑前冻结；实现未开始）
+> 状态：Completed（2026-09-23 跑前冻结并同日交付关闭；`W5-G1`–`G6` 全绿，
+> [PR #68](https://github.com/Linductor-alkaid/mira/pull/68) CI 24/24 全绿）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 第 4 条
@@ -12,7 +13,7 @@
 > 冻结，本文件 §4 承载其契约面）
 > 建议发布点：非发布物；产出 subagent fork/merge 的确定性契约与边界测试
 > （宿主集成轮与真实模型轮/Stage E 评估矩阵的输入形态锚点）
-> 更新日期：2026-09-23（立项）
+> 更新日期：2026-09-23（立项并交付关闭）
 
 ## 1. 目标
 
@@ -387,19 +388,19 @@ merge_working_context_delta(const WorkingContextSnapshot &fork_base,
 两目标 label 均为 `integration;m24`，测试的编写、运行与 sanitizer 取证由
 Independent-Verification-Agent 独立完成并复验。
 
-- [ ] `W5-G1` fork 契约（`tests/m24/m24_fork_merge_test.cpp`）：八 section
+- [x] `W5-G1` fork 契约（`tests/m24/m24_fork_merge_test.cpp`）：八 section
   逐字复制（content/provenance/sequence/confidence 逐一相等）；
   `source_checkpoints` 逐字继承；身份 = 子五元组 + 子水位 ≥ 1（零水位拒
   绝）；fork 溯源三字段正确且 `validate()` 冻结；schema 1.2 加法（v1.0/
   v1.1 载荷读回保留原 `schema_version` 且 digest 与升级前计算逐位一致；
   fork 字段仅非 nil 进入 canonical 对象，无按版本分支——沿 M21 §4.2 冻结
   公式）；同输入幂等同 id 同 digest；无效父快照整体 `InvalidArgument`。
-- [ ] `W5-G2` delta 契约（同文件）：机械投影三分类（inherited 剔除计数、
+- [x] `W5-G2` delta 契约（同文件）：机械投影三分类（inherited 剔除计数、
   同 section 血统交集 → Supersede 取最小编号、其余 Addition）；冻结八
   section 词表（越词表拒绝）；provenance 逐条非空与上界纪律；`fork-base-
   snapshot-id` 必填；delta schema v1 JSON 往返；`generated_by` 记录子侧
   profile；无效子快照整体拒绝。
-- [ ] `W5-G3` merge 策略（同文件）：supersede 原位替换且父先序保持；
+- [x] `W5-G3` merge 策略（同文件）：supersede 原位替换且父先序保持；
   stale supersede 丢弃计数并重分类 addition；addition 按 delta 序追加；
   逐 section 固定顺序截断与计数；`generated_by` 继承 `parent.generated_by`
   （nil 父与 curated 父两种形态均断言）；前置校验三拒绝（`fork-base-
@@ -407,23 +408,23 @@ Independent-Verification-Agent 独立完成并复验。
   digest 覆盖字段上逐字段相同的候选（两类父快照同水位提交均为
   `IdempotentNoOp`）；效果非零合并在同水位 → `conflicting-watermark`；同
   输入组跨进程候选与报告计数逐字节一致。
-- [ ] `W5-G4` 提交与竞态贯通（同文件）：合并候选经既有
+- [x] `W5-G4` 提交与竞态贯通（同文件）：合并候选经既有
   `commit_working_context` 在父水位严格前进时提交成功；同水位异 digest →
   `conflicting-watermark` fail-closed 且 store 不变（合并不豁免）；水位回
   退/五元组不匹配/终态迟到照旧丢弃；父链与子链隔离（两会话并行提交互不影
   响，无跨会话水位干扰）；fork 后父侧 epoch 变化开新链、合并到旧身份候选
   被拒。
-- [ ] `W5-G5` 生命周期与边界（同文件）：Deferrable 路由（正常完成且 future
+- [x] `W5-G5` 生命周期与边界（同文件）：Deferrable 路由（正常完成且 future
   被消费；`begin_shutdown` 后提交被拒；在途取消 → `Cancelled` 且 store 零
   部分写入）；`erase_session(子会话)` 后父快照与已合并内容不变、子快照清
   空；W3 协同——父/子会话 AutoCurator 链状态互不重臂、互不抢 in-flight 槽
   位（复用 m22 契约面断言）；W4 协同——合并后父快照按既有映射晋升成功、未
   合并分支内容零晋升路径；子会话全操作对父 store 零写入（场景负向冻结）。
-- [ ] `W5-G6` 恢复重建与确定性（`tests/m24/m24_fork_merge_test.cpp` +
+- [x] `W5-G6` 恢复重建与确定性（`tests/m24/m24_fork_merge_test.cpp` +
   `tests/m24/m24_fork_merge_eval.cpp`）：空 store 重建——父快照既有路径 +
   子基线经 fork 纯函数重建同 id 同 digest；eval harness 在冻结 fork/merge
   链数据集（digest 锚定）上跑投影/分类/合并/提交全链，报告跨进程字节一致。
-- [ ] 本地门禁：debug 全量 ctest 全绿（含新增 m24 两目标）、ASAN/UBSAN/TSAN
+- [x] 本地门禁：debug 全量 ctest 全绿（含新增 m24 两目标）、ASAN/UBSAN/TSAN
   m24 目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check`/`architecture-check` 通过、clang-tidy 预检被改库源编译单元
   零违例、本机 NDK 两 ABI 交叉编译预演通过；既有 m20–m23 套件在 `M24-02`
@@ -433,31 +434,31 @@ Independent-Verification-Agent 独立完成并复验。
   `state_digest` 断言为运行期重算等值、无硬编码快照 digest 锚点，
   `dataset_digest` 数据集级锚点不受 schema 演进影响；m21 eval 报告
   environment 派生修复后不再把 1.2 快照谎报为 1.1。
-- [ ] 文档同步完成（§7 `M24-04` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
+- [x] 文档同步完成（§7 `M24-04` 清单；与实现同一变更提交）。
+- [x] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
   并关闭本阶段。
 
 ## 7. 工作项
 
 - [x] `M24-01` 阶段立项与本文件 §4/§5/§6 冻结 + [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)
   交付（时间戳先于任何实现与测试）。
-- [ ] `M24-02` 公开契约与实现：`context_working_context.hpp` schema 1.2 加
+- [x] `M24-02` 公开契约与实现：`context_working_context.hpp` schema 1.2 加
   法扩展（fork 溯源字段、validate/digest/JSON 同步）+
   `context_working_context_fork.hpp/.cpp`（seed、delta 契约、机械投影、
   merge 入口与报告）；既有 m21 套件戳记同步随同一变更交付（§4.2：四处
   test 戳记断言按新当前版本同步 + eval faithful 判定同步 + eval 报告
   environment 版本派生自 `working_context_schema_current()`；测试的运行与
   取证由 Independent-Verification-Agent 复验）。
-- [ ] `M24-03` 契约/集成测试矩阵（§6 W5-G1–G6，`tests/m24/`，CMake 注册
+- [x] `M24-03` 契约/集成测试矩阵（§6 W5-G1–G6，`tests/m24/`，CMake 注册
   `mira_m24_fork_merge_test` 与 `mira_m24_fork_merge_eval`，label
   `integration;m24`）——测试的编写、运行与 sanitizer 取证由
   Independent-Verification-Agent 独立完成并复验。
-- [ ] `M24-04` 文档同步：Context Curator 设计 §13 实现注记、
+- [x] `M24-04` 文档同步：Context Curator 设计 §13 实现注记、
   [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 验证
   方式与关联计划回填、总计划索引与 §4.1 注记、API 手册
   `docs/api/context-memory.md` 新头文件条目、README 能力表、术语表（词条已
   随本立项登记）。
-- [ ] `M24-05` 本地全门禁与 PR CI 取证回填。
+- [x] `M24-05` 本地全门禁与 PR CI 取证回填。
 
 ## 8. 风险与阻塞
 
@@ -581,3 +582,41 @@ fences: OK。
   动；`ctest --preset debug -R m24` 无匹配目标——`tests/m24/` 随
   `M24-02`/`M24-03` 交付）。`M24-01` 据此勾选；里程碑状态维持 `Planned`
   （实现未开始，`M24-02` 起进入实现）。
+
+
+2026-09-23（第四次，交付）：`M24-02`–`M24-04` 同一变更交付（提交 `4e10449`，
+[PR #68](https://github.com/Linductor-alkaid/mira/pull/68)）。产品面：
+`context_working_context.hpp` schema 1.2 加法扩展（`WorkingContextForkProvenance`
++ 可选 `fork` 字段，validate/digest/JSON 同步——fork 仅非 nil 进入 canonical
+对象，v1.0/v1.1 载荷读回保留原戳记且 digest 逐位一致）与新公开契约
+`include/mira/context_working_context_fork.hpp` +
+`src/context/context_working_context_fork.cpp`（fork 基线、局部 delta 机械投影、
+parent merge 机械合并三组纯函数与报告；候选 `generated_by` 继承父值，经既有
+§5.2 管线提交）；m21 既有套件戳记同步随同一变更交付（§4.2 六处）。测试矩阵
+`M24-03` 由 Independent-Verification-Agent 独立交付：`tests/m24/` 22 用例
+（`W5-G1`–`G6`，label `integration;m24`）+ 冻结 fork/merge 链确定性 eval
+harness。IVA 循环共发现并修复三处测试侧缺陷（均经升级裁决授权、语义零改动）：
+`reject_mutant` lambda 缺结尾 return（编译修复）、w3 夹具全局 gate 双会话
+死锁（gdb 取证后改会话化 gate）、父路径漏 drain（按
+`context_working_context_auto.hpp` 契约补 `await_auto_settlement`）；产品侧
+据评审修订一处 supersede 解析口径（§4.4「在其 section 内找 content 相等的
+父条目」扫描语义），并在 clang-tidy 强门禁下移除
+`context_working_context.cpp` 对可平凡拷贝 fork 溯源的无效 `std::move`
+（`performance-move-const-arg`）。本地取证：`mira_m24_fork_merge_test`
+22/22 PASS、`mira_m24_fork_merge_eval` 全绿（`runs_byte_identical:true`）、
+`ctest -R "m24|m21"` 4/4 通过；静态分析 preset 下 `mira_core` clang-tidy
+（`--warnings-as-errors=*`）零违例；format/docs/sbom/platform-boundary/
+architecture 五项检查全绿（architecture 的 max-file-lines 新违规按裁决把
+套件按职责拆分为契约 TU + 生命周期 TU + 共享助手头，ctest 仍两目标）。
+sanitizer 与 NDK 交叉编译面按 §6 冻结口径由 CI 管线复跑取证（见下条），
+本记录不另行声明本地 sanitizer/NDK 取证。
+
+2026-09-23（第五次，关闭）：`M24-05` 完成——
+[PR #68](https://github.com/Linductor-alkaid/mira/pull/68)（head `4e10449`）
+CI 24/24 全部 SUCCESS：linux（gcc/clang × Debug/Release）、windows
+（Debug/Release）、android（arm64/x86_64 NDK 交叉）、sanitizers（ASAN/UBSAN/
+TSAN）与 quality 管线全绿，即 §6 本地门禁条目所列各面（含既有 m20–m23
+套件在戳记同步后复跑）由 CI 全量复跑证实。`W5-G1`–`G6` 与 `M24-01`–`M24-05`
+全部勾选，里程碑转 `Completed`。遗留（非本阶段范围，维持 §2 非目标留痕）：
+宿主集成接线、自动 fork/merge 与自动晋升触发、模型介导语义合并、真实模型/
+Stage E 语义指标（`MNT-202609-27` 证据通道，RULE-10）。
