@@ -2,7 +2,33 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-22（DEC-035 Stage W4「Memory Promotion」交付关闭（同日
+> 更新日期：2026-09-23（DEC-035 Stage W5「Subagent Fork / Merge」交付关闭
+> （同日跑前冻结）：快照 fork——子会话基线 + schema 1.2 加法溯源（fork 仅非
+> nil 进入 digest canonical 对象，v1.0/v1.1 载荷读回保留原戳记且 digest 逐位
+> 一致）、局部 delta——独立 schema v1 机械三分类投影（inherited 剔除 / 血统
+> supersede / addition）、parent merge policy——引用驱动机械合并经既有 §5.2
+> 提交管线（同水位冲突 fail-closed 不豁免；候选 `generated_by` 继承父值，零
+> 效果合并 `IdempotentNoOp` 对 nil/curated 两类父快照普遍可达）；既有 m21
+> 套件六处戳记随升版同步；IVA 独立 22 用例 `W5-G1`–`G6` 全绿 + 冻结链 eval
+> harness 跨进程字节一致；本地 clang-tidy 零违例 + 五检查全绿；PR
+> [#68](https://github.com/Linductor-alkaid/mira/pull/68) CI 24/24 全绿
+> （linux/windows/android/sanitizers/quality）；**Stage W5 同日关闭
+> （`Completed`）**；详见 §4.1 第 17 条与
+> [M24 文件](m24-context-curator-stage-w5.md)。）
+> 此前 2026-09-23（DEC-035 下一阶段 Stage W5「Subagent Fork / Merge」经
+> [M24](m24-context-curator-stage-w5.md) 立项并跑前冻结（`M24-01`）：多 Agent
+> 工作流场景边界冻结为
+> [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)——
+> subagent 为 Agent Harness 控制平面内父会话旁的子 Session（不设第三执行面，
+> Workflow fork 保持 DEC-019 未承诺扩展位）、fork = 子会话基线 + 快照 schema
+> 1.2 加法溯源（不复用 M20 epoch「作废」语义）、局部 delta 独立 schema v1、
+> parent merge policy 为机械确定性合并并经既有 §5.2 提交管线（同水位冲突
+> fail-closed 不豁免）；门禁 `W5-G1`–`G6`（`tests/m24/`，契约 + 冻结链确定性
+> harness）与阶段冻结协议必答八问 + 决策记录表随立项冻结；宿主集成接线（归
+> 宿主集成轮）与自动晋升触发（维持 M23 宿主显式现状）为显式非目标；实现未
+> 开始，状态 `Planned`；详见 §4.1 第 17 条与
+> [M24 文件](m24-context-curator-stage-w5.md)。）
+> 此前 2026-09-22（DEC-035 Stage W4「Memory Promotion」交付关闭（同日
 > 跑前冻结）：快照耐久语句（constraints / decisions / verified_facts /
 > failed_attempts）经 `MemoryConsolidator` 既有纪律晋升长期记忆——共享管线
 > 入口 `consolidate_candidates`（管线体只保留一份）、duplicate 判定收紧禁止
@@ -199,6 +225,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M21](m21-context-curator-stage-w2.md) | Context Curator Stage W2——`IContextCurator` 契约与模型供给参考实现（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：快照 schema 1.1 加法扩展（五 Curator section + `generated_by`）、previous+checkpoint+recent events 增量 curation、provenance 绑定与退化防护、`ProviderContextCurator` 经 `IModelProvider` 供给（DEC-036 口径）、Supervisor Deferrable 路由） | M20；[Context Curator 设计](../design/context_curator_design.md) §4.2/§6/§13 与 M21 §4 冻结 | Stage W3 自动触发的输入形态锚点（非发布物） | Completed |
 | [M22](m22-working-context-stage-w3.md) | Context Curator Stage W3——Supervisor 自动触发（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：`WorkingContextTriggerPolicy` 双轴触发策略（序列水位 + 执行事件增量）、`WorkingContextAutoCurator` 每会话链 coalescing、task boundary forced flush、失败回退；全部经既有 Deferrable 路由，无隐藏后台循环） | M21；快照链长会话基线可复现（[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)）；[Context Curator 设计](../design/context_curator_design.md) §8/§13 与 M22 §4 冻结 | Stage W4 Memory promotion 与 Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 | [M23](m23-memory-promotion-stage-w4.md) | Context Curator Stage W4——Memory Promotion（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆——`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级；宿主显式触发、泛型 Deferrable 路由；无模型） | M21（Stage W2 关闭）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M23 §4 冻结 | Stage W5 subagent fork/merge 与宿主集成轮的输入形态锚点（非发布物） | Completed |
+| [M24](m24-context-curator-stage-w5.md) | Context Curator Stage W5——Subagent Fork / Merge（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)：快照 fork——子会话基线 + schema 1.2 加法溯源、局部 delta——独立 schema v1 机械三分类投影、parent merge policy——机械确定性合并经既有 §5.2 提交管线（同水位冲突不豁免）；无模型） | M23（Stage W4 关闭，已满足）；多 Agent 工作流场景冻结（已满足，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M24 §4 冻结 | 宿主集成轮与真实模型轮/Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -547,6 +574,42 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     证据与限制见 [M23 文件](m23-memory-promotion-stage-w4.md) 验证记录；
     遗留：Stage W5（subagent fork/merge）、自动晋升触发与宿主集成接线、
     真实模型接入与语义质量声明（归真实模型轮与 Stage E 证据通道）。
+
+17. DEC-035 Stage W5「Subagent Fork / Merge」立项与交付入口（2026-09-23）：W4 关
+    闭后，依[Context Curator 设计](../design/context_curator_design.md) §13
+    W5 行门禁先冻结缺失的前置——「多 Agent 工作流场景」原无任何文档承载
+    （全语料仅 §13 W5 行一处占位；issue #48「Subagent 与上下文隔离」节是需
+    求记录非决策），经专项决策
+    [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)
+    冻结：subagent 为 Agent Harness 控制平面内父会话旁的子 Session（不设
+    `SubagentRuntime` 或第三执行面；Workflow 分支合并/并行/子 Workflow 保持
+    [DEC-019](../decisions/DEC-019-workflow-ir-contract.md) §2 未承诺扩展
+    位，issue #48 强制 flush 清单中的 `workflow fork` 归该扩展链）；fork =
+    子会话基线 + 快照 schema 1.2 加法溯源（不复用 M20 task_epoch「作废」语
+    义——live 单五元组、会话水位单调与 W-07 系统性阻断同会话并行分支）；
+    curated result = 子侧既有 `IContextCurator` 管线产物 + 机械 delta 投影
+    （独立 schema v1：inherited 剔除 / 同 section 血统交集 supersede / 其余
+    addition 三分类）；parent merge policy = 机械确定性合并（引用驱动、
+    stale supersede 重分类、固定顺序截断），产物经既有 §5.2 提交管线落库
+    （同水位冲突 fail-closed 不豁免，无第二写路径）；子代理无动作路径，如
+    需环境动作在其自身会话按既有 ActionLease 纪律执行。经
+    [M24](m24-context-curator-stage-w5.md) 立项（`M24-01`）并跑前冻结契约
+    语义、门禁 `W5-G1`–`G6`（`tests/m24/` 契约/集成 + 冻结 fork/merge 链
+    确定性 harness，label `integration;m24`）与阶段冻结协议必答八问 + 决策
+    记录表；无模型无语义质量声明（RULE-10，issue #48 对照指标归真实模型轮
+    与 Stage E 证据通道）；宿主集成接线（归宿主集成轮另行立项）与自动晋升
+    触发（维持 M23 冻结的宿主显式现状，如需自动化须上位决策）为显式非目
+    标。实现与验证同日完成（提交 `4e10449`，PR
+    [#68](https://github.com/Linductor-alkaid/mira/pull/68) CI 24/24 全绿）：
+    schema 1.2 加法溯源与新契约 `context_working_context_fork.hpp/.cpp` 落
+    地、既有 m21 套件六处戳记同步；IVA 独立 22 用例 `W5-G1`–`G6` 全绿 +
+    冻结链 eval harness 跨进程字节一致；本地 clang-tidy 零违例、五检查全绿
+    （测试套件按 max-file-lines 裁决拆分为契约 TU + 生命周期 TU + 共享助手
+    头）。`M24-01`–`05` 与 `W5-G1`–`G6` 关闭，**Stage W5 交付完成
+    （`Completed`）**；证据与限制见 [M24 文件](m24-context-curator-stage-w5.md)
+    验证记录；遗留：宿主集成接线、自动 fork/merge 与自动晋升触发、模型介导
+    语义合并、真实模型接入与语义质量声明（归真实模型轮与 Stage E 证据通
+    道）。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
@@ -980,6 +1043,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 | [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
 | [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md) | 机器可检查的架构策略、基线与契约四件套交付标准（`MNT-202609-35`–`38`；policy 单一来源 + CI 门禁 + 基线渐进治理 + 术语表 + 阶段冻结协议） | Accepted | 维护轮（2026-09 第五轮起持续生效） |
+| [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md) | 多 Agent 工作流场景与 Subagent 上下文隔离边界（Issue #48；Stage W5：subagent = Agent Harness 控制平面内父会话旁的子 Session、fork = 子会话基线 + schema 1.2 溯源、机械确定性 merge policy、W3/W4 共存边界；Workflow fork 保持 DEC-019 扩展位） | Accepted（方向；实现由 [M24](m24-context-curator-stage-w5.md) 承载） | M24（Stage W5） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

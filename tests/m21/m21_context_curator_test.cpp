@@ -389,18 +389,18 @@ struct Fixture final {
 int schema_v11_round_trip_and_v10_compat() {
     constexpr SchemaVersion current = working_context_schema_current();
     MIRA_CHECK(current.major == 1);
-    MIRA_CHECK(current.minor == 1);
+    MIRA_CHECK(current.minor == 2);
 
     const SessionId session = session_from_seed(10);
     const TaskId task = task_from_seed(11);
 
-    // The deterministic projection stamps {1, 1}, leaves the Curator sections
+    // The deterministic projection stamps {1, 2}, leaves the Curator sections
     // empty and generated_by nil, and keeps the W1 mapping unchanged.
     const auto checkpoint = make_checkpoint(session, task, 10, 1);
     const auto projected = working_context_from_checkpoint(checkpoint, make_identity(task));
     MIRA_CHECK(projected.has_value());
     MIRA_CHECK(projected.value().schema_version.major == 1);
-    MIRA_CHECK(projected.value().schema_version.minor == 1);
+    MIRA_CHECK(projected.value().schema_version.minor == 2);
     MIRA_CHECK(projected.value().active_tasks.empty());
     MIRA_CHECK(projected.value().verified_facts.empty());
     MIRA_CHECK(projected.value().failed_attempts.empty());
@@ -418,7 +418,7 @@ int schema_v11_round_trip_and_v10_compat() {
     const auto full = make_full_snapshot(session, task);
     const auto restored = working_context_from_json(working_context_to_json(full));
     MIRA_CHECK(restored.has_value());
-    MIRA_CHECK(restored.value().schema_version.minor == 1);
+    MIRA_CHECK(restored.value().schema_version.minor == 2);
     MIRA_CHECK(restored.value().id == full.id);
     MIRA_CHECK(restored.value().session_id == full.session_id);
     MIRA_CHECK(restored.value().task_id == full.task_id);
@@ -607,7 +607,7 @@ int curator_normal_path_binds_provenance() {
     const std::string seed =
         checkpoint.session_id.to_string() + "|" + checkpoint.task_id.to_string() + "|3|7|10";
     MIRA_CHECK(snapshot.id == working_context_snapshot_id_from_seed(seed));
-    MIRA_CHECK(snapshot.schema_version.minor == 1);
+    MIRA_CHECK(snapshot.schema_version.minor == 2);
     MIRA_CHECK(snapshot.generated_by == provider.profile().id);
     // The chain carried the previous snapshot's source checkpoint.
     MIRA_CHECK(snapshot.source_checkpoints.size() == 2);

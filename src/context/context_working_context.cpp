@@ -252,6 +252,21 @@ Result<void> WorkingContextSnapshot::validate() const {
     if (const auto result = validate_items(next_actions, "next_actions"); !result) {
         return result;
     }
+    // Stage W5 (schema 1.2): non-nil fork provenance must be fully formed
+    // (M24 §4.2) — the fork-point parent watermark is a positive sequence by
+    // the same discipline as the snapshot watermark itself.
+    if (fork.has_value()) {
+        if (fork->base_snapshot_id.is_nil() || fork->parent_session_id.is_nil()) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context fork provenance requires the base "
+                                         "snapshot and parent session");
+        }
+        if (fork->parent_through_event_sequence == 0) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context fork provenance requires a positive "
+                                         "parent watermark");
+        }
+    }
     return Result<void>{};
 }
 
@@ -277,6 +292,18 @@ Hash WorkingContextSnapshot::state_digest() const {
     object.emplace_back("failed_attempts", items_to_json(failed_attempts));
     object.emplace_back("important_refs", items_to_json(important_refs));
     object.emplace_back("next_actions", items_to_json(next_actions));
+    // Stage W5 digest discipline (M24 §4.2, frozen): the fork provenance
+    // enters the canonical object only when non-nil — no per-version
+    // branching, so a legacy-read snapshot without a fork digests bit
+    // identically to its pre-upgrade computation.
+    if (fork.has_value()) {
+        object.emplace_back(
+            "fork",
+            JsonValue::Object{{"base_snapshot_id", fork->base_snapshot_id.to_string()},
+                              {"parent_session_id", fork->parent_session_id.to_string()},
+                              {"parent_through_event_sequence",
+                               static_cast<std::int64_t>(fork->parent_through_event_sequence)}});
+    }
     return canonical_json_digest(JsonValue(std::move(object)));
 }
 
@@ -306,6 +333,16 @@ JsonValue working_context_to_json(const WorkingContextSnapshot &snapshot) {
     object.emplace_back("failed_attempts", items_to_json(snapshot.failed_attempts));
     object.emplace_back("important_refs", items_to_json(snapshot.important_refs));
     object.emplace_back("next_actions", items_to_json(snapshot.next_actions));
+    // Optional since schema 1.2 (Stage W5): emitted only when set, so
+    // pre-fork payloads stay byte-stable.
+    if (snapshot.fork.has_value()) {
+        JsonValue::Object fork;
+        fork.emplace_back("base_snapshot_id", snapshot.fork->base_snapshot_id.to_string());
+        fork.emplace_back("parent_session_id", snapshot.fork->parent_session_id.to_string());
+        fork.emplace_back("parent_through_event_sequence",
+                          static_cast<std::int64_t>(snapshot.fork->parent_through_event_sequence));
+        object.emplace_back("fork", JsonValue(std::move(fork)));
+    }
     return JsonValue(std::move(object));
 }
 
@@ -494,6 +531,52 @@ Result<WorkingContextSnapshot> working_context_from_json(const JsonValue &json) 
             return items.error();
         }
         snapshot.next_actions = std::move(items).value();
+    }
+    // Optional since schema 1.2 (Stage W5): a fork baseline round-trips its
+    // provenance; a payload without the field reads as fork=nil (legacy
+    // discipline — a missing field is never an error).
+    if (const auto *fork = json.find("fork"); fork != nullptr) {
+        const auto *fork_object = fork->as_object();
+        if (fork_object == nullptr) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context snapshot fork provenance must be "
+                                         "an object");
+        }
+        WorkingContextForkProvenance provenance;
+        const auto parse_fork_id = [&fork](const char *key, auto &target,
+                                           const char *message) -> Result<void> {
+            const auto *field = fork->find(key);
+            if (field == nullptr || !field->is_string()) {
+                return working_context_error(ErrorCode::InvalidArgument, message);
+            }
+            const auto parsed = std::decay_t<decltype(target)>::parse(*field->as_string());
+            if (!parsed) {
+                return working_context_error(ErrorCode::InvalidArgument, message);
+            }
+            target = *parsed;
+            return Result<void>{};
+        };
+        if (const auto result = parse_fork_id("base_snapshot_id", provenance.base_snapshot_id,
+                                              "working context fork base snapshot id is "
+                                              "malformed");
+            !result) {
+            return result.error();
+        }
+        if (const auto result = parse_fork_id("parent_session_id", provenance.parent_session_id,
+                                              "working context fork parent session is "
+                                              "malformed");
+            !result) {
+            return result.error();
+        }
+        const auto *watermark = fork->find("parent_through_event_sequence");
+        const auto value =
+            watermark == nullptr ? std::optional<std::int64_t>{} : watermark->as_integer();
+        if (!value || *value < 0) {
+            return working_context_error(ErrorCode::InvalidArgument,
+                                         "working context fork parent watermark is malformed");
+        }
+        provenance.parent_through_event_sequence = static_cast<std::uint64_t>(*value);
+        snapshot.fork = provenance;
     }
     if (const auto valid = snapshot.validate(); !valid) {
         return valid.error();

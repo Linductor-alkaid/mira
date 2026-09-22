@@ -88,6 +88,7 @@ add_library(mira_core
     src/context/context_rerank.cpp
     src/context/context_consolidation.cpp
     src/context/context_working_context.cpp
+    src/context/context_working_context_fork.cpp
     src/context/context_curator.cpp
     src/context/context_working_context_auto.cpp
     src/context/context_working_context_promotion.cpp

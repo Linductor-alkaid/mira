@@ -5,7 +5,8 @@
 > `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
 > `mira/stateful_replay.hpp`、`mira/context_curator.hpp`、
-> `mira/context_working_context_promotion.hpp`
+> `mira/context_working_context_promotion.hpp`、
+> `mira/context_working_context_fork.hpp`
 
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
@@ -316,6 +317,50 @@ Working State Plane 进入长期 Memory 的唯一受控通道：快照中具有�
   泛型路由执行，无新 Supervisor 方法。
 - 验证证据：`tests/m23/`（W4-G1–G6 契约门禁；无模型无数据集，无 benchmark
   声明，RULE-10）。
+
+## context_working_context_fork.hpp：Working Context Subagent Fork / Merge（M24，DEC-035 Stage W5）
+
+issue #48「Subagent 与上下文隔离」的确定性契约面（场景边界冻结于 DEC-044：
+subagent = Agent Harness 控制平面内父会话旁的子 Session；fork/merge 是
+Working State Plane 投影操作，无第三执行面、无环境动作路径、无模型调用）。
+快照 schema 1.2 加法 minor：可选 `fork` 溯源（`WorkingContextForkProvenance`）
+仅出现在子会话 fork 基线上，仅非 nil 时进入 digest canonical 对象与 JSON，
+v1.0/v1.1 载荷读回保留原 `schema_version` 且 digest 逐位一致（DEC-002）：
+
+- `fork_working_context(parent_base, seed, options)`：从父会话已提交快照产出
+  子会话只读基线——八 section 逐字副本、`source_checkpoints` 逐字继承、身份
+  换轨为子五元组（`child_watermark ≥ 1`）、携带 fork 溯源；同一输入组幂等
+  （同 id 同 digest 同字节）；非法/越界父快照或零水位整体
+  `InvalidArgument`，无部分基线。父会话 store 永不被子操作写入。
+- `WorkingContextDelta`（独立 schema `mira.working_context.delta.v1`）与
+  `working_context_delta_from_fork(fork_base, child_snapshot, options)`：把
+  子链最终快照对基线做机械三分类投影——content 与基线逐字节相等 → inherited
+  （剔除并计数，不回传完整探索历史）；`source_events` 与同 section 基线条目
+  交集（W2 编号转录 provenance 绑定，父子事件空间不相交）→ `Supersede`（取
+  最小基线规范编号，编号 = 声明序 × 向量序 0..N-1）；其余 → `Addition`。
+  固定八 section 词表、逐条 provenance、`max_item_chars`/`max_items_per_section`
+  上界（RULE-08），越界整体拒绝；`working_context_delta_to_json`/
+  `from_json` 往返保真。
+- `merge_working_context_delta(fork_base, parent, delta, parent_identity,
+  watermark, options)`：引用驱动机械合并——supersede 经基线引用在父 section
+  原位替换（父先序保持，无命中重分类为 addition 并计数）、addition 按 delta
+  序追加、逐 section 固定顺序截断；前置三拒绝（`fork-base-mismatch`/
+  `same-session-fork`/身份不一致，均 `InvalidArgument`）。候选 = 父身份 +
+  新水位、`source_checkpoints` 逐字继承、`generated_by` 继承 `parent.generated_by`
+  （零效果 delta 候选与父 digest 逐字段相同，同水位提交判 `IdempotentNoOp`）、
+  `fork` = nil；本入口不写 store——候选经既有 `commit_working_context` §5.2
+  管线落库（合并只在父水位严格前进时可提交，同水位异 digest
+  `conflicting-watermark` fail-closed 不豁免），rejected = 宿主不调用合并。
+  报告携带全部决策计数（resolved/stale/appended/truncated）供宿主审计与晋升
+  决策；跨进程字节确定。
+- 边界：fork/merge 均宿主显式操作（不接 W3 自动触发链、无隐藏后台循环），
+  提交经既有 `ContextMemorySupervisor::submit<T>(…, Deferrable, …)` 泛型
+  路由；合并产物按 M23 冻结 section→kind 映射参与晋升，未合并分支内容零
+  晋升路径；`erase_session(子会话)` 不触及父快照与已合并内容；跨会话隐私
+  擦除编排归宿主职责。
+- 验证证据：`tests/m24/`（`mira_m24_fork_merge_test` 22 用例 +
+  `mira_m24_fork_merge_eval` 冻结链确定性 harness，W5-G1–G6 门禁；无模型、
+  无 benchmark 声明，RULE-10）。
 
 ## stateful_replay.hpp：AnalysisReplay
 

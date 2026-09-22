@@ -9,9 +9,14 @@
 > W3 自动触发已由 [M22](../plans/m22-working-context-stage-w3.md) 承载并交付；
 > W4 Memory Promotion 已由 [M23](../plans/m23-memory-promotion-stage-w4.md)
 > 承载并交付（2026-09-22 跑前冻结 + 同日交付，契约语义见其 §4）；
-> W5 进入里程碑的门槛见 §13）
-> 版本：0.2
-> 更新日期：2026-09-15
+> W5 Subagent fork / merge 已由 [M24](../plans/m24-context-curator-stage-w5.md)
+> 承载并交付（2026-09-23 跑前冻结 + 同日交付，PR #68 CI 24/24：多 Agent 工作
+> 流场景边界冻结于
+> [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)——
+> subagent 为父会话旁的子 Session、fork = 子会话基线 + 溯源、merge policy
+> 为机械确定性合并；契约语义随 M24 §4））
+> 版本：0.3
+> 更新日期：2026-09-23
 > 负责人：Mira Maintainers
 > 上位设计：[Context Intelligence 设计](context_intelligence_design.md)、
 > [Context 与 Memory 架构设计](context_and_memory_design.md)
@@ -312,7 +317,7 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 | W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入）——**已交付**（[M21](../plans/m21-context-curator-stage-w2.md)，2026-09-15，基线见[curation v1](../benchmarks/context-intelligence-working-context-curation-v1.md)：W2-G1–G6 全绿、脚本化确定性供给方口径） | W1 关闭（已满足）；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项）（已满足） |
 | W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退——由 [M22](../plans/m22-working-context-stage-w3.md) 承载（2026-09-15 立项，触发策略随其 §4 跑前冻结） | W2 关闭（已满足）；快照链在长会话基线上可复现（已满足，[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)） |
 | W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律——**已交付**（[M23](../plans/m23-memory-promotion-stage-w4.md)，2026-09-22 跑前冻结 + 同日交付：`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级、宿主显式触发经泛型 Deferrable 路由；W4-G1–G6 全绿，PR #67 CI 24/24） | W2 关闭（已满足）；Working Context 与长期 Memory 边界测试冻结（已满足，M23 §6 跑前冻结） |
-| W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy | W4 关闭；多 Agent 工作流场景冻结 |
+| W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy——**已交付**（[M24](../plans/m24-context-curator-stage-w5.md)，2026-09-23 跑前冻结 + 同日交付：fork = 子会话基线 + schema 1.2 加法溯源、delta 独立 schema v1 机械三分类投影、机械确定性合并经既有 §5.2 提交管线（同水位冲突 fail-closed 不豁免）、候选 `generated_by` 继承父值；既有 m21 套件戳记随升版同步；W5-G1–G6 全绿，PR #68 CI 24/24） | W4 关闭（已满足，[M23](../plans/m23-memory-promotion-stage-w4.md)）；多 Agent 工作流场景冻结（已满足——场景边界冻结于 [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)：Agent Harness 控制平面 Session 内子代理，Workflow fork 保持 DEC-019 扩展位） |
 
 每 Stage 进入实现前创建里程碑文件（不预分配编号），测试矩阵至少覆盖：正常完成、
 组件缺席降级、提交五元组竞态、终态后迟到结果、shutdown、同水位冲突与恢复重建。
