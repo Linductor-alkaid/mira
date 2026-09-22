@@ -597,6 +597,33 @@ mira_add_m22_test(mira_m22_auto_trigger_test m22/m22_auto_trigger_test.cpp)
 mira_add_m22_test(mira_m22_auto_trigger_eval m22/m22_auto_trigger_eval.cpp)
 
 # ---------------------------------------------------------------------------
+# M23 (DEC-035 Stage W4): the single Working Context -> Memory promotion
+# bridge — deterministic candidate projection from committed snapshots
+# (frozen section -> kind mapping, drop counters, deterministic record ids)
+# routed through the existing MemoryConsolidator policy pipeline via the new
+# consolidate_candidates entry (duplicate-noop tightening, approval gate,
+# supersede), the read-only snapshot-store boundary and the generic
+# supervisor Deferrable routing. Gates W4-G1..G6 live in the contract suite.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m23_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m23" TIMEOUT 120)
+endfunction()
+
+mira_add_m23_test(mira_m23_promotion_test m23/m23_promotion_test.cpp)
+
+# ---------------------------------------------------------------------------
 # M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability
 # catalog, fail-closed manifest parsing and deterministic negotiation. Pure
 # computation over caller-supplied data; gates M7-TM0-G1..G5 live in the test,
