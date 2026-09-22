@@ -5,7 +5,9 @@
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)
 > 关联计划：[M20](../plans/m20-working-context-stage-w1.md)（Stage W1）、
-> [M21](../plans/m21-context-curator-stage-w2.md)（Stage W2）
+> [M21](../plans/m21-context-curator-stage-w2.md)（Stage W2）、
+> [M22](../plans/m22-working-context-stage-w3.md)（Stage W3）、
+> [M23](../plans/m23-memory-promotion-stage-w4.md)（Stage W4）
 > 上位决策：[DEC-032](DEC-032-context-intelligence-layered-context.md)
 
 ## 背景与问题
