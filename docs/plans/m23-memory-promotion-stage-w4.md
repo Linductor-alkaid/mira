@@ -1,7 +1,8 @@
 # M23：Context Curator Stage W4——Memory Promotion（Working Context 经 `MemoryConsolidator` 既有纪律晋升长期记忆）
 
-> 状态：In Progress（2026-09-22 立项并跑前冻结本文件 §4/§5/§6/§7；同日实现
-> 启动）
+> 状态：Completed（2026-09-22：PR #67 双 pipeline CI 24/24 全绿，§7 退出
+> 条件逐项复核通过；subagent fork/merge 归 Stage W5，真实模型接入与语义
+> 质量归真实模型轮与 Stage E 证据通道）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 第 4 条
@@ -300,7 +301,7 @@ Independent-Verification-Agent 独立编写、运行并复验。
   `sbom-check`/`architecture-check` 通过、clang-tidy 预检被改库源编译单元
   零违例、本机 NDK 两 ABI 交叉编译预演通过。
 - [x] 文档同步完成（§7 `M23-04` 清单；与实现同一变更提交）。
-- [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
+- [x] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
   并关闭本阶段。
 
 ## 7. 工作项
@@ -317,7 +318,8 @@ Independent-Verification-Agent 独立编写、运行并复验。
   计划与验证方式回填、总计划索引与 §4.1 注记、API 手册
   `docs/api/context-memory.md` 新头文件条目、README 能力表、术语表
   （如需新词条）。
-- [ ] `M23-05` 本地全门禁与 PR CI 取证回填（本地门禁已取证，PR CI 待回填）。
+- [ ] `M23-05` 本地全门禁与 PR CI 取证回填（本地门禁与 PR CI 均已取证，
+  见 §9 末条）。
 
 ## 8. 风险与阻塞
 
@@ -376,3 +378,16 @@ Independent-Verification-Agent 独立完成并复验，两轮取证）。
   集，RULE-10；契约门禁即验收面）；subagent fork/merge（W5）、自动晋升触发、
   宿主集成接线为显式非目标；Windows/Android 编译级/Release/quality 由 PR
   CI 回填后本阶段方可关闭（`M23-05`）。
+
+2026-09-22：PR CI（[#67](https://github.com/Linductor-alkaid/mira/pull/67)，
+head `1f63632`）双 pipeline 各 **12/12 全部通过**（push run
+[`35679225851`](https://github.com/Linductor-alkaid/mira/actions/runs/35679225851)
+/ pull_request run
+[`35679247197`](https://github.com/Linductor-alkaid/mira/actions/runs/35679247197)）：
+Linux GCC/Clang Debug/Release、Windows MSVC Debug/Release、Android 两 ABI
+编译级 + installed-consumer 交叉链接、ASAN/UBSAN/TSAN、quality（format +
+architecture-check 零新违规）。`M23-05` 关闭；§7 退出条件逐项复核后本阶段
+（DEC-035 Stage W4）关闭，状态 `In Progress` → `Completed`。遗留（显式非
+目标，不阻塞关闭）：subagent fork/merge（Stage W5）、自动晋升触发与宿主
+集成接线、真实模型接入与语义质量声明（归真实模型轮与 Stage E，
+`MNT-202609-27` 证据通道）。
