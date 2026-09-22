@@ -754,7 +754,7 @@ void audit_identity(const WorkingContextSnapshot &candidate, const EvalSession &
         candidate.task_id == checkpoint.task_id && candidate.task_epoch == checkpoint.task_epoch &&
         candidate.environment_epoch == checkpoint.environment_epoch &&
         candidate.session_id == eval_session.session && candidate.schema_version.major == 1 &&
-        candidate.schema_version.minor == 1 && candidate.generated_by == provider.profile().id &&
+        candidate.schema_version.minor == 2 && candidate.generated_by == provider.profile().id &&
         candidate.source_checkpoints.size() == round_index + 1 &&
         candidate.source_checkpoints.back() == checkpoint.id;
     if (faithful) {
@@ -1583,7 +1583,11 @@ int main(int argc, char **argv) {
     JsonValue::Object report;
     report.emplace_back("schema", "mira.m21.context-curator-eval.v1");
     JsonValue::Object environment;
-    environment.emplace_back("snapshot_schema_version", std::string("1.1"));
+    // Derived from the live schema stamp (M24 §4.2): no second literal to
+    // maintain across snapshot upgrades.
+    environment.emplace_back("snapshot_schema_version",
+                             std::to_string(working_context_schema_current().major) + "." +
+                                 std::to_string(working_context_schema_current().minor));
     environment.emplace_back(
         "curator_output_schema_digest",
         digest_hex(canonical_json_digest(working_context_curation_output_schema().root)));

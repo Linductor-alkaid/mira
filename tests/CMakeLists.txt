@@ -624,6 +624,38 @@ endfunction()
 mira_add_m23_test(mira_m23_promotion_test m23/m23_promotion_test.cpp)
 
 # ---------------------------------------------------------------------------
+# M24 (DEC-035 Stage W5): the subagent Working Context fork/merge bridge —
+# snapshot fork over the committed parent baseline (schema 1.2 additive fork
+# provenance), the mechanical local-delta projection (inherited skip,
+# lineage-bound supersede, addition) and the deterministic parent merge
+# policy over the existing §5.2 commit pipeline. The eval harness runs the
+# frozen fork/merge chain dataset with gate W5-G6 and exits non-zero on
+# failure.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m24_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core Mira::workflow executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m24" TIMEOUT 120)
+endfunction()
+
+mira_add_m24_test(mira_m24_fork_merge_test m24/m24_fork_merge_test.cpp)
+# The test suite is split by responsibility across two translation units
+# (architecture max-file-lines budget); both link into the single target and
+# the case table in m24_fork_merge_test.cpp drives all 22 cases.
+target_sources(mira_m24_fork_merge_test PRIVATE m24/m24_fork_merge_lifecycle.cpp)
+mira_add_m24_test(mira_m24_fork_merge_eval m24/m24_fork_merge_eval.cpp)
+
+# ---------------------------------------------------------------------------
 # M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability
 # catalog, fail-closed manifest parsing and deterministic negotiation. Pure
 # computation over caller-supplied data; gates M7-TM0-G1..G5 live in the test,

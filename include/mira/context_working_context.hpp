@@ -86,10 +86,12 @@ struct WorkingContextSnapshotId final {
 [[nodiscard]] WorkingContextSnapshotId working_context_snapshot_id_from_seed(std::string_view seed);
 
 [[nodiscard]] constexpr SchemaVersion working_context_schema_current() noexcept {
+    // 1.2 (Stage W5, DEC-044): additive minor — the optional `fork` provenance
+    // (set only on child-session fork baselines) joins the snapshot; 1.0/1.1
+    // payloads stay readable with their own stamp (DEC-002, M24 §4.2).
     // 1.1 (Stage W2): additive minor — five Curator-filled sections and the
-    // `generated_by` model annotation joined the three W1 sections; 1.0
-    // payloads stay readable (DEC-002, design §4.1).
-    return {1, 1};
+    // `generated_by` model annotation joined the three W1 sections.
+    return {1, 2};
 }
 
 // Bounds for the deterministic projection (documented defaults, not a frozen
@@ -111,6 +113,20 @@ struct WorkingContextIdentity final {
     TaskId task;
     std::uint64_t task_epoch = 0;
     std::uint64_t environment_epoch = 0;
+};
+
+// Stage W5 fork provenance (schema 1.2, DEC-044/M24 §4.2): carried only by a
+// child-session fork baseline and records which committed parent snapshot the
+// verbatim copy came from. The parent store is never written through it — the
+// provenance is read-only lineage evidence (global 128-bit ids stay
+// resolvable across sessions).
+struct WorkingContextForkProvenance final {
+    WorkingContextSnapshotId base_snapshot_id;       // the fork-source parent snapshot
+    SessionId parent_session_id;                     // the fork-source parent session
+    std::uint64_t parent_through_event_sequence = 0; // fork-point parent watermark (>= 1)
+
+    friend constexpr bool operator==(const WorkingContextForkProvenance &,
+                                     const WorkingContextForkProvenance &) noexcept = default;
 };
 
 struct WorkingContextSnapshot final {
@@ -140,6 +156,12 @@ struct WorkingContextSnapshot final {
     std::vector<WorkingContextFailedAttempt> failed_attempts;
     std::vector<WorkingContextImportantRef> important_refs;
     std::vector<WorkingContextNextAction> next_actions;
+    // Stage W5 (schema 1.2): set only on a child-session fork baseline (see
+    // <mira/context_working_context_fork.hpp>); nil on every ordinary
+    // projection, curated snapshot and merge candidate. Digest/JSON include
+    // it only when non-nil (M24 §4.2 frozen discipline, no per-version
+    // branching).
+    std::optional<WorkingContextForkProvenance> fork;
 
     [[nodiscard]] Result<void> validate() const;
     // Canonical digest over authoritative fields; excludes id and created_at

@@ -7,7 +7,8 @@
 > 关联计划：[M20](../plans/m20-working-context-stage-w1.md)（Stage W1）、
 > [M21](../plans/m21-context-curator-stage-w2.md)（Stage W2）、
 > [M22](../plans/m22-working-context-stage-w3.md)（Stage W3）、
-> [M23](../plans/m23-memory-promotion-stage-w4.md)（Stage W4）
+> [M23](../plans/m23-memory-promotion-stage-w4.md)（Stage W4）、
+> [M24](../plans/m24-context-curator-stage-w5.md)（Stage W5）
 > 上位决策：[DEC-032](DEC-032-context-intelligence-layered-context.md)
 
 ## 背景与问题
@@ -44,7 +45,12 @@ Memory / Layer 0 的边界如何划定，以及如何与 DEC-032 的 Stage E/F �
    - W3：Supervisor 自动触发（watermark/event count/task boundary、coalescing、
      forced flush）；
    - W4：Memory Promotion（经 `MemoryConsolidator`）；
-   - W5：Subagent fork / merge。
+   - W5：Subagent fork / merge。（2026-09-23 注：场景边界冻结于
+     [DEC-044](DEC-044-multi-agent-context-fork-boundary.md)——subagent 为
+     Agent Harness 控制平面内父会话旁的子 Session，fork/merge 是 Working
+     State Plane 投影操作而非环境动作或 Workflow 步骤；由
+     [M24](../plans/m24-context-curator-stage-w5.md) 承载，契约语义随其
+     §4 跑前冻结。）
 5. **W1 语义边界**：快照三 section（constraints / decisions / open_issues）由
    已提交 checkpoint 确定性导出，整体替换语义与 Stage D 固化提交模型一致；
    提交沿用五元组纪律与终态幂等；恢复 = 从最近 checkpoint 重导出（幂等同 id

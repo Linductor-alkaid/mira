@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-09-21
+> 版本：1.1
+> 更新日期：2026-09-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -206,6 +206,27 @@ _Avoid_: 附件（无版本与摘要语义）
 短期、任务导向、可频繁覆盖、可从 Trace Plane 重建的投影；不是第二
 份 Memory。
 _Avoid_: 会话记忆、缓存
+
+**Subagent（子代理）**:
+父会话旁由宿主创建的子 Session 中运行的推理角色代理（Developer/Test/
+Review 等，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；
+无专属执行面，环境动作（如需）在其自身会话按既有租约纪律执行。
+_Avoid_: 子线程、插件、第二 Runtime
+
+**Snapshot Fork（快照分叉）**:
+从父会话已提交快照确定性派生子会话只读基线的投影操作，副本携带 fork
+溯源（父快照 id、父会话、fork 点水位）；不复用 epoch 的「作废」语义。
+_Avoid_: 分支（Workflow 语义）、复制（无溯源与身份语义）
+
+**Local Delta（局部增量）**:
+子代理结束时回传父会话的带 provenance 提炼结果，按继承剔除、血统
+supersede、addition 三分类；不是完整探索历史。
+_Avoid_: diff（无语义分类）、摘要（无结构化状态语义）
+
+**Merge Policy（合并策略）**:
+父快照吸收子 delta 的机械确定性裁决：引用驱动、冲突不静默覆盖、产物
+经既有提交管线；rejected 即不合并，子内容只存子会话投影与 Raw Trace。
+_Avoid_: 模型自由合并（v1 无语义裁决）、自动同步
 
 **Consolidation（固化）**:
 把任务经验沉淀为长期记忆的学习过程（DEC-029/030）。
