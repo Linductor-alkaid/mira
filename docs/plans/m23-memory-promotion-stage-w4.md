@@ -133,6 +133,10 @@ struct WorkingContextPromotionProjection final {
 - `candidate.evidence = item.source_events`（provenance 贯通）；为空则丢弃
   该条（`dropped_missing_evidence`）——TR2 确立的"M4 Add 必带事件 evidence"
   上位契约优先。
+  （2026-09-22 实现注记：`WorkingContextSnapshot::validate()`（W1 契约）本就
+  拒绝无 provenance 的条目，故该丢弃分支经公共 API 不可达——空 evidence 条目
+  在投影入口即整体 `InvalidArgument`。分支保留为纵深防御，测试冻结该可观测
+  行为。）
 - `record.id` 从 seed 确定性派生：
   `mira.memory.promotion|<scope_kind_name>|<scope.subject_id>|<section_tag>|<content>`
   （TR2 `learning_id_from_seed` 同款 sha256 截断模式，seed 空间独立）；同语句
@@ -265,55 +269,55 @@ store 层失败经管线既有 `RejectedConflict`/错误传播暴露）。
 `tests/m23/` 契约/集成断言（label `integration;m23`），由
 Independent-Verification-Agent 独立编写、运行并复验。
 
-- [ ] `W4-G1` 投影契约：四类晋升 section 的 kind/statement/scope/confidence/
+- [x] `W4-G1` 投影契约：四类晋升 section 的 kind/statement/scope/confidence/
   validity/provenance 逐一正确；`Unverified`/`model_assisted`/
   `source_namespace` 固化不可覆盖；confidence floor 以下丢弃并计数；空
   evidence 丢弃并计数；确定性 record id（同输入同 id，seed 空间独立）；固定
   section 顺序与 per-run 截断；非晋升四 section 恒零候选；无效 snapshot 整体
   报错。
-- [ ] `W4-G2` 既有纪律贯通：forbidden marker → `RejectedForbidden`；model
+- [x] `W4-G2` 既有纪律贯通：forbidden marker → `RejectedForbidden`；model
   文本 injection marker → `RejectedInjection`；`Preference` →
   `PendingApproval` 且 `apply_pending` 审批后落库；同 scope 同 key 冲突 →
   `Supersede`（版本递增、旧记录 `Superseded`）；store 拒绝 →
   `RejectedConflict`；`consolidate()` 与 `consolidate_candidates()` 走同一
   管线（同一输入候选两类入口 disposition 矩阵一致）。
-- [ ] `W4-G3` 幂等与无降级：同一 snapshot 重复晋升 `duplicate-noop`、记录数
+- [x] `W4-G3` 幂等与无降级：同一 snapshot 重复晋升 `duplicate-noop`、记录数
   不变；已存 `Observed`/`Verified`/`HumanConfirmed` 同语句副本不被 `Unverified`
   晋升降级（noop，版本不变）；M13 `VerifiedEvent` 重放回归仍 noop（§4.2 对
   既有来源无行为变化）。
-- [ ] `W4-G4` 边界负向：晋升前后快照 store 逐字节不变（零写）；`erase_session`
+- [x] `W4-G4` 边界负向：晋升前后快照 store 逐字节不变（零写）；`erase_session`
   后已晋升记录仍在；空快照 → 零候选空报告；policy/snapshot 校验失败 →
   `InvalidArgument`；Curator/快照无任何直接写 Memory 路径（晋升入口是唯一
   桥）。
-- [ ] `W4-G5` Executor 路由：泛型 Deferrable 提交正常完成并被消费；
+- [x] `W4-G5` Executor 路由：泛型 Deferrable 提交正常完成并被消费；
   `begin_shutdown` 后提交被拒；在途晋升被取消时 future 以 `Cancelled` resolve
   且 Memory 零部分写入；统计与报告计数一致。
-- [ ] `W4-G6` 确定性：同输入投影跨进程字节一致（候选 id/statement/顺序/
+- [x] `W4-G6` 确定性：同输入投影跨进程字节一致（候选 id/statement/顺序/
   丢弃计数；mutation id 为 M4 既有随机 id，不参与字节比对，诚实记录）；
   全部断言在 debug 与三 sanitizer 树下通过。
-- [ ] 本地门禁：debug 全量 ctest 全绿（含新增 m23 目标）、ASAN/UBSAN/TSAN
+- [x] 本地门禁：debug 全量 ctest 全绿（含新增 m23 目标）、ASAN/UBSAN/TSAN
   m23 目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check`/`architecture-check` 通过、clang-tidy 预检被改库源编译单元
   零违例、本机 NDK 两 ABI 交叉编译预演通过。
-- [ ] 文档同步完成（§7 `M23-04` 清单；与实现同一变更提交）。
+- [x] 文档同步完成（§7 `M23-04` 清单；与实现同一变更提交）。
 - [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
   并关闭本阶段。
 
 ## 7. 工作项
 
 - [x] `M23-01` 阶段立项与本文件 §4/§5/§6 冻结（时间戳先于任何实现与测试）。
-- [ ] `M23-02` 公开契约与实现：`context_working_context_promotion.hpp/.cpp`
+- [x] `M23-02` 公开契约与实现：`context_working_context_promotion.hpp/.cpp`
   （policy、投影、报告、组合入口）+ `memory_consolidation.hpp/.cpp` 加法重构
   （`consolidate_candidates` 共享管线入口、exact-duplicate 收紧）。
-- [ ] `M23-03` 契约/集成测试矩阵（§6 W4-G1–G6，`tests/m23/`，CMake 注册
+- [x] `M23-03` 契约/集成测试矩阵（§6 W4-G1–G6，`tests/m23/`，CMake 注册
   label `integration;m23`）——测试的编写、运行与 sanitizer 取证由
   Independent-Verification-Agent 独立完成并复验。
-- [ ] `M23-04` 文档同步：Context Curator 设计 §2/§13 实现注记、
+- [x] `M23-04` 文档同步：Context Curator 设计 §2/§13 实现注记、
   [DEC-035](../decisions/DEC-035-context-curator-working-context.md) 关联
   计划与验证方式回填、总计划索引与 §4.1 注记、API 手册
   `docs/api/context-memory.md` 新头文件条目、README 能力表、术语表
   （如需新词条）。
-- [ ] `M23-05` 本地全门禁与 PR CI 取证回填。
+- [ ] `M23-05` 本地全门禁与 PR CI 取证回填（本地门禁已取证，PR CI 待回填）。
 
 ## 8. 风险与阻塞
 
@@ -334,3 +338,41 @@ Independent-Verification-Agent 独立编写、运行并复验。
 进入门槛复核：Stage W2 已关闭（M21，PR #53）；设计 §13 Stage W4 门禁第二项
 "Working Context 与长期 Memory 边界测试冻结"随本文件 §6 满足。W3（M22）已
 交付，非本阶段硬前置（设计 §13 W4 行门禁为"W2 关闭"）。
+
+2026-09-22：`M23-02`–`M23-04` 本地实现、测试与文档同步（分支
+`feat/m23-memory-promotion-stage-w4`；测试的编写、运行与 sanitizer 取证由
+Independent-Verification-Agent 独立完成并复验，两轮取证）。
+
+- **交付**：`include/mira/context_working_context_promotion.hpp` +
+  `src/context/context_working_context_promotion.cpp`（入 `mira_core`）——
+  `WorkingContextPromotionPolicy`（floor 0.5 / cap 32 文档化默认值）、
+  `memory_candidates_from_working_context` 确定性投影（冻结 section→kind
+  映射、逐条 `Unverified`+`model_assisted`+`Consolidation`+
+  `"working-context"` 固化、确定性 record id、固定顺序与截断、丢弃计数）、
+  `promotion_record_id_from_seed`（`mira.memory.promotion|` 独立 seed 空间）、
+  `promote_working_context_to_memory` 组合入口（报告同时携带投影产物与管线
+  报告）；`MemoryConsolidator::consolidate_candidates` 共享管线公共入口
+  （`consolidate()` 重构为"抽取 + 模型增强 + 本入口"，管线体只保留一份）+
+  exact-duplicate 判定收紧（§4.2）。CMake 注册 `mira_m23_promotion_test`
+  （label `integration;m23`）。
+- **测试矩阵**（`tests/m23/m23_promotion_support.hpp` 确定性构造器 +
+  `FaithfulMemory` 测试双；`tests/m23/m23_promotion_test.cpp` 16 用例覆盖
+  W4-G1–G6；mutex/cv 闸门同步，无 sleep 时序）。IVA 首轮取证 15/16 绿并
+  抓到一处实现缺陷：`promote_working_context_to_memory` 先把候选 move 进
+  管线导致 `report.projection.candidates` 恒为空（预期报告保留投影产物）——
+  主循环修复为报告先接管投影、管线按拷贝消费（提交内修复），复验 16/16 全绿。
+  测试另冻结一处计划内张力（§4.1 实现注记：空 evidence 丢弃分支经公共 API
+  不可达，`WorkingContextSnapshot::validate()` 先行整体拒绝）。
+- **本地门禁**（Ubuntu 24.04.4 x86_64、Intel Core Ultra 5 225H、GCC 13.3.0、
+  CMake 3.28.3、NDK r26.3）：debug 全量 ctest **92/92**（原 91 + 本里程碑
+  1 目标，m4/m13 既有套件在重构后无回归）；ASAN/UBSAN/TSAN（TSAN 经
+  `setarch -R`）m23 目标 16/16 零报告；`format-check`（229 文件）/
+  `docs-check`/`platform-boundary-check`/`sbom-check`/`architecture-check`
+  通过；miniconda clang-tidy 18.1.8 预检被改库源编译单元
+  （`context_working_context_promotion.cpp`、`memory_consolidation.cpp`）
+  零违例；本机 NDK r26.3 `android-arm64-release`/`android-x86_64-release`
+  两 preset `mira_core` 交叉编译（warnings-as-errors）预演通过。
+- **限制与未执行项**：无真实模型调用与 benchmark 报告（本阶段无模型无数据
+  集，RULE-10；契约门禁即验收面）；subagent fork/merge（W5）、自动晋升触发、
+  宿主集成接线为显式非目标；Windows/Android 编译级/Release/quality 由 PR
+  CI 回填后本阶段方可关闭（`M23-05`）。

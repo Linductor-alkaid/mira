@@ -32,7 +32,7 @@ Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M
 | Layer 1 检索召回（`IContextEmbedder`/`IContextRetriever`，Conversation/Episode/Lesson） | 契约与参考索引已交付（M17，DEC-032 Stage B）；真实 embedder 供给方与 AgentLoop 集成待后续 | [检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) |
 | Layer 2 重排对照（`IContextReranker` + 确定性参考重排器） | 契约与参考实现已交付（M18，DEC-032 Stage C）；模型重排经供应链复核后接入 | [重排对照 v1](docs/benchmarks/context-intelligence-rerank-v1.md) |
 | Layer 3 语义固化（`ISemanticConsolidator` → `ConversationCheckpoint`，经 `IModelProvider` 供给、五元组提交与终态幂等） | 契约与参考固化器已交付（M19，DEC-032 Stage D）；真实模型供给按 DEC-036 走可用源模型（含主模型），接入待后续 | [固化管线评估 v1](docs/benchmarks/context-intelligence-consolidation-v1.md) |
-| Working Context 快照与 Curator（`WorkingContextSnapshot` schema 1.1：水位、digest、epoch 失效、终态幂等、Layer 0 转换、恢复；`IContextCurator` 模型介导维护者 + `ProviderContextCurator` 参考实现；`WorkingContextAutoCurator` 自动触发：watermark/event count 双轴策略、coalescing、forced flush、失败回退） | Stage W1 确定性契约已交付（M20，DEC-035）；Stage W2 Curator 契约与模型供给参考实现已交付（M21，脚本化确定性口径）；Stage W3 Supervisor 自动触发已交付（M22，脚本化确定性口径）；真实模型接入与语义质量归 Stage E | [working-context 评估 v1](docs/benchmarks/context-intelligence-working-context-v1.md)、[curation 评估 v1](docs/benchmarks/context-intelligence-working-context-curation-v1.md)、[auto-trigger 评估 v1](docs/benchmarks/context-intelligence-working-context-auto-trigger-v1.md) |
+| Working Context 快照与 Curator（`WorkingContextSnapshot` schema 1.1：水位、digest、epoch 失效、终态幂等、Layer 0 转换、恢复；`IContextCurator` 模型介导维护者 + `ProviderContextCurator` 参考实现；`WorkingContextAutoCurator` 自动触发：watermark/event count 双轴策略、coalescing、forced flush、失败回退；Memory Promotion：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆，唯一受控通道） | Stage W1 确定性契约已交付（M20，DEC-035）；Stage W2 Curator 契约与模型供给参考实现已交付（M21，脚本化确定性口径）；Stage W3 Supervisor 自动触发已交付（M22，脚本化确定性口径）；Stage W4 Memory Promotion 已交付（M23：冻结映射、`Unverified`+`model_assisted` 纪律、无降级晋升、无模型）；真实模型接入与语义质量归 Stage E | [working-context 评估 v1](docs/benchmarks/context-intelligence-working-context-v1.md)、[curation 评估 v1](docs/benchmarks/context-intelligence-working-context-curation-v1.md)、[auto-trigger 评估 v1](docs/benchmarks/context-intelligence-working-context-auto-trigger-v1.md) |
 | Temporal Policy（高频条件策略：`TemporalHistory`/`ReactiveRule` 契约、条件策略 Runtime 闭环、规则归纳） | 方向已冻结（DEC-037，issue #50）；实现未开始，Stage T1 未立项 | [Temporal Policy 设计](docs/design/temporal_policy_design.md) |
 
 下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：回收 miracle
@@ -51,7 +51,10 @@ Stage E（真机评估）待 `MNT-202609-27` 证据通道。Context Curator 方�
 Stage W3（Supervisor 自动触发：watermark / event count 双轴策略、coalescing、
 forced flush、失败回退）由
 [M22](docs/plans/m22-working-context-stage-w3.md) 承载并已交付；Stage W4
-（Memory Promotion）与 W5（subagent fork/merge）待立项。
+（Memory Promotion：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆，
+冻结 section→kind 映射、`Unverified`+`model_assisted` 纪律、无降级晋升、宿主
+显式触发）由 [M23](docs/plans/m23-memory-promotion-stage-w4.md) 承载并已交付；
+Stage W5（subagent fork/merge）待立项。
 
 本地 ONNX 感知（M5）与连续控制（M6）已按
 [DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求

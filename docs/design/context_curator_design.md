@@ -46,6 +46,15 @@ DEC-032 的 Stage B–D 已交付检索召回、重排对照与会话语义固�
    派生状态，生命周期绑定 task/session/epoch；跨任务知识仍只能经
    `MemoryConsolidator` 的 policy、scope、验证与人工审批管线进入长期记忆。
    Curator 可以产生 Memory candidate，不能直接写 Memory。
+   （2026-09-22 实现注记：Stage W4 交付该通道——
+   `memory_candidates_from_working_context` 确定性投影冻结 section→kind 映射
+   （constraints→Preference 审批门、decisions→ApplicationFact、
+   verified_facts→EnvironmentFact、failed_attempts→RecoveryLesson；任务导向
+   section 与 `important_refs` 不晋升），候选恒 `Unverified`+`model_assisted`+
+   `source_namespace="working-context"`，经 `MemoryConsolidator::
+   consolidate_candidates` 共享管线落库；重复判定收紧为"已存副本验证等级 ≥
+   提案等级"以杜绝降级；详见
+   [M23](../plans/m23-memory-promotion-stage-w4.md) §4。）
 
 ## 3. 三平面模型
 
