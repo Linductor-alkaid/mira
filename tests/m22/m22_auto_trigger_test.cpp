@@ -20,12 +20,11 @@
 // coordinator-state spin drains only — no sleep-based sequencing (the two
 // timed failure/destruction budgets assert bounds, never ordering).
 //
-// Known implementation deviation kept red on purpose: every fire and forced
-// flush hands the caller a shared_future WITHOUT associated state (double
-// share() in WorkingContextAutoCurator::Impl::issue), so consuming it throws
-// std::future_error. consume_caller_future() records those as defects instead
-// of aborting, letting the rest of the frozen semantics verify; every test
-// touching a caller future ends red while the defect stands.
+// Note: the double-share() defect called out in early review rounds (a caller
+// future without associated state) was fixed within the milestone — issue()
+// now shares exactly once. consume_caller_future() keeps its defect-recording
+// shape as regression armor: a future_error surfaces as a recorded defect and
+// fails the case instead of aborting the run.
 
 #include "../support/m3_support.hpp"
 #include "../support/test.hpp"

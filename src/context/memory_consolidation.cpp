@@ -169,7 +169,6 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
     if (!valid_policy) {
         return valid_policy.error();
     }
-    ConsolidationReport report;
     std::vector<MemoryCandidate> candidates = extract_deterministic(events, scope);
     if (model_ != nullptr) {
         // Model proposals are untrusted: strip any HumanConfirmed claim and
@@ -185,9 +184,20 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
             candidates.push_back(std::move(proposal));
         }
     }
+    return consolidate_candidates(memory, std::move(candidates), scope, now);
+}
+
+Result<ConsolidationReport>
+MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCandidate> candidates,
+                                           const MemoryScope &scope, const Timestamp &now) const {
+    const auto valid_policy = policy_.validate();
+    if (!valid_policy) {
+        return valid_policy.error();
+    }
     if (candidates.size() > policy_.max_candidates_per_run) {
         candidates.resize(policy_.max_candidates_per_run);
     }
+    ConsolidationReport report;
     report.candidates_examined = candidates.size();
 
     for (auto &candidate : candidates) {
@@ -265,8 +275,11 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
             }
         }
         if (conflict.has_value() && conflict->statement == proposed.statement &&
-            conflict->verification == proposed.verification) {
-            // Exact duplicate: no new memory, no churn.
+            conflict->verification >= proposed.verification) {
+            // Exact duplicate with a stored copy at least as verified as the
+            // proposal: no new memory, no churn — and never a downgrade (an
+            // Unverified promotion candidate must not supersede a
+            // HumanConfirmed record, M23 plan §4.2).
             entry.disposition = CandidateDisposition::Applied;
             entry.reason_code = "duplicate-noop";
             entry.resulting_version = conflict->version;

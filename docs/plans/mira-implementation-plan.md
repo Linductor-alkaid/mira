@@ -2,7 +2,30 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-22（DEC-040 第三阶段 TR2「WorkflowRuntime 接线与执行」
+> 更新日期：2026-09-22（DEC-035 Stage W4「Memory Promotion」交付关闭（同日
+> 跑前冻结）：快照耐久语句（constraints / decisions / verified_facts /
+> failed_attempts）经 `MemoryConsolidator` 既有纪律晋升长期记忆——共享管线
+> 入口 `consolidate_candidates`（管线体只保留一份）、duplicate 判定收紧禁止
+> 验证等级降级、晋升候选恒 `Unverified`+`model_assisted`+
+> `source_namespace="working-context"`、确定性 record id（独立 seed 空间）、
+> 宿主显式触发经泛型 Deferrable 路由；IVA 两轮取证 16 case W4-G1–G6 全绿
+> （首轮抓到报告候选被管线搬空的缺陷，修复后复验），本地门禁 ctest 92/92 +
+> 三 sanitizer 零报告 + 五检查 + clang-tidy 零违例 + NDK 两 ABI 预演；
+> PR [#67](https://github.com/Linductor-alkaid/mira/pull/67) 双 pipeline CI
+> 24/24 全绿；**Stage W4 同日关闭（`Completed`）**；详见 §4.1 第 16 条与
+> [M23 文件](m23-memory-promotion-stage-w4.md)。）
+> 此前 2026-09-22（DEC-035 下一阶段 Stage W4「Memory Promotion」经
+> [M23](m23-memory-promotion-stage-w4.md) 立项并跑前冻结（`M23-01`）：快照
+> 耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆——共享管线入口
+> `consolidate_candidates`（管线体只保留一份）、section→kind 冻结映射
+> （constraints→Preference 审批门、decisions→ApplicationFact、
+> verified_facts→EnvironmentFact、failed_attempts→RecoveryLesson；任务导向
+> section 与 `important_refs` 不晋升）、晋升候选恒 `Unverified`+
+> `model_assisted`+`source_namespace="working-context"`、duplicate 判定收紧
+> 禁止验证等级降级、确定性 record id（TR2 同款 seed 派生）、宿主显式触发经
+> 泛型 Deferrable 路由不新增 Supervisor 方法；门禁 W4-G1–G6 与阶段冻结协议
+> 必答八问 + 决策记录表随立项冻结；详见 [M23 文件](m23-memory-promotion-stage-w4.md)。）
+> 此前 2026-09-22（DEC-040 第三阶段 TR2「WorkflowRuntime 接线与执行」
 > 交付关闭（2026-09-21 跑前冻结）：IR v1.1 引用表达加法演进、库挂载
 > tool_refs 清单（宿主 attach + 发布门禁自动提取）、`create_run` 准入消费
 > （Invalid 拒绝 / Degraded 放行 + 事件留痕）、Skill 经同一 Tool 通道的子
@@ -175,6 +198,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M20](m20-working-context-stage-w1.md) | Context Curator Stage W1——`WorkingContextSnapshot` 确定性契约（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：checkpoint 确定性投影、水位/digest/epoch 生命周期、五元组提交与终态幂等、Layer 0 转换、恢复重建；无模型） | M19；[Context Curator 设计](../design/context_curator_design.md) §4/§5/§7/§8 冻结 | Stage W2–W5 提交管线与输入形态锚点（非发布物） | Completed |
 | [M21](m21-context-curator-stage-w2.md) | Context Curator Stage W2——`IContextCurator` 契约与模型供给参考实现（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：快照 schema 1.1 加法扩展（五 Curator section + `generated_by`）、previous+checkpoint+recent events 增量 curation、provenance 绑定与退化防护、`ProviderContextCurator` 经 `IModelProvider` 供给（DEC-036 口径）、Supervisor Deferrable 路由） | M20；[Context Curator 设计](../design/context_curator_design.md) §4.2/§6/§13 与 M21 §4 冻结 | Stage W3 自动触发的输入形态锚点（非发布物） | Completed |
 | [M22](m22-working-context-stage-w3.md) | Context Curator Stage W3——Supervisor 自动触发（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：`WorkingContextTriggerPolicy` 双轴触发策略（序列水位 + 执行事件增量）、`WorkingContextAutoCurator` 每会话链 coalescing、task boundary forced flush、失败回退；全部经既有 Deferrable 路由，无隐藏后台循环） | M21；快照链长会话基线可复现（[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)）；[Context Curator 设计](../design/context_curator_design.md) §8/§13 与 M22 §4 冻结 | Stage W4 Memory promotion 与 Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
+| [M23](m23-memory-promotion-stage-w4.md) | Context Curator Stage W4——Memory Promotion（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆——`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级；宿主显式触发、泛型 Deferrable 路由；无模型） | M21（Stage W2 关闭）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M23 §4 冻结 | Stage W5 subagent fork/merge 与宿主集成轮的输入形态锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -492,6 +516,37 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     本地门禁 → PR CI」节奏关闭；`M7-01`–`M7-06` 重定义映射项全部有验证记录
     （详见 [M7 文件](m7-tools-evaluation-platform-v1.md) §9 末条）；推迟项
     按 DEC-042 保持推迟。
+
+16. DEC-035 Stage W4「Memory Promotion」立项与交付入口（2026-09-22）：M7
+    总里程碑关闭后，依总计划前注与 [M22](m22-working-context-stage-w3.md)
+    关闭记录点名的 DEC-035 下一阶段，经 [M23](m23-memory-promotion-stage-w4.md)
+    立项（`M23-01`）并跑前冻结契约语义、门禁 `W4-G1`–`G6` 与阶段冻结协议
+    必答八问 + 决策记录表：快照耐久语句（constraints / decisions /
+    verified_facts / failed_attempts 四 section）经 `MemoryConsolidator`
+    既有纪律晋升长期记忆——`MemoryConsolidator` 新增 `consolidate_candidates`
+    共享管线入口（管线体只保留一份，`consolidate()` 重构为其调用方）、
+    duplicate 判定收紧为"已存副本验证等级 ≥ 提案等级"以杜绝 `HumanConfirmed`
+    被 `Unverified` 晋升副本降级、晋升候选恒 `Unverified`+`model_assisted`+
+    `source_namespace="working-context"`、确定性 record id 从独立 seed 空间
+    派生（TR2 同款模式）、任务导向 section 与 `important_refs` 不晋升、宿主
+    显式触发经 `ContextMemorySupervisor::submit` 泛型 Deferrable 路由（不新增
+    Supervisor 方法）、无模型无 benchmark（RULE-10，门禁全部为契约测试）。
+    同日交付：测试由 Independent-Verification-Agent 两轮独立取证（16 case
+    W4-G1–G6；首轮抓到 `promote_working_context_to_memory` 将投影候选随管线
+    move 导致报告不可审计的缺陷——报告先接管投影、管线按拷贝消费，修复后
+    复验全绿；另冻结 §4.1 实现注记：空 evidence 丢弃分支经公共 API 不可达，
+    快照 `validate()` 先行整体拒绝）。本地门禁：debug 全量 ctest 92/92、
+    三 sanitizer 零报告、五检查（format 229 文件）、clang-tidy 零违例、
+    NDK 两 ABI 预演通过。同日：PR
+    [#67](https://github.com/Linductor-alkaid/mira/pull/67)（head `1f63632`）
+    双 pipeline 各 12/12 全绿（push
+    [`35679225851`](https://github.com/Linductor-alkaid/mira/actions/runs/35679225851)
+    / pull_request
+    [`35679247197`](https://github.com/Linductor-alkaid/mira/actions/runs/35679247197)）。
+    `M23-01`–`05` 与 `W4-G1`–`G6` 关闭，**Stage W4 交付完成（`Completed`）**；
+    证据与限制见 [M23 文件](m23-memory-promotion-stage-w4.md) 验证记录；
+    遗留：Stage W5（subagent fork/merge）、自动晋升触发与宿主集成接线、
+    真实模型接入与语义质量声明（归真实模型轮与 Stage E 证据通道）。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

@@ -4,7 +4,8 @@
 > `mira/context_retrieval.hpp`、`mira/memory_contracts.hpp`、
 > `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
-> `mira/stateful_replay.hpp`、`mira/context_curator.hpp`
+> `mira/stateful_replay.hpp`、`mira/context_curator.hpp`、
+> `mira/context_working_context_promotion.hpp`
 
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
@@ -58,6 +59,10 @@ Verified Event 到 Memory candidate 的确定性管道：
   `ConsolidationReport`（`CandidateDisposition` 含重复 no-op、禁止内容与注入拒绝、
   需人工审批的 Preference 类目）；`ConsolidationPolicy` / `IConsolidationModel` 控制
   可选的模型辅助路径，但模型文本不能绕过 policy、scope 与 authority 校验。
+- `MemoryConsolidator::consolidate_candidates(store, candidates, scope, now)`（M23）：
+  对预先抽取的候选执行与 `consolidate()` 相同的策略管线（不做事件抽取、不挂模型
+  钩子，候选 provenance 由调用方负责）；重复判定要求已存副本验证等级 ≥ 提案等级，
+  杜绝验证等级降级。`consolidate()` 即"抽取 + 模型增强 + 本入口"，管线体只有一份。
 
 ## provider_continuation.hpp
 
@@ -281,6 +286,36 @@ Supervisor 驱动的快照链自动维护（issue #48 方向的 Stage W3）：�
 - 评估证据：
   [auto-trigger 评估 v1](../benchmarks/context-intelligence-working-context-auto-trigger-v1.md)
   （W3-G1–G6 门禁；脚本化确定性供给方口径，RULE-10）。
+
+## context_working_context_promotion.hpp：Working Context Memory Promotion（M23，DEC-035 Stage W4）
+
+Working State Plane 进入长期 Memory 的唯一受控通道：快照中具有跨任务耐久价值的
+语句经确定性投影变为 `MemoryCandidate`，再走 `MemoryConsolidator` 既有纪律管线
+（marker 过滤、record 校验、scope 内冲突检索、duplicate 判定、人工审批、apply）。
+快照与 Curator 永不直接写 Memory；晋升是宿主显式操作（典型时点：任务终态边界），
+不是 curation 的自动副作用：
+
+- 冻结 section→kind 映射：`constraints`→`Preference`（默认落入人工审批门）、
+  `decisions`→`ApplicationFact`、`verified_facts`→`EnvironmentFact`、
+  `failed_attempts`→`RecoveryLesson`；任务导向 section（`active_tasks`/
+  `next_actions`/`open_issues`）与 `important_refs` 不晋升——投影函数读不到
+  它们，调用方无法把当前任务状态固化进长期记忆。
+- 晋升候选恒为 `Unverified` + `model_assisted` +
+  `source_namespace="working-context"`（模型介导派生投影，RULE-09，不可被调用方
+  覆盖），`evidence` 绑定 item 源事件 provenance；record id 从独立 seed 空间
+  确定性派生（同输入同 id，跨进程可复现）。
+- `WorkingContextPromotionPolicy`：`min_confidence`（默认 0.5，低于即丢弃并
+  计数）与 `max_candidates_per_run`（固定 section 顺序截断，丢弃计数不受影响）。
+- `promote_working_context_to_memory(consolidator, memory, snapshot, scope, now,
+  policy)`：投影 + 共享管线组合入口；报告同时携带投影产物（含候选与丢弃计数）
+  与管线 `ConsolidationReport`。scope 由宿主权威给定（ACL），Core 不发明
+  tenant/subject 策略。
+- 边界：晋升只读快照面（不写 store、不推水位）；`erase_session` 不触及已晋升
+  记录（受 Memory 侧 retention/erasure/approval 治理，跨 store 擦除编排是宿主
+  职责）；宿主经既有 `ContextMemorySupervisor::submit<T>(…, Deferrable, …)`
+  泛型路由执行，无新 Supervisor 方法。
+- 验证证据：`tests/m23/`（W4-G1–G6 契约门禁；无模型无数据集，无 benchmark
+  声明，RULE-10）。
 
 ## stateful_replay.hpp：AnalysisReplay
 

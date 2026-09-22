@@ -6,7 +6,10 @@
 > W2 `IContextCurator` 契约与模型供给参考实现已由
 > [M21](../plans/m21-context-curator-stage-w2.md) 承载并本地交付——
 > [curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)；
-> W3–W5 进入里程碑的门槛见 §13）
+> W3 自动触发已由 [M22](../plans/m22-working-context-stage-w3.md) 承载并交付；
+> W4 Memory Promotion 已由 [M23](../plans/m23-memory-promotion-stage-w4.md)
+> 承载并交付（2026-09-22 跑前冻结 + 同日交付，契约语义见其 §4）；
+> W5 进入里程碑的门槛见 §13）
 > 版本：0.2
 > 更新日期：2026-09-15
 > 负责人：Mira Maintainers
@@ -43,6 +46,15 @@ DEC-032 的 Stage B–D 已交付检索召回、重排对照与会话语义固�
    派生状态，生命周期绑定 task/session/epoch；跨任务知识仍只能经
    `MemoryConsolidator` 的 policy、scope、验证与人工审批管线进入长期记忆。
    Curator 可以产生 Memory candidate，不能直接写 Memory。
+   （2026-09-22 实现注记：Stage W4 交付该通道——
+   `memory_candidates_from_working_context` 确定性投影冻结 section→kind 映射
+   （constraints→Preference 审批门、decisions→ApplicationFact、
+   verified_facts→EnvironmentFact、failed_attempts→RecoveryLesson；任务导向
+   section 与 `important_refs` 不晋升），候选恒 `Unverified`+`model_assisted`+
+   `source_namespace="working-context"`，经 `MemoryConsolidator::
+   consolidate_candidates` 共享管线落库；重复判定收紧为"已存副本验证等级 ≥
+   提案等级"以杜绝降级；详见
+   [M23](../plans/m23-memory-promotion-stage-w4.md) §4。）
 
 ## 3. 三平面模型
 
@@ -299,7 +311,7 @@ E（miracle 真机评估）/ Stage F（提示压缩）并行不冲突、不占�
 | W1 | `WorkingContextSnapshot` 确定性契约（store、水位、digest、epoch、provenance、Layer 0 转换、恢复）——无模型，**已交付**（[M20](../plans/m20-working-context-stage-w1.md)，2026-09-14，基线见[working-context v1](../benchmarks/context-intelligence-working-context-v1.md)：W1-G1–G6 全绿、恢复 12/12 幂等重建、跨进程报告字节级一致） | M19 关闭（已满足）；设计/决策冻结 |
 | W2 | `IContextCurator` 契约 + model-backed 参考实现（StrictJsonSchema、provenance 绑定、fail-closed、previous-snapshot 增量输入）——**已交付**（[M21](../plans/m21-context-curator-stage-w2.md)，2026-09-15，基线见[curation v1](../benchmarks/context-intelligence-working-context-curation-v1.md)：W2-G1–G6 全绿、脚本化确定性供给方口径） | W1 关闭（已满足）；可用源模型供给（[DEC-036](../decisions/DEC-036-consolidation-model-supply.md)：经 `IModelProvider` 注入，含主 Agent 模型；不要求专用小模型，无新增供应链项）（已满足） |
 | W3 | Supervisor 自动触发：watermark / event count / task boundary 触发、coalescing、forced flush、失败回退——由 [M22](../plans/m22-working-context-stage-w3.md) 承载（2026-09-15 立项，触发策略随其 §4 跑前冻结） | W2 关闭（已满足）；快照链在长会话基线上可复现（已满足，[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)） |
-| W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律 | W2 关闭；Working Context 与长期 Memory 边界测试冻结 |
+| W4 | Memory Promotion：Curator 产生 Memory candidate，仍经 `MemoryConsolidator` 既有纪律——**已交付**（[M23](../plans/m23-memory-promotion-stage-w4.md)，2026-09-22 跑前冻结 + 同日交付：`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级、宿主显式触发经泛型 Deferrable 路由；W4-G1–G6 全绿，PR #67 CI 24/24） | W2 关闭（已满足）；Working Context 与长期 Memory 边界测试冻结（已满足，M23 §6 跑前冻结） |
 | W5 | Subagent fork / merge：快照 fork、局部 delta、curated result、parent merge policy | W4 关闭；多 Agent 工作流场景冻结 |
 
 每 Stage 进入实现前创建里程碑文件（不预分配编号），测试矩阵至少覆盖：正常完成、
