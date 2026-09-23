@@ -686,6 +686,40 @@ endfunction()
 mira_add_m25_test(mira_m25_loop_seam_test m25/m25_loop_seam_test.cpp)
 mira_add_m25_test(mira_m25_host_orchestration_test m25/m25_host_orchestration_test.cpp)
 
+# ---------------------------------------------------------------------------
+# M26 (DEC-037 Stage T1): the temporal-policy conditional-strategy minimal
+# deterministic closed loop - TemporalHistory bounded ring, ReactiveRule
+# schema v1 (mira.policy.rule.v1), ReactivePolicyRuntime step/lifecycle and
+# the induce -> adopt -> test -> promote -> replay evidence pipeline over a
+# frozen synthetic dataset. Gates T1-G1..G3 live in the tests/m26/
+# contract/lifecycle matrix (IVA-owned; split by the architecture
+# max-file-lines budget along the M24 precedent), T1-G4/G5 in the eval
+# harness with the pinned dataset digest and byte-identical pipeline
+# replays (M16-M20 convention). Labels integration;m26, TIMEOUT 120.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m26_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m26" TIMEOUT 120)
+endfunction()
+
+mira_add_m26_test(mira_m26_temporal_policy_test m26/m26_temporal_policy_test.cpp)
+# The gate matrix is split by responsibility across two translation units;
+# both link into the single target and the case table in
+# m26_temporal_policy_test.cpp drives all cases.
+target_sources(mira_m26_temporal_policy_test PRIVATE m26/m26_lifecycle.cpp)
+mira_add_m26_test(mira_m26_temporal_policy_eval m26/m26_temporal_policy_eval.cpp)
+
 mira_add_test(mira_working_context_host_test integration/working_context_host_test.cpp
     integration)
 

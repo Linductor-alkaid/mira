@@ -1,9 +1,11 @@
 # DEC-037：Temporal Policy——高频条件策略的经验固化方向
 
-> 状态：Accepted（方向冻结；实现未开始）
+> 状态：Accepted（方向冻结；Stage T1 已由 [M26](../plans/m26-temporal-policy-stage-t1.md)
+> 立项承载（2026-09-24），其实现进度见该里程碑）
 > 日期：2026-09-14
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #50](https://github.com/Linductor-alkaid/mira/issues/50)
+> 关联计划：[M26](../plans/m26-temporal-policy-stage-t1.md)（Stage T1）
 > 上位决策：[DEC-014](DEC-014-agent-harness-workflow-dual-plane.md)
 > 关联决策：[DEC-011](DEC-011-demo-first-external-validation.md)、
 > [DEC-029](DEC-029-memory-domains-and-learning-contracts.md)、
@@ -58,8 +60,9 @@ Mira 现有能力建立在"观察 → 理解 → 一次决策 → 执行 → 再
 - 不让 LLM/VLM 进入高频控制循环；不在无真机证据时宣称实时性（RULE-10）。
 - 不建立平行的第二套资产治理体系：策略资产与 Workflow Runtime 同层（版本化、审计、
   激活状态共享）。
-- 不改变既有里程碑状态；Stage T1 亦未立项，进入实现前须按规范新建里程碑文件并冻结
-  契约与门禁。
+- 不改变既有里程碑状态；Stage T1 曾未立项（2026-09-24 更新：已由
+  [M26](../plans/m26-temporal-policy-stage-t1.md) 立项并在其文件内冻结正式契约、
+  门禁与八问，本决策语义不变）；T2–T6 进入实现前仍须按规范新建里程碑文件。
 
 ## 备选方案
 
