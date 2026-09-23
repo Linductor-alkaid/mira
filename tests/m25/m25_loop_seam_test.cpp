@@ -355,8 +355,7 @@ int environment_epoch_gate_closes_in_supplier() {
     // it returns the empty state instead of the snapshot.
     constexpr std::uint64_t host_environment_epoch = 8;
     WorkingContextSupplier gated_supplier =
-        [&store, session,
-         host_environment_epoch]() -> Result<std::optional<WorkingContextSnapshot>> {
+        [&store, session]() -> Result<std::optional<WorkingContextSnapshot>> {
         auto latest = store.latest(session);
         if (!latest.has_value()) {
             return latest;
