@@ -424,6 +424,24 @@ if(MIRA_BUILD_TESTS)
     set_tests_properties(mira_stateful_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 
+# Working Context host integration example (M25, DEC-045): the reference host
+# for the AgentLoop snapshot supply seam — explicit W3/W4/W5 orchestration
+# (on_signal/flush, promotion submit, fork/merge) around a seam-wired loop
+# with the curation and promotion planes routed through the supervisor.
+add_executable(mira_working_context_host_consumer examples/working_context_host_consumer.cpp)
+target_link_libraries(mira_working_context_host_consumer PRIVATE
+    Mira::core Mira::simulator_adapter Mira::state_store executor::executor)
+target_include_directories(mira_working_context_host_consumer SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include")
+mira_enable_warnings(mira_working_context_host_consumer)
+mira_enable_sanitizers(mira_working_context_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_working_context_host_consumer_test
+             COMMAND mira_working_context_host_consumer)
+    set_tests_properties(mira_working_context_host_consumer_test
+                         PROPERTIES LABELS "consumer" TIMEOUT 60)
+endif()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(docs-check

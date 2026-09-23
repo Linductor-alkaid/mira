@@ -362,6 +362,18 @@ v1.0/v1.1 载荷读回保留原 `schema_version` 且 digest 逐位一致（DEC-0
   `mira_m24_fork_merge_eval` 冻结链确定性 harness，W5-G1–G6 门禁；无模型、
   无 benchmark 声明，RULE-10）。
 
+## 宿主集成轮消费面（M25，DEC-045）
+
+W1–W5 产物的 Runtime 生产消费者：`AgentLoop` 快照供给缝（契约见
+[Agent Loop API](model-agent-loop.md) 供给缝节与
+[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）。缝只读——
+经 `context_items_from_working_context` 的既有 Layer 0 转换消费当前会话**已提交**
+快照（身份对齐门槛 + 有界渲染 + 失败降级，未注入零漂移）；写侧纪律全部归上述
+既有管线（curation/commit/merge），缝不绕过、不豁免、不新增写路径。W3 信号、
+W4 晋升与 W5 fork/merge 的宿主显式调用序由参考宿主
+`examples/working_context_host_consumer.cpp` 示范；本手册 W3/W4/W5 节的语义
+零改动。
+
 ## stateful_replay.hpp：AnalysisReplay
 
 只读分析回放：`AnalysisReplay(events, checkpoints, memory, artifacts).inspect(task,
@@ -373,3 +385,7 @@ Network/Tool/Input 能力，不加载真实 Provider continuation。
 
 - [Context 与 Memory 架构设计](../design/context_and_memory_design.md)
 - [Stateful agent beta 发布说明](../releases/stateful-agent-beta.md)
+- [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)、
+  [M25：宿主集成轮](../plans/m25-host-integration-round.md)、
+  [参考宿主示例](../../examples/working_context_host_consumer.cpp)
+  （`mira_working_context_host_consumer`，consumer 门禁离线可跑）

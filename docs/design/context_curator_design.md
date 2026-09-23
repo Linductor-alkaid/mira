@@ -14,8 +14,14 @@
 > 流场景边界冻结于
 > [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)——
 > subagent 为父会话旁的子 Session、fork = 子会话基线 + 溯源、merge policy
-> 为机械确定性合并；契约语义随 M24 §4））
-> 版本：0.3
+> 为机械确定性合并；契约语义随 M24 §4）；
+> 下游宿主集成轮（W1–W5 产物的 Runtime 消费面）已由
+> [M25](../plans/m25-host-integration-round.md) 承载并交付（2026-09-23 立项
+> + 同日交付关闭，PR #69 CI 24/24：接线形态冻结于
+> [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)——
+> Agent Loop 快照供给缝经 §7 的 Layer 0 转换注入已提交快照（§7 实现注记），
+> W3/W4/W5 保持宿主显式编排；契约语义随 M25 §4））
+> 版本：0.5
 > 更新日期：2026-09-23
 > 负责人：Mira Maintainers
 > 上位设计：[Context Intelligence 设计](context_intelligence_design.md)、
@@ -237,6 +243,14 @@ W1 不引入新的 `ContextItemKind`：快照 section 与 checkpoint 语句在 W
 复用既有 kind 保持"不修改 StandardContextManager 与 Layer 0 既有语义"的纪律；
 W2 快照内容与 checkpoint 语句分道后，如需独立审计粒度，再以加法式变更引入专用
 kind。宿主应择一喂给 Layer 0（快照或 checkpoint），不做去重承诺。
+
+（2026-09-23 实现注记：本转换的首个 in-Loop 消费者已随
+[M25](../plans/m25-host-integration-round.md) 交付——`AgentLoop` 快照供给缝
+（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）在
+`build_request` 中消费本转换产物，渲染为单一带标签块（来源标签
+`mira.agent-loop.working-context.v1`，User 角色，固定 section 声明序 +
+条目序，超界截断并标注），Loop 不发明第二套转换；契约面见 M25 §4.2 与
+[API 手册](../api/model-agent-loop.md) 供给缝节。）
 
 ## 8. Executor 路由与调度（W1 部分）
 

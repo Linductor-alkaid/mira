@@ -136,6 +136,9 @@
   [DEC-019](DEC-019-workflow-ir-contract.md)（扩展位声明）、
   [DEC-002](DEC-002-public-contract-versioning.md)（schema 1.2 加法 minor）
 - [M24：Context Curator Stage W5——Subagent Fork / Merge](../plans/m24-context-curator-stage-w5.md)
+- [DEC-045](DEC-045-agent-loop-working-context-seam.md)、
+  [M25：宿主集成轮](../plans/m25-host-integration-round.md)（子代理 Loop 经
+  供给缝消费子链已提交快照；fork/merge 维持宿主显式编排，零自动化零触碰）
 - [M23](../plans/m23-memory-promotion-stage-w4.md)（W4 关闭前置与晋升边界）、
   [M20](../plans/m20-working-context-stage-w1.md)（五元组/epoch 语义）、
   [M21](../plans/m21-context-curator-stage-w2.md)（W2 指令契约与 supersede
