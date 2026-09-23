@@ -1,7 +1,8 @@
 # M26：Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环
 
-> 状态：In Progress（2026-09-24 立项并跑前冻结（`M26-01` 交付）；实现按 §7 工作项
-> 自 `M26-02` 起推进，门禁验证完成前工作项保持未勾选）
+> 状态：Completed（2026-09-24 立项并跑前冻结、同日交付关闭；`T1-G1`–`G6` 全绿，
+> [PR #70](https://github.com/Linductor-alkaid/mira/pull/70) CI 24/24 全部 SUCCESS，
+> 详见 §9 验证记录）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（[DEC-037](../decisions/DEC-037-temporal-policy.md)
 > Stage T1；Temporal Policy 链的首个交付轮）
@@ -13,7 +14,7 @@
 > 平台 Adapter 宿主接入须先补专项决策、DEC-038/DEC-041 首阶段须先做词表对齐，
 > 经计划核对 T1 为唯一无外部依赖且准备面完整的入口）
 > 建议发布点：非发布物；Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点
-> 更新日期：2026-09-24（立项并跑前冻结）
+> 更新日期：2026-09-24（立项并跑前冻结、同日交付关闭）
 
 ## 1. 目标
 
@@ -583,7 +584,7 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
 注册沿 M24/M25 先例新增 `mira_add_m26_test` 函数（link `Mira::core` +
 `executor::executor`，label `integration;m26`，TIMEOUT 120）。
 
-- [ ] `T1-G1` 契约与序列化（`tests/m26/m26_temporal_policy_test.cpp`，label
+- [x] `T1-G1` 契约与序列化（`tests/m26/m26_temporal_policy_test.cpp`，label
   `integration;m26`）：`TemporalHistory` 环语义——append 序列严格推进（回归 →
   `HistorySequenceNotAdvancing`）、容量逐出最旧、`digest()` 跨实例一致；
   `TrackedEntity`/`PolicyWorldView`/`PolicyRuntimeOptions`/`TemporalHistoryOptions`
@@ -597,7 +598,7 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
   `policy_event_schema_name` 逐类精确名断言 + 每类构造一次的载荷键集恰为 §4.4
   事件表冻结清单（canonical 序列化跨进程字节一致）；`TemporalHistoryEntry::
   source_digest` 在两条构造路径（step 累计 / rebuild 重放）下恒空串断言。
-- [ ] `T1-G2` step 评估语义（同文件）：未激活状态零评估零事件；tick 非单调拒绝
+- [x] `T1-G2` step 评估语义（同文件）：未激活状态零评估零事件；tick 非单调拒绝
   且零状态变更零事件；匹配固定序（priority 升序、rule_id 字典序，含同 priority
   用例）；恰一匹配 → `RuleTriggered` + 动作集；多匹配 → 冲突 fail-closed（零动
   作 + `RuleConflicted` + `PolicyEscalatedToAgent` + 匹配规则全体降级 Candidate
@@ -606,7 +607,7 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
   纯 `Fact` 条件规则（手编）匹配 → `RuleTriggered` 且载荷 `entity_key` 为空串
   （键在、符合事件表键集）；`entities` 为空时含实体作用域条件的规则零匹配零事
   件；帧 `rule_id` 分型与帧 `tick` 取值按 §4.4 帧/载荷分工逐类断言。
-- [ ] `T1-G3` 归纳/测试/晋升生命周期（同文件；超行数预算时按 M24 先例拆分
+- [x] `T1-G3` 归纳/测试/晋升生命周期（同文件；超行数预算时按 M24 先例拆分
   lifecycle TU 并在验证记录留痕）：锚实体选择确定性（实体序首个 motion 非空）；
   `min_support` 之下零候选；`agent_handled=false` 样本不参与归纳；候选规范阈值
   形式逐字段断言（自覆盖 Ge/Ge/Le + 支持集极值；支持集边界相位值触发断言）；
@@ -618,7 +619,7 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
   （§4.4：Runtime→Candidate demote、Runtime\|Candidate→Retired retire、越界
   `RuleStateInvalid` 且规则集不变零事件）、retire 终态幂等 NoOp（零事件）、
   `RuleCandidateInduced` 采纳点恰一发射且重复采纳不重发。
-- [ ] `T1-G4` 重建与跨进程确定性（`tests/m26/m26_temporal_policy_eval.cpp`，
+- [x] `T1-G4` 重建与跨进程确定性（`tests/m26/m26_temporal_policy_eval.cpp`，
   label `integration;m26`）：冻结确定性数据集（digest 在 harness 内常量锚定并
   断言，场景 = 设计 §6.1 示例域：`heavy_slash_a` 相位过阈 + 距离过近 → dodge，
   含否定样本与保留测试分部）；`rebuild_temporal_histories` 与 runtime 累计器
@@ -626,7 +627,7 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
   参数来自 runtime 实例）；完整管线重放（induce → adopt → test → promote）两遍 →
   规则集 digest、测试报告 digest 与 `--report` 全部字节一致；`--report` 跨进程/
   跨构建树字节一致（M16–M20 口径）。
-- [ ] `T1-G5` 确定性闭环端到端（同文件，设计 §12 T1 证明）：训练分部脚本 Agent
+- [x] `T1-G5` 确定性闭环端到端（同文件，设计 §12 T1 证明）：训练分部脚本 Agent
   处理重复模式 → 归纳候选 → 测试晋升 → 重放分部同一模式由 Runtime 规则执行
   （`agent_handled=false`）且动作与 Agent 历史动作一致、`RuleTriggered` 事件在
   案（重放样本含支持集边界相位值——Ge 阈值自覆盖的直接断言；数据集满足 §4.4
@@ -636,33 +637,33 @@ Error make_temporal_policy_error(TemporalPolicyDomainCode code, std::string safe
   指标为管线行为指标，报告不含任何实时性/语义质量声明（RULE-10）；harness 编排
   任务经 `executor.submit_auto` 托管且 future 被消费；runtime 全程零自建线程/
   定时器/注册循环（行为断言）。
-- [ ] `T1-G6` 文档同步与契约四件套：API 手册新页 `docs/api/temporal-policy.md`
+- [x] `T1-G6` 文档同步与契约四件套：API 手册新页 `docs/api/temporal-policy.md`
   + `docs/api/index.md` 模块地图行；术语表新词条（Temporal Policy / ReactiveRule /
   PolicyRuntime，与 PolicyEngine/WorkflowPolicy 消歧）；设计文档实现注记（草案 →
   正式契约偏差清单：TrackedEntity 不内嵌 history、`WorldState` →
   `PolicyWorldView`、`PolicyTransitioned` 归 T5、事件 T1 子集）；README 能力表
   行；[DEC-037](../decisions/DEC-037-temporal-policy.md) 关联回填；总计划同步。
-- [ ] 本地门禁：debug 全量 ctest 全绿（含新增 m26 两目标）、ASAN/UBSAN/TSAN 新
+- [x] 本地门禁：debug 全量 ctest 全绿（含新增 m26 两目标）、ASAN/UBSAN/TSAN 新
   增目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check`/`architecture-check` 通过、clang-tidy 预检被改库源编译单元
   （`temporal_policy.cpp` 等）零违例、本机 NDK 两 ABI 交叉编译预演通过；既有
   套件零回归（新表面纯加法，无既有契约改动）。
-- [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录并
+- [x] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录并
   关闭本阶段。
 
 ## 7. 工作项
 
-- [ ] `M26-01` 阶段立项与本文件 §4/§5/§6/§7 冻结（时间戳先于任何实现与测试）。
-- [ ] `M26-02` 契约与实现：`include/mira/temporal_policy.hpp` +
+- [x] `M26-01` 阶段立项与本文件 §4/§5/§6/§7 冻结（时间戳先于任何实现与测试）。
+- [x] `M26-02` 契约与实现：`include/mira/temporal_policy.hpp` +
   `src/temporal/temporal_policy.cpp`（入 `mira_core`），按 §4 冻结语义实现；
   core 模块零 policy 差异；clang-tidy 预检零违例。
-- [ ] `M26-03` 契约/生命周期测试矩阵（§6 `T1-G1`–`T1-G3`，`tests/m26/`，CMake
+- [x] `M26-03` 契约/生命周期测试矩阵（§6 `T1-G1`–`T1-G3`，`tests/m26/`，CMake
   注册 label `integration;m26`）——测试的编写、运行与 sanitizer 取证由
   Independent-Verification-Agent 独立完成并复验。
-- [ ] `M26-04` 确定性闭环评估 harness（§6 `T1-G4`–`T1-G5`，
+- [x] `M26-04` 确定性闭环评估 harness（§6 `T1-G4`–`T1-G5`，
   `tests/m26/m26_temporal_policy_eval.cpp`，数据集 digest 锚定 + 跨进程一致）——
   同由 Independent-Verification-Agent 独立完成并复验。
-- [ ] `M26-05` 文档同步（§6 `T1-G6` 清单）+ 本地全门禁与 PR CI 取证回填；
+- [x] `M26-05` 文档同步（§6 `T1-G6` 清单）+ 本地全门禁与 PR CI 取证回填；
   全部工作项与门禁复核通过后本里程碑转 `Completed`。
 
 ## 8. 风险与阻塞
@@ -889,3 +890,29 @@ reason 闭集、retire 终态幂等 NoOp）、`rebuild_temporal_histories` 只�
   条目设 y=2x，rebuild 输入实体并不满足）；修复方向：夹具 position_y 改 10.0
   或删除该断言。两项修复前契约矩阵目标（T1-G1..G3）无法链接运行；eval 目标
   （T1-G4/G5）本轮已可编译执行。
+
+2026-09-24（第七次，关闭）：`M26-05` 完成——
+[PR #70](https://github.com/Linductor-alkaid/mira/pull/70)（head `251e6a8d`，
+提交 `6c753d5` 立项冻结 + `M26-02` 契约与实现 + IVA 测试矩阵、`251e6a8`
+CI 修复）CI 24/24 全部 SUCCESS：linux（gcc/clang × Debug/Release）、windows
+（Debug/Release）、android（arm64/x86_64 NDK 交叉）、sanitizers
+（ASAN/UBSAN/TSAN）与 quality 管线全绿，push run（35918141870）与 PR run
+（35918147676）均 success，即 §6 本地门禁条目所列各面（sanitizer、clang-tidy
+强门禁、NDK 两 ABI 交叉编译——来自 CI android 任务而非另行本机预演、既有套件
+零回归）由 CI 全量复跑证实。前两轮 CI 失败均已收敛：首轮 linux gcc Release
+checkout 步骤 TLS 证书验证基础设施抖动（job 107364874490，`server certificate
+verification failed`，非代码）；次轮 clang Debug/Release 于
+`m26_lifecycle.cpp:360` 报 `-Wstring-conversion`（字符串字面量隐式转 bool，
+gcc 无此检查），按 `MIRA_CHECK` 打印语义等价的 `std::cerr` + `return 1` 习语
+修复（`251e6a8`），重跑后全绿。`T1-G1`–`T1-G6` 与 `M26-01`–`M26-05` 全部勾选，
+里程碑转 `Completed`。`T1-G6` 文档同步交付面：API 手册新页
+`docs/api/temporal-policy.md` + `docs/api/index.md` 模块地图行、术语表
+「Temporal Policy / ReactiveRule / PolicyRuntime」词条（与 PolicyEngine/
+WorkflowPolicy 消歧）、[Temporal Policy 设计](../design/temporal_policy_design.md)
+§16 实现注记（草案 → 正式契约偏差清单）、README 能力表行、
+[DEC-037](../decisions/DEC-037-temporal-policy.md) 交付状态回填、总计划同步。
+遗留（非本阶段范围，维持 §2 非目标留痕）：真机感知（T2/T3）与连续控制注入
+（T6）受 DEC-011 门禁（`MNT-202609-27` 证据通道）；Workflow 激活/停用通道、
+EventStore 事件桥接、HSM/BT 后端与自动治理（T5）、Agent Rule Induction 全管线
+（T4）随各自立项独立冻结；规则触发非授权语义（RULE-09）与实时性声明封禁
+（RULE-10/T6 门禁）继续有效。

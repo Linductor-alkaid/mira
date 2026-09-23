@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.1
-> 更新日期：2026-09-23
+> 版本：1.2
+> 更新日期：2026-09-24
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -278,3 +278,26 @@ _Avoid_: 驱动、插件
 `MIRA_DEFINE_ID` 生成的不可互换 128-bit 标识；`TaskEpoch`、
 `EnvironmentEpoch` 等单调计数器不是 ID。
 _Avoid_: 整数句柄、字符串拼接 ID
+
+## 9. Temporal Policy（DEC-037 / M26）
+
+权威来源：[Temporal Policy 设计](../design/temporal_policy_design.md)、
+[M26 里程碑](../plans/m26-temporal-policy-stage-t1.md) §4 冻结契约。
+
+**Temporal Policy（时序条件策略）**:
+把 Agent 低频探索中经重复验证的模式固化为本地确定性条件策略的机制
+（DEC-037 Stage T1 由 M26 交付）；与 `PolicyEngine`（安全授权决策）、
+`WorkflowPolicy`（Workflow 执行策略闭集）是不同层的三个概念，无继承、
+替代或豁免关系。
+_Avoid_: 策略引擎（授权语义）、实时性策略（实时性归 T6 门禁）
+
+**ReactiveRule（反应式规则）**:
+`mira.policy.rule.v1` 的闭集谓词规则资产：provenance 必备（RULE-07）、
+经 Candidate → Testing → Runtime 证据晋升（RULE-10）、触发不是授权
+（RULE-09 延伸）。
+_Avoid_: 手写 if 分支（无 provenance 与生命周期的裸规则）
+
+**PolicyRuntime（策略运行时）**:
+`ReactivePolicyRuntime` 承载的确定性评估与宿主显式生命周期（归纳/采纳/
+测试/晋升/降级/退役）；每 tick 有界同步、不读系统时钟、不建线程。
+_Avoid_: 状态机引擎（HSM/BT 归 T5）、自治治理（晋升无自动面）

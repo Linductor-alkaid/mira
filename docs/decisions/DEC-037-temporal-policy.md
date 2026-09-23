@@ -1,7 +1,7 @@
 # DEC-037：Temporal Policy——高频条件策略的经验固化方向
 
 > 状态：Accepted（方向冻结；Stage T1 已由 [M26](../plans/m26-temporal-policy-stage-t1.md)
-> 立项承载（2026-09-24），其实现进度见该里程碑）
+> 承载并交付关闭（2026-09-24，[PR #70](https://github.com/Linductor-alkaid/mira/pull/70)）；T2–T6 逐阶段另行立项）
 > 日期：2026-09-14
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #50](https://github.com/Linductor-alkaid/mira/issues/50)
