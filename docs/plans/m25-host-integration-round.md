@@ -1,6 +1,7 @@
 # M25：宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（Working Context 的首个 Runtime 生产消费者）
 
-> 状态：Planned（2026-09-23 立项，工作项与门禁跑前冻结；实现未开始）
+> 状态：Completed（2026-09-23 立项并交付关闭；`HI-G1`–`G6` 全绿，
+> [PR #69](https://github.com/Linductor-alkaid/mira/pull/69) CI 24/24 全绿）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（DEC-035 链的下游
 > 消费轮；接线形态与边界见
@@ -15,7 +16,7 @@
 > 本文件 §4 承载其契约面）
 > 建议发布点：非发布物；产出 Agent Loop 快照供给缝契约与宿主编排参考（真实
 > 模型轮与 Stage E 评估矩阵的接线前提）
-> 更新日期：2026-09-23（立项）
+> 更新日期：2026-09-23（立项并交付关闭）
 
 ## 1. 目标
 
@@ -297,21 +298,28 @@ void set_working_context_supplier(WorkingContextSupplier supplier,
   快照条目 → 任务边界 flush → 终态 → 晋升，事件审计在案；子代理闭环——
   fork 基线 → 子 Loop 会话注入子链快照 → 子返回 → 父合并 → 父下一请求含
   合并条目；seam 降级场景在闭环中可见（诊断事件）。
-- [ ] `HI-G6` 参考宿主与文档（`examples/working_context_host_consumer.cpp`，
+- [x] `HI-G6` 参考宿主与文档（`examples/working_context_host_consumer.cpp`，
   CMake 注册 label `consumer`、离线 `TIMEOUT 60`，失败非零退出）：最小宿主
   端到端跑通（session + Loop + 供给缝 + supervisor + auto curator + store
   + fork/merge + 晋升，scripted provider）；文档同步完成——API 手册
   `docs/api/model-agent-loop.md` 供给缝条目、`docs/api/context-memory.md`
   交叉引用、README 能力表、总计划、[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)
   关联回填、Context Curator 设计实现注记、术语表（如需新词条）。
-- [ ] 本地门禁：debug 全量 ctest 全绿（含新增 m25 两目标 + 集成目标 +
+- [x] 本地门禁：debug 全量 ctest 全绿（含新增 m25 两目标 + 集成目标 +
   consumer 目标）、ASAN/UBSAN/TSAN 新增目标零报告、`format-check`/
   `docs-check`/`platform-boundary-check`/`sbom-check`/`architecture-check`
   通过、clang-tidy 预检被改库源编译单元（`agent_loop.cpp` 等）零违例、本
   机 NDK 两 ABI 交叉编译预演通过；既有 m3（AgentLoop 既有套件）与 m20–m24
-  套件零回归（缝为加法，未注入路径零漂移由 HI-G1 首项断言背书）。
-- [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
-  并关闭本阶段。
+  套件零回归（缝为加法，未注入路径零漂移由 HI-G1 首项断言背书）。本地取
+  证为针对性（debug 构建零警告、`docs-check` OK、`ctest -R consumer` 4/4、
+  m25+集成 4/4、m3 两套件回归全绿；§9 第三次记录）；sanitizer、clang-tidy
+  强门禁与 NDK 交叉编译面按冻结口径由 [PR #69](https://github.com/Linductor-alkaid/mira/pull/69)
+  CI 管线全量复跑取证（见下条），本记录不另行声明本地 sanitizer/NDK 取证。
+- [x] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录
+  并关闭本阶段。[PR #69](https://github.com/Linductor-alkaid/mira/pull/69)
+  （head `4abf8ee`）CI 24/24 全部 SUCCESS：linux（gcc/clang × Debug/Release）、
+  windows（Debug/Release）、android（arm64/x86_64 NDK 交叉）、sanitizers
+  （ASAN/UBSAN/TSAN）与 quality 管线全绿。
 
 ## 7. 工作项
 
@@ -327,10 +335,10 @@ void set_working_context_supplier(WorkingContextSupplier supplier,
 - [x] `M25-04` 单系统闭环集成测试（§6 `HI-G5`，
   `tests/integration/working_context_host_test.cpp`，`mira_add_test` label
   `integration`）——同由 Independent-Verification-Agent 独立完成并复验。
-- [ ] `M25-05` 参考宿主示例（§6 `HI-G6`，
+- [x] `M25-05` 参考宿主示例（§6 `HI-G6`，
   `examples/working_context_host_consumer.cpp`，CMake 注册 label
   `consumer`、离线可跑）。
-- [ ] `M25-06` 文档同步（`M25-04`–`05` 清单）+ 本地全门禁与 PR CI 取证回
+- [x] `M25-06` 文档同步（`M25-04`–`05` 清单）+ 本地全门禁与 PR CI 取证回
   填。
 
 ## 8. 风险与阻塞
@@ -449,3 +457,24 @@ clang-tidy、NDK 两 ABI）与 PR CI 取证回填（统一门禁跑）；`M25-05
 `ctest --preset debug -R consumer` → 4/4 全绿（含新增 consumer 目标）；
 `mira_working_context_host_consumer` 独立运行输出 `working context host
 example: OK`（退出码 0）。
+
+2026-09-23（第四次，关闭）：`M25-06` 完成——
+[PR #69](https://github.com/Linductor-alkaid/mira/pull/69)（head `4abf8ee`，
+提交 `4afff9f` 立项冻结 + `4abf8ee` CI 修复）CI 24/24 全部 SUCCESS：linux
+（gcc/clang × Debug/Release）、windows（Debug/Release）、android（arm64/
+x86_64 NDK 交叉）、sanitizers（ASAN/UBSAN/TSAN）与 quality 管线全绿，双
+push run（35819755432/35819758151）均 success，即 §6 本地门禁条目所列各面
+（sanitizer、clang-tidy 强门禁、NDK 两 ABI 交叉、既有 m3 与 m20–m24 套件
+回归）由 CI 全量复跑证实。首轮 CI 失败（linux clang Debug：`m25_loop_seam_test.cpp:359`
+对 constexpr 变量的多余 lambda 捕获，clang `-Wall` 的
+`-Wunused-lambda-capture` + `-Werror` 编译失败、gcc 无此检查）经升级裁决
+授权对 IVA 测试文件做单行语义中性修复（捕获列表移除该 constexpr 变量，
+CI job 107036229900 日志取证），复跑全绿。`HI-G1`–`G6` 与 `M25-01`–`M25-06`
+全部勾选，里程碑转 `Completed`。交付面：`include/mira/agent_loop.hpp`/
+`src/model/agent_loop.cpp` 供给缝加法扩展、`tests/m25/` + `tests/integration/
+working_context_host_test.cpp` 门禁矩阵（IVA 所有）、
+`examples/working_context_host_consumer.cpp` 参考宿主、契约四件套文档。
+遗留（非本阶段范围，维持 §2 非目标留痕）：Loop 内自动化（W3 触发/W4 晋升/
+W5 fork-merge 的自动化须各自上位决策）、平台 Adapter 宿主接入、真实模型
+canary 与语义质量声明（归真实模型轮与 Stage E，`MNT-202609-27` 证据通道，
+RULE-10）。

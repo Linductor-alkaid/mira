@@ -16,11 +16,12 @@
 > subagent 为父会话旁的子 Session、fork = 子会话基线 + 溯源、merge policy
 > 为机械确定性合并；契约语义随 M24 §4）；
 > 下游宿主集成轮（W1–W5 产物的 Runtime 消费面）已由
-> [M25](../plans/m25-host-integration-round.md) 立项（2026-09-23，接线形态
-> 冻结于 [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：
-> Agent Loop 快照供给缝经 §7 的 Layer 0 转换注入已提交快照，W3/W4/W5 保持
-> 宿主显式编排））
-> 版本：0.4
+> [M25](../plans/m25-host-integration-round.md) 承载并交付（2026-09-23 立项
+> + 同日交付关闭，PR #69 CI 24/24：接线形态冻结于
+> [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)——
+> Agent Loop 快照供给缝经 §7 的 Layer 0 转换注入已提交快照（§7 实现注记），
+> W3/W4/W5 保持宿主显式编排；契约语义随 M25 §4））
+> 版本：0.5
 > 更新日期：2026-09-23
 > 负责人：Mira Maintainers
 > 上位设计：[Context Intelligence 设计](context_intelligence_design.md)、
