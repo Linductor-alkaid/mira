@@ -120,4 +120,7 @@ Memory / Layer 0 的边界如何划定，以及如何与 DEC-032 的 Stage E/F �
 - [DEC-032](DEC-032-context-intelligence-layered-context.md)、
   [M19](../plans/m19-context-intelligence-stage-d.md)（五元组提交纪律与
   Provider 语义组件范式的来源）
+- [DEC-045](DEC-045-agent-loop-working-context-seam.md)、
+  [M25：宿主集成轮](../plans/m25-host-integration-round.md)（W1–W5 产物的
+  Runtime 生产消费者：Agent Loop 快照供给缝，只读消费已提交快照）
 - [Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)

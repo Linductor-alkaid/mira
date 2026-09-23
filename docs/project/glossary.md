@@ -207,6 +207,12 @@ _Avoid_: 附件（无版本与摘要语义）
 份 Memory。
 _Avoid_: 会话记忆、缓存
 
+**Supply Seam（供给缝）**:
+Agent Loop 的可选只读快照供给依赖（DEC-045/M25）：宿主注入回调，请求
+装配时经 Layer 0 转换消费当前会话已提交快照；只读、零自动化，写侧
+纪律归既有提交管线。
+_Avoid_: 自动接线（Loop 内自动化须上位决策）、第二写路径
+
 **Subagent（子代理）**:
 父会话旁由宿主创建的子 Session 中运行的推理角色代理（Developer/Test/
 Review 等，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；

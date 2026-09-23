@@ -159,6 +159,36 @@ loop.set_tool_registry(registry);
   `mira.agent-loop.user-message.v1`）。**脱敏责任在宿主**：入队文本原样进入事件存储
   与模型请求，凭据、输入法敏感内容必须在入队前移除。
 
+## agent_loop.hpp：Working Context 快照供给缝（M25，DEC-045）
+
+`AgentLoop` 的可选只读依赖：宿主注入「取当前会话已提交快照」回调后，
+`build_request` 每步恰一次消费它，把已提交快照经 Layer 0 唯一转换
+（`context_items_from_working_context`）渲染为带标签块（provenance
+`mira.agent-loop.working-context.v1`，User 角色，UntrustedExternalData 纪律，
+RULE-09）进入请求——置于用户上下文块之后、工具结果块之前。未注入回调时请求
+装配与无缝形态逐字节一致（M3 契约的加法扩展）：
+
+```cpp
+loop.set_working_context_supplier(
+    [&store, session_id] { return store.latest(session_id); },
+    WorkingContextSeamOptions{});   // 渲染上界：32 条 / 8 KiB 文档化默认值
+```
+
+- **身份对齐门槛**：快照 `session_id`/`task_id`/`task_epoch` 与当前
+  `AgentLoopSpec` 任务帧完全一致才注入；任一不一致本步跳过注入并计一次诊断
+  事件（`WorkingContextSeamSkipped`）。环境纪元不比较——Loop 不持有该值、M3
+  契约不为此扩面；需要环境纪元门控的宿主在**供给回调内闭合**（回调闭包当前
+  环境纪元，失配返回空 optional 即正常空态），快照条目的 epoch 标注照常随
+  渲染进入请求（可审计）。
+- **有界渲染**（RULE-08）：超出 `max_items`/`max_chars` 按转换输出固定顺序
+  （section 声明序 + 条目序）截断并追加 `[working context truncated]` 标注。
+- **降级**：回调返回错误或抛出异常 → 本步请求不含快照条目 + 一次
+  `WorkingContextSeamDegraded` 诊断事件（异常文本不进入事件面），循环继续，
+  下一步恢复注入；空 store（空 optional）是正常空态，零条目零诊断。
+- **零自动化**：Loop 不发 W3 信号、不触发晋升、不调用 fork/merge——W3/W4/W5
+  全部宿主显式编排（[Context 与 Memory API](context-memory.md) 对应节；参考
+  宿主 `examples/working_context_host_consumer.cpp` 示范完整调用序）。
+
 ## conversation_log.hpp：会话对话投影
 
 [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) 的投影 API：

@@ -656,6 +656,40 @@ target_sources(mira_m24_fork_merge_test PRIVATE m24/m24_fork_merge_lifecycle.cpp
 mira_add_m24_test(mira_m24_fork_merge_eval m24/m24_fork_merge_eval.cpp)
 
 # ---------------------------------------------------------------------------
+# M25 (DEC-045): the host-integration round - the AgentLoop Working Context
+# snapshot supply seam (zero-drift injection, identity gate, bounded
+# rendering, degradation) and the explicit host orchestration of the W3/W4/W5
+# surfaces over the existing pipelines. Gates HI-G1..G4 live in the
+# tests/m25/ contract/lifecycle matrix (IVA-owned), HI-G5 in
+# tests/integration/working_context_host_test.cpp and HI-G6 in
+# examples/working_context_host_consumer.cpp (label consumer). The compile
+# definition below anchors the symbol-level zero-automation scan at the
+# product sources.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m25_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core executor::executor)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    target_compile_definitions(${name} PRIVATE M25_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m25" TIMEOUT 120)
+endfunction()
+
+mira_add_m25_test(mira_m25_loop_seam_test m25/m25_loop_seam_test.cpp)
+mira_add_m25_test(mira_m25_host_orchestration_test m25/m25_host_orchestration_test.cpp)
+
+mira_add_test(mira_working_context_host_test integration/working_context_host_test.cpp
+    integration)
+
+# ---------------------------------------------------------------------------
 # M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability
 # catalog, fail-closed manifest parsing and deterministic negotiation. Pure
 # computation over caller-supplied data; gates M7-TM0-G1..G5 live in the test,

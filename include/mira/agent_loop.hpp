@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mira/context_working_context.hpp>
 #include <mira/environment.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
@@ -9,6 +10,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -98,6 +100,25 @@ struct AgentLoopSpec final {
     ModelProfileId profile_id;
 };
 
+// M25 (DEC-045): rendering bounds for the optional Working Context supply
+// seam (RULE-08, documented defaults). Content beyond a bound is dropped in
+// the fixed Layer 0 conversion order (section declaration order, then entry
+// order) and a truncation marker is appended.
+struct WorkingContextSeamOptions final {
+    std::size_t max_items = 32;
+    std::size_t max_chars = 8'192;
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
+// Read-only snapshot supply callback, resolved exactly once per assembled
+// request. A nullopt payload is the normal empty state (no committed snapshot
+// for the session); an Error result is a supply failure that degrades to a
+// visible diagnostic instead of blocking the loop. Store access and any extra
+// gating the host requires (e.g. an environment epoch it observed) close
+// inside the callback.
+using WorkingContextSupplier = std::function<Result<std::optional<WorkingContextSnapshot>>()>;
+
 // Drives Observe -> Reason -> Plan -> Act -> Verify over one environment and
 // the model gateway. Each iteration is a bounded work unit; cancellation,
 // admission rejection and terminal states stop the loop before any new
@@ -115,6 +136,18 @@ class AgentLoop final {
 
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
+
+    // M25 (DEC-045): attaches the optional read-only snapshot supply seam and
+    // its rendering bounds. Without a supplier, request assembly stays
+    // unchanged byte for byte. With one, each assembled request resolves the
+    // callback exactly once and renders the session's committed snapshot —
+    // only when it describes exactly this task frame (session / task /
+    // task_epoch identity gate) — as a labeled block between the user context
+    // block and the tool result block. Supply failures degrade to a visible
+    // diagnostic and never block the loop. Wire once before run(), like the
+    // other setters.
+    void set_working_context_supplier(WorkingContextSupplier supplier,
+                                      WorkingContextSeamOptions options = {});
 
     // Queues one user message for injection at the next step boundary.
     // Rejects when the bounded queue is full or the message is empty. Text is
@@ -139,6 +172,12 @@ class AgentLoop final {
     // appends the texts to the standing instructions for this run.
     void drain_user_messages(const AgentLoopSpec &spec,
                              std::vector<std::string> &user_instructions);
+    // Consumes the supply seam once (M25/DEC-045) and returns the labeled
+    // snapshot block for this step; nullopt when nothing is injected (no
+    // supplier attached, normal empty state, identity mismatch, degraded
+    // supply — the last two each leave one diagnostic on the event surface).
+    [[nodiscard]] std::optional<ModelInputItem>
+    build_working_context_block(const AgentLoopSpec &spec);
 
     std::shared_ptr<IEnvironment> environment_;
     ModelGateway &gateway_;
@@ -149,6 +188,8 @@ class AgentLoop final {
     std::shared_ptr<BuiltinToolRegistry> tools_;
     std::mutex pending_mutex_;
     std::deque<std::string> pending_user_messages_;
+    WorkingContextSupplier working_context_supplier_;
+    WorkingContextSeamOptions seam_options_;
 };
 
 // Compiles one validated decision into the platform-neutral input sequence.

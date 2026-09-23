@@ -1,4 +1,5 @@
 #include <mira/agent_loop.hpp>
+#include <mira/context_working_context.hpp>
 #include <mira/model_digest.hpp>
 
 #include <algorithm>
@@ -180,6 +181,19 @@ void AgentLoop::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools) {
     tools_ = std::move(tools);
 }
 
+Result<void> WorkingContextSeamOptions::validate() const {
+    if (max_items == 0 || max_chars == 0) {
+        return loop_error(ErrorCode::InvalidArgument, "seam bounds must be positive");
+    }
+    return Result<void>{};
+}
+
+void AgentLoop::set_working_context_supplier(WorkingContextSupplier supplier,
+                                             WorkingContextSeamOptions options) {
+    working_context_supplier_ = std::move(supplier);
+    seam_options_ = options;
+}
+
 Result<void> AgentLoop::enqueue_user_message(std::string message) {
     if (message.empty()) {
         return loop_error(ErrorCode::InvalidArgument, "user message must not be empty");
@@ -246,6 +260,107 @@ Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
     OperationContext observe_context = context;
     observe_context.operation = OperationId::generate();
     return environment_->observe(request, observe_context);
+}
+
+std::optional<ModelInputItem> AgentLoop::build_working_context_block(const AgentLoopSpec &spec) {
+    if (working_context_supplier_ == nullptr) {
+        return std::nullopt;
+    }
+    if (!seam_options_.validate().has_value()) {
+        // Misconfigured bounds are a wiring error: degrade visibly instead of
+        // rendering an unbounded block (RULE-08).
+        emit(spec, "WorkingContextSeamDegraded",
+             JsonValue::Object{{"reason", std::string("invalid-seam-options")}}, EventClass::State);
+        return std::nullopt;
+    }
+    // Exactly one supply call per assembled request; the loop never caches
+    // snapshot content across steps — each request re-reads the committed
+    // projection (plan §4.2).
+    Result<std::optional<WorkingContextSnapshot>> supplied{std::optional<WorkingContextSnapshot>{}};
+    try {
+        supplied = working_context_supplier_();
+    } catch (const std::exception &) {
+        // Host callback discipline: an exception is isolated into a
+        // diagnostic and never escapes into request assembly. Only the
+        // sanitized reason rides the event surface, never exception text.
+        emit(spec, "WorkingContextSeamDegraded",
+             JsonValue::Object{{"reason", std::string("supplier-exception")}}, EventClass::State);
+        return std::nullopt;
+    } catch (...) {
+        emit(spec, "WorkingContextSeamDegraded",
+             JsonValue::Object{{"reason", std::string("supplier-exception")}}, EventClass::State);
+        return std::nullopt;
+    }
+    if (!supplied.has_value()) {
+        emit(spec, "WorkingContextSeamDegraded",
+             JsonValue::Object{{"reason", std::string("supplier-error")},
+                               {"code", static_cast<std::int64_t>(supplied.error().code)}},
+             EventClass::State);
+        return std::nullopt;
+    }
+    if (!supplied.value().has_value()) {
+        // Normal empty state: zero entries, zero diagnostics.
+        return std::nullopt;
+    }
+    const auto &snapshot = *supplied.value();
+    // Identity gate: only a snapshot of exactly this task frame is injected;
+    // any other frame (foreign session or task, stale task epoch) is skipped
+    // and counted. The environment epoch is deliberately not compared — the
+    // loop does not hold it; hosts gate it inside the callback.
+    if (snapshot.session_id != spec.session_id || snapshot.task_id != spec.task_id ||
+        snapshot.task_epoch != spec.task_epoch) {
+        emit(spec, "WorkingContextSeamSkipped",
+             JsonValue::Object{{"reason", std::string("identity-mismatch")}}, EventClass::State);
+        return std::nullopt;
+    }
+    // Layer 0 is the only admission conversion (DEC-035): the seam renders
+    // its product deterministically and never derives a second mapping.
+    const auto entries = context_items_from_working_context(snapshot);
+    if (entries.empty()) {
+        return std::nullopt;
+    }
+    // Deterministic labeled block: a short identity header carries the epoch
+    // annotation (auditable on the wire), then one line per entry in the
+    // fixed conversion order; bounds truncate in that same order and append
+    // the frozen marker (RULE-08).
+    std::string text = "[working context v1|wm=" + std::to_string(snapshot.through_event_sequence) +
+                       "|task_epoch=" + std::to_string(snapshot.task_epoch) +
+                       "|env_epoch=" + std::to_string(snapshot.environment_epoch) + "]";
+    bool truncated = false;
+    std::size_t kept = 0;
+    for (const auto &entry : entries) {
+        if (kept >= seam_options_.max_items) {
+            truncated = true;
+            break;
+        }
+        std::string line = "- ";
+        if (!entry.content.empty()) {
+            if (const auto *part = std::get_if<TextPart>(&entry.content.front())) {
+                line += part->text;
+            }
+        }
+        if (text.size() + 1 + line.size() > seam_options_.max_chars) {
+            truncated = true;
+            break;
+        }
+        text += '\n';
+        text += line;
+        ++kept;
+    }
+    if (truncated) {
+        text += "\n[working context truncated]";
+    }
+    // Untrusted-derived projection: never a System role (RULE-09 discipline
+    // on the request wire, frozen source label).
+    ModelInputItem seam_item;
+    seam_item.role = ModelRole::User;
+    seam_item.provenance.source = "mira.agent-loop.working-context.v1";
+    seam_item.authority = Sensitivity::Internal;
+    TextPart seam_text;
+    seam_text.text = std::move(text);
+    seam_text.sensitivity = Sensitivity::Internal;
+    seam_item.content.emplace_back(std::move(seam_text));
+    return seam_item;
 }
 
 Result<ModelRequest>
@@ -395,6 +510,11 @@ AgentLoop::build_request(const AgentLoopSpec &spec, const Observation &observati
     }
 
     request.input = {std::move(system_item), std::move(user_item)};
+    // M25 (DEC-045): the snapshot seam block rides between the user context
+    // block and any tool result block (frozen position).
+    if (auto seam_item = build_working_context_block(spec)) {
+        request.input.push_back(std::move(*seam_item));
+    }
     if (tool_item.has_value()) {
         request.input.push_back(std::move(*tool_item));
     }

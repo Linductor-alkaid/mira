@@ -2,7 +2,33 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-23（DEC-035 Stage W5「Subagent Fork / Merge」交付关闭
+> 更新日期：2026-09-23（宿主集成轮 [M25](m25-host-integration-round.md) 实现交付：
+> `M25-02` 供给缝契约与实现——`agent_loop.hpp` 的
+> `WorkingContextSeamOptions`/`WorkingContextSupplier`/
+> `set_working_context_supplier` 与 `build_request` 注入（每步恰一次供给、
+> 身份对齐门槛三腿、环境纪元归宿主回调、固定顺序截断 + 标注、失败降级 +
+> 异常隔离，未注入零漂移）；`M25-05` 参考宿主
+> `examples/working_context_host_consumer.cpp`（label `consumer`、离线
+> `TIMEOUT 60`，W3/W4/W5 宿主显式编排示范）；`M25-06` 文档同步（API 手册
+> 供给缝条目、context-memory 交叉引用、README 能力表、DEC-035/DEC-044 关联
+> 回填、Curator 设计实现注记、术语表供给缝词条）。IVA 复验：`HI-G1`–`G5`
+> 全绿（2/2 `tests/m25/` 目标 + 1/1 集成目标）；`HI-G6` 已交付待复验；
+> `M25-06` 的全门禁与 PR CI 取证回填未执行（统一门禁跑），`M25-01`–`06`
+> 与 `HI-G1`–`G6` 复选框按验证状态同步。）
+> 此前 2026-09-23（宿主集成轮经 [M25](m25-host-integration-round.md)
+> 立项并跑前冻结（`M25-01`）：接线形态冻结为
+> [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)——
+> Agent Loop 薄缝：可选快照供给依赖（沿 setter 注入先例，未注入零漂移），
+> `build_request` 经既有 `context_items_from_working_context`（Layer 0 唯
+> 一准入转换）注入已提交快照条目（身份对齐门槛 + 有界渲染 + 失败降级）；
+> W3 信号/W4 晋升/W5 fork-merge 保持宿主显式编排、Loop 零自动化（M23/M24
+> 冻结语义零触碰）；自动 fork/merge、自动晋升触发与模型介导语义合并均不并
+> 入（须各自上位决策）；验收三层（`tests/m25/` 契约矩阵 + `tests/integration/`
+> 单系统闭环 + `examples/` 参考宿主），无模型无语义声明（RULE-10，issue #48
+> 对照指标归真实模型轮与 Stage E）；范围钉死 Core 参考宿主，平台 Adapter
+> 另行立项；实现未开始，状态 `Planned`；详见 §4.1 第 18 条与
+> [M25 文件](m25-host-integration-round.md)。）
+> 此前 2026-09-23（DEC-035 Stage W5「Subagent Fork / Merge」交付关闭
 > （同日跑前冻结）：快照 fork——子会话基线 + schema 1.2 加法溯源（fork 仅非
 > nil 进入 digest canonical 对象，v1.0/v1.1 载荷读回保留原戳记且 digest 逐位
 > 一致）、局部 delta——独立 schema v1 机械三分类投影（inherited 剔除 / 血统
@@ -226,6 +252,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M22](m22-working-context-stage-w3.md) | Context Curator Stage W3——Supervisor 自动触发（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[Issue #48](https://github.com/Linductor-alkaid/mira/issues/48)：`WorkingContextTriggerPolicy` 双轴触发策略（序列水位 + 执行事件增量）、`WorkingContextAutoCurator` 每会话链 coalescing、task boundary forced flush、失败回退；全部经既有 Deferrable 路由，无隐藏后台循环） | M21；快照链长会话基线可复现（[curation 评估 v1](../benchmarks/context-intelligence-working-context-curation-v1.md)）；[Context Curator 设计](../design/context_curator_design.md) §8/§13 与 M22 §4 冻结 | Stage W4 Memory promotion 与 Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 | [M23](m23-memory-promotion-stage-w4.md) | Context Curator Stage W4——Memory Promotion（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆——`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级；宿主显式触发、泛型 Deferrable 路由；无模型） | M21（Stage W2 关闭）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M23 §4 冻结 | Stage W5 subagent fork/merge 与宿主集成轮的输入形态锚点（非发布物） | Completed |
 | [M24](m24-context-curator-stage-w5.md) | Context Curator Stage W5——Subagent Fork / Merge（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)：快照 fork——子会话基线 + schema 1.2 加法溯源、局部 delta——独立 schema v1 机械三分类投影、parent merge policy——机械确定性合并经既有 §5.2 提交管线（同水位冲突不豁免）；无模型） | M23（Stage W4 关闭，已满足）；多 Agent 工作流场景冻结（已满足，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M24 §4 冻结 | 宿主集成轮与真实模型轮/Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
+| [M25](m25-host-integration-round.md) | 宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：可选快照供给依赖（未注入零漂移）、`build_request` 经 `context_items_from_working_context` 注入已提交快照条目（身份对齐 + 有界渲染 + 失败降级）；W3/W4/W5 宿主显式编排、Loop 零自动化；三层验收——`tests/m25/` 契约矩阵 + `tests/integration/` 单系统闭环 + `examples/` 参考宿主；无模型） | M23/M24 关闭（已满足）；接线验收形态冻结（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M25 §4 冻结 | 真实模型轮与 Stage E 评估矩阵的接线前提（非发布物） | Planned |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -610,6 +637,36 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     验证记录；遗留：宿主集成接线、自动 fork/merge 与自动晋升触发、模型介导
     语义合并、真实模型接入与语义质量声明（归真实模型轮与 Stage E 证据通
     道）。
+
+18. 宿主集成轮立项入口（2026-09-23）：W5 关闭后，遗留四项中唯一无外部依赖
+    的「宿主集成接线」依 M24 §2/§5 留痕（「接线验收形态无任何已冻结文档，
+    八问不可答」）先补冻结面，经专项决策
+    [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md) 冻结
+    接线形态：Agent Loop 薄缝——可选快照供给依赖（沿 `set_event_store`/
+    `set_tool_registry` setter 注入先例，未注入时请求装配与现状逐字节一
+    致），`build_request` 经既有 `context_items_from_working_context`
+    （Layer 0 唯一准入转换）注入当前会话**已提交**快照条目（身份对齐门槛
+    = 快照 `session_id`/`task_id`/`task_epoch` 与当前 `AgentLoopSpec` 任务
+    帧一致，不一致跳过并计诊断；环境纪元不比较——Loop 不持有该值、M3 契约
+    不扩面，门控归宿主供给回调闭包；有界渲染固定顺序截断、供给失败降级为
+    无快照条目 + 诊断事件）；**零自动化**——W3 信号上
+    报、W4 终态晋升（`submit<WorkingContextPromotionReport>` 泛型
+    Deferrable）、W5 fork/merge（父水位严格前进才可提交，同水位
+    fail-closed 不豁免）全部宿主显式编排，Loop 内零 Supervisor/AutoCurator
+    调用（M23 §5/M24 §5 决策表与 [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)
+    第 7 条冻结语义零触碰）；自动 fork/merge、自动晋升触发与模型介导语义
+    合并不并入本轮（各按既有决策留痕归口，须上位决策方可立项）。经
+    [M25](m25-host-integration-round.md) 立项（`M25-01`）并跑前冻结契约语
+    义、门禁 `HI-G1`–`G6`（三层：`tests/m25/` 契约/生命周期矩阵 label
+    `integration;m25` + `tests/integration/working_context_host_test.cpp`
+    单系统闭环 label `integration` + `examples/working_context_host_consumer.cpp`
+    参考宿主 label `consumer`）与阶段冻结协议必答八问 + 决策记录表；范围钉
+    死 Core 参考宿主（simulator/offline、scripted provider），平台 Adapter
+    宿主接入另行立项；无模型无语义质量声明（RULE-10，issue #48 对照指标归
+    真实模型轮与 Stage E 证据通道）。实现已交付（2026-09-23：`M25-02` 供给缝
+    契约与实现、`M25-03`/`M25-04` 测试矩阵由 IVA 独立交付并复验 `HI-G1`–`G5`
+    全绿、`M25-05` 参考宿主与 `M25-06` 文档同步交付待复验；里程碑状态与剩余
+    门禁取证见 [M25 文件](m25-host-integration-round.md) 验证记录）。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
@@ -1044,6 +1101,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
 | [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md) | 机器可检查的架构策略、基线与契约四件套交付标准（`MNT-202609-35`–`38`；policy 单一来源 + CI 门禁 + 基线渐进治理 + 术语表 + 阶段冻结协议） | Accepted | 维护轮（2026-09 第五轮起持续生效） |
 | [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md) | 多 Agent 工作流场景与 Subagent 上下文隔离边界（Issue #48；Stage W5：subagent = Agent Harness 控制平面内父会话旁的子 Session、fork = 子会话基线 + schema 1.2 溯源、机械确定性 merge policy、W3/W4 共存边界；Workflow fork 保持 DEC-019 扩展位） | Accepted（方向；实现由 [M24](m24-context-curator-stage-w5.md) 承载） | M24（Stage W5） |
+| [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md) | Agent Loop 的 Working Context 快照供给缝与宿主编排边界（宿主集成轮：可选供给依赖 + `build_request` 经 Layer 0 转换注入已提交快照（身份对齐/有界/降级）；Loop 零自动化，W3/W4/W5 宿主显式编排；自动 fork-merge/自动晋升/模型介导合并须各自上位决策） | Accepted（方向；实现由 [M25](m25-host-integration-round.md) 承载） | M25（宿主集成轮） |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011
