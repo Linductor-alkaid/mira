@@ -357,7 +357,8 @@ int testing_isolated_per_rule_counts() {
             MIRA_CHECK(row.false_trigger_count == 5);
             MIRA_CHECK(row.sample_count == 5);
         } else {
-            MIRA_CHECK(!"unexpected testing row");
+            std::cerr << "m26: unexpected testing row: " << row.rule_id << '\n';
+            return 1;
         }
     }
     MIRA_CHECK(scoped.sink.count(PolicyEventType::RuleTestingResulted) == 2);
