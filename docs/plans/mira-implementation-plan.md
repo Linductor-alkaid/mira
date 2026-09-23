@@ -2,7 +2,39 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-23（宿主集成轮 [M25](m25-host-integration-round.md)
+> 更新日期：2026-09-24（Temporal Policy Stage T1 由 [M26](m26-temporal-policy-stage-t1.md)
+> 立项、跑前冻结并同日交付关闭（**`Completed`**）：
+> [PR #70](https://github.com/Linductor-alkaid/mira/pull/70)（head `251e6a8d`，
+> 提交 `6c753d5` 立项冻结 + `M26-02` 契约与实现 + IVA 测试矩阵、`251e6a8`
+> CI 修复）CI 24/24 全部 SUCCESS——linux（gcc/clang × Debug/Release）、windows
+> （Debug/Release）、android（arm64/x86_64 NDK 交叉）、sanitizers
+> （ASAN/UBSAN/TSAN）与 quality 管线全绿；`T1-G1`–`G6` 与 `M26-01`–`05` 全部
+> 勾选。交付面：`include/mira/temporal_policy.hpp`/`src/temporal/
+> temporal_policy.cpp` 条件策略确定性最小闭环（`TemporalHistory` 有界观测环、
+> `ReactiveRule` schema v1、T1 子集九类版本化事件、`mira.temporal_policy`
+> 错误域、宿主显式归纳/采纳/测试/晋升/降级/退役生命周期，冻结确定性数据集上
+> 「重复事件 → 候选规则 → 证据晋升 → 无 Agent 介入正确执行」，无平台/感知/
+> 模型依赖）、`tests/m26/` 门禁矩阵（IVA 所有）、契约四件套文档（API 新页、
+> 术语表词条、设计实现注记、README 能力行）。遗留：真机感知（T2/T3）与连续
+> 控制（T6）仍受 DEC-011 门禁（`MNT-202609-27` 证据）；详见 §4.1 第 19 条与
+> [M26 文件](m26-temporal-policy-stage-t1.md)。）
+> 此前 2026-09-24（DEC-037 Stage T1「条件策略契约与确定性 Runtime 最小闭环」
+> 经 [M26](m26-temporal-policy-stage-t1.md) 立项并跑前冻结（`M26-01`）：正式契约
+> ——`TemporalHistory` 有界观测环、`TrackedEntity`/`PolicyWorldView` 输入契约、
+> `ReactiveRule` schema v1（闭集谓词 + provenance + `mira.policy.rule.v1`）、
+> `IPolicyRuntime`/`ReactivePolicyRuntime` 评估与宿主显式归纳/测试/晋升生命周期、
+> T1 子集九类 `mira.policy.*.v1` 版本化事件——随本文件 §4 冻结；门禁
+> `T1-G1`–`G6`（`tests/m26/` 契约/生命周期矩阵 + 确定性闭环评估 harness，label
+> `integration;m26`，数据集 digest 锚定 + 跨进程报告一致）与阶段冻结协议必答
+> 八问 + 决策记录表随立项冻结；闭环证明口径 = 设计 §12「重复事件 → 候选规则 →
+> 晋升后无需 Agent 介入正确执行」，指标全部为管线行为指标（RULE-10）；T1 零
+> Executor 注册面（step/归纳/测试为有界同步函数，realtime/低延迟 lane 为 T2+/T6
+> 集成形态）；范围注记交叉点——规则产出非授权来源（RULE-09 延伸）、策略激活的
+> Workflow/工具化表达与 EventStore 桥接为显式非目标、Temporal Policy 与
+> PolicyEngine/WorkflowPolicy 术语消歧随 glossary 词条落地；真机感知（T2/T3）与
+> 连续控制（T6）仍受 DEC-011 门禁（`MNT-202609-27` 证据）；冻结与交付全过程
+> 详见 §4.1 第 19 条与 [M26 文件](m26-temporal-policy-stage-t1.md)，
+> 交付关闭见顶部条目。）
 > 交付关闭（**`Completed`**）：[PR #69](https://github.com/Linductor-alkaid/mira/pull/69)
 > （head `4abf8ee`）CI 24/24 全部 SUCCESS——linux（gcc/clang × Debug/Release）、
 > windows（Debug/Release）、android（arm64/x86_64 NDK 交叉）、sanitizers
@@ -257,6 +289,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M23](m23-memory-promotion-stage-w4.md) | Context Curator Stage W4——Memory Promotion（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆——`consolidate_candidates` 共享管线入口、section→kind 冻结映射、`Unverified`+`model_assisted` 纪律、duplicate 判定收紧禁止验证等级降级；宿主显式触发、泛型 Deferrable 路由；无模型） | M21（Stage W2 关闭）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M23 §4 冻结 | Stage W5 subagent fork/merge 与宿主集成轮的输入形态锚点（非发布物） | Completed |
 | [M24](m24-context-curator-stage-w5.md) | Context Curator Stage W5——Subagent Fork / Merge（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)：快照 fork——子会话基线 + schema 1.2 加法溯源、局部 delta——独立 schema v1 机械三分类投影、parent merge policy——机械确定性合并经既有 §5.2 提交管线（同水位冲突不豁免）；无模型） | M23（Stage W4 关闭，已满足）；多 Agent 工作流场景冻结（已满足，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M24 §4 冻结 | 宿主集成轮与真实模型轮/Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 | [M25](m25-host-integration-round.md) | 宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：可选快照供给依赖（未注入零漂移）、`build_request` 经 `context_items_from_working_context` 注入已提交快照条目（身份对齐 + 有界渲染 + 失败降级）；W3/W4/W5 宿主显式编排、Loop 零自动化；三层验收——`tests/m25/` 契约矩阵 + `tests/integration/` 单系统闭环 + `examples/` 参考宿主；无模型） | M23/M24 关闭（已满足）；接线验收形态冻结（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M25 §4 冻结 | 真实模型轮与 Stage E 评估矩阵的接线前提（非发布物） | Completed |
+| [M26](m26-temporal-policy-stage-t1.md) | Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环（[DEC-037](../decisions/DEC-037-temporal-policy.md)：`TemporalHistory`/`TrackedEntity`/T1 子集版本化事件族/`ReactiveRule` schema v1 契约 + `IPolicyRuntime`/`ReactivePolicyRuntime` 最小闭环——冻结确定性数据集上「重复事件 → 候选规则 → 晋升后无需 Agent 正确执行」；无平台、无感知、无模型依赖，指标全部为管线行为指标） | DEC-037 冻结（已满足）；T1 纯 Core 确定性阶段常规授权（总计划 §4.1 第 7 条与 DEC-037 决策第 7 条，已满足）；M26 §4 冻结 | Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点（非发布物） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -675,6 +708,43 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     **Stage W5 链宿主集成轮交付完成（`Completed`）**；证据与遗留见
     [M25 文件](m25-host-integration-round.md) 验证记录（Loop 内自动化、平台
     Adapter 宿主接入、真实模型/Stage E 语义指标维持非目标留痕）。
+
+19. DEC-037 Stage T1 立项入口（2026-09-24）：M25 关闭后，遗留三项中唯一具备
+    完整立项条件的是 DEC-037 Stage T1——总计划 §4.1 第 7 条与
+    [DEC-037](../decisions/DEC-037-temporal-policy.md) 决策第 7 条授权「纯 Core
+    确定性阶段按常规授权立项」且 M21/M22 关闭记录两度点名其为下一可用入口；
+    平台 Adapter 宿主接入须先补专项决策冻结接线验收形态（M24 §2/§5 同型留痕
+    「八问不可答」），真实模型轮与 DEC-032 Stage E 受 `MNT-202609-27` 外部证据
+    阻塞，DEC-038/DEC-041 首阶段须先做实体词表对齐并补专项设计。经
+    [M26](m26-temporal-policy-stage-t1.md) 立项（`M26-01`）并跑前冻结正式契约
+    （`TemporalHistory` 有界观测环与重放重建、`TrackedEntity`/`PolicyWorldView`
+    输入契约、`ReactiveRule` schema v1 闭集谓词 + provenance + 幂等 rule_id、
+    `IPolicyRuntime`/`ReactivePolicyRuntime` step 评估语义（激活门、固定匹配序、
+    冲突 fail-closed）、宿主显式归纳/采纳/测试/晋升/降级生命周期（`min_support`
+    + 测试分部零误触发 + `min_test_support` 证据晋升）、T1 子集九类
+    `mira.policy.*.v1` 版本化事件（schema 名与逐类载荷键集逐一冻结）、
+    `mira.temporal_policy` 错误域（12 码显式 int32 枚举 + 稳定名映射，沿
+    `mira.*` 域惯例））、门禁 `T1-G1`–`G6`（`tests/m26/` 契约/生命周期矩阵 +
+    `tests/m26/m26_temporal_policy_eval.cpp` 确定性闭环评估 harness，label
+    `integration;m26`，数据集 digest 锚定 + `--report` 跨进程一致）与阶段冻结
+    协议必答八问 + 决策记录表；闭环证明口径 = 设计 §12「重复事件 → 候选规则 →
+    晋升后无需 Agent 介入正确执行」，指标全部为管线行为指标（RULE-10）；T1 零
+    Executor 注册面——step/归纳/测试为有界同步函数、harness 编排经
+    `submit_auto()` 且 future 必消费、realtime/低延迟 lane 为 T2+/T6 集成形态
+    （生产 realtime 部署验证随其立项冻结）；范围注记交叉点——规则产出非授权
+    来源（RULE-09 延伸，DEC-004 PolicyEngine 边界不变）、策略激活的 Workflow/
+    工具化表达（设计 §8）与 EventStore 事件桥接为显式非目标（随其立项独立冻结）、
+    Temporal Policy 与 PolicyEngine/WorkflowPolicy 术语消歧随 glossary 词条
+    落地；真机感知（T2/T3）与连续控制注入（T6）仍受 DEC-011 门禁
+    （`MNT-202609-27` 证据），不被本立项解锁。同日交付关闭（`Completed`，
+    2026-09-24）：`M26-02` 契约与实现（`include/mira/temporal_policy.hpp` +
+    `src/temporal/temporal_policy.cpp` 入 `mira_core`，含 `mira.temporal_policy`
+    错误域与加性只读累计器访问器）、`M26-03`/`M26-04` IVA 测试矩阵与确定性
+    闭环 harness（冻结数据集 digest 锚定、跨进程一致、冲突注入与恢复）、
+    `M26-05` 契约四件套与文档同步；[PR #70](https://github.com/Linductor-alkaid/mira/pull/70)
+    （head `251e6a8d`，提交 `6c753d5` + `251e6a8`）CI 24/24 全绿
+    （linux gcc/clang × Debug/Release、windows、android 双 ABI NDK 交叉、
+    三 sanitizer、quality），`T1-G1`–`G6` 与 `M26-01`–`05` 全部勾选。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
@@ -1101,7 +1171,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-033](../decisions/DEC-033-hybrid-visual-grounding.md) | Android 混合视觉 Grounding 管线（Issue #25；统一区域契约、事件驱动调度、许可约束） | Accepted（方向；实现受 DEC-011 证据门禁约束） | 保持 `MNT-202609-27` 证据门禁（DEC-042 不解锁；随证据另行立项） |
 | [DEC-034](../decisions/DEC-034-minimal-eval-profile.md) | 离散动作与 Workflow 最小评估 Profile v1（四臂对照、17 case、跑前冻结口径与阈值） | Accepted（规范冻结；harness 实现归 `MNT-202609-29`） | 阶段 F 后续（`MNT-202609-28` 产出） |
 | [DEC-036](../decisions/DEC-036-consolidation-model-supply.md) | 语义固化与 Working Context 的模型供给口径（可用源模型，不要求专用小模型；部分修订 DEC-032/DEC-035） | Accepted | M17–M20（历史证据保留，不追溯改写） |
-| [DEC-037](../decisions/DEC-037-temporal-policy.md) | Temporal Policy——高频条件策略的经验固化方向（Issue #50；统一 Policy 抽象，Stage T1–T6） | Accepted（方向；实现未开始；T2/T3/T6 受 DEC-011 门禁） | Stage T1 逐阶段另行立项 |
+| [DEC-037](../decisions/DEC-037-temporal-policy.md) | Temporal Policy——高频条件策略的经验固化方向（Issue #50；统一 Policy 抽象，Stage T1–T6） | Accepted（方向；Stage T1 已由 [M26](m26-temporal-policy-stage-t1.md) 交付关闭（PR #70，`Completed`）；T2/T3/T6 受 DEC-011 门禁） | M26（Stage T1）；T2–T6 逐阶段另行立项 |
 | [DEC-038](../decisions/DEC-038-unified-behavior-trace.md) | 统一 Behavior Trace——执行轨迹的三层语义投影（Issue #55/#56；L0 事件/L1 语义行为/L2 narrative，承接 DEC-026 §4 轨迹抽取非目标） | Accepted（方向；实现未开始） | 首阶段另行立项 |
 | [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义已由 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 完成；实现随 M7 的 MCP 阶段（TM0–TM2 之后）立项 |
 | [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；首阶段 TR0 稳定引用与兼容投影已由 [M7](m7-tools-evaluation-platform-v1.md) TR0 交付关闭（引用语法 v1 随该阶段冻结）；TR1 Skill 生命周期随后续阶段立项） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |

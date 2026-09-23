@@ -337,3 +337,27 @@ Unknown → AgentControlled → CandidateRule → Testing → RuntimePolicy
   [DEC-036](../decisions/DEC-036-consolidation-model-supply.md)
 - [评估与基准体系](evaluation_and_benchmark_design.md)
 - [Issue #50](https://github.com/Linductor-alkaid/mira/issues/50)
+
+## 16. 实现注记（Stage T1 已交付，2026-09-24）
+
+Stage T1 由 [M26](../plans/m26-temporal-policy-stage-t1.md) 承载并交付关闭
+（[PR #70](https://github.com/Linductor-alkaid/mira/pull/70)）。本设计为 v0.1
+方向级文档，正式契约以 M26 §4 冻结面为准；本节列出草案 → 正式契约的偏差清单，
+与 M26 §2/§4 注记一致：
+
+- **`TrackedEntity` 不内嵌 `TemporalHistory`**：§4.2 草案的 `history` 成员不进
+  入契约——历史由 runtime 累计器唯一持有（内嵌会使每个 tick 的世界视图复制
+  N 份历史），重建走 `rebuild_temporal_histories` 只读投影。
+- **`WorldState` → `PolicyWorldView`**：T1 局部输入契约为「实体 + 闭集标量
+  事实」；DEC-041 Session World State 投影实现未开始，词表对齐随 DEC-038/
+  DEC-041 首阶段冻结处理。
+- **`PolicyTransitioned` 归 T5**：T1 事件为九类 `mira.policy.*.v1` 子集
+  （无状态机转换事件）；HSM/BT 后端与自动治理归 T5。
+- **`IPolicyRuntime::step` 语义具体化**：激活门、`(priority, rule_id)` 固定
+  匹配序、冲突 fail-closed（零动作 + 全体降级 + 升级事件）；§5.2 示例的严格
+  `> 0.55` 阈值为手编规则示意，归纳规范形式为自覆盖比较（Ge/Le/Eq，支持集
+  恒自匹配）。
+- **错误域与事件载荷逐一冻结**：`mira.temporal_policy` 12 码三重映射、九类
+  事件 schema 名与逐类载荷键集、帧/载荷分工见 M26 §4.4。
+- **Executor 路由**：T1 为零注册循环（§10 表的 realtime/低延迟 lane 是 T2+/T6
+  集成形态，T1 不注册）；runtime 不读系统时钟。
