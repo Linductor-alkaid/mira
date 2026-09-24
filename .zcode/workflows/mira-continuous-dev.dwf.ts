@@ -1,7 +1,8 @@
 /* zcode-workflow
 description: 沿 Mira 总计划持续开发：每轮评审计划→（需要时调研+立项冻结）→实现→独立测试取证（IVA）→本地门禁（debug 全量 + 三
-  sanitizer + 五项检查 + NDK 预演）→PR→CI 全绿→文档收尾→合并 master
-  并清理工作分支，循环直到计划完成或达到轮数上限。合并与分支清理已获维护者授权。
+  sanitizer + 五项检查 + NDK 预演）→PR→CI 全绿→文档收尾→合并 master 并清理工作分支，循环直到计划完成或达到轮数上限。CI
+  判定等全部检查终态，失败先按日志分类：基础设施抖动（checkout/网络/TLS/runner）自动重跑失败 job（上限 2
+  次），代码失败才交实现员。合并与分支清理已获维护者授权。
 whenToUse: 要按 docs/plans/mira-implementation-plan.md 继续推进 Mira
   开发时运行；每轮产出一个经完整门禁与 CI 验证并合并的 PR。
 args:
@@ -234,29 +235,110 @@ async function checksStarted(pr: string): Promise<boolean> {
   return false;
 }
 
-async function waitChecksGreen(pr: string): Promise<"pass" | "fail" | "timeout"> {
+interface ChecksVerdict {
+  /** pass=全部检查终态且成功；fail=全部检查终态且有失败；timeout=轮询超时 */
+  outcome: "pass" | "fail" | "timeout";
+  /** outcome=fail 时的失败检查名 */
+  failedNames: string[];
+}
+
+/** 拉取 PR 检查 rollup；gh 不可达或输出异常时返回 null（调用方按网络抖动处理） */
+async function fetchRollup(pr: string): Promise<Array<{ name: string; status: string; conclusion: string }> | null> {
+  const v = await world.run("gh", ["pr", "view", pr, "--json", "statusCheckRollup"]);
+  if (v.exitCode !== 0) return null;
+  try {
+    const parsed = JSON.parse(v.stdout) as { statusCheckRollup?: Array<{ name?: string; status?: string; conclusion?: string }> };
+    if (!Array.isArray(parsed.statusCheckRollup)) return null;
+    return parsed.statusCheckRollup.map((c) => ({
+      name: String(c.name ?? ""),
+      status: String(c.status ?? ""),
+      conclusion: String(c.conclusion ?? ""),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+// gh pr checks 的退出码在出现失败项时即为 1，哪怕其余检查还在 pending——
+// 「fail+pending」中间快照会把还在跑的 CI 误判成终态失败，因此改为解析 rollup。
+// 本仓库检查全部来自 GitHub Actions（CheckRun 有 status/conclusion）；纯 status context 条目
+// 会一直视为未终态直到轮询超时，真发生时按超时中止处理。
+const CHECK_OK_CONCLUSIONS = ["SUCCESS", "NEUTRAL", "SKIPPED"];
+
+/** 轮询直到 PR 全部检查到终态才判定，绝不拿非终态快照下结论 */
+async function waitChecksSettled(pr: string): Promise<ChecksVerdict> {
   for (let poll = 0; poll < 200; poll++) {
-    const chk = await world.run("gh", ["pr", "checks", pr], { timeoutMs: 180_000 });
-    if (chk.exitCode === 0) {
-      if (chk.stdout.indexOf("no checks") !== -1) {
-        await world.run("sleep", ["90"]);
-        continue;
+    const rollup = await fetchRollup(pr);
+    if (rollup === null || rollup.length === 0) {
+      const probe = await world.run("gh", ["pr", "view", pr, "--json", "number"]);
+      if (probe.exitCode !== 0) {
+        log(`gh 访问异常（疑似网络抖动），120 秒后继续轮询 CI`);
       }
-      return "pass";
-    }
-    if (chk.exitCode === 8) {
-      await world.run("sleep", ["90"]);
-      continue;
-    }
-    const probe = await world.run("gh", ["pr", "view", pr, "--json", "number"]);
-    if (probe.exitCode !== 0) {
-      log(`gh 访问异常（疑似网络抖动），120 秒后继续轮询 CI`);
       await world.run("sleep", ["120"]);
       continue;
     }
-    return "fail";
+    const unfinished = rollup.filter((c) => c.status !== "COMPLETED");
+    if (unfinished.length > 0) {
+      await world.run("sleep", ["90"]);
+      continue;
+    }
+    const failed = rollup.filter((c) => CHECK_OK_CONCLUSIONS.indexOf(c.conclusion) === -1).map((c) => c.name);
+    if (failed.length === 0) return { outcome: "pass", failedNames: [] };
+    return { outcome: "fail", failedNames: failed };
   }
-  return "timeout";
+  return { outcome: "timeout", failedNames: [] };
+}
+
+// ---------- CI 失败分类：基础设施抖动（checkout/网络/TLS/runner）优先重跑，不惊动实现员 ----------
+const INFRA_SIGNATURES = [
+  "server certificate verification failed",
+  "unable to access",
+  "could not resolve host",
+  "connection reset by peer",
+  "the runner has received a shutdown signal",
+  "loss of network",
+];
+
+/** 当前分支头上、已终态且非成功的 Actions run id 列表 */
+async function failedRunIds(branch: string): Promise<string[]> {
+  const head = await world.run("git", ["rev-parse", "HEAD"]);
+  const sha = head.stdout.trim();
+  const lst = await world.run("gh", ["run", "list", "--branch", branch, "--limit", "10", "--json", "databaseId,headSha,status,conclusion"]);
+  if (lst.exitCode !== 0) return [];
+  try {
+    const parsed = JSON.parse(lst.stdout) as Array<{ databaseId?: number; headSha?: string; status?: string; conclusion?: string }>;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r) => typeof r.databaseId === "number" && r.headSha === sha && r.status === "completed" && r.conclusion !== "success")
+      .map((r) => String(r.databaseId));
+  } catch {
+    return [];
+  }
+}
+
+/** 全部失败 run 的失败日志都呈基础设施特征才算抖动；日志拿不到或任一无特征，按代码失败处理 */
+async function failuresLookInfra(branch: string): Promise<boolean> {
+  const ids = await failedRunIds(branch);
+  if (ids.length === 0) return false;
+  for (const id of ids) {
+    const lg = await world.run("gh", ["run", "view", id, "--log-failed"]);
+    if (lg.exitCode !== 0) return false;
+    const text = `${lg.stdout}\n${lg.stderr}`.toLowerCase();
+    const hit = INFRA_SIGNATURES.find((s) => text.indexOf(s) !== -1);
+    if (hit === undefined) return false;
+  }
+  return true;
+}
+
+async function rerunFailedJobs(branch: string): Promise<boolean> {
+  const ids = await failedRunIds(branch);
+  if (ids.length === 0) return false;
+  let allOk = true;
+  for (const id of ids) {
+    const r = await world.run("gh", ["run", "rerun", id, "--failed"]);
+    if (r.exitCode !== 0) allOk = false;
+  }
+  return allOk;
 }
 
 // ---------- 常驻计划角色 ----------
@@ -581,15 +663,17 @@ for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
   let readyToMerge = false;
   let backfilled = false;
   let ciFailInfo = "";
-  for (let round = 1; round <= 3; round++) {
-    await checksStarted(prNumber);
-    const verdict = await waitChecksGreen(prNumber);
-    if (verdict === "pass") {
+  let infraRetries = 0;
+  let codeRounds = 0;
+  while (true) {
+    // 规则 1：等全部检查到终态再判定，绝不拿「有失败 + 其余 pending」的中间快照下结论
+    const verdict = await waitChecksSettled(prNumber);
+    if (verdict.outcome === "pass") {
       if (backfilled) {
         readyToMerge = true;
         break;
       }
-      log(`PR #${prNumber} CI 首轮全绿，补全验证记录后复跑`);
+      log(`PR #${prNumber} CI 全绿，补全验证记录后复跑`);
       await developer.ask<string>([
         `PR #${prNumber} CI 已全绿（${prUrl}）。请只做文档收尾，不改代码与测试：`,
         `1. 里程碑文件：状态改 Completed，验证记录补上 PR ${prNumber}、CI 全绿证据与本轮 commit；`,
@@ -619,17 +703,30 @@ for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
       }
       continue;
     }
-    const list = await world.run("gh", ["pr", "checks", prNumber]);
-    ciFailInfo = `${list.stdout}\n${list.stderr}`.slice(0, 4000);
-    if (verdict === "timeout") {
-      stoppedReason = `CI 轮询超过 5 小时未出结果，本地分支 ${branch} 保留全部提交`;
+    if (verdict.outcome === "timeout") {
+      stoppedReason = `CI 轮询超过 5 小时未到全部终态，本地分支 ${branch} 保留全部提交`;
       break;
     }
-    if (round === 3) break;
-    log(`PR #${prNumber} CI 第 ${round} 轮有失败项，交回实现员修复后重推`);
-    await developer.ask<string>(`PR CI 有失败项（第 ${round} 轮）：\n${ciFailInfo}\n请在当前分支修复；脚本负责提交、推送并重跑 CI。`);
+    // 全部检查已终态且存在失败
+    const list = await world.run("gh", ["pr", "checks", prNumber]);
+    ciFailInfo = `${list.stdout}\n${list.stderr}`.slice(0, 4000);
+    // 规则 2：先分类——基础设施抖动（checkout/网络/TLS/runner）重跑失败 job，不占用代码修复轮次
+    if (infraRetries < 2 && await failuresLookInfra(branch)) {
+      infraRetries += 1;
+      const rr = await rerunFailedJobs(branch);
+      log(`CI 失败项（${verdict.failedNames.slice(0, 4).join("、")}）经日志判定为基础设施抖动，第 ${infraRetries}/2 次重跑失败 job${rr === true ? "" : "（部分重跑指令未成功，继续观察）"}`);
+      continue;
+    }
+    if (codeRounds >= 2) break;
+    codeRounds += 1;
+    log(`PR #${prNumber} CI 有失败项（${verdict.failedNames.slice(0, 4).join("、")}），第 ${codeRounds}/3 轮交回实现员修复`);
+    await developer.ask<string>(`PR CI 有失败项（第 ${codeRounds} 轮）：\n${ciFailInfo}\n请在当前分支修复；若你判断失败纯属基础设施抖动且无需改代码，直接说明「无需改动」，不要为改而改；脚本负责提交、推送并重跑 CI。`);
     await world.run("git", ["add", "-A"]);
-    await world.run("git", ["commit", "-m", `fix(${scope}): address CI failures (round ${round})`]);
+    const fixCm = await world.run("git", ["commit", "-m", `fix(${scope}): address CI failures (round ${codeRounds})`]);
+    if (fixCm.exitCode !== 0) {
+      log(`实现员未产生任何变更而 CI 仍失败，停止本轮（同一失败不空转重跑）`);
+      break;
+    }
     for (let attempt = 1; attempt <= 5; attempt++) {
       const p = await world.run("git", ["push"]);
       if (p.exitCode === 0) break;
