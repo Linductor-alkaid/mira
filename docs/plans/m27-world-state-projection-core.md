@@ -868,3 +868,28 @@ CI runner 无此问题）；全量 `ctest`（ubsan 预设）`100% tests passed,
 `M27-04` 复选框随本轮取证勾选（IVA 三轮复验通过，m27 两目标 35 用例全绿，
 7 条门禁有测试覆盖）；`WS-G7`、本地全门禁与 PR CI 复选框保持未勾选，待
 `M27-05`（API 手册新页随其交付，CI 取证随 PR 回填）。
+
+2026-09-28（第十次）：PR CI android（NDK libc++）与 windows（MSVC）双目标
+编译失败，根因同一处平台精度问题：`Timestamp::wall`（`core_contracts.hpp`
+既有公共类型）原声明为 `std::chrono::system_clock::time_point`，其 tick 精度
+随标准库平台定义——libstdc++/libc++ 为纳秒，MSVC 为 100 ns。M27 冻结契约
+要求 wall 时间按纳秒整数精确往返（§4.4 wire）且陈旧判定 1 ns 粒度
+（§4.3/`WS-G4` 边界用例 `make_expiry(30, 1)`），centi tick 表示在 MSVC 上
+既编译不过（纳秒→centi 隐式收窄被拒）也无法表示 1 ns 偏移。修复（公共契约
+可移植性泛化，非门禁放宽）：`core_contracts.hpp` 新增 `WallTimePoint`
+别名（`time_point<system_clock, nanoseconds>`）并将 `wall` 钉到该类型——
+纳秒 tick 标准库上与原类型完全同型（Linux/Android 零行为变更），MSVC 上
+获得精确纳秒表示；随迁机械适配六处 wall↔memory/context 契约字段桥点
+（`memory_consolidation.cpp` `wall_nanos` 形参 + recorded_at 回填、
+`context_working_context_promotion.cpp`/`m23_promotion_support.hpp`
+显式 `time_point_cast`），并把 checkpoint/context 快照两处 ns 解码从
+「cast 到 clock 自身 duration」升级为 `WallTimePoint` 精确重建（MSVC 上
+round-trip 由有损变精确）；`temporal_policy.cpp` 的 `sampled_at_wall_ns`
+序列化在粗 tick 标准库上随之从 tick 计数修正为真实纳秒（Linux 不变）。
+API 手册 `docs/api/core-runtime.md` Timestamp 条目同步。门禁（本次实际
+执行）：`cmake --build build/debug`（mira_core/m27 两目标/m23/m13/
+executor 集成测试）→ 零错误；`cmake --build build/android-arm64-release
+--target mira_core`（NDK aarch64 libc++，复现 CI 失败配置）→ 零错误；
+`cmake --build build/ubsan`（同四目标）→ 零错误；`format-check` →
+249 files 通过；`check_docs.py`/`check_architecture.py` → OK/clean。
+windows（MSVC）本地无工具链，由 PR CI 验证。

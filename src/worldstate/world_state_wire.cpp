@@ -39,7 +39,7 @@ constexpr std::string_view kElementSourceNames[] = {"UiTree", "Ocr", "Detector",
 
 [[nodiscard]] Timestamp timestamp_from_wall_ns(std::int64_t nanoseconds) {
     Timestamp time;
-    time.wall = std::chrono::system_clock::time_point(std::chrono::nanoseconds(nanoseconds));
+    time.wall = WallTimePoint(std::chrono::nanoseconds(nanoseconds));
     return time;
 }
 

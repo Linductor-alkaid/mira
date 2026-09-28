@@ -68,8 +68,8 @@ inline constexpr std::int64_t kSecondNs = 1'000'000'000;
 
 [[nodiscard]] inline Timestamp at_ns(std::int64_t offset_seconds, std::int64_t offset_ns = 0) {
     Timestamp time;
-    time.wall = std::chrono::system_clock::time_point(
-        std::chrono::nanoseconds(kBaseNs + offset_seconds * kSecondNs + offset_ns));
+    time.wall =
+        WallTimePoint(std::chrono::nanoseconds(kBaseNs + offset_seconds * kSecondNs + offset_ns));
     return time;
 }
 
@@ -290,9 +290,7 @@ inline constexpr std::string_view kFrozenDatasetDigestHex =
     return left.wall == right.wall;
 }
 
-[[nodiscard]] inline bool is_epoch(const Timestamp &time) {
-    return time.wall == std::chrono::system_clock::time_point{};
-}
+[[nodiscard]] inline bool is_epoch(const Timestamp &time) { return time.wall == WallTimePoint{}; }
 
 inline int expect_domain_error(const Error &error, WorldStateDomainCode code, const char *what) {
     if (error.domain != kDomainName) {

@@ -148,8 +148,17 @@ MIRA_DEFINE_ID(WorkflowDecisionId);
 
 #undef MIRA_DEFINE_ID
 
+// Wall-clock instants are pinned to nanosecond precision on the system clock:
+// wire formats (mira.worldstate.v1) round-trip wall time as exact nanoseconds
+// since epoch and staleness contracts compare at 1 ns granularity. On standard
+// libraries whose system_clock ticks coarser than 1 ns (MSVC: 100 ns) the
+// default time_point duration cannot represent that contract, so the duration
+// is pinned explicitly. On nanosecond-tick standard libraries (libstdc++,
+// libc++) this is the same type as std::chrono::system_clock::time_point.
+using WallTimePoint = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
+
 struct Timestamp final {
-    std::chrono::system_clock::time_point wall{};
+    WallTimePoint wall{};
     std::chrono::steady_clock::time_point monotonic{};
     [[nodiscard]] static Timestamp now() noexcept {
         return {std::chrono::system_clock::now(), std::chrono::steady_clock::now()};

@@ -23,12 +23,11 @@ namespace {
 }
 
 [[nodiscard]] Timestamp timestamp_from_nanos(std::int64_t nanos, std::int64_t monotonic_nanos) {
-    // Clock tick periods differ across platforms (msvc 100ns, libc++ micro on
-    // some Android builds); round-trip through explicit duration casts.
+    // Wall round-trips through WallTimePoint (nanosecond precision by
+    // contract), so the stored ns integer is recovered exactly on every
+    // platform; monotonic goes through the clock's own duration explicitly.
     Timestamp stamp;
-    stamp.wall = std::chrono::system_clock::time_point(
-        std::chrono::duration_cast<std::chrono::system_clock::duration>(
-            std::chrono::nanoseconds(nanos)));
+    stamp.wall = WallTimePoint(std::chrono::nanoseconds(nanos));
     stamp.monotonic = std::chrono::steady_clock::time_point(
         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
             std::chrono::nanoseconds(monotonic_nanos)));
