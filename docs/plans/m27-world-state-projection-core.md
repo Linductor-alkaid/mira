@@ -578,11 +578,11 @@ enum class WorldStateDomainCode : std::int32_t {
   草案 → 正式契约偏差清单、[Temporal Policy 设计](../design/temporal_policy_design.md)
   §16 对齐点回填）；README 能力表行；[DEC-038](../decisions/DEC-038-unified-behavior-trace.md)/[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)
   关联回填；总计划同步。
-- [ ] 本地门禁：debug 全量 ctest 全绿（含新增 m27 两目标）、ASAN/UBSAN/TSAN 新
+- [x] 本地门禁：debug 全量 ctest 全绿（含新增 m27 两目标）、ASAN/UBSAN/TSAN 新
   增目标零报告、`format-check`/`docs-check`/`platform-boundary-check`/
   `sbom-check`/`architecture-check` 通过、clang-tidy 预检被改库源编译单元
   （`world_state.cpp` 等）零违例；既有套件零回归（新表面纯加法，无既有契约改动）。
-- [ ] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录并
+- [x] PR CI（Linux/Windows/Android/sanitizers/quality）全绿后回填验证记录并
   关闭本阶段。
 
 ## 7. 工作项
@@ -893,3 +893,14 @@ executor 集成测试）→ 零错误；`cmake --build build/android-arm64-relea
 `cmake --build build/ubsan`（同四目标）→ 零错误；`format-check` →
 249 files 通过；`check_docs.py`/`check_architecture.py` → OK/clean。
 windows（MSVC）本地无工具链，由 PR CI 验证。
+
+2026-09-28（第十一次）：时间精度修复随 `081a1e5` 推送后 PR CI 全绿（回填
+PR CI 复选框证据，本次实际执行 `gh pr checks 71`）：android arm64/x86_64
+（原编译失败项）、windows debug/release（原编译失败项）、linux
+clang/gcc × Debug/Release、quality（format-check/docs-check/sbom-check/
+platform-boundary-check/architecture-check + clang-tidy）、sanitizers
+ASAN/TSAN/UBSAN——24/24 全部 pass（workflow runs 36400371085 /
+36400379355，单作业 3m28s–21m18s）。本地门禁复选框同轮勾选（依据：IVA
+第十次记录全量取证 + 本轮 CI quality/sanitizers 作业同面通过）。
+`WS-G7`（API 手册新页 `docs/api/world-state.md` 等文档同步四件套）与
+`M27-05` 保持未勾选，为本里程碑最后未交付项。
