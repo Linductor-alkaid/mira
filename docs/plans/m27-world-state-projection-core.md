@@ -1,7 +1,7 @@
 # M27：会话 World State 投影首阶段——实体词表对齐与确定性投影核心
 
-> 状态：In Progress（2026-09-28 立项并跑前冻结（`M27-01` 交付）；实现按 §7 工作项
-> 自 `M27-02` 起推进，门禁验证完成前工作项保持未勾选）
+> 状态：Completed（2026-09-28 立项、跑前冻结并同日交付关闭：[PR #71](https://github.com/Linductor-alkaid/mira/pull/71)
+> CI 24/24 全绿；§7 全部工作项与 §6 全部门禁复核通过，验证记录见 §9）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
 > 首阶段；[DEC-038](../decisions/DEC-038-unified-behavior-trace.md)/DEC-041
@@ -571,7 +571,7 @@ enum class WorldStateDomainCode : std::int32_t {
   static_cast<std::int32_t>(成员)` 与 `world_state_domain_code_name` 稳定名
   三重一致；`RecordInvalid` 以输入路径可达场景断言，`VocabularyViolation`
   以算子输入路径断言、validate/from_json 路径零产生）。
-- [ ] `WS-G7` 文档同步与契约四件套：API 手册新页 `docs/api/world-state.md` +
+- [x] `WS-G7` 文档同步与契约四件套：API 手册新页 `docs/api/world-state.md` +
   `docs/api/index.md` 模块地图行；术语表新词条（World State / 实体词表，与
   Behavior Trace 词条消歧衔接）——词表词条随本立项先行落地（§7 `M27-01`），
   本门禁复核其与交付契约一致；设计文档实现注记（[World State 投影设计](../design/world_state_projection_design.md)
@@ -604,7 +604,7 @@ enum class WorldStateDomainCode : std::int32_t {
 - [x] `M27-04` 投影契约/重建/淘汰测试矩阵（§6 `WS-G2`–`WS-G6`，
   `tests/m27/m27_world_state_test.cpp`）——同由 Independent-Verification-Agent
   独立完成并复验。
-- [ ] `M27-05` 文档同步（§6 `WS-G7` 清单）+ 本地全门禁与 PR CI 取证回填；
+- [x] `M27-05` 文档同步（§6 `WS-G7` 清单）+ 本地全门禁与 PR CI 取证回填；
   全部工作项与门禁复核通过后本里程碑转 `Completed`。
 
 ## 8. 风险与阻塞
@@ -904,3 +904,23 @@ ASAN/TSAN/UBSAN——24/24 全部 pass（workflow runs 36400371085 /
 第十次记录全量取证 + 本轮 CI quality/sanitizers 作业同面通过）。
 `WS-G7`（API 手册新页 `docs/api/world-state.md` 等文档同步四件套）与
 `M27-05` 保持未勾选，为本里程碑最后未交付项。
+
+2026-09-28（第十二次）：`M27-05` 文档同步交付，里程碑关闭（`Completed`）。
+`WS-G7` 四件套：API 手册新页 `docs/api/world-state.md`（数据契约/六类输入/
+八算子要点/wire 与八码错误域折叠规则/重建确定性）+ `docs/api/index.md`
+模块地图行（更新日期同步 2026-09-28）；README 能力表新增 World State 行
+（状态与消费锚点如实标注）；术语表复核——World State / 实体词表词条与
+交付契约一致（三态假设、纯函数重建、非授权来源、词表四组身份域单一承载），
+零修订；设计文档（[World State 投影设计](../design/world_state_projection_design.md)）
+头注转「首阶段已交付」并新增 §12 实现注记（草案 → 冻结面差异清单：options
+归属、第六类过期输入、toolref 登记级检查、冲突唯一来源、前台无条件覆盖、
+`WallTimePoint` 纳秒精度）；[Temporal Policy 设计](../design/temporal_policy_design.md)
+§16 对齐点已于 `M27-01` 随冻结批次回填（:354 在案，本轮零修订）；
+[DEC-041](../decisions/DEC-041-session-world-state-projection.md) 头注转
+「首阶段已交付关闭」；总计划同步四处：头注近况行 M27 段转交付关闭叙事
+（PR #71 六提交链 + CI 24/24）、§4 里程碑表 M27 行转 `Completed`、§4.1
+第 20 条转 `Completed` 交付清单、§5 DEC-041 行状态括注转已关闭。门禁复核
+（本次实际执行）：`python3 tools/check_docs.py .` → Markdown links and
+fences: OK；`python3 tools/check_architecture.py .` → architecture policy
+is clean；本提交零代码变更，PR CI 随 docs 提交复跑取证。至此 §7 五个工作
+项与 §6 七条门禁全部完成，本里程碑转 `Completed`。

@@ -2,7 +2,9 @@
 
 > 状态：Accepted（方向冻结；首阶段已由 [M27](../plans/m27-world-state-projection-core.md)
 > 立项并跑前冻结（2026-09-28，词表前置
-> [DEC-046](DEC-046-entity-vocabulary-alignment.md)），实现进度见该里程碑）
+> [DEC-046](DEC-046-entity-vocabulary-alignment.md)）并已交付关闭（`Completed`，
+> [PR #71](https://github.com/Linductor-alkaid/mira/pull/71)）；消费接线与
+> Runtime/Session 集成逐阶段另行立项）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)

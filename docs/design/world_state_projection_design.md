@@ -1,7 +1,9 @@
 # World State 投影设计——会话级环境认知的共享表示
 
-> 状态：Active（v0.1 方向级；正式契约以 [M27](../plans/m27-world-state-projection-core.md)
-> §4 冻结面为准，草案与冻结面不一致处以 M27 §4 为准并回填本文实现注记）
+> 状态：Active（v0.1；首阶段已按 [M27](../plans/m27-world-state-projection-core.md)
+> §4 冻结面交付（2026-09-28，[PR #71](https://github.com/Linductor-alkaid/mira/pull/71)，
+> `Completed`）——草案与冻结面不一致处以 M27 §4 为准，实现取舍与偏差清单见
+> M27 §9 第五/六次验证记录与本文 §12 实现注记）
 > 版本：0.1
 > 更新日期：2026-09-28
 > 负责人：Mira Maintainers
@@ -165,3 +167,23 @@ WorldState 投影（纯函数核：值类型 + 更新算子 + rebuild）      �
 - [M27](../plans/m27-world-state-projection-core.md)（首阶段立项与正式契约冻结面）
 - [Temporal Policy 设计](temporal_policy_design.md) §16（`PolicyWorldView` 局部
   契约与词表对齐注记）、[术语表](../project/glossary.md)（World State 词条）
+
+## 12. 实现注记（首阶段交付后回填，2026-09-28）
+
+首阶段（[M27](../plans/m27-world-state-projection-core.md) `Completed`）按 §4
+冻结面实现并经 IVA 矩阵复验；草案 v0.1 与冻结面/实现的关键差异以 M27 §4 与
+§9 为准，要点留痕：
+
+- options 归属：值类型不内嵌、wire 无 options 键、八算子显式携带
+  `const WorldStateOptions &`（§4 B-A 修订；本草案第 3 节早期形态未定此点）。
+- 过期指令显式入序列：`WorldExpiryInput{now}` 为第六类输入，`expire_stale`
+  冻结为 `apply_expiry`，含过期推进可重放（B-B 修订）；`prune_entities` 为
+  非重建语义的审计便利入口。
+- toolref 校验归调用方：core 只做登记级检查（非空 + ≤ 256 字节），语法权威
+  在 workflow 模块 `parse_tool_reference`（B-C 修订，依赖方向约束）。
+- 导航 `from_state` 对账为 `ConflictMarked` 唯一触发；识别/成功导航正常留痕
+  不记冲突（B1 修订）；错误码折叠规则见 M27 §4.5（B2 修订）。
+- 前台观察无条件逐字段覆盖，`same_foreground_content` 仅门控 `PageAssumed`
+  环条目追加（IVA 复验修正，M27 §9 第六次）。
+- `Timestamp::wall` 为 `WallTimePoint`（system_clock 上显式纳秒精度），wire
+  wall 纳秒整数逐位精确往返、陈旧判定 1 ns 粒度（跨平台修正，M27 §9 第十次）。

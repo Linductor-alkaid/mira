@@ -19,9 +19,14 @@
 > 冻结；范围注记交叉点——DEC-038 L1/L2 首阶段随后另行立项并引用同一词表、
 > 投影非授权来源（RULE-09 延伸）、不声明更新延迟（RULE-10，容量缺省值为暂定
 > 默认值）；真实模型轮与 Stage E 仍受 `MNT-202609-27` 外部证据阻塞、平台
-> Adapter 宿主接入须先补专项决策，均不被本立项解锁；状态 `In Progress`
-> （`M27-01` 立项冻结已交付，实现自 `M27-02` 起推进，门禁验证完成前工作项保持
-> 未勾选）；详见 §4.1 第 20 条与 [M27 文件](m27-world-state-projection-core.md)。）
+> Adapter 宿主接入须先补专项决策，均不被本立项解锁。2026-09-28 同日交付关闭
+> （**`Completed`**）：[PR #71](https://github.com/Linductor-alkaid/mira/pull/71)
+> （`dd466aa` 立项冻结 + `58b5f6d` 投影核 + `baf344a` IVA 测试矩阵 + `a3c7fa9`
+> flaky 排队取消测试确定性修复 + `081a1e5` `Timestamp::wall` 纳秒精度跨平台修复 +
+> `6cc9692` CI 取证回填）CI 24/24 全部 SUCCESS——linux（gcc/clang ×
+> Debug/Release）、windows（Debug/Release）、android（arm64/x86_64 NDK 交叉）、
+> sanitizers（ASAN/TSAN/UBSAN）、quality；WS-G1–G7 全勾，验证记录见
+> [M27 文件](m27-world-state-projection-core.md) §9 与 §4.1 第 20 条。）
 > 此前 2026-09-24（Temporal Policy Stage T1 由 [M26](m26-temporal-policy-stage-t1.md)
 > 立项、跑前冻结并同日交付关闭（**`Completed`**）：
 > [PR #70](https://github.com/Linductor-alkaid/mira/pull/70)（head `251e6a8d`，
@@ -310,7 +315,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M24](m24-context-curator-stage-w5.md) | Context Curator Stage W5——Subagent Fork / Merge（[DEC-035](../decisions/DEC-035-context-curator-working-context.md)/[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)：快照 fork——子会话基线 + schema 1.2 加法溯源、局部 delta——独立 schema v1 机械三分类投影、parent merge policy——机械确定性合并经既有 §5.2 提交管线（同水位冲突不豁免）；无模型） | M23（Stage W4 关闭，已满足）；多 Agent 工作流场景冻结（已满足，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md)）；[Context Curator 设计](../design/context_curator_design.md) §13 与 M24 §4 冻结 | 宿主集成轮与真实模型轮/Stage E 评估矩阵的输入形态锚点（非发布物） | Completed |
 | [M25](m25-host-integration-round.md) | 宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：可选快照供给依赖（未注入零漂移）、`build_request` 经 `context_items_from_working_context` 注入已提交快照条目（身份对齐 + 有界渲染 + 失败降级）；W3/W4/W5 宿主显式编排、Loop 零自动化；三层验收——`tests/m25/` 契约矩阵 + `tests/integration/` 单系统闭环 + `examples/` 参考宿主；无模型） | M23/M24 关闭（已满足）；接线验收形态冻结（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M25 §4 冻结 | 真实模型轮与 Stage E 评估矩阵的接线前提（非发布物） | Completed |
 | [M26](m26-temporal-policy-stage-t1.md) | Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环（[DEC-037](../decisions/DEC-037-temporal-policy.md)：`TemporalHistory`/`TrackedEntity`/T1 子集版本化事件族/`ReactiveRule` schema v1 契约 + `IPolicyRuntime`/`ReactivePolicyRuntime` 最小闭环——冻结确定性数据集上「重复事件 → 候选规则 → 晋升后无需 Agent 正确执行」；无平台、无感知、无模型依赖，指标全部为管线行为指标） | DEC-037 冻结（已满足）；T1 纯 Core 确定性阶段常规授权（总计划 §4.1 第 7 条与 DEC-037 决策第 7 条，已满足）；M26 §4 冻结 | Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点（非发布物） | Completed |
-| [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物） | In Progress |
+| [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物）；已交付（[PR #71](https://github.com/Linductor-alkaid/mira/pull/71) CI 全绿） | Completed |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -791,8 +796,11 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     算子 + `rebuild_world_state` 重放重建、确定性淘汰序、`mira.world_state`
     八码错误域；零 Executor 注册面）、门禁 `WS-G1`–`G7`（`tests/m27/` 词表
     目录 + 投影契约/重建/淘汰矩阵，label `integration;m27`）与阶段冻结协议
-    必答八问 + 决策记录表；状态 `In Progress`（2026-09-28 `M27-01` 立项冻结
-    已交付；实现自 `M27-02` 起推进，门禁验证完成前工作项保持未勾选）。DEC-038 首阶段随后
+    必答八问 + 决策记录表；状态 `Completed`（2026-09-28 同日交付关闭：
+    `M27-01` 立项冻结 + `M27-02` 投影核 + `M27-03`/`M27-04` IVA 测试矩阵
+    （`WS-G1`–`G6`）+ `M27-05` 文档同步（`WS-G7`，API 手册 World State 页 +
+    README 能力行 + 设计/决策状态回填）；[PR #71](https://github.com/Linductor-alkaid/mira/pull/71)
+    CI 24/24 全绿；验证记录见 M27 §9 十二次记录）。DEC-038 首阶段随后
     另行立项（不预分配编号）：其 L1 实体引用、源事件引用与工具调用引用必须
     引用同一词表且不得定义第二套引用形态（DEC-046 §影响与风险），L1/L2 schema、
     抽取编排 API 与预算缺省值随其里程碑冻结（DEC-038 §非目标）。平台 Adapter
@@ -1228,7 +1236,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-038](../decisions/DEC-038-unified-behavior-trace.md) | 统一 Behavior Trace——执行轨迹的三层语义投影（Issue #55/#56；L0 事件/L1 语义行为/L2 narrative，承接 DEC-026 §4 轨迹抽取非目标） | Accepted（方向；实现未开始） | 首阶段另行立项（词表对齐前置已由 [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md) 与 [M27](m27-world-state-projection-core.md) 冻结；L1/L2 schema 随其里程碑冻结） |
 | [DEC-039](../decisions/DEC-039-mcp-tool-module-admission.md) | MCP 工具模组准入——部署时注册的外部 Tool 来源（Issue #56；部分修订 DEC-009 备选方案第 5 条） | Accepted（方向；实现未开始） | M7 重定义已由 [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) 完成；实现随 M7 的 MCP 阶段（TM0–TM2 之后）立项 |
 | [DEC-040](../decisions/DEC-040-tool-reference-and-skill-layer.md) | Tool 稳定引用、兼容状态与 Skill 层级（Issue #55/#56；引用钉住/跟随、`Runnable/Degraded/Invalid` 投影、Skill=暴露为 Tool 的 Workflow） | Accepted（方向；首阶段 TR0 稳定引用与兼容投影已由 [M7](m7-tools-evaluation-platform-v1.md) TR0 交付关闭（引用语法 v1 随该阶段冻结）；TR1 Skill 生命周期随后续阶段立项） | M7 模组体系落地后随其后阶段另行立项（[DEC-042](../decisions/DEC-042-m7-scope-redefinition.md)） |
-| [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；首阶段已由 [M27](m27-world-state-projection-core.md) 立项并跑前冻结（词表前置 [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)；`M27-01` 立项冻结已交付，状态 `In Progress`）） | M27（首阶段）；消费接线与 Runtime/Session 集成逐阶段另行立项 |
+| [DEC-041](../decisions/DEC-041-session-world-state-projection.md) | 会话 World State 投影——Runtime 当前环境认知的共享表示（Issue #55；纯函数更新、事件确定性重建、消费者只读） | Accepted（方向；首阶段已由 [M27](m27-world-state-projection-core.md) 立项并跑前冻结（词表前置 [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)）并已交付关闭（`Completed`，[PR #71](https://github.com/Linductor-alkaid/mira/pull/71)）） | M27（首阶段）；消费接线与 Runtime/Session 集成逐阶段另行立项 |
 | [DEC-042](../decisions/DEC-042-m7-scope-redefinition.md) | M7 范围重定义——Tool 模组体系分阶段落地（`MNT-202609-30` 交付物；原 `M7-01`–`M7-28` 迁移映射，推迟项保持 DEC-011 证据门禁） | Accepted | M7（TM0 起） |
 | [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md) | 机器可检查的架构策略、基线与契约四件套交付标准（`MNT-202609-35`–`38`；policy 单一来源 + CI 门禁 + 基线渐进治理 + 术语表 + 阶段冻结协议） | Accepted | 维护轮（2026-09 第五轮起持续生效） |
 | [DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md) | 多 Agent 工作流场景与 Subagent 上下文隔离边界（Issue #48；Stage W5：subagent = Agent Harness 控制平面内父会话旁的子 Session、fork = 子会话基线 + schema 1.2 溯源、机械确定性 merge policy、W3/W4 共存边界；Workflow fork 保持 DEC-019 扩展位） | Accepted（方向；实现由 [M24](m24-context-curator-stage-w5.md) 承载） | M24（Stage W5） |
