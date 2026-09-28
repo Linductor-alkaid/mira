@@ -106,6 +106,8 @@ add_library(mira_core
     src/replay/stateful_replay.cpp
     src/support/json.cpp
     src/temporal/temporal_policy.cpp
+    src/worldstate/world_state.cpp
+    src/worldstate/world_state_wire.cpp
     src/model/model_contracts.cpp
     src/model/model_profile.cpp
     src/model/model_digest.cpp
