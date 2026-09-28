@@ -128,9 +128,9 @@ namespace mira::testing {
     record.scope = scope;
     record.kind = kind;
     record.statement = std::move(statement);
-    record.validity.valid_from =
+    record.validity.valid_from = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         m23_fixed_now().wall +
-        std::chrono::seconds{static_cast<std::int64_t>(recorded_offset_seconds)};
+        std::chrono::seconds{static_cast<std::int64_t>(recorded_offset_seconds)});
     record.recorded_at = record.validity.valid_from;
     record.provenance = {m23_event_from_seed(recorded_offset_seconds + 900)};
     record.verification = verification;

@@ -1,6 +1,10 @@
 # DEC-041：会话 World State 投影——Runtime 当前环境认知的共享表示
 
-> 状态：Accepted（方向冻结；实现未开始）
+> 状态：Accepted（方向冻结；首阶段已由 [M27](../plans/m27-world-state-projection-core.md)
+> 立项并跑前冻结（2026-09-28，词表前置
+> [DEC-046](DEC-046-entity-vocabulary-alignment.md)）并已交付关闭（`Completed`，
+> [PR #71](https://github.com/Linductor-alkaid/mira/pull/71)）；消费接线与
+> Runtime/Session 集成逐阶段另行立项）
 > 日期：2026-09-15
 > 决策人：Mira Maintainers
 > 需求来源：[Issue #55](https://github.com/Linductor-alkaid/mira/issues/55)
@@ -86,7 +90,8 @@ Mira 已有的环境知识表示各自服务于一个时间尺度：Observation 
 - 不改变 Observation/坐标契约、App Model 契约与 DEC-028 导航语义。
 - 不承诺跨设备或跨命名空间的世界模型（DEC-027 v1 单命名空间同源约束）。
 - 不在本决策冻结投影的具体 schema、更新算子清单与缺省淘汰策略（首阶段里程碑
-  冻结；进入 `Planned` 前新建里程碑文件）。
+  冻结；进入 `Planned` 前新建里程碑文件——已满足：
+  [M27](../plans/m27-world-state-projection-core.md) 于 2026-09-28 立项冻结）。
 
 ## 备选方案
 
@@ -113,7 +118,8 @@ Mira 已有的环境知识表示各自服务于一个时间尺度：Observation 
   宿主供给；投影在该场景下的表达力有限，文档如实披露（RULE-10）。
 - 新增公开契约面（投影读取 API 与类型），DEC-002 版本化，installed-consumer
   需覆盖；与 DEC-038/DEC-040 的词表对齐是共同前置，任何一侧先行都必须预留
-  对齐点。
+  对齐点（对齐点已冻结：[DEC-046](DEC-046-entity-vocabulary-alignment.md)
+  与[实体词表设计](../design/entity_vocabulary_design.md)，2026-09-28）。
 
 ## 验证方式
 
@@ -139,4 +145,8 @@ Mira 已有的环境知识表示各自服务于一个时间尺度：Observation 
 - [Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
   （App Model 定位、W-03/W-05/W-06/W-07）
 - [Context Curator 设计](../design/context_curator_design.md)（checkpoint/重建先例）
-- 专项设计与里程碑文件随首阶段立项交付。
+- 专项设计与里程碑文件随首阶段立项交付（已交付，2026-09-28：
+  [M27](../plans/m27-world-state-projection-core.md)、
+  [World State 投影设计](../design/world_state_projection_design.md)、
+  [DEC-046](DEC-046-entity-vocabulary-alignment.md) 与
+  [实体词表设计](../design/entity_vocabulary_design.md)）。

@@ -91,7 +91,9 @@ memory_candidates_from_working_context(const WorkingContextSnapshot &snapshot,
             record.scope = scope;
             record.kind = section.kind;
             record.statement = item.content;
-            record.validity.valid_from = snapshot.created_at.wall;
+            record.validity.valid_from =
+                std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                    snapshot.created_at.wall);
             record.provenance = item.source_events;
             // Model-mediated derived projection (RULE-09): hard-wired, not
             // caller-tunable — a promotion candidate is unverified model

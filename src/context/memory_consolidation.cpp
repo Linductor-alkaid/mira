@@ -26,7 +26,7 @@ namespace {
     return false;
 }
 
-[[nodiscard]] std::int64_t wall_nanos(const std::chrono::system_clock::time_point &stamp) {
+[[nodiscard]] std::int64_t wall_nanos(const WallTimePoint &stamp) {
     return static_cast<std::int64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
 }
@@ -203,8 +203,10 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
     for (auto &candidate : candidates) {
         MemoryRecord proposed = std::move(candidate.proposed);
         proposed.scope = scope;
-        proposed.recorded_at =
-            proposed.recorded_at.time_since_epoch().count() == 0 ? now.wall : proposed.recorded_at;
+        if (proposed.recorded_at.time_since_epoch().count() == 0) {
+            proposed.recorded_at =
+                std::chrono::time_point_cast<std::chrono::system_clock::duration>(now.wall);
+        }
         const std::string key =
             memory_kind_name(proposed.kind) + ":" + lowercase(proposed.statement);
         ConsolidationEntry entry;

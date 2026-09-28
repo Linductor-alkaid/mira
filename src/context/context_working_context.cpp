@@ -34,11 +34,9 @@ namespace {
 
 [[nodiscard]] Timestamp timestamp_from_nanos(std::int64_t wall, std::int64_t monotonic) {
     Timestamp timestamp;
-    // Clock durations are platform-defined (e.g. microseconds on Windows and
-    // the NDK); convert through the clock's own duration explicitly.
-    timestamp.wall = std::chrono::system_clock::time_point(
-        std::chrono::duration_cast<std::chrono::system_clock::duration>(
-            std::chrono::nanoseconds(wall)));
+    // Wall recovers the stored ns integer exactly through WallTimePoint;
+    // monotonic converts through the clock's own duration explicitly.
+    timestamp.wall = WallTimePoint(std::chrono::nanoseconds(wall));
     timestamp.monotonic = std::chrono::steady_clock::time_point(
         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
             std::chrono::nanoseconds(monotonic)));
