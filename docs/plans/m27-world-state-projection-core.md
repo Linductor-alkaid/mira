@@ -506,7 +506,7 @@ enum class WorldStateDomainCode : std::int32_t {
 `executor::executor`，label `integration;m27`，TIMEOUT 120；
 `tests/CMakeLists.txt:639-721` 先例）。
 
-- [ ] `WS-G1` 词表目录一致性与 fail-closed 负向矩阵
+- [x] `WS-G1` 词表目录一致性与 fail-closed 负向矩阵
   （`tests/m27/m27_entity_vocabulary_test.cpp`，label `integration;m27`，目标
   额外链接 `Mira::workflow`）：词表 §2.4 **两层断言**——(a) 类型名闭集：
   `is_workflow_event_type`（`workflow_events.hpp:28`）对词表 §2.4 表 20 个
@@ -523,7 +523,7 @@ enum class WorldStateDomainCode : std::int32_t {
   256 字节经 `apply_tool_settled` 拒绝；
   `MemoryScope.subject_id`/`entity_key` 不进词表目录的反向断言（映射规则登记，
   词表 §3——投影 API 不接受 `entity_key` 形态输入的编译面确认）。
-- [ ] `WS-G2` 纯函数性与更新算子矩阵（`tests/m27/m27_world_state_test.cpp`，
+- [x] `WS-G2` 纯函数性与更新算子矩阵（`tests/m27/m27_world_state_test.cpp`，
   label `integration;m27`）：`WorldStateOptions`（含容量为 0 → `OptionsInvalid`）/
   `WorldForegroundApp`/`WorldPageAssumption`/`WorldEntity`/`WorldState`
   validate 全部拒绝路径；八算子逐个正负用例（§4.3 表逐行：观察刷新/插入/溢出
@@ -538,13 +538,13 @@ enum class WorldStateDomainCode : std::int32_t {
   options 在不同进程内重复应用 `digest()` 逐字节一致，且投影更新不读系统时钟
   （固定输入 + 变换宿主墙钟不可观测：digest 与时间注入无关）；算子失败零变更
   强一致断言。
-- [ ] `WS-G3` 重建与跨进程确定性（同文件）：冻结确定性输入序列（digest 在测试
+- [x] `WS-G3` 重建与跨进程确定性（同文件）：冻结确定性输入序列（digest 在测试
   内常量锚定并断言，覆盖六类输入——五类更新 + `WorldExpiryInput`——与冲突/
   过期/溢出淘汰路径）；同 options 下 `rebuild_world_state` 与逐算子增量推进的
   `digest()` 逐字节一致；同输入前缀截断重放 → 前缀投影 digest 与全量推进至
   该前缀一致；独立 `prune_entities` 调用的投影不在等价断言内（§4.3 非重建
   语义的负向确认）；完整管线重放两遍 → digest 跨进程字节一致（M16–M20 口径）。
-- [ ] `WS-G4` 容量与淘汰（同文件，全部经带 options 的算子断言）：
+- [x] `WS-G4` 容量与淘汰（同文件，全部经带 options 的算子断言）：
   `options.max_entities` 溢出触发淘汰序（stale → `last_seen_at` → confidence
   → canonical JSON 字典序四键逐格断言，含全同键稳定性）；被淘汰实体的投影可
   从六类输入序列以同 options 重放逐字节重建（含 `EntityEvicted` 条目）；
@@ -552,7 +552,7 @@ enum class WorldStateDomainCode : std::int32_t {
   `options.max_change_summary_bytes` → `PayloadTooLarge` 拒绝且投影零变更
   （不截断冒充）；不同 options 下同输入序列推进不宣称 digest 可比（options
   进重建配方的正向确认）。
-- [ ] `WS-G5` Unknown/陈旧/冲突 fail-closed 负向矩阵与只读性（同文件）：默认
+- [x] `WS-G5` Unknown/陈旧/冲突 fail-closed 负向矩阵与只读性（同文件）：默认
   构造 `WorldState` 全 `Unknown` 且合法（无供给 ≠ 猜测）；无识别/导航供给时
   页面恒 `Unknown` 且置信恒 0；`apply_expiry` 后消费 `Stale` 条目不回 `Believed`
   （无新证据不升级）；导航 `from_state` 对账冲突场景 `ConflictMarked` 条目
@@ -561,7 +561,7 @@ enum class WorldStateDomainCode : std::int32_t {
   面断言 + 架构检查：`world_state.hpp` 不包含 `security.hpp` 依赖）、
   `Unknown`/`Stale` 状态不被算子自动升级为 `Believed`（授权语义本身归 DEC-004
   安全层，非本阶段对象）。
-- [ ] `WS-G6` wire schema 与错误域（同文件）：`mira.worldstate.v1` canonical
+- [x] `WS-G6` wire schema 与错误域（同文件）：`mira.worldstate.v1` canonical
   JSON 往返字节一致 + DEC-002 版本策略（`{1,0}`/`{1,1}` 读取、`{0,x}`/`{2,x}`
   拒绝、未知成员/缺成员 `PayloadMalformed`；成员结构合法但值非法——含嵌套
   词表类值非法（如实体 `observation_id` 零值）与 `change_sequence` 回归——
@@ -587,21 +587,21 @@ enum class WorldStateDomainCode : std::int32_t {
 
 ## 7. 工作项
 
-- [ ] `M27-01` 阶段立项与本文件 §4/§5/§6/§7 冻结（时间戳先于任何实现与测试）；
+- [x] `M27-01` 阶段立项与本文件 §4/§5/§6/§7 冻结（时间戳先于任何实现与测试）；
   同批交付 [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)、
   [实体词表设计](../design/entity_vocabulary_design.md)、
   [World State 投影设计](../design/world_state_projection_design.md) v0.1、
   术语表词条（World State / 实体词表）、总计划登记与 DEC-038/DEC-041/
   [Temporal Policy 设计](../design/temporal_policy_design.md) §16 事实性回填。
-- [ ] `M27-02` 契约与实现：`include/mira/world_state.hpp` +
+- [x] `M27-02` 契约与实现：`include/mira/world_state.hpp` +
   `src/worldstate/world_state.cpp`（入 `mira_core`），按 §4 冻结语义实现；
   core 模块零 policy 差异；clang-tidy 预检零违例。
-- [ ] `M27-03` 词表目录与 fail-closed 测试矩阵（§6 `WS-G1`，
+- [x] `M27-03` 词表目录与 fail-closed 测试矩阵（§6 `WS-G1`，
   `tests/m27/m27_entity_vocabulary_test.cpp`，CMake 注册 label `integration;m27`，
   目标额外链接 `Mira::workflow` 以调用权威 `parse_tool_reference`）
   ——测试的编写、运行与 sanitizer 取证由 Independent-Verification-Agent 独立
   完成并复验。
-- [ ] `M27-04` 投影契约/重建/淘汰测试矩阵（§6 `WS-G2`–`WS-G6`，
+- [x] `M27-04` 投影契约/重建/淘汰测试矩阵（§6 `WS-G2`–`WS-G6`，
   `tests/m27/m27_world_state_test.cpp`）——同由 Independent-Verification-Agent
   独立完成并复验。
 - [ ] `M27-05` 文档同步（§6 `WS-G7` 清单）+ 本地全门禁与 PR CI 取证回填；
@@ -845,3 +845,26 @@ mira_core` → exit 0。
 format-check` → 249 files 全部通过（exit 0）；`cmake --build build/debug
 --target mira_core` 与 `cmake --build build/static-analysis --target
 mira_core`（clang-tidy 增量树）→ 均 exit 0。
+
+2026-09-28（第九次）：强门禁第 3 轮唯一失败定位为既有测试
+`tests/integration/executor_lifecycle_test.cpp` 的 flaky 竞态（与本里程碑
+零代码耦合，原 :76-87 属 M0 基线交付）：原循环 64 次 submit→cancel→wait 并
+要求至少一次观察到「排队中取消」，但 `apply` 纯函数瞬时完成，空闲机器上
+worker 出队恒快于取消请求——单次尝试取消获胜概率约 2.5%，64 次全败概率约
+20%，ubsan 门禁因此间歇性打红（复核：`build/ubsan/Testing/Temporary/
+LastTest.log` 唯一失败项 `mira_executor_integration_test`，断言
+`executor_lifecycle_test.cpp:87 check failed: saw_queued_cancellation`）。
+修复（测试侧，机制覆盖由概率改确定，非取消语义放宽）：循环保留 64 次但只
+断言与交错无关的结算契约（`cancel` ∈ {Cancelled, Applied}、`wait(2s)` ∈
+{Applied, Cancelled}，超时/拒绝即失败）+ 已观察 id 再取消返回 `NotFound`
+的终态幂等断言；「排队中取消」改由文件末尾新增确定性段验证——promise 阻塞
+occupier 钉住唯一 worker，victim 必然在队列中被取消
+（`RequestedBeforeStart` + future 以 `TaskCancelled` 结算，in_flight 归零）。
+Independent-Verification-Agent 复验（本次实际执行）：该测试 ubsan 20/20、
+debug 10/10、tsan 5/5（tsan 需 `setarch -R` 规避本机内核高熵 ASLR 与
+sanitizer shadow 映射冲突的环境性启动崩溃，约 90% 复现率、与本次修复无关，
+CI runner 无此问题）；全量 `ctest`（ubsan 预设）`100% tests passed,
+0 tests failed out of 102`（132.06s）。`WS-G1`–`WS-G6` 与 `M27-01`–
+`M27-04` 复选框随本轮取证勾选（IVA 三轮复验通过，m27 两目标 35 用例全绿，
+7 条门禁有测试覆盖）；`WS-G7`、本地全门禁与 PR CI 复选框保持未勾选，待
+`M27-05`（API 手册新页随其交付，CI 取证随 PR 回填）。

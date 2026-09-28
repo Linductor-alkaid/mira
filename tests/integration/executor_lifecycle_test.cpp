@@ -73,18 +73,30 @@ int main() {
     MIRA_CHECK(runtime.submit({2, 9, 0, mira::BaselineCommandKind::DiagnosticFailure}).admitted);
     MIRA_CHECK(runtime.wait(2, 2s).code == mira::BaselineResultCode::Failed);
 
-    bool saw_queued_cancellation = false;
-    for (std::uint64_t attempt = 0; attempt < 64 && !saw_queued_cancellation; ++attempt) {
+    // Every admitted command settles promptly regardless of where the
+    // cancellation lands: before start (queued -> Cancelled), while running
+    // (cooperative token; the command still applies), or after completion
+    // (idempotent Applied). Hitting the queued window through this facade
+    // depends on worker dequeue timing -- an idle worker wins the race, so a
+    // loop that must observe the queued window flakes on fast machines.
+    // Only the interleaving-independent settlement contract is asserted here;
+    // the queued-cancellation mechanism itself is proven deterministically in
+    // the dedicated executor section at the end of this file.
+    for (std::uint64_t attempt = 0; attempt < 64; ++attempt) {
         const auto command_id = 100 + attempt;
         MIRA_CHECK(
             runtime.submit({command_id, 1000 + attempt, 0, mira::BaselineCommandKind::Command})
                 .admitted);
         const auto cancel = runtime.cancel(command_id);
+        MIRA_CHECK(cancel.code == mira::BaselineResultCode::Cancelled ||
+                   cancel.code == mira::BaselineResultCode::Applied);
         const auto result = runtime.wait(command_id, 2s);
-        saw_queued_cancellation = cancel.code == mira::BaselineResultCode::Cancelled &&
-                                  result.code == mira::BaselineResultCode::Cancelled;
+        MIRA_CHECK(result.code == mira::BaselineResultCode::Applied ||
+                   result.code == mira::BaselineResultCode::Cancelled);
     }
-    MIRA_CHECK(saw_queued_cancellation);
+    // Observed command ids are retired: a late cancellation reports NotFound
+    // instead of resurrecting terminal state.
+    MIRA_CHECK(runtime.cancel(2).code == mira::BaselineResultCode::NotFound);
 
     MIRA_CHECK(runtime.request_shutdown());
     const auto rejected = runtime.submit({999, 1, 0, mira::BaselineCommandKind::Command});
@@ -177,5 +189,44 @@ int main() {
     }
     MIRA_CHECK(saw_timer_cancelled);
     MIRA_CHECK(direct_executor.shutdown(true) == executor::ShutdownResult::Completed);
+
+    // Queued cancellation, deterministically: the occupier pins the only
+    // worker, so the victim is provably still queued when the cancel request
+    // lands. The executor contract then guarantees the victim never runs and
+    // its future settles with TaskCancelled -- the same semantics the runtime
+    // baseline maps to a Cancelled command result.
+    executor::Executor queued_cancel_executor;
+    executor::ExecutorConfig queued_cancel_config;
+    queued_cancel_config.min_threads = 1;
+    queued_cancel_config.max_threads = 1;
+    queued_cancel_config.queue_capacity = 2;
+    queued_cancel_config.max_in_flight_tasks = 2;
+    MIRA_CHECK(queued_cancel_executor.initialize(queued_cancel_config));
+
+    std::promise<void> occupier_started;
+    auto occupier_started_future = occupier_started.get_future().share();
+    std::promise<void> occupier_release;
+    auto occupier_release_future = occupier_release.get_future().share();
+    auto occupier = queued_cancel_executor.submit_with_handle([&] {
+        occupier_started.set_value();
+        occupier_release_future.wait();
+    });
+    MIRA_CHECK(occupier_started_future.wait_for(2s) == std::future_status::ready);
+
+    auto victim = queued_cancel_executor.submit_with_handle([] { return 1; });
+    MIRA_CHECK(queued_cancel_executor.request_task_cancel(victim.handle).result ==
+               executor::TaskCancellationResult::RequestedBeforeStart);
+    occupier_release.set_value();
+    MIRA_CHECK(occupier.future.wait_for(2s) == std::future_status::ready);
+    bool victim_cancelled = false;
+    try {
+        MIRA_CHECK(victim.future.wait_for(2s) == std::future_status::ready);
+        static_cast<void>(victim.future.get());
+    } catch (const executor::TaskCancelled &) {
+        victim_cancelled = true;
+    }
+    MIRA_CHECK(victim_cancelled);
+    MIRA_CHECK(queued_cancel_executor.get_in_flight_submissions() == 0);
+    MIRA_CHECK(queued_cancel_executor.shutdown(true) == executor::ShutdownResult::Completed);
     return 0;
 }
