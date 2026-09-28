@@ -720,6 +720,43 @@ mira_add_m26_test(mira_m26_temporal_policy_test m26/m26_temporal_policy_test.cpp
 target_sources(mira_m26_temporal_policy_test PRIVATE m26/m26_lifecycle.cpp)
 mira_add_m26_test(mira_m26_temporal_policy_eval m26/m26_temporal_policy_eval.cpp)
 
+# ---------------------------------------------------------------------------
+# M27 (DEC-041 first stage): the session World State projection core - the
+# entity-vocabulary catalog consistency and fail-closed matrix (WS-G1), the
+# purity/operator/capacity/fail-closed matrix (WS-G2/G4/G5) and the
+# rebuild/wire/error-domain matrix (WS-G3/G6) over the milestone §4 frozen
+# contract. IVA-owned; split by the architecture max-file-lines budget along
+# the M24/M26 precedent. Labels integration;m27, TIMEOUT 120. The vocabulary
+# target additionally links Mira::workflow to drive the authoritative
+# parse_tool_reference (tests requires already include workflow); the
+# M27_SOURCE_DIR definition anchors the header face scans.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m27_test name source)
+    cmake_parse_arguments(M27_ARG "" "" "EXTRA_LIBS" ${ARGN})
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core executor::executor ${M27_ARG_EXTRA_LIBS})
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    target_compile_definitions(${name} PRIVATE M27_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m27" TIMEOUT 120)
+endfunction()
+
+mira_add_m27_test(mira_m27_entity_vocabulary_test m27/m27_entity_vocabulary_test.cpp
+    EXTRA_LIBS Mira::workflow)
+mira_add_m27_test(mira_m27_world_state_test m27/m27_world_state_test.cpp)
+# The gate matrix is split by responsibility across two translation units;
+# both link into the single target and the case table in
+# m27_world_state_test.cpp drives all cases.
+target_sources(mira_m27_world_state_test PRIVATE m27/m27_wire_rebuild.cpp)
+
 mira_add_test(mira_working_context_host_test integration/working_context_host_test.cpp
     integration)
 
