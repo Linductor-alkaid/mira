@@ -85,7 +85,9 @@ behavior narrative，使下游（judge、context、蒸馏）在行为语义层�
   （DEC-029/DEC-030 已有方向）。
 - 不做自动 Policy 学习；Temporal Policy 归纳走 DEC-037 自身纪律。
 - 不在本决策冻结 L1/L2 的具体 schema、抽取编排 API 与预算缺省值；它们在首阶段
-  里程碑文件内冻结（进入 `Planned` 前按规范新建里程碑文件，不预分配编号）。
+  里程碑文件内冻结（进入 `Planned` 前按规范新建里程碑文件，不预分配编号；
+  实体词表对齐前置已由 [DEC-046](DEC-046-entity-vocabulary-alignment.md) 于
+  2026-09-28 冻结，词表承载[实体词表设计](../design/entity_vocabulary_design.md)）。
 - 不改变 EventStore 既有事件的 schema 与语义。
 
 ## 备选方案
@@ -112,7 +114,10 @@ behavior narrative，使下游（judge、context、蒸馏）在行为语义层�
 - 重建成本随事件量增长：需要水位/增量/checkpoint 策略（DEC-035 先例），全量重建
   仅作为恢复与审计路径。
 - 与 DEC-041 的实体语义必须在首阶段对齐（同一 `ElementRef` 词表），否则两个投影会
-  各自漂移——这是本决策与 DEC-041 的共同前置。
+  各自漂移——这是本决策与 DEC-041 的共同前置（已冻结：
+  [DEC-046](DEC-046-entity-vocabulary-alignment.md)，词表承载
+  [实体词表设计](../design/entity_vocabulary_design.md)；本决策首阶段里程碑
+  引用同一词表，不得定义第二套引用形态）。
 
 ## 验证方式
 
@@ -138,4 +143,7 @@ behavior narrative，使下游（judge、context、蒸馏）在行为语义层�
   [DEC-041](DEC-041-session-world-state-projection.md)
 - [Agent Harness 与 Workflow 架构设计](../design/agent_harness_and_workflow_architecture.md)
   （W-01/W-03/W-04/W-07/W-08、`RULE-07`/`RULE-09`）
-- 专项设计随首阶段立项交付（本决策只冻结方向与边界）。
+- 专项设计随首阶段立项交付（本决策只冻结方向与边界；共同词表前置已交付：
+  [DEC-046](DEC-046-entity-vocabulary-alignment.md) 与
+  [实体词表设计](../design/entity_vocabulary_design.md)，2026-09-28——本决策
+  首阶段里程碑尚未立项）。

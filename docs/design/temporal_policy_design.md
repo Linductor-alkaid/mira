@@ -350,7 +350,10 @@ Stage T1 由 [M26](../plans/m26-temporal-policy-stage-t1.md) 承载并交付关�
   N 份历史），重建走 `rebuild_temporal_histories` 只读投影。
 - **`WorldState` → `PolicyWorldView`**：T1 局部输入契约为「实体 + 闭集标量
   事实」；DEC-041 Session World State 投影实现未开始，词表对齐随 DEC-038/
-  DEC-041 首阶段冻结处理。
+  DEC-041 首阶段冻结处理（词表对齐已由 [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)
+  与 [M27](../plans/m27-world-state-projection-core.md) 冻结，2026-09-28；
+  `entity_key` 为阶段局部标识、映射规则见
+  [实体词表设计](entity_vocabulary_design.md) §3，随 T2+ 消费立项冻结）。
 - **`PolicyTransitioned` 归 T5**：T1 事件为九类 `mira.policy.*.v1` 子集
   （无状态机转换事件）；HSM/BT 后端与自动治理归 T5。
 - **`IPolicyRuntime::step` 语义具体化**：激活门、`(priority, rule_id)` 固定

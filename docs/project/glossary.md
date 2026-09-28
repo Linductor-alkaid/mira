@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.2
-> 更新日期：2026-09-24
+> 版本：1.3
+> 更新日期：2026-09-28
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -242,6 +242,21 @@ _Avoid_: 压缩（Context 压缩是预算语义）
 DEC-038 统一的任务执行事实轨迹平面，是 Working Context 等投影的
 唯一事实源。
 _Avoid_: 日志轨迹
+
+**World State（会话世界状态）**:
+DEC-041 会话级「Runtime 当前 believed 环境认知」的确定性投影
+（前台应用、页面假设、存活实体、最近变化）：从 L0 事件纯函数重建，
+`Believed`/`Stale`/`Unknown` 显式三态；只是数据，不构成动作授权。
+_Avoid_: 世界模型（无跨设备承诺）、环境事实源（EventStore 才是事实源）、
+当前状态（与 App Model 长期图知识语义混淆）
+
+**实体词表（Entity Vocabulary）**:
+DEC-046 冻结的跨投影共享引用词表 v1：ElementRef 证据引用、App Model
+`state_id` 页面身份、`toolref:` 工具引用、L0 事件引用四组身份域的
+单一冻结承载（实体词表设计）；Memory `subject_id` 与 Temporal Policy
+`entity_key` 以映射规则登记、不进 v1 基线。
+_Avoid_: 各投影自定义引用形态（第二套词表）、永久实体 ID（ElementRef
+是证据非身份）
 
 ## 7. Workflow 体系（M8–M14）
 
