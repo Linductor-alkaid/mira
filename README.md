@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/mira.png" alt="Mira icon" width="160" />
+</p>
+
 # Mira
 
 Mira 是使用现代 C++ 构建的跨平台原生 AI Agent Runtime。核心运行闭环为：
