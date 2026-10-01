@@ -1,132 +1,219 @@
-<p align="center">
-  <img src="docs/mira.png" alt="Mira icon" width="160" />
-</p>
+<div align="center">
+  <img src="docs/mira.png" alt="Mira" width="160" />
 
-# Mira
+  # Mira
 
-Mira 是使用现代 C++ 构建的跨平台原生 AI Agent Runtime。核心运行闭环为：
+  **A cross-platform native AI Agent Runtime in modern C++**
+
+  [![CI](https://github.com/Linductor-alkaid/mira/actions/workflows/ci.yml/badge.svg)](https://github.com/Linductor-alkaid/mira/actions/workflows/ci.yml)
+  [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+  ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)
+  ![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20Android-lightgrey)
+
+  [English](README.md) · [简体中文](README_zh.md)
+</div>
+
+---
+
+Mira is a runtime for building autonomous agents that perceive an environment,
+reason with an LLM/VLM, act, and verify the outcome — on a desktop process, a
+simulated device, or a real Android phone. The runtime loop is explicit:
 
 ```
 Observe -> Reason -> Plan -> Act -> Verify
 ```
 
-Agent Core 与具体平台完全解耦：Android、Windows、Linux、模拟器等宿主能力只通过
-Platform Adapter 接入，Core 不依赖任何平台 SDK。所有异步任务、定时任务和生命周期由
-[`third_party/executor`](third_party/executor) 统一管理，Mira 自研代码不创建私有线程。
+- **Platform-independent core.** Host capabilities (Android, Windows, Linux,
+  simulators, robots) enter only through Platform Adapters; the core never
+  touches a platform SDK.
+- **Executor-owned concurrency.** Every async task, timer, blocking-I/O worker,
+  and shutdown path is managed by the bundled
+  [Executor](third_party/executor). Mira's own code creates no threads of its own.
+- **API-first model layer.** OpenAI-compatible providers behind `IModelProvider`;
+  model output is parsed and validated into structured decisions before anything
+  reaches the environment.
 
-## 当前能力状态
+## Architecture
 
-Mira 已交付 M0–M4，阶段 A–F（M8–M13）及其 Agent 恢复编排（M14）、最小评估 Harness
-与 recorded 基线（M15）的实现已合入并通过 Android 两 ABI 编译与安装包 consumer
-链接门禁；设备运行与宿主消费证据仍待补
-（见[实施总计划](docs/plans/mira-implementation-plan.md)）：
+```mermaid
+flowchart TB
+    app["Host application"]
 
-| 能力 | 状态 | 证据 |
-| --- | --- | --- |
-| 公共契约、状态机、EventStore、安全边界 | 已交付（M0/M1） | — |
-| Observation、坐标、Simulator、Android Host ABI v1 | 已交付（M2） | — |
-| OpenAI-compatible Provider、视觉离散闭环 | 已交付（M3） | [Agent loop alpha](docs/releases/agent-loop-alpha.md) |
-| Context/Memory、Checkpoint、崩溃恢复、Replay | 已交付（M4） | [Stateful agent beta](docs/releases/stateful-agent-beta.md) |
-| Workflow 契约、执行、对话 patch 与策略 | 实现已交付（M8–M10），Android 设备运行待补 | [Workflow API](docs/api/workflow-contracts.md) |
-| 轨迹编译、任务归纳、App Model 与导航 | 实现已交付（M11/M12），Android 设备运行待补 | [Workflow 专项设计](docs/design/workflow_runtime_design.md) |
-| 四类记忆域、Episode/Lesson、失败检索 | 实现已交付（M13），Android 设备运行待补 | [阶段 F 计划](docs/plans/m13-memory-and-learning-loop.md) |
-| `WaitingAgent` 恢复编排（模型决策修复 + `WorkflowRecoveryAttempted` 审计） | 实现已交付（M14，DEC-031），Android 设备运行与真实 Provider 证据待补 | [M14 计划](docs/plans/m14-recovery-orchestration.md)、[恢复编排设计](docs/design/workflow_recovery_orchestration_design.md) |
-| 离散动作 + Workflow 最小评估 Harness（四臂对照、17 case、G1–G6 门禁、soak） | recorded 基线已交付（M15，DEC-034）；live canary 与真实平台组待补跑 | [评估基线 v1](docs/benchmarks/discrete-workflow-eval-v1.md) |
-| long-session 上下文有界性基线（Layer 0，无模型） | Stage A 基线已交付（M16，DEC-032） | [long-session 基线 v1](docs/benchmarks/context-intelligence-long-session-v1.md) |
-| Layer 1 检索召回（`IContextEmbedder`/`IContextRetriever`，Conversation/Episode/Lesson） | 契约与参考索引已交付（M17，DEC-032 Stage B）；真实 embedder 供给方与 AgentLoop 集成待后续 | [检索评估 v1](docs/benchmarks/context-intelligence-retrieval-v1.md) |
-| Layer 2 重排对照（`IContextReranker` + 确定性参考重排器） | 契约与参考实现已交付（M18，DEC-032 Stage C）；模型重排经供应链复核后接入 | [重排对照 v1](docs/benchmarks/context-intelligence-rerank-v1.md) |
-| Layer 3 语义固化（`ISemanticConsolidator` → `ConversationCheckpoint`，经 `IModelProvider` 供给、五元组提交与终态幂等） | 契约与参考固化器已交付（M19，DEC-032 Stage D）；真实模型供给按 DEC-036 走可用源模型（含主模型），接入待后续 | [固化管线评估 v1](docs/benchmarks/context-intelligence-consolidation-v1.md) |
-| Working Context 快照与 Curator（`WorkingContextSnapshot` schema 1.1：水位、digest、epoch 失效、终态幂等、Layer 0 转换、恢复；`IContextCurator` 模型介导维护者 + `ProviderContextCurator` 参考实现；`WorkingContextAutoCurator` 自动触发：watermark/event count 双轴策略、coalescing、forced flush、失败回退；Memory Promotion：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆，唯一受控通道） | Stage W1 确定性契约已交付（M20，DEC-035）；Stage W2 Curator 契约与模型供给参考实现已交付（M21，脚本化确定性口径）；Stage W3 Supervisor 自动触发已交付（M22，脚本化确定性口径）；Stage W4 Memory Promotion 已交付（M23：冻结映射、`Unverified`+`model_assisted` 纪律、无降级晋升、无模型）；Stage W5 Subagent Fork / Merge 已交付（M24，DEC-044：子会话 fork 基线 + schema 1.2 溯源、局部 delta 机械三分类、确定性 merge policy 经既有提交管线，无模型）；宿主集成轮已交付（M25，DEC-045：Agent Loop 快照供给缝——未注入零漂移、身份对齐 + 有界渲染 + 失败降级，W3/W4/W5 宿主显式编排、Loop 零自动化，三层验收无模型，参考宿主 `examples/working_context_host_consumer.cpp`）；真实模型接入与语义质量归 Stage E | [working-context 评估 v1](docs/benchmarks/context-intelligence-working-context-v1.md)、[curation 评估 v1](docs/benchmarks/context-intelligence-working-context-curation-v1.md)、[auto-trigger 评估 v1](docs/benchmarks/context-intelligence-working-context-auto-trigger-v1.md) |
-| Temporal Policy（高频条件策略：`TemporalHistory`/`ReactiveRule` 契约、条件策略 Runtime 闭环、规则归纳） | Stage T1 确定性最小闭环已交付（M26，DEC-037：冻结数据集上「重复事件 → 候选规则 → 证据晋升 → 无 Agent 介入正确执行」，无平台/感知/模型依赖）；真机感知（T2/T3）与连续控制（T6）待 DEC-011 门禁证据 | [Temporal Policy API](docs/api/temporal-policy.md)、[M26 计划](docs/plans/m26-temporal-policy-stage-t1.md) |
-| 会话 World State 投影（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、有界存活实体表与变化环；六类输入 + 八个纯函数算子 + `rebuild_world_state` 重放重建；`mira.worldstate.v1` wire + `mira.world_state` 八码错误域） | 首阶段确定性投影核已交付（M27，DEC-041/DEC-046：实体词表 v1 单一承载，无平台/感知/模型依赖，零 Executor 注册面）；DEC-038 行为轨迹首阶段与 Temporal Policy T2+ 世界视图映射为后续消费方 | [World State API](docs/api/world-state.md)、[M27 计划](docs/plans/m27-world-state-projection-core.md) |
+    subgraph core["Mira core — platform-independent"]
+        direction LR
+        loop["Agent runtime<br/>state machine · events · recovery"]
+        model["Model gateway<br/>OpenAI-compatible"]
+        wf["Workflow runtime"]
+        ctx["Context intelligence<br/>& memory"]
+        tp["Temporal policy"]
+        ws["World state"]
+    end
 
-下一步见[阶段 F 后续计划](docs/plans/maintenance-2026-09-post-stage-f.md)：回收 miracle
-真机/Provider 证据、补跑 live canary 与恢复率/成本分布、依证据推进持久化与 M7
-重定义；Context Intelligence（DEC-032）Stage A/B/C 已由
-[M16](docs/plans/m16-context-intelligence-stage-a.md)、
-[M17](docs/plans/m17-context-intelligence-stage-b.md) 与
-[M18](docs/plans/m18-context-intelligence-stage-c.md) 交付，Stage D（Layer 3 语义
-固化）由 [M19](docs/plans/m19-context-intelligence-stage-d.md) 承载并已完成本地
-交付；Context Curator 方向（[DEC-035](docs/decisions/DEC-035-context-curator-working-context.md)，
-issue #48）Stage W1（`WorkingContextSnapshot` 确定性契约）由
-[M20](docs/plans/m20-working-context-stage-w1.md)、Stage W2（`IContextCurator`
-契约与模型供给参考实现）由
-[M21](docs/plans/m21-context-curator-stage-w2.md) 承载并已完成本地交付；
-Stage E（真机评估）待 `MNT-202609-27` 证据通道。Context Curator 方向
-Stage W3（Supervisor 自动触发：watermark / event count 双轴策略、coalescing、
-forced flush、失败回退）由
-[M22](docs/plans/m22-working-context-stage-w3.md) 承载并已交付；Stage W4
-（Memory Promotion：快照耐久语句经 `MemoryConsolidator` 既有纪律晋升长期记忆，
-冻结 section→kind 映射、`Unverified`+`model_assisted` 纪律、无降级晋升、宿主
-显式触发）由 [M23](docs/plans/m23-memory-promotion-stage-w4.md) 承载并已交付；
-Stage W5（subagent fork/merge：子会话 fork 基线 + 快照 schema 1.2 加法溯源、
-局部 delta 机械三分类投影、确定性 parent merge policy 经既有提交管线，场景
-边界见 [DEC-044](docs/decisions/DEC-044-multi-agent-context-fork-boundary.md)）
-由 [M24](docs/plans/m24-context-curator-stage-w5.md) 承载并已交付；宿主集成
-接线与真实模型/Stage E 语义指标待后续。
+    subgraph adapters["Platform adapters"]
+        sim["Simulator"]
+        android["Android host"]
+    end
 
-本地 ONNX 感知（M5）与连续控制（M6）已按
-[DEC-011](docs/decisions/DEC-011-demo-first-external-validation.md) 终止；能力验证与需求
-发现由独立仓库的 demo 产品承载，后续里程碑待其证据重定义。Mira 仓库不包含产品 UI 或
-完整应用。
+    subgraph transports["Transports"]
+        net["net_transport"]
+        tls["openssl / mbedtls"]
+    end
 
-## 构建与测试
+    store["state_store<br/>SQLite/WAL checkpoint & memory"]
+    exec["Executor<br/>async · timers · I/O · lifecycle"]
 
-要求：C++20 编译器、CMake ≥ 3.20、Ninja。Executor、Mbed TLS 与 SQLite 以 pinned
-submodule/vendored 方式提供，无需系统安装。
+    app -->|"find_package(Mira)"| core
+    core -->|"contracts"| adapters
+    model --> transports
+    core --> store
+    core -.->|"owns all concurrency"| exec
+```
+
+Everything is consumed as one installable package: `find_package(Mira 0.1 CONFIG REQUIRED)`
+
+| Target | Purpose |
+| --- | --- |
+| `Mira::core` | Agent runtime: state machine, observation, event/checkpoint stores, safety, context & memory, model gateway, tool modules, temporal policy, world state |
+| `Mira::workflow` | Workflow contracts and runtime: execution, interruption patches, trajectory compilation, navigation, learning, recovery |
+| `Mira::state_store` | SQLite/WAL reference persistence for checkpoints and memory |
+| `Mira::simulator_adapter` | Reference `IEnvironment` implementation (simulated device) |
+| `Mira::android_adapter` | Android host adapter and dispatcher (Host ABI boundary) |
+| `Mira::net_transport` | Portable socket HTTP/SSE transport (POSIX + Winsock, proxy-aware) |
+| `Mira::openssl_transport` | Optional OpenSSL TLS channel (Unix, where OpenSSL is found) |
+| `Mira::mbedtls_transport` | Cross-platform TLS channel on pinned Mbed TLS |
+
+The public API (~70 headers under `include/mira/`) is built on a small set of
+stable conventions: a `Result<T>` error model with no exceptions across the
+boundary, strongly-typed 128-bit IDs, collaborative cancellation, terminal-state
+idempotency, and explicit schema versioning. Key contracts include
+`IEnvironment`, `IModelProvider`, `IMemory`, `IEventStore`, `ICheckpointStore`,
+`IContextCurator`, `IPolicyRuntime`, and `ITlsChannel`.
+
+## Highlights
+
+- **Explicit agent state machine** — each loop phase is a bounded, observable,
+  interruptible work unit. Every task records ordered, versionable events;
+  terminal states are idempotent, so late model responses cannot resurrect a
+  cancelled task.
+- **Structured model decisions** — raw model text never drives platform input.
+  Decisions and actions are validated, typed, and mapped to discrete or
+  continuous actions with one uniform, cancellable result semantics.
+- **Workflow runtime** — declarative contracts plus an executor for them:
+  interruption patches, trajectory compilation from demos, app-model navigation,
+  learning from failures, and `WaitingAgent` recovery orchestration.
+- **Context intelligence** — retrieval, reranking, and semantic consolidation
+  layers; working-context snapshots with watermark/event-count auto-curation;
+  memory promotion under a verified-only discipline; subagent fork/merge with
+  schema-tracked provenance.
+- **Temporal policy & world state** — reactive conditional rules over event
+  history with deterministic rule induction; a bounded world-state projection
+  (`Believed` / `Stale` / `Unknown` assumptions) that can be rebuilt by replay.
+- **Safety & reproducibility** — permission gates, secret redaction in logs,
+  observer callbacks isolated from the critical path, and replay that
+  distinguishes recorded results from real side effects.
+
+## Project status
+
+All implementation milestones **M0–M27** of the
+[implementation plan](docs/plans/mira-implementation-plan.md) are delivered, and
+CI is green across the full matrix (Linux GCC/Clang, Windows MSVC, Android NDK
+arm64/x86_64 cross-builds, ASAN/UBSAN/TSAN, clang-tidy/format and architecture
+gates).
+
+Still open — and honestly reported rather than claimed: on-device Android
+runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the
+first stage of the unified behavior trace (DEC-038). Mira ships the runtime and
+installable packages; it deliberately contains no product UI or end-user app.
+
+## Getting started
+
+Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja. Executor, Mbed TLS, and
+SQLite are provided as pinned submodules/vendored sources — nothing to install.
 
 ```bash
 git submodule update --init --recursive
-cmake --preset debug          # 或 release / asan / ubsan / tsan
+cmake --preset debug          # or release / asan / ubsan / tsan
 cmake --build --preset debug
 ctest --test-dir build/debug --output-on-failure
 ```
 
-Windows 使用 `windows-debug` / `windows-release` preset；Android arm64 交叉构建使用
-`android-arm64-release`（目标构建验证，真机运行不在声明范围）。常用 CMake 选项：
-`MIRA_BUILD_TESTS`、`MIRA_WITH_OPENSSL`、`MIRA_WITH_MBEDTLS`、`MIRA_ENABLE_CLANG_TIDY`。
+Windows uses the `windows-debug` / `windows-release` presets; Android arm64
+cross-builds use `android-arm64-release` / `android-x86_64-release` (build
+verification). Common CMake options: `MIRA_BUILD_TESTS`, `MIRA_WITH_OPENSSL`,
+`MIRA_WITH_MBEDTLS`, `MIRA_ENABLE_CLANG_TIDY`.
 
-平台与编译器支持等级（GCC/Clang/MSVC/NDK 的已验证组合）见
-[平台矩阵](docs/compatibility/platform-matrix.md)；Provider 兼容性见
-[OpenAI-compatible 互操作矩阵](docs/compatibility/openai-compatible-matrix.md)。
-
-## 安装与外部消费
-
-Mira 以安装包形式对外提供全部公共能力，外部项目（包括 demo 产品）只经此边界消费：
+### Install & consume
 
 ```bash
 cmake --build --preset release
 cmake --install build/release --prefix /path/to/install
 ```
 
-消费方 `CMakeLists.txt`：
-
 ```cmake
-find_package(Mira 0.1 CONFIG REQUIRED)   # 自动解析 executor 0.4 与 Threads 依赖
+find_package(Mira 0.1 CONFIG REQUIRED)   # resolves executor + Threads for you
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE
-    Mira::core                 # 契约、状态机、环境、模型网关、闭环
-    Mira::state_store          # SQLite/WAL Checkpoint 与 Memory 参考后端
-    Mira::simulator_adapter    # Simulator 参考环境
+    Mira::core                 # contracts, state machine, model gateway, loop
+    Mira::state_store          # SQLite/WAL checkpoint & memory reference backend
+    Mira::simulator_adapter    # Simulator reference environment
 )
 ```
 
-可选目标：`Mira::workflow`、`Mira::android_adapter`、`Mira::net_transport`、`Mira::openssl_transport`、
-`Mira::mbedtls_transport`。安装消费路径由 `mira_installed_consumer_test` 在 CI 全矩阵
-持续验证（Android Workflow 交叉链接覆盖待补，不宣称设备运行通过）。最小示例见
-[`examples/minimal_consumer.cpp`](examples/minimal_consumer.cpp)；
-有状态 Agent（Checkpoint + Memory + supervised shutdown）完整示例见
-[`examples/stateful_agent_consumer.cpp`](examples/stateful_agent_consumer.cpp)。
+Optional targets: `Mira::workflow`, `Mira::android_adapter`, `Mira::net_transport`,
+`Mira::openssl_transport`, `Mira::mbedtls_transport`. The installed-consumer path
+is exercised continuously in CI.
 
-## 文档索引
+## Examples
 
-- [API 手册](docs/api/index.md)——公共头文件逐模块参考
-- [设计文档](docs/design/mira_runtime_design.md)——架构、状态机、Context/Memory、协议
-- [决策记录](docs/decisions/DEC-001-runtime-executor-ownership.md)——`DEC-001` 起
-- [实施计划](docs/plans/mira-implementation-plan.md)——里程碑、状态与验证证据
-- [发布说明](docs/releases/stateful-agent-beta.md)、[安全](docs/security/threat_model_and_confirmation.md)、
-  [供应链](docs/supply-chain/direct-dependencies.md)、[Executor 反馈台账](docs/executor_feedback/ledger.md)
+| Example | What it shows |
+| --- | --- |
+| [`minimal_consumer.cpp`](examples/minimal_consumer.cpp) | Simulator observation, discrete input, runtime lifecycle, tool-module contract smoke |
+| [`stateful_agent_consumer.cpp`](examples/stateful_agent_consumer.cpp) | Durable checkpoint + memory, deterministic consolidation, supervised shutdown, analytics replay |
+| [`working_context_host_consumer.cpp`](examples/working_context_host_consumer.cpp) | Reference host wiring the working-context supply seam: auto-curation signals, memory promotion, subagent fork/merge |
 
-协作约定见 [AGENTS.md](AGENTS.md) 与
-[项目管理与文档规范](docs/project/project_management_and_documentation.md)。
+## Platform support
+
+| Platform | Compilers | Level |
+| --- | --- | --- |
+| Linux x86_64 | GCC 13, Clang 18 | Build + runtime verified (core, transports, state store) |
+| Windows x64 | MSVC (VS 2022) | Build + runtime verified (core, transports, state store) |
+| Android arm64-v8a / x86_64 | NDK 26.3 (API 24) | Cross-build verified; on-device runtime pending external evidence |
+
+Details and transport/provider interoperability:
+[platform matrix](docs/compatibility/platform-matrix.md) ·
+[OpenAI-compatible matrix](docs/compatibility/openai-compatible-matrix.md)
+
+## Documentation
+
+Documentation is mostly in Chinese:
+
+- [API manual](docs/api/index.md) — per-module reference of the public headers
+- [Runtime design](docs/design/mira_runtime_design.md) — architecture, state machine, context/memory, protocols
+- [Implementation plan](docs/plans/mira-implementation-plan.md) — milestones, status, verification evidence
+- [Decision records](docs/decisions/DEC-001-runtime-executor-ownership.md) — from DEC-001 to DEC-046
+- [Evaluation baselines](docs/benchmarks/) — nine recorded benchmark reports
+- [Security](docs/security/threat_model_and_confirmation.md) ·
+  [Supply chain](docs/supply-chain/direct-dependencies.md) ·
+  [Executor feedback ledger](docs/executor_feedback/ledger.md)
+- [Contribution conventions](AGENTS.md) ·
+  [Project management rules](docs/project/project_management_and_documentation.md)
+
+## Third-party dependencies
+
+| Library | Version | License | Provision |
+| --- | --- | --- | --- |
+| [Executor](third_party/executor) | 0.5.0 | MIT | git submodule |
+| [Mbed TLS](third_party/mbedtls) | 3.6.7 (3.6 LTS) | Apache-2.0 (chosen) | git submodule |
+| [SQLite](third_party/sqlite) | 3.53.4 | Public domain | vendored amalgamation |
+
+An SBOM is maintained at
+[`docs/supply-chain/sbom.cdx.json`](docs/supply-chain/sbom.cdx.json) and enforced
+by CI.
+
+## License
+
+Mira is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+Third-party dependencies under `third_party/` remain under their own licenses
+(listed above) and are not subject to this repository's license.
