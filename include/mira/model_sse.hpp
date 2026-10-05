@@ -6,6 +6,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -85,6 +87,13 @@ struct UnvalidatedModelPreview final {
     bool truncated = false;
 };
 
+// Called on the transport execution context. Post the bounded snapshot to an
+// executor::comm primitive; do not block or run business handlers here.
+// An empty snapshot starts a new request/attempt. Only canonical terminal
+// responses may enter history, memory, or tool execution.
+using ModelPreviewSink =
+    std::function<void(const ModelRequestId &, const UnvalidatedModelPreview &)>;
+
 // Counts and terminal classification for EventStore summaries.
 struct SseStreamStats final {
     std::uint64_t stream_sequence = 0; // Local monotonic sequence.
@@ -152,6 +161,34 @@ class ResponsesSseParser final {
     bool cancel_seen_ = false;
     std::optional<ModelResponse> terminal_response_;
     SseStreamStats stats_;
+};
+
+// One-choice Chat Completions SSE reducer. Text and tool argument fragments
+// remain unvalidated until a finish reason and [DONE] have both arrived.
+class ChatCompletionsSseParser final {
+  public:
+    ChatCompletionsSseParser(const ModelRequest &request, const ModelProfile &profile,
+                             SseStreamLimits limits = {});
+    [[nodiscard]] Result<void> feed(std::string_view chunk);
+    [[nodiscard]] Result<ModelResponse> finish();
+    [[nodiscard]] UnvalidatedModelPreview take_preview();
+    [[nodiscard]] const SseStreamStats &stats() const noexcept { return stats_; }
+
+  private:
+    struct ToolFragments {
+        std::string id, name, arguments;
+    };
+    [[nodiscard]] Result<void> reduce(const SseMessage &message);
+    ModelRequest request_;
+    ModelProfile profile_;
+    SseStreamLimits limits_;
+    SseFramingParser framer_;
+    SseStreamStats stats_;
+    std::string id_, model_, text_, refusal_, finish_reason_, preview_;
+    std::map<std::int64_t, ToolFragments> tools_;
+    std::size_t argument_bytes_ = 0;
+    std::size_t pending_preview_drops_ = 0;
+    std::optional<JsonValue> usage_;
 };
 
 } // namespace mira

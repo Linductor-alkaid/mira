@@ -149,6 +149,7 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
 
     request.output_contract.mode = OutputMode::Text;
     request.generation.max_output_tokens = config_.max_output_tokens_per_turn;
+    request.generation.reasoning_effort = config_.reasoning_effort;
     request.budget.max_output_tokens =
         config_.max_output_tokens_per_turn *
         (static_cast<std::uint64_t>(config_.max_turns) + config_.max_recoveries + 1);
@@ -206,7 +207,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                            std::chrono::steady_clock::now() + config_.model_call_deadline)
                 : std::chrono::steady_clock::now() + config_.model_call_deadline;
 
-        auto call = gateway_.infer(request.value(), model_context);
+        auto call = gateway_.infer(request.value(), model_context, config_.inference);
         if (!call) {
             if (call.error().code == ErrorCode::Cancelled) {
                 result.outcome = ConversationOutcome::Cancelled;
@@ -225,6 +226,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
         auto outcome = std::move(call).value();
+        result.last_usage = outcome.response.usage;
         if (!outcome.admitted) {
             result.outcome = ConversationOutcome::Cancelled;
             result.safe_summary = outcome.rejection_reason;
@@ -295,6 +297,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     break;
                 }
                 ++tool_executions;
+                result.tool_executions = tool_executions;
                 emit(spec, "ToolExecuted",
                      JsonValue::Object{{"wire_name", proposal.wire_name},
                                        {"operation_id", proposal.operation_id.to_string()},

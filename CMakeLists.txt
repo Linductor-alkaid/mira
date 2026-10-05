@@ -114,6 +114,7 @@ add_library(mira_core
     src/model/model_schema.cpp
     src/model/model_dialect.cpp
     src/model/model_sse.cpp
+    src/model/model_chat_sse.cpp
     src/model/model_tool.cpp
     src/model/model_tool_wire.cpp
     src/model/provider_continuation.cpp

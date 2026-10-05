@@ -35,7 +35,7 @@ class RecordingProvider final : public IModelProvider {
 
     [[nodiscard]] Result<ModelResponse> infer(const ModelRequest &request,
                                               const OperationContext &context,
-                                              const ProviderInferOptions &) override {
+                                              const ProviderInferOptions &options) override {
         if (context.cancelled()) {
             return make_model_error(ModelDomainCode::ModelCancelled, "recording provider cancelled",
                                     false, request.operation_id);
@@ -56,6 +56,8 @@ class RecordingProvider final : public IModelProvider {
         if (hook != nullptr) {
             hook();
         }
+        if (options.stream && options.preview_sink)
+            options.preview_sink(request.request_id, {"fixture preview", 0, false});
         response.request_id = request.request_id;
         response.operation_id = request.operation_id;
         response.profile_id = request.profile_id;

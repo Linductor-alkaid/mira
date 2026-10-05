@@ -250,3 +250,16 @@ EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与
 - [LLM API 协议设计](../design/llm-api-protocol-design.md)、
   [模型 Provider 与工具设计](../design/model_provider_and_tool_design.md)
 - [Agent loop alpha 发布说明](../releases/agent-loop-alpha.md)
+
+## 会话流式预览（DEC-049）
+
+`InferOptions::preview_sink` / `ProviderInferOptions::preview_sink` 配合 `stream=true` 使用。
+`ModelPreviewSink(request_id, UnvalidatedModelPreview)`在传输执行上下文提供至多16KiB的
+**完整快照**；空快照表示新请求/尝试。调用者只校验并投递至Executor通信原语，不阻塞或运行
+业务handler。回调异常计入drop，不使规范推理结果失败。取消后停止预览；终态规范响应覆盖预览。
+预览没有usage权威，不能进入Memory/历史、执行工具或成为成功依据。溢出以truncated/drop表示。
+
+两种OpenAI兼容协议均支持SSE。`ChatCompletionsSseParser`复用分帧与同步mapper，要求单choice、
+稳定身份、有界文本/工具片段、有效finish_reason及[DONE]；断流失败。工具参数只在终态归约后
+执行，未验证的片段不向UI投递。`ConversationLoopConfig::inference`透传请求选项，
+`reasoning_effort`进入generation；结果新增`last_usage`（最后模型请求）和`tool_executions`。

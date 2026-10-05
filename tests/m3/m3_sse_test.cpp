@@ -275,9 +275,137 @@ int cancel_flag_records_late_terminal_as_diagnostic() {
     return 0;
 }
 
+std::string chat_chunk(const std::string &delta, const std::string &finish = "null") {
+    return "data: {\"id\":\"chat_1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":" + delta +
+           ",\"finish_reason\":" + finish + "}]}\n\n";
+}
+int chat_stream_fragmentation_tools_and_limits() {
+    auto request = base_request_alias();
+    auto profile = make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test");
+    const auto stream = chat_chunk(R"({"role":"assistant","content":"你好"})") +
+                        chat_chunk(R"({"content":"世界"})") + chat_chunk("{}", "\"stop\"") +
+                        "data: "
+                        "{\"id\":\"chat_1\",\"model\":\"m\",\"choices\":[],\"usage\":{\"prompt_"
+                        "tokens\":8,\"completion_tokens\":4,\"total_tokens\":12}}\n\n" +
+                        "data: [DONE]\n\n";
+    ChatCompletionsSseParser parser(request, profile);
+    std::string preview;
+    for (const char c : stream) {
+        MIRA_CHECK(parser.feed(std::string_view(&c, 1)));
+        preview += parser.take_preview().text;
+    }
+    MIRA_CHECK(preview == "你好世界");
+    auto result = parser.finish();
+    MIRA_CHECK(result);
+    MIRA_CHECK(result.value().usage.input_tokens == 8);
+    MIRA_CHECK(
+        std::get<OutputTextPart>(std::get<MessageOutput>(result.value().output[0]).content[0])
+            .text == preview);
+    MIRA_CHECK(!parser.feed("data: [DONE]\n\n"));
+
+    const auto tool_stream =
+        chat_chunk(
+            R"({"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"wait","arguments":"{\"seconds\":"}}]})") +
+        chat_chunk(R"({"tool_calls":[{"index":0,"type":null,"function":{"arguments":"0}"}}]})") +
+        chat_chunk("{}", "\"tool_calls\"") + "data: [DONE]\n\n";
+    ChatCompletionsSseParser tools(request, profile);
+    MIRA_CHECK(tools.feed(tool_stream));
+    auto tool_result = tools.finish();
+    MIRA_CHECK(tool_result);
+    auto tool =
+        std::find_if(tool_result.value().output.begin(), tool_result.value().output.end(),
+                     [](const auto &item) { return std::holds_alternative<ToolCallOutput>(item); });
+    MIRA_CHECK(tool != tool_result.value().output.end());
+    MIRA_CHECK(std::get<ToolCallOutput>(*tool).provider_name == "wait");
+    // No provisional tool may leak into UI preview.
+    MIRA_CHECK(tools.take_preview().text.empty());
+
+    for (const auto &bad :
+         {chat_chunk("{}") + "data: [DONE]\n\n", chat_chunk("{}", "\"bogus\"") + "data: [DONE]\n\n",
+          chat_chunk(R"({"content":123})"),
+          chat_chunk("{}", "\"stop\"") + chat_chunk(R"({"content":"late"})")}) {
+        ChatCompletionsSseParser invalid_parser(request, profile);
+        auto status = invalid_parser.feed(bad);
+        MIRA_CHECK(!status || !invalid_parser.finish());
+    }
+    ChatCompletionsSseParser cumulative(request, profile);
+    const std::string usage_first =
+        "data: "
+        "{\"id\":\"chat_1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}"
+        ",\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1}}\n\n";
+    const std::string usage_last = "data: "
+                                   "{\"id\":\"chat_1\",\"model\":\"m\",\"choices\":[{\"index\":0,"
+                                   "\"delta\":{\"content\":\"b\"},\"finish_reason\":\"stop\"}],"
+                                   "\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":2}}\n\n";
+    MIRA_CHECK(cumulative.feed(usage_first + usage_last + "data: [DONE]\n\n"));
+    MIRA_CHECK(cumulative.finish().value().usage.output_tokens == 2);
+    ChatCompletionsSseParser decreasing(request, profile);
+    MIRA_CHECK(!decreasing.feed(usage_last + usage_first));
+    ChatCompletionsSseParser eof(request, profile);
+    MIRA_CHECK(eof.feed(chat_chunk(R"({"content":"partial"})")));
+    MIRA_CHECK(!eof.finish());
+    SseStreamLimits limits;
+    limits.max_preview_bytes = 3;
+    ChatCompletionsSseParser bounded(request, profile, limits);
+    MIRA_CHECK(bounded.feed(chat_chunk(R"({"content":"你好"})")));
+    MIRA_CHECK(bounded.take_preview().truncated);
+    MIRA_CHECK(bounded.take_preview().dropped_updates == 0);
+    limits.max_accumulated_text_bytes = 1;
+    ChatCompletionsSseParser overflow(request, profile, limits);
+    MIRA_CHECK(!overflow.feed(chat_chunk(R"({"content":"你好"})")));
+    limits.max_accumulated_text_bytes = 4096;
+    limits.max_arguments_buffer_bytes = 1;
+    ChatCompletionsSseParser tool_overflow(request, profile, limits);
+    MIRA_CHECK(!tool_overflow.feed(tool_stream));
+    return 0;
+}
+int live_preview_delivery_and_failure_isolation() {
+    auto request = base_request_alias();
+    auto profile = std::make_shared<ModelProfile>(
+        make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test"));
+    auto transport = std::make_shared<MockHttpTransport>(std::make_shared<MapSecretResolver>());
+    MockStep step;
+    step.status = 200;
+    step.chunk_pieces = {chat_chunk(R"({"content":"first"})"),
+                         chat_chunk(R"({"content":" second"})"),
+                         chat_chunk("{}", "\"stop\"") + "data: [DONE]\n\n"};
+    transport->enqueue(step);
+    OpenAiCompatibleProvider provider(profile, transport, nullptr);
+    ProviderInferOptions options;
+    options.stream = true;
+    std::vector<std::string> previews;
+    options.preview_sink = [&](const auto &id, const auto &preview) {
+        (void)id;
+        previews.push_back(preview.text);
+    };
+    auto response = provider.infer(request, OperationContext{}, options);
+    MIRA_CHECK(response);
+    MIRA_CHECK(previews.size() == 3 && previews[0].empty() && previews[1] == "first" &&
+               previews[2] == "first second");
+    MIRA_CHECK(provider.take_last_preview()->text == "first second");
+    transport->enqueue(step);
+    options.preview_sink = [](const auto &, const auto &) {
+        throw std::runtime_error("preview refused");
+    };
+    MIRA_CHECK(provider.infer(request, OperationContext{}, options));
+    MIRA_CHECK(provider.last_sse_stats().preview_drops == 3);
+    transport->enqueue(step);
+    OperationContext cancelled;
+    cancelled.cancellation_requested = [] { return true; };
+    std::size_t callbacks = 0;
+    options.preview_sink = [&](const auto &, const auto &) { ++callbacks; };
+    (void)provider.infer(request, cancelled, options);
+    MIRA_CHECK(callbacks == 0);
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (auto status = chat_stream_fragmentation_tools_and_limits())
+        return status;
+    if (auto status = live_preview_delivery_and_failure_isolation())
+        return status;
     if (const int status = framing_handles_arbitrary_fragmentation(); status != 0) {
         return status;
     }

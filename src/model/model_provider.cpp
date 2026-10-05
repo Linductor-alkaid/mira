@@ -194,55 +194,79 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     static_cast<void>(stash_headers);
 
     if (options.stream) {
-        if (profile_->dialect != ProtocolDialect::OpenAIResponsesV1) {
-            return make_model_error(ModelDomainCode::CapabilityMismatch,
-                                    "streaming is not enabled for this dialect");
-        }
-        ResponsesSseParser parser(request, *profile_);
-        std::string raw;
-        std::optional<Error> parse_failure;
-        auto info = transport_->execute(
-            http, limits_from_profile(*profile_, request), context,
-            [&](std::string_view chunk) {
-                raw.append(chunk.data(), chunk.size());
-                if (parse_failure.has_value()) {
-                    return; // Stop feeding after the first protocol failure.
+        auto consume = [&](auto &parser) -> Result<ModelResponse> {
+            std::string raw;
+            std::optional<Error> parse_failure;
+            UnvalidatedModelPreview snapshot;
+            auto publish = [&] {
+                if (!options.preview_sink || context.cancelled())
+                    return;
+                try {
+                    options.preview_sink(request.request_id, snapshot);
+                } catch (...) {
+                    ++snapshot.dropped_updates;
                 }
-                auto status = parser.feed(chunk);
-                if (!status) {
-                    parse_failure = status.error();
-                }
-            },
-            trace);
-        last_trace_ = trace;
-        if (info.has_value()) {
-            last_headers_ = info.value().headers;
-        }
-        sse_stats_ = parser.stats();
-        last_preview_ = parser.take_preview();
-        if (!info) {
-            return info.error();
-        }
-        if (parse_failure.has_value()) {
-            return parse_failure.value();
-        }
-        if (info.value().status < 200 || info.value().status >= 300) {
-            return map_http_error_status(
-                WireHttpResponse{info.value().status, info.value().headers, raw});
-        }
-        auto finished = parser.finish();
-        if (!finished) {
-            return finished.error();
-        }
-        auto result = std::move(finished).value();
-        result.rate_limit = parse_rate_limit_headers(last_headers_);
-        if (options.capture_raw_response && protected_artifacts_ != nullptr) {
-            auto reference = store_raw_response(raw);
-            if (reference) {
-                result.protected_raw_response = std::move(reference).value();
+            };
+            publish(); // New attempt: clear any earlier provisional response.
+            auto info = transport_->execute(
+                http, limits_from_profile(*profile_, request), context,
+                [&](std::string_view chunk) {
+                    raw.append(chunk.data(), chunk.size());
+                    if (parse_failure)
+                        return;
+                    auto status = parser.feed(chunk);
+                    if (!status) {
+                        parse_failure = status.error();
+                        return;
+                    }
+                    auto update = parser.take_preview();
+                    if (update.text.empty() && !update.truncated)
+                        return;
+                    if (snapshot.text.size() + update.text.size() <= 16 * 1024)
+                        snapshot.text += update.text;
+                    else {
+                        snapshot.truncated = true;
+                        ++snapshot.dropped_updates;
+                    }
+                    snapshot.dropped_updates += update.dropped_updates;
+                    snapshot.truncated = snapshot.truncated || update.truncated;
+                    publish();
+                },
+                trace);
+            last_trace_ = trace;
+            if (info)
+                last_headers_ = info.value().headers;
+            sse_stats_ = parser.stats();
+            sse_stats_.preview_drops = snapshot.dropped_updates;
+            last_preview_ = snapshot;
+            if (!info)
+                return info.error();
+            if (info.value().status < 200 || info.value().status >= 300)
+                return map_http_error_status(
+                    WireHttpResponse{info.value().status, info.value().headers, raw});
+            if (parse_failure)
+                return *parse_failure;
+            auto finished = parser.finish();
+            sse_stats_ = parser.stats();
+            sse_stats_.preview_drops = snapshot.dropped_updates;
+            sse_stats_.cancel_seen = context.cancelled();
+            if (!finished)
+                return finished.error();
+            auto result = std::move(finished).value();
+            result.rate_limit = parse_rate_limit_headers(last_headers_);
+            if (options.capture_raw_response && protected_artifacts_) {
+                auto reference = store_raw_response(raw);
+                if (reference)
+                    result.protected_raw_response = std::move(reference).value();
             }
+            return result;
+        };
+        if (profile_->dialect == ProtocolDialect::OpenAIResponsesV1) {
+            ResponsesSseParser parser(request, *profile_);
+            return consume(parser);
         }
-        return result;
+        ChatCompletionsSseParser parser(request, *profile_);
+        return consume(parser);
     }
 
     std::string raw;
