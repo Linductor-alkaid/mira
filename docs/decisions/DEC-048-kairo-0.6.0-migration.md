@@ -78,3 +78,8 @@ v0.6.0 的破坏性变更：命名空间 `executor::` → `kairo::`、include `<
 - 上游：[kairo v0.6.0 release](https://github.com/Linductor-alkaid/kairo/releases/tag/v0.6.0)、
   `third_party/kairo/docs/MIGRATION.md`
 - 台账：`EXE-20260922-001`（保持 Open）
+
+> 2026-10-05 更新：pin 由 v0.6.0 tag（`d9602ea`）前移至 master `ef821dc`
+> （`v0.6.0-12-gef821dc`），以承接 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)
+> 对 `EXE-20260922-001`（MinGW `native_handle` cast）的修复；同一 0.6.x 源线，无新增
+> 公开 API 消费，决策语义不变。

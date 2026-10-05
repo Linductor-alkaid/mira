@@ -14,9 +14,9 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "pkg:github/Linductor-alkaid/kairo@d9602ea6762806be320b9543e3b36f27f7dd5b1a",
+      "bom-ref": "pkg:github/Linductor-alkaid/kairo@ef821dcca05bbf9038409a2ff9acc5ed729936bc",
       "name": "kairo",
-      "version": "d9602ea6762806be320b9543e3b36f27f7dd5b1a",
+      "version": "ef821dcca05bbf9038409a2ff9acc5ed729936bc",
       "licenses": [
         {
           "license": {
@@ -24,7 +24,7 @@
           }
         }
       ],
-      "purl": "pkg:github/Linductor-alkaid/kairo@d9602ea6762806be320b9543e3b36f27f7dd5b1a"
+      "purl": "pkg:github/Linductor-alkaid/kairo@ef821dcca05bbf9038409a2ff9acc5ed729936bc"
     },
     {
       "type": "library",
