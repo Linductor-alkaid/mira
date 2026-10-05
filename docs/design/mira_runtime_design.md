@@ -40,7 +40,7 @@ Mira 要提供一个跨平台、原生、高性能、可扩展的 AI Agent Runti
 4. 同时支持点击、输入等离散动作，以及拖拽、摇杆、触摸轨迹等连续动作。
 5. 将低频 AI 决策与高频 Native Controller 解耦。
 6. Task 和 Session 可暂停、恢复、取消、超时、恢复失败，并支持 Human Takeover。
-7. 所有任务和运行生命周期由 `third_party/executor` 管理。
+7. 所有任务和运行生命周期由 `third_party/kairo` 管理。
 8. 所有关键决策和副作用可观察、可诊断、可脱敏记录，并能离线回放。
 
 ### 2.2 第一阶段非目标
@@ -57,7 +57,7 @@ Mira 要提供一个跨平台、原生、高性能、可扩展的 AI Agent Runti
 
 ### 3.1 Runtime 拥有独立 Executor
 
-每个 `MiraRuntime` 实例拥有一个显式构造的 `executor::Executor`，不默认使用进程单例。
+每个 `MiraRuntime` 实例拥有一个显式构造的 `kairo::Executor`，不默认使用进程单例。
 `MiraRuntime` 是 Executor 的唯一初始化和最终关闭者。Session、Task、Provider、Controller
 只获得受控执行入口、取消上下文或任务句柄，不拥有全局 Executor。
 
@@ -204,7 +204,7 @@ Android 提供 CI/交叉编译入口但尚待目标 runner 验证；真实输入
 ```text
 Host
 └── MiraRuntime
-    ├── executor::Executor
+    ├── kairo::Executor
     ├── ExecutionSupervisor
     ├── EventBus
     ├── EventStore
@@ -804,7 +804,7 @@ RuntimeConfig 必须暴露关键容量和告警阈值，不使用无界容器隐
 ### 11.4 初始化顺序
 
 1. 校验 RuntimeConfig、Provider 能力和队列容量。
-2. 构造独立 `executor::Executor` 并调用 `initialize_ex()`。
+2. 构造独立 `kairo::Executor` 并调用 `initialize()`。
 3. 启动 ExecutionSupervisor 和故障观测。
 4. 启动 EventStore/ArtifactStore 所需 worker。
 5. 打开 CheckpointStore/MemoryStore，完成 schema migration 并启动 indexer。
@@ -1194,7 +1194,7 @@ Mira/
 │   ├── compatibility/
 │   ├── benchmarks/
 │   └── executor_feedback/
-└── third_party/executor/
+└── third_party/kairo/
 ```
 
 建议 CMake target 至少拆分为 `mira_core`、`mira_openai_compatible_provider`、
@@ -1317,9 +1317,9 @@ Executor。Fake Provider 可以使用屏障和可控结果，但其异步生命�
 - 项目约束：[`AGENTS.md`](../../AGENTS.md)
 - 长期架构：[Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)
   （[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)）
-- Executor API：[`third_party/executor/docs/API.md`](../../third_party/executor/docs/API.md)
+- Executor API：[`third_party/kairo/docs/API.md`](../../third_party/kairo/docs/API.md)
 - Executor 集成指南：
-  [`third_party/executor/docs/skill/executor-integration/SKILL.md`](../../third_party/executor/docs/skill/executor-integration/SKILL.md)
+  [`third_party/kairo/docs/skill/kairo-integration/SKILL.md`](../../third_party/kairo/docs/skill/kairo-integration/SKILL.md)
 - Executor 能力反馈台账：[`docs/executor_feedback/ledger.md`](../executor_feedback/ledger.md)
 - Context 与 Memory：[`docs/design/context_and_memory_design.md`](context_and_memory_design.md)
 - 项目管理规范：[项目管理与文档规范](../project/project_management_and_documentation.md)

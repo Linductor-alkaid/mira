@@ -16,9 +16,9 @@
 #include <string_view>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -366,7 +366,7 @@ class ModuleDeployToken final {
 //   every outcome — report, Cancelled, task exception, admission rejection —
 //   into one Result. Futures must be consumed; nothing is silently dropped.
 [[nodiscard]] Result<std::future<Result<ModuleTrustReport>>>
-submit_module_verification(executor::Executor &executor, ToolModuleManifest manifest,
+submit_module_verification(kairo::Executor &executor, ToolModuleManifest manifest,
                            ModuleTrustConfig trust, ModuleDeployToken cancellation = {});
 
 // The single well-defined consumption point for a verification future:

@@ -14,7 +14,7 @@
 #include <mira/context_memory_supervisor.hpp>
 #include <mira/model_provider.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -656,8 +656,8 @@ int items_from_checkpoint_mapping() {
 // ---------------------------------------------------------------------------
 
 int supervisor_routes_and_shuts_down_consolidation() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const auto segment = prefix_segment(
             10, {make_entry(ConversationEntry::Kind::UserMessage, 1, "constraint: routed")});
@@ -700,7 +700,7 @@ int supervisor_routes_and_shuts_down_consolidation() {
         MIRA_CHECK(!outcome.has_value());
         MIRA_CHECK(outcome.error().code == ErrorCode::Cancelled);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

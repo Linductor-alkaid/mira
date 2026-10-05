@@ -27,7 +27,7 @@
 #include <mira/context_working_context.hpp>
 #include <mira/model_provider.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -1077,8 +1077,8 @@ int curator_input_validation() {
 // ---------------------------------------------------------------------------
 
 int supervisor_commit_pipeline() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(50);
         const TaskId task = task_from_seed(51);
@@ -1236,7 +1236,7 @@ int supervisor_commit_pipeline() {
         MIRA_CHECK(!rejection.has_value());
         MIRA_CHECK(rejection.error().code == ErrorCode::Unavailable);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1245,8 +1245,8 @@ int supervisor_commit_pipeline() {
 // ---------------------------------------------------------------------------
 
 int supervisor_cancel_and_failure_degrade() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     const SessionId session = session_from_seed(60);
     const TaskId task = task_from_seed(61);
     const auto checkpoint = make_checkpoint(session, task, 10, 1);
@@ -1319,7 +1319,7 @@ int supervisor_cancel_and_failure_degrade() {
         const auto report = supervisor.begin_shutdown();
         MIRA_CHECK(report.critical_drain_complete);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

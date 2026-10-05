@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -60,7 +60,7 @@ class IRemoteFileStore {
 // pending futures before returning.
 class OpenAiRemoteFileStore final : public IRemoteFileStore {
   public:
-    OpenAiRemoteFileStore(executor::Executor &executor, std::shared_ptr<const ModelProfile> profile,
+    OpenAiRemoteFileStore(kairo::Executor &executor, std::shared_ptr<const ModelProfile> profile,
                           std::shared_ptr<IHttpTransport> transport,
                           std::shared_ptr<IArtifactSource> artifacts);
     ~OpenAiRemoteFileStore() override;

@@ -1,7 +1,7 @@
 #include "support/m3_support.hpp"
 
 #include "support/test.hpp"
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/adapters/net/socket_transport.hpp>
 #include <mira/model_contracts.hpp>
@@ -21,17 +21,17 @@ using namespace mira::testing;
 class ExecutorFixture final {
   public:
     ExecutorFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
         executor_.initialize(config);
     }
     ~ExecutorFixture() { (void)executor_.shutdown(true); }
-    executor::Executor &executor() { return executor_; }
+    kairo::Executor &executor() { return executor_; }
 
   private:
-    executor::Executor executor_;
+    kairo::Executor executor_;
 };
 
 [[nodiscard]] OperationContext make_context(std::function<bool()> cancelled = nullptr) {

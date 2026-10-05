@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -62,7 +62,7 @@ struct Sample final {
 struct Fixture final {
     explicit Fixture(std::filesystem::path root) {
         std::filesystem::create_directories(root);
-        executor_.initialize(executor::ExecutorConfig{});
+        executor_.initialize(kairo::ExecutorConfig{});
         checkpoint_options.path = root / "bench-checkpoints.db";
         memory_options.path = root / "bench-memory.db";
         checkpoint_store =
@@ -74,7 +74,7 @@ struct Fixture final {
         (void)checkpoint_store->close();
         (void)executor_.shutdown(true);
     }
-    executor::Executor executor_;
+    kairo::Executor executor_;
     SqliteStoreOptions checkpoint_options;
     SqliteMemoryStoreOptions memory_options;
     MemoryEventStore events;

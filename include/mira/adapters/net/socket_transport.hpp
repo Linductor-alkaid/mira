@@ -6,7 +6,7 @@
 
 #include <mira/model_transport.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <condition_variable>
 #include <cstddef>
@@ -32,7 +32,7 @@ struct SocketTransportConfig final {
 // latency is bounded without cross-thread socket closes.
 class SocketHttpTransport final : public IHttpTransport {
   public:
-    SocketHttpTransport(executor::Executor &executor, std::shared_ptr<ISecretResolver> secrets,
+    SocketHttpTransport(kairo::Executor &executor, std::shared_ptr<ISecretResolver> secrets,
                         std::shared_ptr<ITlsChannelFactory> tls = nullptr,
                         SocketTransportConfig config = SocketTransportConfig{});
     ~SocketHttpTransport() override;
@@ -114,7 +114,7 @@ class SocketHttpTransport final : public IHttpTransport {
                     std::chrono::steady_clock::time_point total_deadline,
                     std::chrono::steady_clock::time_point started_at, TransportTrace &trace);
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     std::shared_ptr<ISecretResolver> secrets_;
     std::shared_ptr<ITlsChannelFactory> tls_;
     SocketTransportConfig config_;
@@ -124,7 +124,7 @@ class SocketHttpTransport final : public IHttpTransport {
     std::deque<std::shared_ptr<Job>> queue_;
     bool stopping_ = false;
     std::size_t active_workers_ = 0;
-    std::vector<executor::WorkerHandle> handles_;
+    std::vector<kairo::WorkerHandle> handles_;
     bool started_ = false;
 };
 

@@ -21,7 +21,7 @@
 #include <mira/json.hpp>
 #include <mira/model_provider.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <array>
@@ -964,7 +964,7 @@ struct ChainResult final {
 
 [[nodiscard]] ChainResult run_chain_round(const Dataset &dataset, const FrozenConfig &config,
                                           ScriptedCuratorProvider &provider,
-                                          ProviderContextCurator &curator, executor::Executor &exec,
+                                          ProviderContextCurator &curator, kairo::Executor &exec,
                                           std::uint64_t calls_before) {
     ChainResult result;
     result.committed_json.resize(dataset.sessions.size());
@@ -1310,7 +1310,7 @@ enum class FailureClass { ProviderError, MalformedJson, Refusal, Deadline, Cance
 
 void run_failure_round(const Dataset &dataset,
                        const std::vector<WorkingContextSnapshot> &final_snapshots,
-                       FailureClass failure_class, executor::Executor &exec,
+                       FailureClass failure_class, kairo::Executor &exec,
                        const FrozenConfig &config, Counters &counters) {
     for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
@@ -1452,8 +1452,8 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    executor::Executor exec;
-    if (!exec.initialize(executor::ExecutorConfig{})) {
+    kairo::Executor exec;
+    if (!exec.initialize(kairo::ExecutorConfig{})) {
         std::cerr << "executor initialization failed\n";
         return 2;
     }
@@ -1645,7 +1645,7 @@ int main(int argc, char **argv) {
         file << json << '\n';
     }
 
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     if (!gates_ok) {
         for (const auto &message : failures) {
             std::cerr << "gate failure: " << message << '\n';

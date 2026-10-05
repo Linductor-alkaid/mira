@@ -4,7 +4,7 @@
 #include <mira/security.hpp>
 
 #include "support/test.hpp"
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/model_gateway.hpp>
 
@@ -28,7 +28,7 @@ using namespace mira::testing;
 class GatewayFixture final {
   public:
     GatewayFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -86,7 +86,7 @@ class GatewayFixture final {
         return model_request;
     }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<MapSecretResolver> secrets_;
     std::shared_ptr<MockHttpTransport> transport_;
     std::shared_ptr<ModelProfile> profile_;
@@ -323,8 +323,8 @@ class LoopLikeFixture final {
     ~LoopLikeFixture() { (void)executor_.shutdown(true); }
     void activate() { admission_->activate(spec_.task_id, 1); }
 
-    executor::Executor executor_;
-    executor::ExecutorConfig executor_config_;
+    kairo::Executor executor_;
+    kairo::ExecutorConfig executor_config_;
     std::shared_ptr<MockHttpTransport> transport_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;

@@ -24,8 +24,8 @@ Observe -> Reason -> Plan -> Act -> Verify
 
 - **核心与平台解耦。** 宿主能力（Android、Windows、Linux、模拟器、机器人）只通过
   Platform Adapter 接入，核心层不触碰任何平台 SDK。
-- **并发由 Executor 统一承载。** 所有异步任务、定时任务、阻塞 I/O worker 与关闭
-  路径都由内置的 [Executor](third_party/executor) 管理，Mira 自研代码不创建私有线程。
+- **并发由 kairo 统一承载。**（上游库 v0.6.0 前名为 Executor） 所有异步任务、定时任务、阻塞 I/O worker 与关闭
+  路径都由内置的 [kairo](third_party/kairo) 管理，Mira 自研代码不创建私有线程。
 - **API-first 模型层。** 通过 `IModelProvider` 接入 OpenAI-compatible 服务；模型输出
   先解析、验证为结构化决策，才会触达环境。
 
@@ -56,7 +56,7 @@ flowchart TB
     end
 
     store["state_store<br/>SQLite/WAL Checkpoint 与 Memory"]
-    exec["Executor<br/>异步 · 定时 · I/O · 生命周期"]
+    exec["kairo<br/>异步 · 定时 · I/O · 生命周期"]
 
     app -->|"find_package(Mira)"| core
     core -->|"契约"| adapters
@@ -112,7 +112,7 @@ arm64/x86_64 交叉构建、ASAN/UBSAN/TSAN、clang-tidy/format 与架构门禁�
 
 ## 快速开始
 
-要求：C++20 编译器、CMake ≥ 3.20、Ninja。Executor、Mbed TLS 与 SQLite 以 pinned
+要求：C++20 编译器、CMake ≥ 3.20、Ninja。kairo、Mbed TLS 与 SQLite 以 pinned
 submodule/vendored 方式提供，无需系统安装。
 
 ```bash
@@ -184,7 +184,7 @@ target_link_libraries(my_app PRIVATE
 
 | 库 | 版本 | 许可证 | 提供方式 |
 | --- | --- | --- | --- |
-| [Executor](third_party/executor) | 0.5.0 | MIT | git submodule |
+| [kairo](third_party/kairo) | 0.6.0 | MIT | git submodule |
 | [Mbed TLS](third_party/mbedtls) | 3.6.7（3.6 LTS） | Apache-2.0（选用） | git submodule |
 | [SQLite](third_party/sqlite) | 3.53.4 | Public Domain | vendored amalgamation |
 

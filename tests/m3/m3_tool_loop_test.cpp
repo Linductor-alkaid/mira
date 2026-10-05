@@ -13,7 +13,7 @@
 #include <mira/model_gateway.hpp>
 #include <mira/tool_executor.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <memory>
 #include <string>
@@ -28,7 +28,7 @@ using namespace mira::testing;
 class ToolLoopFixture final {
   public:
     ToolLoopFixture() {
-        executor::ExecutorConfig executor_config;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 2;
         executor_config.max_threads = 2;
         executor_config.queue_capacity = 32;
@@ -71,7 +71,7 @@ class ToolLoopFixture final {
         return loop;
     }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<SimulatorEnvironment> environment_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;

@@ -10,9 +10,9 @@
 #include <memory>
 #include <string>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -68,7 +68,7 @@ class SqliteCheckpointStore final : public ICheckpointStore {
     // Executor must outlive the store; close it from a host (non-worker)
     // thread before Executor shutdown or store destruction.
     [[nodiscard]] static Result<std::unique_ptr<SqliteCheckpointStore>>
-    open(executor::Executor &executor, SqliteStoreOptions options);
+    open(kairo::Executor &executor, SqliteStoreOptions options);
     ~SqliteCheckpointStore() override;
 
     SqliteCheckpointStore(const SqliteCheckpointStore &) = delete;

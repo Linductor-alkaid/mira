@@ -266,7 +266,7 @@ class SqliteCheckpointStore::Impl final {
 SqliteCheckpointStore::SqliteCheckpointStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
 Result<std::unique_ptr<SqliteCheckpointStore>>
-SqliteCheckpointStore::open(executor::Executor &executor, SqliteStoreOptions options) {
+SqliteCheckpointStore::open(kairo::Executor &executor, SqliteStoreOptions options) {
     const auto valid = options.validate();
     if (!valid) {
         return valid.error();

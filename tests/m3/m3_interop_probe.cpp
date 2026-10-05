@@ -6,7 +6,7 @@
 #include <mira/model_schema.hpp>
 #include <mira/model_upload.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -482,8 +482,8 @@ int main() {
         environment("MIRA_INTEROP_ENDPOINT_ORIGIN").value_or("https://api.openai.com");
     const auto prefix = environment("MIRA_INTEROP_API_PREFIX").value_or("/v1");
 
-    executor::Executor executor;
-    executor::ExecutorConfig executor_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = 2;
     executor_config.max_threads = 2;
     executor_config.queue_capacity = 16;
@@ -668,7 +668,7 @@ int main() {
                    has_domain_code(invalid, ModelDomainCode::ProviderPermissionDenied);
 
         auto cancelled = std::make_shared<std::atomic_bool>(false);
-        auto cancellation_timer = executor.submit_delayed_with_handle(
+        auto cancellation_timer = executor.submit_delayed(
             10, [cancelled] { cancelled->store(true, std::memory_order_release); });
         auto cancellation_context = context();
         cancellation_context.cancellation_requested = [cancelled] {

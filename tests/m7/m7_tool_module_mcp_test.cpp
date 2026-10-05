@@ -15,7 +15,7 @@
 #include <mira/tool_executor.hpp>
 #include <mira/tool_module_mcp.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -352,12 +352,14 @@ McpDispatchLimits fast_limits() {
     return limits;
 }
 
-bool make_executor(executor::Executor &executor, std::size_t min_threads, std::size_t max_threads) {
-    executor::ExecutorConfig config;
+bool make_executor(kairo::Executor &executor, std::size_t min_threads, std::size_t max_threads) {
+    kairo::ExecutorConfig config;
     config.min_threads = min_threads;
     config.max_threads = max_threads;
     config.queue_capacity = 64;
-    return executor.initialize(config);
+    // ExecutorResult's operator bool is explicit (kairo 0.6.0), so the
+    // result is read by field rather than implicitly converted.
+    return executor.initialize(config).ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -1193,7 +1195,7 @@ int g2_runtime_downgrade_and_pinned_settlement() {
     // In-flight settlement: a dispatcher bound to the pinned (pre-revoke)
     // exposure still executes its members normally (design section 7.4).
     {
-        executor::Executor executor;
+        kairo::Executor executor;
         MIRA_CHECK(make_executor(executor, 1, 2));
         auto dispatcher = McpToolDispatcher::make(pinned, fast_limits());
         MIRA_CHECK(dispatcher.has_value());
@@ -1206,7 +1208,7 @@ int g2_runtime_downgrade_and_pinned_settlement() {
         MIRA_CHECK(settled.value().tool_id == spec.tool_id);
         dispatcher.value()->close(std::chrono::milliseconds{0});
         MIRA_CHECK(dispatcher.value()->stats().in_flight == 0);
-        MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     }
 
     // ServerDisconnected revokes a second module through the same matrix.
@@ -1445,7 +1447,7 @@ Verdict run_builtin(const ExposedToolSpec &spec, const ToolProposal &proposal,
 // Drives one proposal through the MCP dispatcher bound to the same pinned
 // identity and a live executor.
 Verdict run_mcp(const ExposedToolSpec &spec, const ToolProposal &proposal,
-                const OperationContext &context, executor::Executor &executor,
+                const OperationContext &context, kairo::Executor &executor,
                 IMcpToolTransport &transport, const McpDispatchLimits &limits) {
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), limits);
     if (!dispatcher.has_value()) {
@@ -1491,7 +1493,7 @@ bool verdicts_match(const Verdict &builtin, const Verdict &mcp, const char *&why
 }
 
 int g3_gate_parity_with_builtin() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const McpDispatchLimits limits = fast_limits();
     const ToolId tool_id = ToolId::generate();
@@ -1669,7 +1671,7 @@ int g3_gate_parity_with_builtin() {
 
     MIRA_CHECK(mismatches == 0);
     MIRA_CHECK(rows == 11);
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1743,7 +1745,7 @@ int g4_probe_and_make_limits_validation() {
 }
 
 int g4_normal_completion_and_stats() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), fast_limits());
@@ -1786,7 +1788,7 @@ int g4_normal_completion_and_stats() {
     MIRA_CHECK(failed_in_tool_executor_domain(rejected));
     MIRA_CHECK(dispatcher.value()->stats().closed_rejections == 1);
 
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1800,9 +1802,9 @@ int g4_submission_rejection_and_rollback_retry() {
     // Stopped executor: synchronous rejection surfaces as an explicit error
     // and the operation reservation is rolled back.
     {
-        executor::Executor stopped;
+        kairo::Executor stopped;
         MIRA_CHECK(make_executor(stopped, 1, 1));
-        MIRA_CHECK(stopped.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(stopped.shutdown(true) == kairo::ShutdownResult::Completed);
         auto rejected = dispatcher.value()->execute(proposal, plain_context(), stopped, transport);
         MIRA_CHECK(!rejected.has_value());
         MIRA_CHECK(rejected.error().code == ErrorCode::Unavailable ||
@@ -1816,7 +1818,7 @@ int g4_submission_rejection_and_rollback_retry() {
     // The rejected operation id is not poisoned: the same proposal succeeds
     // on a healthy executor through the same dispatcher (reservation rollback).
     {
-        executor::Executor fresh;
+        kairo::Executor fresh;
         MIRA_CHECK(make_executor(fresh, 1, 2));
         auto settled = dispatcher.value()->execute(proposal, plain_context(), fresh, transport);
         MIRA_CHECK(settled.has_value());
@@ -1826,7 +1828,7 @@ int g4_submission_rejection_and_rollback_retry() {
         MIRA_CHECK(stats.completed == 1);
         MIRA_CHECK(stats.submission_rejections == 1);
         MIRA_CHECK(stats.in_flight == 0);
-        MIRA_CHECK(fresh.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(fresh.shutdown(true) == kairo::ShutdownResult::Completed);
     }
     // Uninitialized executor: the pinned Executor facade (v0.5.0) accepts
     // submit_auto() on a default-constructed executor and runs the task, so
@@ -1836,7 +1838,7 @@ int g4_submission_rejection_and_rollback_retry() {
     // the call completes and the dispatcher never manufactures a rejection
     // that never happened.
     {
-        executor::Executor uninit;
+        kairo::Executor uninit;
         const ToolProposal other =
             make_proposal(spec, json_or_abort(R"json({"x":15})json"), "call_uninit");
         auto settled = dispatcher.value()->execute(other, plain_context(), uninit, transport);
@@ -1852,7 +1854,7 @@ int g4_submission_rejection_and_rollback_retry() {
 }
 
 int g4_transport_exception_and_error_folding() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), fast_limits());
@@ -1884,12 +1886,12 @@ int g4_transport_exception_and_error_folding() {
     MIRA_CHECK(stats.in_flight == 0);
     MIRA_CHECK(stats.pending == 0);
     dispatcher.value()->close(std::chrono::milliseconds{0});
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int g4_inflight_and_immediate_cancellation() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), fast_limits());
@@ -1926,12 +1928,12 @@ int g4_inflight_and_immediate_cancellation() {
         MIRA_CHECK(stats.pending == 0);
     }
     dispatcher.value()->close(std::chrono::milliseconds{0});
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int g4_deadline_and_close_drain() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     McpDispatchLimits limits = fast_limits();
@@ -1968,12 +1970,12 @@ int g4_deadline_and_close_drain() {
     MIRA_CHECK(stats.pending == 0);
     MIRA_CHECK(stats.completed == 0);
 
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int g4_cancel_grace_exhaustion_and_close_drain() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     McpDispatchLimits limits = fast_limits();
@@ -2002,12 +2004,12 @@ int g4_cancel_grace_exhaustion_and_close_drain() {
     MIRA_CHECK(stats.pending_drained >= 1);
     MIRA_CHECK(stats.in_flight == 0);
 
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int g4_concurrency_cap_and_oversize_result() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 2, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), fast_limits());
@@ -2074,12 +2076,12 @@ int g4_concurrency_cap_and_oversize_result() {
     dispatcher.value()->close(std::chrono::milliseconds{0});
     MIRA_CHECK(dispatcher.value()->stats().in_flight == 0);
     MIRA_CHECK(dispatcher.value()->stats().pending == 0);
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int g4_submit_and_consume_folding() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     EchoTransport transport;
     const JsonValue arguments = json_or_abort(R"json({"x":12})json");
@@ -2104,9 +2106,9 @@ int g4_submit_and_consume_folding() {
 
     // Stopped executor: synchronous rejection, no future escapes.
     {
-        executor::Executor stopped;
+        kairo::Executor stopped;
         MIRA_CHECK(make_executor(stopped, 1, 1));
-        MIRA_CHECK(stopped.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(stopped.shutdown(true) == kairo::ShutdownResult::Completed);
         auto rejected =
             submit_mcp_invocation(stopped, transport, "cmp.echo", arguments, McpInvocationProbe{});
         MIRA_CHECK(!rejected.has_value());
@@ -2117,8 +2119,8 @@ int g4_submit_and_consume_folding() {
     // Admission rejection delivered through a ready-with-exception future is
     // folded by consume_mcp_invocation() into ResourceExhausted.
     {
-        executor::Executor bounded;
-        executor::ExecutorConfig config;
+        kairo::Executor bounded;
+        kairo::ExecutorConfig config;
         config.min_threads = 1;
         config.max_threads = 1;
         config.queue_capacity = 4;
@@ -2140,9 +2142,9 @@ int g4_submit_and_consume_folding() {
         }
         gate.set_value();
         blocker.get();
-        MIRA_CHECK(bounded.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(bounded.shutdown(true) == kairo::ShutdownResult::Completed);
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -2269,7 +2271,7 @@ int g5_untrusted_projection_and_result_authority() {
 }
 
 int g5_error_summary_bounded() {
-    executor::Executor executor;
+    kairo::Executor executor;
     MIRA_CHECK(make_executor(executor, 1, 2));
     const ExposedToolSpec spec = echo_spec(ToolId::generate());
     auto dispatcher = McpToolDispatcher::make(single_exposure(spec), fast_limits());
@@ -2305,7 +2307,7 @@ int g5_error_summary_bounded() {
     MIRA_CHECK(report.still_pending == 0);
 
     dispatcher.value()->close(std::chrono::milliseconds{0});
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

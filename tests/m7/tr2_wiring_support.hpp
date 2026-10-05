@@ -193,8 +193,8 @@ inline std::shared_ptr<BuiltinToolRegistry> registry_with(FixtureTool &tool) {
 
 // A hand-built exposure view entry with a caller-fixed spec digest.
 inline ExposedToolSpec hand_spec(const std::string &wire, const std::string &description,
-                          const Hash &spec_digest, const ToolId &tool_id,
-                          const char *schema_json = kLookupSchema) {
+                                 const Hash &spec_digest, const ToolId &tool_id,
+                                 const char *schema_json = kLookupSchema) {
     ExposedToolSpec spec;
     spec.tool_id = tool_id;
     spec.version = SemanticVersion{1, 0, 0};
@@ -245,9 +245,9 @@ inline WorkflowParameterSpec key_param() {
 }
 
 inline WorkflowDefinition wiring_definition(const WorkflowId &workflow_id, SchemaVersion version,
-                                     const std::string &name, const std::string &summary,
-                                     std::vector<WorkflowParameterSpec> parameters,
-                                     std::vector<WorkflowStep> steps) {
+                                            const std::string &name, const std::string &summary,
+                                            std::vector<WorkflowParameterSpec> parameters,
+                                            std::vector<WorkflowStep> steps) {
     WorkflowDefinition definition;
     definition.schema_version = version;
     definition.workflow_id = workflow_id;
@@ -262,22 +262,24 @@ inline WorkflowDefinition wiring_definition(const WorkflowId &workflow_id, Schem
 
 // The standard v1.0 lookup definition: one read-only ToolCall step with a
 // bound parameter.
-inline WorkflowDefinition make_lookup_definition(const WorkflowId &workflow_id, SchemaVersion version,
-                                          const std::string &summary) {
+inline WorkflowDefinition make_lookup_definition(const WorkflowId &workflow_id,
+                                                 SchemaVersion version,
+                                                 const std::string &summary) {
     return wiring_definition(workflow_id, version, "fixture.lookup", summary, {key_param()},
                              {lookup_step(kStepLookup, "delta.lookup")});
 }
 
-inline WorkflowDefinition make_v11_definition(const WorkflowId &workflow_id, const std::string &summary,
-                                       const std::string &tool_member) {
+inline WorkflowDefinition make_v11_definition(const WorkflowId &workflow_id,
+                                              const std::string &summary,
+                                              const std::string &tool_member) {
     return wiring_definition(workflow_id, SchemaVersion{1, 1}, "fixture.lookup.v11", summary,
                              {key_param()}, {lookup_step(kStepLookup, tool_member)});
 }
 
-inline WorkflowVersionRecord make_version_record(const SemanticVersion &version,
-                                          const Sha256Digest &content_digest,
-                                          WorkflowValidationResult validation,
-                                          const Sha256Digest &parent_digest = Sha256Digest{}) {
+inline WorkflowVersionRecord
+make_version_record(const SemanticVersion &version, const Sha256Digest &content_digest,
+                    WorkflowValidationResult validation,
+                    const Sha256Digest &parent_digest = Sha256Digest{}) {
     WorkflowVersionRecord record;
     record.version = version;
     record.actor = "fixture";
@@ -292,8 +294,8 @@ inline WorkflowVersionRecord make_version_record(const SemanticVersion &version,
 }
 
 inline WorkflowVersionHistory single_version_history(const WorkflowId &workflow_id,
-                                              const WorkflowDefinition &definition,
-                                              WorkflowValidationResult validation) {
+                                                     const WorkflowDefinition &definition,
+                                                     WorkflowValidationResult validation) {
     WorkflowVersionHistory history;
     history.workflow_id = workflow_id;
     must(append_workflow_version(
@@ -304,7 +306,7 @@ inline WorkflowVersionHistory single_version_history(const WorkflowId &workflow_
 }
 
 inline WorkflowVersionHistory two_version_history(const WorkflowDefinition &definition_v1,
-                                           const WorkflowDefinition &definition_v2) {
+                                                  const WorkflowDefinition &definition_v2) {
     WorkflowVersionHistory history;
     history.workflow_id = definition_v1.workflow_id;
     must(append_workflow_version(
@@ -320,7 +322,7 @@ inline WorkflowVersionHistory two_version_history(const WorkflowDefinition &defi
 }
 
 inline WorkflowToolRefManifest extract_or_abort(const WorkflowDefinition &definition,
-                                         std::span<const ExposedToolSpec> view) {
+                                                std::span<const ExposedToolSpec> view) {
     return must(extract_workflow_tool_references(definition, view), "extraction fixture");
 }
 
@@ -335,7 +337,7 @@ struct TypedEvent final {
 };
 
 inline std::vector<TypedEvent> typed_events(const MemoryEventStore &store, const SessionId &session,
-                                     std::string_view type) {
+                                            std::string_view type) {
     std::vector<TypedEvent> events;
     EventQuery query;
     query.session_id = session;
@@ -374,7 +376,7 @@ inline OperationContext plain_context() {
 
 // Builds a DEC-015-consistent proposal for one exposed registry entry.
 inline ToolProposal proposal_for(const ExposedToolSpec &spec, const JsonValue &arguments,
-                          const std::string &call_id, const OperationContext &context) {
+                                 const std::string &call_id, const OperationContext &context) {
     ToolProposal proposal;
     proposal.provider_call_id = ProviderToolCallId{call_id};
     proposal.tool_id = spec.tool_id;
@@ -397,13 +399,14 @@ const ExposedToolSpec *find_exposed(std::span<const ExposedToolSpec> view,
 
 // Field-wise equality for the two projection structs that predate defaulted
 // comparisons.
-inline bool manifests_equal(const WorkflowToolRefManifest &lhs, const WorkflowToolRefManifest &rhs) {
+inline bool manifests_equal(const WorkflowToolRefManifest &lhs,
+                            const WorkflowToolRefManifest &rhs) {
     return lhs.workflow_id == rhs.workflow_id && lhs.definition_digest == rhs.definition_digest &&
            lhs.entries == rhs.entries && lhs.digest == rhs.digest;
 }
 
 inline bool projections_equal(const WorkflowToolCompatProjection &lhs,
-                       const WorkflowToolCompatProjection &rhs) {
+                              const WorkflowToolCompatProjection &rhs) {
     return lhs.workflow_id == rhs.workflow_id && lhs.definition_digest == rhs.definition_digest &&
            lhs.state == rhs.state && lhs.entries == rhs.entries && lhs.digest == rhs.digest;
 }
@@ -421,7 +424,8 @@ struct MountedScenario final {
     WorkflowToolRefManifest mounted;
 };
 
-inline MountedScenario mount_lookup_workflow(const WorkflowId &workflow_id, const std::string &summary) {
+inline MountedScenario mount_lookup_workflow(const WorkflowId &workflow_id,
+                                             const std::string &summary) {
     MountedScenario scenario;
     scenario.fixture = std::make_unique<WorkflowFixture>();
     scenario.tool = std::make_shared<FixtureTool>();

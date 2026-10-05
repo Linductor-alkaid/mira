@@ -99,7 +99,7 @@ namespace mira::testing {
 // derive from this order.
 [[nodiscard]] inline const std::vector<const char *> &m24_section_names() {
     static const std::vector<const char *> sections = {
-        "constraints", "decisions", "open_issues", "active_tasks",
+        "constraints",    "decisions",       "open_issues",    "active_tasks",
         "verified_facts", "failed_attempts", "important_refs", "next_actions"};
     return sections;
 }
@@ -132,8 +132,7 @@ inline void m24_fill_all_sections(WorkingContextSnapshot &snapshot, std::uint64_
 
 class GatedWorkingContextStore final : public IWorkingContextStore {
   public:
-    explicit GatedWorkingContextStore(WorkingContextStorePolicy policy = {})
-        : store_(policy) {}
+    explicit GatedWorkingContextStore(WorkingContextStorePolicy policy = {}) : store_(policy) {}
 
     void arm_gate() {
         std::lock_guard lock(mutex_);

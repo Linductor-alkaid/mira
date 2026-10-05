@@ -41,7 +41,7 @@
 #include "m26_cases.hpp"
 #include "m26_dataset.hpp"
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <cstdint>
 #include <fstream>
@@ -399,8 +399,8 @@ int main(int argc, char **argv) {
     // Executor-owned orchestration (§4.5): both pipeline passes are
     // submit_auto jobs whose futures are consumed here, and shutdown runs
     // on this non-worker thread after the futures resolve (AGENTS.md 3/6).
-    executor::Executor executor;
-    executor::ExecutorConfig exec_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig exec_config;
     exec_config.min_threads = 2;
     exec_config.max_threads = 2;
     exec_config.queue_capacity = 32;
@@ -496,7 +496,7 @@ int main(int argc, char **argv) {
             }
         }
     }
-    failed += check(executor.shutdown(true) == executor::ShutdownResult::Completed,
+    failed += check(executor.shutdown(true) == kairo::ShutdownResult::Completed,
                     "executor shutdown completed");
 
     if (failed == 0) {

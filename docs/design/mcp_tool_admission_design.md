@@ -282,7 +282,7 @@ class McpToolDispatcher final {
     McpToolDispatcher(ToolExposure exposure, McpDispatchLimits limits);
     [[nodiscard]] Result<ToolExecutionRecord> execute(const ToolProposal &proposal,
                                                       const OperationContext &context,
-                                                      executor::Executor &executor,
+                                                      kairo::Executor &executor,
                                                       IMcpToolTransport &transport);
     McpDispatcherCloseReport close(std::chrono::milliseconds drain_budget);
 };

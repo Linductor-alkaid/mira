@@ -17,7 +17,7 @@
 #include <mira/memory_consolidation.hpp>
 #include <mira/memory_contracts.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <condition_variable>
@@ -463,8 +463,8 @@ int fork_then_parent_epoch_change_rejects_stale_merge() {
 // ---------------------------------------------------------------------------
 
 int supervisor_routes_merge_commit_and_shuts_down() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         ContextMemorySupervisor supervisor(exec);
         WorkingContextSnapshot parent = m24_snapshot(270);
@@ -574,7 +574,7 @@ int supervisor_routes_merge_commit_and_shuts_down() {
         MIRA_CHECK(stats.failed == 1);
         MIRA_CHECK(stats.rejected_closed == 1);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -643,8 +643,8 @@ int erase_child_session_preserves_parent_and_merge() {
 }
 
 int w3_auto_curator_chains_independent() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         ContextMemorySupervisor supervisor(exec);
         InMemoryWorkingContextStore store;
@@ -723,7 +723,7 @@ int w3_auto_curator_chains_independent() {
         const auto parent_settled = auto_curator.session_view(parent_session);
         MIRA_CHECK(parent_settled.has_value() && parent_settled->settled_watermark == 56);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

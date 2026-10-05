@@ -379,11 +379,11 @@ SocketHttpTransport::Exchange::read_some(std::byte *data, std::size_t capacity,
 // Worker
 // ---------------------------------------------------------------------------
 
-class SocketHttpTransport::Worker final : public executor::IBlockingIoWorker {
+class SocketHttpTransport::Worker final : public kairo::IBlockingIoWorker {
   public:
     explicit Worker(SocketHttpTransport &owner) : owner_(owner) {}
 
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         while (!stop_token.stop_requested()) {
             std::shared_ptr<Job> job;
             {
@@ -436,7 +436,7 @@ void SocketHttpTransport::run_job(Job &job) {
 // SocketHttpTransport
 // ---------------------------------------------------------------------------
 
-SocketHttpTransport::SocketHttpTransport(executor::Executor &executor,
+SocketHttpTransport::SocketHttpTransport(kairo::Executor &executor,
                                          std::shared_ptr<ISecretResolver> secrets,
                                          std::shared_ptr<ITlsChannelFactory> tls,
                                          SocketTransportConfig config)
@@ -463,11 +463,11 @@ bool SocketHttpTransport::start() {
         return true;
     }
     for (std::size_t index = 0; index < config_.worker_count; ++index) {
-        executor::BlockingIoConfig worker_config;
+        kairo::BlockingIoConfig worker_config;
         worker_config.thread_name = config_.worker_count == 1
                                         ? config_.worker_name
                                         : config_.worker_name + "-" + std::to_string(index);
-        auto handle = executor_.start_worker(executor::BlockingWorkerSpec{
+        auto handle = executor_.start_worker(kairo::BlockingWorkerSpec{
             worker_config.thread_name, worker_config, std::make_unique<Worker>(*this)});
         if (!handle.started()) {
             return false;

@@ -26,9 +26,9 @@ Observe -> Reason -> Plan -> Act -> Verify
 - **Platform-independent core.** Host capabilities (Android, Windows, Linux,
   simulators, robots) enter only through Platform Adapters; the core never
   touches a platform SDK.
-- **Executor-owned concurrency.** Every async task, timer, blocking-I/O worker,
+- **kairo-owned concurrency.** Every async task, timer, blocking-I/O worker,
   and shutdown path is managed by the bundled
-  [Executor](third_party/executor). Mira's own code creates no threads of its own.
+  [kairo](third_party/kairo) (the library was named Executor before v0.6.0). Mira's own code creates no threads of its own.
 - **API-first model layer.** OpenAI-compatible providers behind `IModelProvider`;
   model output is parsed and validated into structured decisions before anything
   reaches the environment.
@@ -60,7 +60,7 @@ flowchart TB
     end
 
     store["state_store<br/>SQLite/WAL checkpoint & memory"]
-    exec["Executor<br/>async · timers · I/O · lifecycle"]
+    exec["kairo<br/>async · timers · I/O · lifecycle"]
 
     app -->|"find_package(Mira)"| core
     core -->|"contracts"| adapters
@@ -203,7 +203,7 @@ Documentation is mostly in Chinese:
 
 | Library | Version | License | Provision |
 | --- | --- | --- | --- |
-| [Executor](third_party/executor) | 0.5.0 | MIT | git submodule |
+| [kairo](third_party/kairo) | 0.6.0 | MIT | git submodule |
 | [Mbed TLS](third_party/mbedtls) | 3.6.7 (3.6 LTS) | Apache-2.0 (chosen) | git submodule |
 | [SQLite](third_party/sqlite) | 3.53.4 | Public domain | vendored amalgamation |
 

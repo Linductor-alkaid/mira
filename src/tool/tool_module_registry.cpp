@@ -1,6 +1,6 @@
 #include <mira/tool_module_registry.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <map>
@@ -734,7 +734,7 @@ const NegotiationView *ModuleNegotiationCoordinator::current() const noexcept {
 // ---------------------------------------------------------------------------
 
 Result<std::future<Result<ModuleTrustReport>>>
-submit_module_verification(executor::Executor &executor, ToolModuleManifest manifest,
+submit_module_verification(kairo::Executor &executor, ToolModuleManifest manifest,
                            ModuleTrustConfig trust, ModuleDeployToken cancellation) {
     auto task = [manifest = std::move(manifest), trust = std::move(trust),
                  cancellation]() -> Result<ModuleTrustReport> {
@@ -758,10 +758,10 @@ submit_module_verification(executor::Executor &executor, ToolModuleManifest mani
 
     try {
         return executor.submit_auto(std::move(task));
-    } catch (const executor::ExecutorStopping &) {
+    } catch (const kairo::ExecutorStopping &) {
         return make_module_error(ErrorCode::Unavailable,
                                  "executor is stopping: verification not submitted");
-    } catch (const executor::CapacityExhaustedException &) {
+    } catch (const kairo::CapacityExhaustedException &) {
         return make_module_error(ErrorCode::ResourceExhausted,
                                  "executor capacity exhausted: verification not submitted");
     } catch (const std::runtime_error &) {
@@ -780,12 +780,12 @@ Result<ModuleTrustReport>
 consume_module_verification(std::future<Result<ModuleTrustReport>> future) {
     try {
         return future.get();
-    } catch (const executor::CapacityExhaustedException &) {
+    } catch (const kairo::CapacityExhaustedException &) {
         // Admission rejections are delivered as a ready-with-exception future
         // by this facade; fold them into the explicit result surface.
         return make_module_error(ErrorCode::ResourceExhausted,
                                  "executor capacity exhausted: verification not admitted");
-    } catch (const executor::ExecutorStopping &) {
+    } catch (const kairo::ExecutorStopping &) {
         return make_module_error(ErrorCode::Unavailable,
                                  "executor is stopping: verification not admitted");
     } catch (const std::exception &) {

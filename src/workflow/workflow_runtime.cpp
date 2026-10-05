@@ -1,6 +1,6 @@
 #include <mira/workflow_runtime.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -284,8 +284,8 @@ struct WorkflowRuntime::RunRecord final {
     bool episode_recorded = false;
 };
 
-WorkflowRuntime::WorkflowRuntime(executor::Executor &executor, MiraRuntime &runtime,
-                                 SessionId session, std::shared_ptr<IEnvironment> environment,
+WorkflowRuntime::WorkflowRuntime(kairo::Executor &executor, MiraRuntime &runtime, SessionId session,
+                                 std::shared_ptr<IEnvironment> environment,
                                  WorkflowRuntimeConfig config)
     : executor_(executor), runtime_(runtime), session_(session),
       environment_(std::move(environment)), config_(config), runtime_id_(RuntimeId::generate()) {}

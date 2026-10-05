@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -103,8 +103,8 @@ class FakeMemory final : public IMemory {
 }
 
 int submit_consume_and_exception_isolation() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         FakeMemory memory;
         MemoryEventStore events;
@@ -137,13 +137,13 @@ int submit_consume_and_exception_isolation() {
         MIRA_CHECK(stats.events_emitted >= 6);
         MIRA_CHECK(stats.event_sink_failures == 0);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int rejection_after_close_and_capacity_bound() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         FakeMemory memory;
         SupervisorConfig config;
@@ -175,13 +175,13 @@ int rejection_after_close_and_capacity_bound() {
         MIRA_CHECK(!denied.has_value());
         MIRA_CHECK(denied.error().code == ErrorCode::Unavailable);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int deferrable_cancelled_critical_settles_at_shutdown() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         FakeMemory memory;
         memory.slow_compact = true;
@@ -210,13 +210,13 @@ int deferrable_cancelled_critical_settles_at_shutdown() {
             MIRA_CHECK(swept.error().code == ErrorCode::Cancelled);
         }
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int failing_operations_report_without_poisoning() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         FakeMemory memory;
         memory.fail_queries = true;
@@ -250,13 +250,13 @@ int failing_operations_report_without_poisoning() {
         MIRA_CHECK(stats.completed >= 1); // the pending erasure completed as a call
         MIRA_CHECK(stats.failed >= 2);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int checkpoint_scheduling_routes_through_supervisor() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         MemoryEventStore events;
         MemoryCheckpointStore checkpoints;
@@ -286,7 +286,7 @@ int checkpoint_scheduling_routes_through_supervisor() {
         MIRA_CHECK(coordinator.latest_stored_sequence(task).has_value());
         MIRA_CHECK(coordinator.latest_stored_sequence(task).value() > 0);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

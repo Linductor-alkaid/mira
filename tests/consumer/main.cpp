@@ -17,7 +17,7 @@
 #include <memory>
 #include <system_error>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #ifdef MIRA_CONSUMER_HAS_MBEDTLS
 #include <mira/adapters/net/mbedtls_tls.hpp>
@@ -55,8 +55,8 @@ int main() {
 
     // Durable state stores: the installed package must export Mira::state_store
     // (with its vendored SQLite closure), not just the public headers.
-    executor::Executor store_exec;
-    if (!store_exec.initialize(executor::ExecutorConfig{})) {
+    kairo::Executor store_exec;
+    if (!store_exec.initialize(kairo::ExecutorConfig{})) {
         return 6;
     }
     {
@@ -83,7 +83,7 @@ int main() {
         (void)checkpoint_store.value()->close();
         std::filesystem::remove_all(root, fs_error);
     }
-    if (store_exec.shutdown(true) != executor::ShutdownResult::Completed) {
+    if (store_exec.shutdown(true) != kairo::ShutdownResult::Completed) {
         return 9;
     }
 
@@ -93,8 +93,8 @@ int main() {
     // the caller's responsibility; a missing file must fail closed at
     // initialize() rather than at first use.
     {
-        executor::Executor net_exec;
-        if (!net_exec.initialize(executor::ExecutorConfig{})) {
+        kairo::Executor net_exec;
+        if (!net_exec.initialize(kairo::ExecutorConfig{})) {
             return 10;
         }
         auto secrets = std::make_shared<mira::NullSecretResolver>();
@@ -115,7 +115,7 @@ int main() {
             return 14; // A missing CA bundle must not initialize.
         }
 #endif
-        if (net_exec.shutdown(true) != executor::ShutdownResult::Completed) {
+        if (net_exec.shutdown(true) != kairo::ShutdownResult::Completed) {
             return 15;
         }
     }
@@ -169,8 +169,8 @@ int main() {
     // loop over its own Executor and control plane, proving that
     // Mira::workflow's executor dependency resolves for package consumers.
     {
-        executor::Executor host_executor;
-        executor::ExecutorConfig host_config;
+        kairo::Executor host_executor;
+        kairo::ExecutorConfig host_config;
         // 4 threads: one async drive + its monitor + one step dispatch +
         // one spare (M13 resumed drives occupy workers while waiting on
         // step futures, mirroring the test fixture).
@@ -835,7 +835,7 @@ int main() {
         if (!runtime.finish_shutdown().clean) {
             return 28;
         }
-        if (host_executor.shutdown(true) != executor::ShutdownResult::Completed) {
+        if (host_executor.shutdown(true) != kairo::ShutdownResult::Completed) {
             return 29;
         }
     }

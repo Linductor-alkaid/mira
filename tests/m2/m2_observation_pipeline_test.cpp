@@ -2,7 +2,7 @@
 
 #include <mira/observation_pipeline.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -84,7 +84,7 @@ OperationContext context_with_deadline(std::chrono::milliseconds budget) {
 class ExecutorFixture final {
   public:
     ExecutorFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -93,7 +93,7 @@ class ExecutorFixture final {
         }
     }
     ~ExecutorFixture() { static_cast<void>(executor.shutdown(true)); }
-    executor::Executor executor;
+    kairo::Executor executor;
 };
 
 int check_settlement_and_quality() {

@@ -1515,7 +1515,7 @@ class SqliteMemoryStore::Impl final {
 
 SqliteMemoryStore::SqliteMemoryStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
-Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(executor::Executor &executor,
+Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Executor &executor,
                                                                    SqliteMemoryStoreOptions options,
                                                                    IArtifactStore *artifacts) {
     const auto valid = options.validate();

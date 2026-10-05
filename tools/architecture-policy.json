@@ -5,17 +5,17 @@
     {
       "id": "core",
       "roots": ["include/mira", "src"],
-      "requires": ["executor"]
+      "requires": ["kairo"]
     },
     {
       "id": "workflow",
       "roots": ["src/workflow"],
-      "requires": ["core", "executor"]
+      "requires": ["core", "kairo"]
     },
     {
       "id": "state_store",
       "roots": ["src/storage"],
-      "requires": ["core", "executor", "sqlite"]
+      "requires": ["core", "kairo", "sqlite"]
     },
     {
       "id": "simulator_adapter",
@@ -25,17 +25,17 @@
     {
       "id": "android_adapter",
       "roots": ["adapters/android", "include/mira/adapters/android"],
-      "requires": ["core", "executor"]
+      "requires": ["core", "kairo"]
     },
     {
       "id": "net_transport",
       "roots": ["adapters/net", "include/mira/adapters/net"],
-      "requires": ["core", "executor", "mbedtls", "openssl", "platform_posix", "platform_windows"]
+      "requires": ["core", "kairo", "mbedtls", "openssl", "platform_posix", "platform_windows"]
     },
     {
       "id": "examples",
       "roots": ["examples"],
-      "requires": ["core", "workflow", "state_store", "executor", "simulator_adapter"]
+      "requires": ["core", "workflow", "state_store", "kairo", "simulator_adapter"]
     },
     {
       "id": "tests",
@@ -44,7 +44,7 @@
         "core",
         "workflow",
         "state_store",
-        "executor",
+        "kairo",
         "sqlite",
         "mbedtls",
         "openssl",
@@ -57,7 +57,7 @@
     }
   ],
   "external_modules": {
-    "executor": { "headers": ["executor/"] },
+    "kairo": { "headers": ["kairo/"] },
     "sqlite": { "headers": ["sqlite3.h", "sqlite3ext.h"] },
     "mbedtls": { "headers": ["mbedtls/", "psa/", "test/test_certs.h"] },
     "openssl": { "headers": ["openssl/"] },

@@ -28,9 +28,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -225,7 +225,7 @@ struct Sha256DigestHash final {
 // every calling context.
 class WorkflowRuntime final {
   public:
-    WorkflowRuntime(executor::Executor &executor, MiraRuntime &runtime, SessionId session,
+    WorkflowRuntime(kairo::Executor &executor, MiraRuntime &runtime, SessionId session,
                     std::shared_ptr<IEnvironment> environment,
                     WorkflowRuntimeConfig config = WorkflowRuntimeConfig{});
     ~WorkflowRuntime();
@@ -420,7 +420,7 @@ class WorkflowRuntime final {
     // Stops run producers, cancels active runs through the control plane and
     // drains drive futures within the bounded budget. Never shuts the
     // executor down: the host owns it and follows with MiraRuntime shutdown
-    // and executor::Executor::shutdown(true).
+    // and kairo::Executor::shutdown(true).
     WorkflowShutdownReport shutdown();
 
     [[nodiscard]] bool shut_down() const noexcept;
@@ -623,7 +623,7 @@ class WorkflowRuntime final {
     [[nodiscard]] WorkflowRunState run_state(const RunRecord &run) const;
     [[nodiscard]] JsonValue predicate_context_copy(const RunRecord &run) const;
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     MiraRuntime &runtime_;
     SessionId session_;
     std::shared_ptr<IEnvironment> environment_;

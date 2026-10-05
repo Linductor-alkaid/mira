@@ -6,7 +6,7 @@
 #include <mira/artifact_store.hpp>
 #include <mira/event_store.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -25,7 +25,7 @@ using mira::test::FakeAndroidHost;
 class ExecutorFixture final {
   public:
     ExecutorFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -34,7 +34,7 @@ class ExecutorFixture final {
         }
     }
     ~ExecutorFixture() { static_cast<void>(executor.shutdown(true)); }
-    executor::Executor executor;
+    kairo::Executor executor;
 };
 
 OperationContext context(std::chrono::milliseconds budget) {
