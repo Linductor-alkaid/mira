@@ -71,7 +71,8 @@ struct ConversationLoopResult final {
 // exactly like AgentLoop::run().
 class ConversationLoop final {
   public:
-    ConversationLoop(ModelGateway &gateway, ConversationLoopConfig config = ConversationLoopConfig{});
+    ConversationLoop(ModelGateway &gateway,
+                     ConversationLoopConfig config = ConversationLoopConfig{});
 
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
