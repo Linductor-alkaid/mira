@@ -35,3 +35,6 @@ Mirage下游四项会话/协议/原生集成测试在Debug/Release/ASAN/UBSAN通
 Windows、其他Provider及完整供应商协议矩阵未运行；负责人Linductor-alkaid在目标CI
 补跑。上游当前master已采用kairo，本补丁仅增加模型API/协议能力，基于迁移前提交以
 满足Mirage仍依赖Executor的约定；上游合入需在其当前依赖版本复验，不能以此记录声明CI通过。
+
+PR#79首轮CI发现旧interop probe的聚合初始化在-Wmissing-field-initializers下失败；
+新增选项使用显式默认成员初始化修正，保留旧调用源码兼容。CI状态以PR当前结果为准。

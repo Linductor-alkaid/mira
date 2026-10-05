@@ -20,7 +20,7 @@ struct ProviderInferOptions final {
     // Writes the raw terminal payload to a protected artifact and attaches
     // the reference to the response (design LLM API §13.2/§15).
     bool capture_raw_response = false;
-    ModelPreviewSink preview_sink;
+    ModelPreviewSink preview_sink{};
 };
 
 // One configured provider endpoint. Implementations own no lifecycle beyond

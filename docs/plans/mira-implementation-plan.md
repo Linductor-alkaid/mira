@@ -1271,4 +1271,4 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 - 里程碑只能在全部工作项和退出条件完成、且验证记录可复现后改为 `Completed`。
 - 若某项被拆到后续阶段，原项保持未完成，除非范围变更经决策记录批准并明确迁移编号。
 
-2026-10-05：新增[会话流式维护](maintenance-2026-10-conversation-streaming.md)，In Progress。
+2026-10-05：新增[会话流式维护](maintenance-2026-10-conversation-streaming.md)，Linux范围Completed；其他平台验收见该记录。

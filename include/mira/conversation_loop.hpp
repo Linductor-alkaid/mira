@@ -31,8 +31,8 @@ struct ConversationLoopConfig final {
     std::uint32_t max_tool_executions = 32;
     // Per-turn generation bound.
     std::uint64_t max_output_tokens_per_turn = 1024;
-    std::optional<ReasoningEffort> reasoning_effort;
-    InferOptions inference;
+    std::optional<ReasoningEffort> reasoning_effort{};
+    InferOptions inference{};
 };
 
 enum class ConversationOutcome : std::uint8_t {
@@ -58,7 +58,7 @@ struct ConversationLoopResult final {
     std::string answer;
     std::uint32_t recoveries = 0;
     std::string safe_summary;
-    ModelUsage last_usage;
+    ModelUsage last_usage{};
     std::uint32_t tool_executions = 0;
 };
 
