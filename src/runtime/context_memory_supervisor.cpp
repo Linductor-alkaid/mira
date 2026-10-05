@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace mira {
 
@@ -112,7 +112,7 @@ Result<void> SupervisorConfig::validate() const {
 
 class ContextMemorySupervisor::Impl final {
   public:
-    Impl(executor::Executor &executor, SupervisorConfig config, IEventStore *event_sink,
+    Impl(kairo::Executor &executor, SupervisorConfig config, IEventStore *event_sink,
          RuntimeId runtime_id, SessionId session_id)
         : executor_(executor), config_(config), event_sink_(event_sink), runtime_id_(runtime_id),
           session_id_(session_id) {}
@@ -266,7 +266,7 @@ class ContextMemorySupervisor::Impl final {
         }
     }
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     SupervisorConfig config_;
     IEventStore *event_sink_ = nullptr;
     RuntimeId runtime_id_;
@@ -280,7 +280,7 @@ class ContextMemorySupervisor::Impl final {
     SupervisorStats stats_;
 };
 
-ContextMemorySupervisor::ContextMemorySupervisor(executor::Executor &executor,
+ContextMemorySupervisor::ContextMemorySupervisor(kairo::Executor &executor,
                                                  SupervisorConfig config, IEventStore *event_sink,
                                                  RuntimeId runtime_id, SessionId session_id) {
     const auto valid = config.validate();

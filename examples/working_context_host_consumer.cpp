@@ -35,7 +35,7 @@
 #include <mira/runtime.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <condition_variable>
@@ -298,8 +298,8 @@ class DeterministicCurator final : public IContextCurator {
 }
 
 int run(const std::filesystem::path &root) {
-    executor::Executor executor;
-    executor::ExecutorConfig executor_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = 2;
     executor_config.max_threads = 4;
     executor_config.queue_capacity = 64;
@@ -698,7 +698,7 @@ int run(const std::filesystem::path &root) {
         ++failures;
     }
     (void)memory_store.value()->close();
-    if (executor.shutdown(true) != executor::ShutdownResult::Completed) {
+    if (executor.shutdown(true) != kairo::ShutdownResult::Completed) {
         std::cerr << "executor shutdown incomplete\n";
         ++failures;
     }

@@ -276,10 +276,10 @@ _Avoid_: 录制回放（无泛化语义）
 
 ## 8. 基础设施
 
-权威来源：根 [AGENTS.md](../../AGENTS.md)（Executor 强制约束）、[Executor API 文档](../../third_party/executor/docs/API.md)、[架构治理](architecture_governance.md)。
+权威来源：根 [AGENTS.md](../../AGENTS.md)（Executor 强制约束）、[kairo API 文档](../../third_party/kairo/docs/API.md)、[架构治理](architecture_governance.md)。
 
 **Executor（执行器）**:
-`third_party/executor` 提供的强制并发与生命周期基础设施；所有异步、
+`third_party/kairo`（上游 Executor 已于 v0.6.0 更名 kairo）提供的强制并发与生命周期基础设施；所有异步、
 延时、周期、阻塞 I/O 与实时任务必须经其公开能力管理。能力缺口按
 `docs/executor_feedback/ledger.md` 登记。
 _Avoid_: 线程池（实现细节）、自建调度器（禁止）

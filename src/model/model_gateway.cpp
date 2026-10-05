@@ -1,7 +1,7 @@
 #include <mira/model_digest.hpp>
 #include <mira/model_gateway.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -50,7 +50,7 @@ namespace {
 
 } // namespace
 
-ModelGateway::ModelGateway(executor::Executor &executor, ModelRouter router,
+ModelGateway::ModelGateway(kairo::Executor &executor, ModelRouter router,
                            std::shared_ptr<IArtifactSource> artifacts, PriceTable prices,
                            ModelGatewayConfig config)
     : executor_(executor), router_(std::move(router)), artifacts_(std::move(artifacts)),
@@ -345,7 +345,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             if (decision.action == RetryAction::RetryAfter && decision.delay.count() > 0) {
                 // Retry pacing runs through an Executor timer so shutdown and
                 // cancellation can interrupt the wait.
-                auto sleeper = executor_.submit_delayed_with_handle(
+                auto sleeper = executor_.submit_delayed(
                     static_cast<std::int64_t>(decision.delay.count()), [] {});
                 if (sleeper.future.valid()) {
                     try {

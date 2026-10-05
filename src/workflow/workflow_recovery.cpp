@@ -2,7 +2,7 @@
 
 #include <mira/model_schema.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -343,7 +343,7 @@ JsonSchema workflow_recovery_decision_schema() {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-WorkflowRecoveryOrchestrator::WorkflowRecoveryOrchestrator(executor::Executor &executor,
+WorkflowRecoveryOrchestrator::WorkflowRecoveryOrchestrator(kairo::Executor &executor,
                                                            WorkflowRuntime &runtime,
                                                            MiraRuntime &control,
                                                            ModelGateway &gateway, SessionId session,

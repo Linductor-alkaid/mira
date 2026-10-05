@@ -65,8 +65,8 @@ Replay 侧 Provider（`model_replay.hpp`）共同保证：回放只返回录制�
 `SqliteCheckpointStore`——`ICheckpointStore` 的 SQLite/WAL 实现：
 
 ```cpp
-executor::Executor exec;
-exec.initialize(executor::ExecutorConfig{});
+kairo::Executor exec;
+exec.initialize(kairo::ExecutorConfig{});
 mira::SqliteStoreOptions options;
 options.path = root / "checkpoints.db";
 auto store = mira::SqliteCheckpointStore::open(exec, options);  // Result<unique_ptr<...>>

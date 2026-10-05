@@ -9,7 +9,7 @@
 
 #include <mira/json.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -230,8 +230,8 @@ int cross_thread_pipeline_replay_byte_identical() {
     const auto dataset = frozen_dataset();
     const auto options = dataset_options();
 
-    executor::Executor executor;
-    MIRA_CHECK(executor.initialize(executor::ExecutorConfig{}));
+    kairo::Executor executor;
+    MIRA_CHECK(executor.initialize(kairo::ExecutorConfig{}));
     auto rebuild_future = executor.submit_auto(
         [&dataset, &options] { return rebuild_world_state(dataset, options); });
     auto fold_future =
@@ -244,7 +244,7 @@ int cross_thread_pipeline_replay_byte_identical() {
 
     MIRA_CHECK(rebuilt.value().digest() == folded.value().digest());
     MIRA_CHECK(rebuilt.value().digest().to_string() == kFrozenDatasetDigestHex);
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

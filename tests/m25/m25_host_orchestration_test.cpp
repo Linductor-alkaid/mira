@@ -43,7 +43,7 @@
 #include <mira/context_working_context_promotion.hpp>
 #include <mira/memory_consolidation.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -117,8 +117,8 @@ int loop_run_issues_zero_orchestration_calls() {
     const auto curate_session = m25_session_from_seed(602);
     const auto curate_task = m25_task_from_seed(603);
 
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -175,7 +175,7 @@ int loop_run_issues_zero_orchestration_calls() {
         MIRA_CHECK(m25_count_or(store, curate_session, 0) == 1);
         MIRA_CHECK(memory.stored_records() == 0);
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -188,8 +188,8 @@ int flush_future_precedes_terminal_flag() {
     const auto session = m25_session_from_seed(610);
     const auto task = m25_task_from_seed(611);
 
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -246,7 +246,7 @@ int flush_future_precedes_terminal_flag() {
         MIRA_CHECK(kept.has_value() && kept.value().has_value());
         MIRA_CHECK(kept.value()->through_event_sequence == 8);
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -259,8 +259,8 @@ int promotion_routes_through_generic_deferrable() {
     const auto session = m25_session_from_seed(620);
     const auto task = m25_task_from_seed(621);
 
-    executor::Executor executor;
-    MIRA_CHECK(executor.initialize(executor::ExecutorConfig{}));
+    kairo::Executor executor;
+    MIRA_CHECK(executor.initialize(kairo::ExecutorConfig{}));
     {
         ContextMemorySupervisor supervisor(executor);
         FaithfulMemory memory;
@@ -278,7 +278,7 @@ int promotion_routes_through_generic_deferrable() {
         MIRA_CHECK(report.value().consolidation.entries.size() == 1);
         MIRA_CHECK(memory.stored_records() == 1);
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -407,8 +407,8 @@ int supervisor_begin_shutdown_rejects_and_cancels() {
     const auto session = m25_session_from_seed(650);
     const auto task = m25_task_from_seed(651);
 
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -471,7 +471,7 @@ int supervisor_begin_shutdown_rejects_and_cancels() {
         auto_curator.drain(session);
         MIRA_CHECK(auto_curator.stats().errors >= 1);
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -497,7 +497,7 @@ int executor_shutdown_rejects_new_run_submission() {
         MIRA_CHECK(outcome.has_value());
         MIRA_CHECK(outcome.value().outcome == LoopOutcome::Completed);
     }
-    MIRA_CHECK(harness.executor().shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(harness.executor().shutdown(true) == kairo::ShutdownResult::Completed);
     const auto executed_before = harness.provider().requests().size();
 
     // A new run() submission after the executor closed must become an
@@ -589,8 +589,8 @@ int store_reads_coexist_with_curation_writes() {
     std::atomic<bool> stop{false};
     std::atomic<std::size_t> read_errors{0};
     std::atomic<std::size_t> reads{0};
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 4;
     config.queue_capacity = 32;
@@ -641,7 +641,7 @@ int store_reads_coexist_with_curation_writes() {
     for (auto &reader : readers) {
         reader.get();
     }
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     MIRA_CHECK(read_errors.load() == 0);
     MIRA_CHECK(reads.load() > 0);
     const auto latest = store.latest(session);

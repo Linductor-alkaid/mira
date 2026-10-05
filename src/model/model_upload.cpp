@@ -2,7 +2,7 @@
 
 #include <mira/model_digest.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -79,11 +79,11 @@ constexpr std::size_t kMaxPendingDeletes = 256;
 struct OpenAiRemoteFileStore::Impl final {
     struct PendingDelete final {
         RemoteFileRef file;
-        executor::TimerHandle handle;
+        kairo::TimerHandle handle;
         std::future<Result<void>> future;
     };
 
-    executor::Executor &executor;
+    kairo::Executor &executor;
     std::shared_ptr<const ModelProfile> profile;
     std::shared_ptr<IHttpTransport> transport;
     std::shared_ptr<IArtifactSource> artifacts;
@@ -92,7 +92,7 @@ struct OpenAiRemoteFileStore::Impl final {
     std::vector<PendingDelete> pending;
     std::vector<RemoteFileAudit> audits;
 
-    Impl(executor::Executor &owner, std::shared_ptr<const ModelProfile> configured_profile,
+    Impl(kairo::Executor &owner, std::shared_ptr<const ModelProfile> configured_profile,
          std::shared_ptr<IHttpTransport> configured_transport,
          std::shared_ptr<IArtifactSource> configured_artifacts)
         : executor(owner), profile(std::move(configured_profile)),
@@ -155,7 +155,7 @@ struct OpenAiRemoteFileStore::Impl final {
     }
 };
 
-OpenAiRemoteFileStore::OpenAiRemoteFileStore(executor::Executor &executor,
+OpenAiRemoteFileStore::OpenAiRemoteFileStore(kairo::Executor &executor,
                                              std::shared_ptr<const ModelProfile> profile,
                                              std::shared_ptr<IHttpTransport> transport,
                                              std::shared_ptr<IArtifactSource> artifacts)
@@ -293,7 +293,7 @@ Result<void> OpenAiRemoteFileStore::retire(const RemoteFileRef &file,
     }
     try {
         auto state = impl_;
-        auto submission = impl_->executor.submit_delayed_with_handle(
+        auto submission = impl_->executor.submit_delayed(
             requested.count(), [state, file] { return state->delete_remote(file); });
         impl_->pending.push_back(
             Impl::PendingDelete{file, std::move(submission.handle), std::move(submission.future)});

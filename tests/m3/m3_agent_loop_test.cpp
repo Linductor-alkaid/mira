@@ -1,7 +1,7 @@
 #include "support/m3_support.hpp"
 
 #include "support/test.hpp"
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/agent_loop.hpp>
@@ -23,7 +23,7 @@ using namespace mira::testing;
 class LoopFixture final {
   public:
     LoopFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -78,7 +78,7 @@ class LoopFixture final {
         SimulatorEnvironment &environment_;
     };
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<MockHttpTransport> transport_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;

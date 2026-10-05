@@ -42,8 +42,8 @@ foreach(HEADER IN ITEMS
     # The net transport headers reference Executor worker types in their
     # public surface, so their minimal consumer needs the Executor headers
     # exactly like an installed Mira::net_transport consumer does.
-    if(HEADER MATCHES "adapters/net/" AND EXECUTOR_INCLUDE_DIR)
+    if(HEADER MATCHES "adapters/net/" AND KAIRO_INCLUDE_DIR)
         target_include_directories("header_${TARGET_NAME}" SYSTEM PRIVATE
-            "${EXECUTOR_INCLUDE_DIR}")
+            "${KAIRO_INCLUDE_DIR}")
     endif()
 endforeach()

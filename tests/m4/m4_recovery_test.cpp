@@ -4,7 +4,7 @@
 #include <mira/task_checkpoint.hpp>
 #include <mira/task_recovery.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <memory>
 #include <vector>
@@ -208,8 +208,8 @@ int recovery_and_checkpoints_run_under_executor_management() {
     // AGENTS.md: Mira-originated work runs on Executor tasks with consumed
     // futures. The planner and coordinator are synchronous components hosted
     // by those tasks; this test exercises that contract.
-    executor::Executor exec;
-    executor::ExecutorConfig config;
+    kairo::Executor exec;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 16;
@@ -266,7 +266,7 @@ int recovery_and_checkpoints_run_under_executor_management() {
     auto count = checkpoints.count(task);
     MIRA_CHECK(count.has_value() && count.value() == 5);
 
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

@@ -36,7 +36,7 @@
 #include <mira/context_working_context_auto.hpp>
 #include <mira/model_provider.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -568,8 +568,8 @@ int trigger_policy_pure_function() {
 // ---------------------------------------------------------------------------
 
 int construction_validation() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         InMemoryWorkingContextStore store;
         ScriptedAutoCurator curator;
@@ -609,7 +609,7 @@ int construction_validation() {
                    stats.errors == 0 && stats.consecutive_failures == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -618,8 +618,8 @@ int construction_validation() {
 // ---------------------------------------------------------------------------
 
 int on_signal_no_fire_accrues_events() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(100);
         const TaskId task = task_from_seed(101);
@@ -654,7 +654,7 @@ int on_signal_no_fire_accrues_events() {
         MIRA_CHECK(store.latest(session).has_value() && !store.latest(session).value().has_value());
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -663,8 +663,8 @@ int on_signal_no_fire_accrues_events() {
 // ---------------------------------------------------------------------------
 
 int on_signal_fires_both_kinds() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(110);
         const TaskId task = task_from_seed(111);
@@ -738,7 +738,7 @@ int on_signal_fires_both_kinds() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -748,8 +748,8 @@ int on_signal_fires_both_kinds() {
 // ---------------------------------------------------------------------------
 
 int on_signal_absorbs_and_refires_latest() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(120);
         const TaskId task = task_from_seed(121);
@@ -815,7 +815,7 @@ int on_signal_absorbs_and_refires_latest() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -825,8 +825,8 @@ int on_signal_absorbs_and_refires_latest() {
 // ---------------------------------------------------------------------------
 
 int settled_gate_and_catch_up() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(130);
         const TaskId task = task_from_seed(131);
@@ -892,7 +892,7 @@ int settled_gate_and_catch_up() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -902,8 +902,8 @@ int settled_gate_and_catch_up() {
 // ---------------------------------------------------------------------------
 
 int outcome_accounting_committed_noop_discard_error() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(140);
         const TaskId task = task_from_seed(141);
@@ -1028,7 +1028,7 @@ int outcome_accounting_committed_noop_discard_error() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1038,8 +1038,8 @@ int outcome_accounting_committed_noop_discard_error() {
 // ---------------------------------------------------------------------------
 
 int flush_branches() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     const SessionId session = session_from_seed(150);
     const TaskId task = task_from_seed(151);
     const auto live = make_live(session, task);
@@ -1144,7 +1144,7 @@ int flush_branches() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     MIRA_CHECK(caller_defects == 0);
     return 0;
 }
@@ -1156,8 +1156,8 @@ int flush_branches() {
 // ---------------------------------------------------------------------------
 
 int terminal_lateness_keeps_forced_snapshot() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(160);
         const TaskId task = task_from_seed(161);
@@ -1200,7 +1200,7 @@ int terminal_lateness_keeps_forced_snapshot() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1231,8 +1231,8 @@ int failure_fallback_five_classes() {
     };
 
     for (const ClassCase &failure : classes) {
-        executor::Executor exec;
-        MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+        kairo::Executor exec;
+        MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
         {
             const SessionId session = session_from_seed(170);
             const TaskId task = task_from_seed(171);
@@ -1319,7 +1319,7 @@ int failure_fallback_five_classes() {
             MIRA_CHECK(caller_defects == 0);
             supervisor.begin_shutdown();
         }
-        MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     }
     return 0;
 }
@@ -1330,8 +1330,8 @@ int failure_fallback_five_classes() {
 // ---------------------------------------------------------------------------
 
 int previous_selection_and_epoch_reset() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(180);
         const TaskId task = task_from_seed(181);
@@ -1393,7 +1393,7 @@ int previous_selection_and_epoch_reset() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1403,8 +1403,8 @@ int previous_selection_and_epoch_reset() {
 // ---------------------------------------------------------------------------
 
 int rejected_signals() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(190);
         const TaskId task = task_from_seed(191);
@@ -1464,7 +1464,7 @@ int rejected_signals() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1474,8 +1474,8 @@ int rejected_signals() {
 // ---------------------------------------------------------------------------
 
 int shared_future_ownership() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(200);
         const TaskId task = task_from_seed(201);
@@ -1523,7 +1523,7 @@ int shared_future_ownership() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1534,8 +1534,8 @@ int shared_future_ownership() {
 // ---------------------------------------------------------------------------
 
 int shutdown_cancellation_and_rejection() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(210);
         const TaskId task = task_from_seed(211);
@@ -1605,7 +1605,7 @@ int shutdown_cancellation_and_rejection() {
         }
         MIRA_CHECK(caller_defects == 0);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1615,8 +1615,8 @@ int shutdown_cancellation_and_rejection() {
 // ---------------------------------------------------------------------------
 
 int destructor_bounded_drain() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     const SessionId session = session_from_seed(220);
     const TaskId task = task_from_seed(221);
     const auto live = make_live(session, task);
@@ -1666,7 +1666,7 @@ int destructor_bounded_drain() {
     }
     MIRA_CHECK(caller_defects == 0);
     supervisor.begin_shutdown();
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1675,8 +1675,8 @@ int destructor_bounded_drain() {
 // ---------------------------------------------------------------------------
 
 int stats_and_session_view_consistency() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId first_session = session_from_seed(230);
         const SessionId second_session = session_from_seed(231);
@@ -1745,7 +1745,7 @@ int stats_and_session_view_consistency() {
         MIRA_CHECK(caller_defects == 0);
         supervisor.begin_shutdown();
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

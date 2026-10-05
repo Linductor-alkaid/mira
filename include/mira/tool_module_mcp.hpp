@@ -20,9 +20,9 @@
 #include <utility>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -307,7 +307,7 @@ class McpToolDispatcher final {
 
     [[nodiscard]] Result<ToolExecutionRecord> execute(const ToolProposal &proposal,
                                                       const OperationContext &context,
-                                                      executor::Executor &executor,
+                                                      kairo::Executor &executor,
                                                       IMcpToolTransport &transport);
 
     // Terminal close: rejects new dispatches, signals every abandoned wait,
@@ -337,7 +337,7 @@ class McpToolDispatcher final {
 // consume it through consume_mcp_invocation(), which folds every outcome into
 // one Result. Futures must be consumed; nothing is silently dropped.
 [[nodiscard]] Result<std::future<Result<JsonValue>>>
-submit_mcp_invocation(executor::Executor &executor, IMcpToolTransport &transport,
+submit_mcp_invocation(kairo::Executor &executor, IMcpToolTransport &transport,
                       std::string wire_name, JsonValue arguments, McpInvocationProbe probe);
 
 // The single well-defined consumption point for an invocation future: the

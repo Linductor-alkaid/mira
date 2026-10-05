@@ -285,7 +285,7 @@ struct WorkflowRecoveryAttempt final {
 ```cpp
 class WorkflowRecoveryOrchestrator final {
   public:
-    WorkflowRecoveryOrchestrator(executor::Executor &executor,
+    WorkflowRecoveryOrchestrator(kairo::Executor &executor,
                                  WorkflowRuntime &runtime, MiraRuntime &control,
                                  ModelGateway &gateway,
                                  WorkflowRecoveryConfig config);

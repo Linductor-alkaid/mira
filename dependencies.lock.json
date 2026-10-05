@@ -2,13 +2,13 @@
   "schema_version": 1,
   "dependencies": [
     {
-      "name": "executor",
-      "source": "https://github.com/Linductor-alkaid/executor.git",
-      "path": "third_party/executor",
-      "version": "0.5.0",
-      "commit": "2ae4fc8985af8962e08e3282a9330de5445d0d10",
+      "name": "kairo",
+      "source": "https://github.com/Linductor-alkaid/kairo.git",
+      "path": "third_party/kairo",
+      "version": "0.6.0",
+      "commit": "d9602ea6762806be320b9543e3b36f27f7dd5b1a",
       "license": "MIT",
-      "license_file": "third_party/executor/LICENSE"
+      "license_file": "third_party/kairo/LICENSE"
     },
     {
       "name": "mbedtls",

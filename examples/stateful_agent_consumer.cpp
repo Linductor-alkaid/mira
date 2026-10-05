@@ -16,15 +16,15 @@
 #include <iostream>
 #include <string>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
 using namespace mira;
 
 int run(const std::filesystem::path &root) {
-    executor::Executor exec;
-    if (!exec.initialize(executor::ExecutorConfig{})) {
+    kairo::Executor exec;
+    if (!exec.initialize(kairo::ExecutorConfig{})) {
         std::cerr << "executor initialize failed\n";
         return 1;
     }
@@ -143,7 +143,7 @@ int run(const std::filesystem::path &root) {
 
     (void)memory_store.value()->close();
     (void)checkpoint_store.value()->close();
-    if (exec.shutdown(true) != executor::ShutdownResult::Completed) {
+    if (exec.shutdown(true) != kairo::ShutdownResult::Completed) {
         ++failures;
     }
     if (failures == 0) {

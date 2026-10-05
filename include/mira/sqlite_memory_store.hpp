@@ -54,7 +54,7 @@ struct RetrievalWeights final {
 class SqliteMemoryStore final : public IMemory {
   public:
     [[nodiscard]] static Result<std::unique_ptr<SqliteMemoryStore>>
-    open(executor::Executor &executor, SqliteMemoryStoreOptions options,
+    open(kairo::Executor &executor, SqliteMemoryStoreOptions options,
          IArtifactStore *artifacts = nullptr);
     ~SqliteMemoryStore() override;
 

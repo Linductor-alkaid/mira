@@ -1,6 +1,6 @@
 #include <mira/tool_module_mcp.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/json.hpp>
 #include <mira/model_schema.hpp>
@@ -359,7 +359,7 @@ Result<McpSessionPlan> McpModuleAdmission::on_session_event(McpSessionEvent even
 // ---------------------------------------------------------------------------
 
 Result<std::future<Result<JsonValue>>>
-submit_mcp_invocation(executor::Executor &executor, IMcpToolTransport &transport,
+submit_mcp_invocation(kairo::Executor &executor, IMcpToolTransport &transport,
                       std::string wire_name, JsonValue arguments, McpInvocationProbe probe) {
     auto task = [&transport, wire_name = std::move(wire_name), arguments = std::move(arguments),
                  probe = std::move(probe)]() mutable -> Result<JsonValue> {
@@ -374,10 +374,10 @@ submit_mcp_invocation(executor::Executor &executor, IMcpToolTransport &transport
 
     try {
         return executor.submit_auto(std::move(task));
-    } catch (const executor::ExecutorStopping &) {
+    } catch (const kairo::ExecutorStopping &) {
         return make_execution_error(ErrorCode::Unavailable,
                                     "executor is stopping: invocation not submitted");
-    } catch (const executor::CapacityExhaustedException &) {
+    } catch (const kairo::CapacityExhaustedException &) {
         return make_execution_error(ErrorCode::ResourceExhausted,
                                     "executor capacity exhausted: invocation not submitted");
     } catch (const std::runtime_error &) {
@@ -394,10 +394,10 @@ submit_mcp_invocation(executor::Executor &executor, IMcpToolTransport &transport
 Result<JsonValue> consume_mcp_invocation(std::future<Result<JsonValue>> future) {
     try {
         return future.get();
-    } catch (const executor::CapacityExhaustedException &) {
+    } catch (const kairo::CapacityExhaustedException &) {
         return make_execution_error(ErrorCode::ResourceExhausted,
                                     "executor capacity exhausted: invocation not admitted");
-    } catch (const executor::ExecutorStopping &) {
+    } catch (const kairo::ExecutorStopping &) {
         return make_execution_error(ErrorCode::Unavailable,
                                     "executor is stopping: invocation not admitted");
     } catch (const std::exception &) {
@@ -491,7 +491,7 @@ namespace {
 
 Result<ToolExecutionRecord> McpToolDispatcher::execute(const ToolProposal &proposal,
                                                        const OperationContext &context,
-                                                       executor::Executor &executor,
+                                                       kairo::Executor &executor,
                                                        IMcpToolTransport &transport) {
     const auto started = std::chrono::steady_clock::now();
     const auto hard_deadline = started + impl_->limits.max_invocation_duration;

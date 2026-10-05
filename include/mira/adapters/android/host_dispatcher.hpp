@@ -16,9 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira::adapters::android {
 
@@ -104,7 +104,7 @@ struct HostInputOutcome final {
 // after detach by the embedder.
 class HostDispatcherBridge final {
   public:
-    explicit HostDispatcherBridge(executor::Executor &executor);
+    explicit HostDispatcherBridge(kairo::Executor &executor);
     ~HostDispatcherBridge();
 
     HostDispatcherBridge(const HostDispatcherBridge &) = delete;
@@ -145,7 +145,7 @@ class HostDispatcherBridge final {
     // release counter so it stays valid even after the bridge is gone.
     [[nodiscard]] HostLeaseGuard::ReleaseObserver lease_release_observer();
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     mutable std::mutex mutex_;
     std::unordered_map<std::uint64_t, RegistryEntry> registry_;
     std::atomic<std::uint64_t> next_correlation_{0};

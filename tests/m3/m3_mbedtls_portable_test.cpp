@@ -7,7 +7,7 @@
 #include <mira/adapters/net/mbedtls_tls.hpp>
 #include <mira/adapters/net/socket_transport.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <mira/model_contracts.hpp>
 
 #include <mbedtls/ctr_drbg.h>
@@ -203,8 +203,8 @@ class MbedTlsServer final {
 };
 
 int run_verified_request(bool through_proxy) {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -266,8 +266,8 @@ int run_verified_request(bool through_proxy) {
 }
 
 int wrong_ca_fails_closed() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;

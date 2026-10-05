@@ -1,6 +1,6 @@
 #include <mira/adapters/android/host_dispatcher.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <deque>
 #include <utility>
@@ -132,7 +132,7 @@ void HostLeaseGuard::set_release_observer(ReleaseObserver observer) {
     release_observer_ = std::move(observer);
 }
 
-HostDispatcherBridge::HostDispatcherBridge(executor::Executor &executor) : executor_(executor) {
+HostDispatcherBridge::HostDispatcherBridge(kairo::Executor &executor) : executor_(executor) {
     callbacks_table_.struct_size = sizeof(MiraHostCallbacksV1);
     callbacks_table_.user_data = this;
     callbacks_table_.on_operation_complete = [](void *user_data,

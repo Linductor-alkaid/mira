@@ -11,7 +11,7 @@
 #include <mira/adapters/net/openssl_tls.hpp>
 #endif
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <mira/model_contracts.hpp>
 
 #include <openssl/err.h>
@@ -169,8 +169,8 @@ class TlsServer final {
 };
 
 int happy_path_over_tls() {
-    executor::Executor ex;
-    executor::ExecutorConfig config;
+    kairo::Executor ex;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -231,8 +231,8 @@ int happy_path_over_tls() {
 }
 
 int untrusted_certificate_fails_closed() {
-    executor::Executor ex;
-    executor::ExecutorConfig config;
+    kairo::Executor ex;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -286,8 +286,8 @@ int untrusted_certificate_fails_closed() {
 }
 
 int https_connect_proxy_then_verified_tls() {
-    executor::Executor ex;
-    executor::ExecutorConfig config;
+    kairo::Executor ex;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;

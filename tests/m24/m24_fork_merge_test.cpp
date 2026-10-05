@@ -49,7 +49,7 @@
 #include <mira/memory_consolidation.hpp>
 #include <mira/memory_contracts.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <condition_variable>

@@ -9,7 +9,7 @@
 #include <iostream>
 #include <random>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -90,7 +90,7 @@ class FakeModel final : public IConsolidationModel {
 
 struct Fixture final {
     Fixture() {
-        executor_.initialize(executor::ExecutorConfig{});
+        executor_.initialize(kairo::ExecutorConfig{});
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "consolidation.db";
         auto opened = SqliteMemoryStore::open(executor_, options);
@@ -102,7 +102,7 @@ struct Fixture final {
         }
         (void)executor_.shutdown(true);
     }
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::unique_ptr<SqliteMemoryStore> store;
 };
 
