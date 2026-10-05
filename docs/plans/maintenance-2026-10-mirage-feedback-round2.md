@@ -137,3 +137,20 @@ x86_64，GCC 13.3.0，CMake debug 预设。
   补跑条件：Mirage pin 升级后按 mira#72/#75 复验）。Windows 平台编译路径未在本机执行
   （m3_tls_test.cpp 既有主体为 POSIX 风格；补跑条件：PR CI windows matrix）。CI 证据
   待提交 PR 后回填。
+
+2026-10-05：PR #76（分支 `auto/mnt-202610-mirage-feedback-round2`）CI 验证。
+
+- 第 1 轮（commit `cbeb40c`，runs `37287990623`/`37288023723`）：22/24 通过，`quality`
+  因 clang-format 违规失败（`conversation_loop.hpp:74` 构造函数行超限；本机无
+  clang-format，未能在提交前自检）。
+- 第 2 轮（commit `7a8e7da`）：`quality` 仍失败——`conversation_loop.cpp` 等 6 个文件存在
+  更多违规（检查按文件逐个暴露）。本机安装 clang-format 18.1.3 后对全部触碰文件执行
+  `clang-format -i`（纯空白/换行变化，全树重编译 0 警告）。
+- 第 3 轮（commit `215d7bd`，runs
+  [`37293161880`](https://github.com/Linductor-alkaid/mira/actions/runs/37293161880) /
+  [`37293167875`](https://github.com/Linductor-alkaid/mira/actions/runs/37293167875)）：
+  **24/24 检查全部通过**——Linux GCC/Clang Debug+Release、Windows Debug+Release（覆盖
+  SNI 测试与新增文件的 Windows 编译路径）、Android arm64+x86_64、ASAN/UBSAN/TSAN、
+  quality（clang-tidy、clang-format、docs、SBOM、平台边界）。
+- 局部限制关闭情况：Windows 编译路径已由 CI matrix 覆盖（见 §7 首条记录的补跑条件）；
+  SNI 真实端点端到端与 MinGW 复现仍属 Mirage 侧 pin 升级后动作，维持登记。
