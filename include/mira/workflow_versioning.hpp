@@ -61,8 +61,11 @@ struct WorkflowVersionHistory final {
 [[nodiscard]] Result<void> append_workflow_version(WorkflowVersionHistory &history,
                                                    const WorkflowVersionRecord &record);
 
-// Resolves the record whose content digest equals `ir_digest`. Run replay and
-// continuation always resolve by digest (W-03); unknown digests fail closed.
+// Resolves the record whose content digest equals `ir_digest`. When the same
+// content was appended more than once (draft -> publish of identical IR), the
+// newest matching record wins so the digest resolves to its current validation
+// state. Run replay and continuation always resolve by digest (W-03); unknown
+// digests fail closed.
 [[nodiscard]] Result<WorkflowVersionRecord>
 resolve_workflow_version(const WorkflowVersionHistory &history, const Sha256Digest &ir_digest);
 

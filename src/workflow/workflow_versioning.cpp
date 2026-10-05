@@ -88,11 +88,16 @@ Result<void> append_workflow_version(WorkflowVersionHistory &history,
 
 Result<WorkflowVersionRecord> resolve_workflow_version(const WorkflowVersionHistory &history,
                                                        const Sha256Digest &ir_digest) {
-    const auto record = std::find_if(history.records.begin(), history.records.end(),
+    // The same content digest may legitimately appear on more than one record:
+    // the draft -> publish flow appends a NotValidated record and then a
+    // validated record for identical IR (issue #74). Resolution therefore
+    // matches the newest record, which reads the digest's *current*
+    // validation state — the same direction as latest_runnable_workflow_version.
+    const auto record = std::find_if(history.records.rbegin(), history.records.rend(),
                                      [&](const WorkflowVersionRecord &candidate) {
                                          return candidate.content_digest == ir_digest;
                                      });
-    if (record == history.records.end()) {
+    if (record == history.records.rend()) {
         return versioning_error(ErrorCode::NotFound, "no version matches the digest");
     }
     return *record;

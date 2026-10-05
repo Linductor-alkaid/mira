@@ -18,6 +18,7 @@
 | `EXE-20260830-001` | 2026-08-30 | Resolved | 默认异步提交缺少总量有界 admission | 已迁移到 `max_in_flight_tasks` | 已删除 Mira 在途计数，使用 Executor 原生 admission | [executor#179](https://github.com/Linductor-alkaid/executor/issues/179)（`4fd8e60`） |
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
+| `EXE-20260922-001` | 2026-09-22 | Open | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | Windows MinGW 交叉门禁只能构建不含 executor 的目标子集 | 无（不修改 pinned 依赖；门禁按 DEC-017 决策 9 构建子集） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)（MIRA-20260922-001）；executor 侧 issue 待提出 |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -267,3 +268,69 @@ future ready 语义，也不能要求应用延长栈对象生命周期。
 | 2026-08-30 | Open → Proposed | 上游重构消除全部栈同步对象（共享状态 + 串行线程结算）；gcc-13 TSAN 下 4 轮 3 万+ 次串行提交 0 报告，实现已随 executor master 合入 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178) |
 | 2026-08-30 | Proposed → Accepted | 实现与文档已合入 executor master（`13214c0` 实现+测试，`def5200` 文档+网站；TSAN 0 报告，condition-variable lifetime race 按构造消除）。等待可用版本后 Mira 移除非阻塞 tracked dispatch 临时方案 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)、executor master `def5200` |
 | 2026-08-30 | Accepted → Resolved | Mira 已不再创建 facade 外部同步对象或独立业务 promise；直接 facade future 由 Runtime 保存并消费。上游 serial stress 与 Mira Debug/安装/平台边界回归均通过 | `test_serial_context_stress`；`ctest --preset debug --output-on-failure` |
+
+### EXE-20260922-001：blocking_io_executor 的 native_handle static_cast 阻塞 MinGW-w64 posix 构建
+
+- 状态：`Open`
+- 发现日期：`2026-09-22`（2026-10-05 登记并转交上游流程）
+- 记录人/责任人：Mira Maintainers（反馈来源：Mirage 桌面 Host，编号 MIRA-20260922-001）
+- 影响组件：Windows MinGW-w64 交叉构建门禁（posix 线程模型）
+- Executor 版本或提交：`2ae4fc8985af8962e08e3282a9330de5445d0d10`（随附于 `dependencies.lock.json`）
+- 关联代码/测试：`third_party/executor/src/executor/blocking_io_executor.cpp:157`；反馈详情见
+  [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)
+- 上游 issue/PR：executor 仓库 issue 待提出（本条即转交记录）
+
+#### 使用场景
+
+Mirage 桌面 Host 按 DEC-017 引导方式用 MinGW-w64 x86_64 GCC 13.2.0（posix 线程模型）交叉
+构建随附 Executor。Mira 的 Windows 门禁需要"同一源码树在 MSVC 与 MinGW 双工具链可构建"；
+当前 MinGW 门禁只能构建不含 executor 的 platform/desktop/integration 目标子集。
+
+#### 已核查证据
+
+已核对 pinned 版本 `blocking_io_executor.cpp:157`：
+
+```cpp
+auto self_handle = static_cast<std::thread::native_handle_type>(GetCurrentThread());
+```
+
+MinGW-w64 posix 线程模型的 `std::thread::native_handle_type` 是整数类型（pthread 自映射），
+与 `HANDLE`（`void*`）之间无 static_cast 关系；GCC 13.2.0 报
+`invalid 'static_cast' from type 'HANDLE' {aka 'void*'} to type 'std::thread::native_handle_type'
+{aka 'long long unsigned int'}`。编译期最小复现（仅类型引用，不创建线程）与全树复现命令见
+mira#75。MSVC（win32 线程模型，`native_handle_type` 即 `void*`）不受影响。已排除 API 选型或
+配置替代：公开头文件与 `docs/API.md` 无平台无关的自身句柄获取方式。
+
+#### 期望能力与语义
+
+executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 `std::thread::native_handle()`
+取得真实句柄，或按线程模型条件编译适配 posix/Win32 两种形态。修复不得以
+`reinterpret_cast` 绕过编译：需确认 Win32 伪 HANDLE 与 pthread 句柄的真实类型/亲和性语义，
+保留既有生命周期与诊断行为。修复后 MinGW-w64（posix）与 MSVC 双工具链均可构建。
+
+#### 影响与风险
+
+- 正确性：无运行期影响（该路径在 MSVC 下行为不变）。
+- 可移植性：MinGW posix 工具链全树构建被阻塞；M4-06（产品进程 Windows 化）若要求全树
+  MinGW 交叉构建则被此缺陷阻塞，届时期望以 MSVC 门禁 + 本条目状态评估是否放行。
+- 不阻塞当前任何工作项与 MSVC 主工具链。
+
+#### 临时方案
+
+无。不修改 pinned 依赖源码；Windows 门禁在 M4-06 前按 DEC-017 决策 9 只构建不含 executor
+的目标子集，M4-01 CI 已实测该子集可构建。Mirage 侧不修改 pin。
+
+#### 上游验收标准
+
+- MinGW-w64 GCC（posix 线程模型，x86_64）下 executor 默认构建目标零诊断。
+- MSVC（windows-latest，VS 18 2026）构建与既有测试不回归。
+- 亲和性设置行为在两个工具链下保持既有语义（不因绕过 cast 而静默失效）；若语义无法保留，
+  需以明确诊断或文档说明差异。
+
+#### 跟进记录
+
+| 日期 | 状态变化 | 说明 | 证据/链接 |
+| --- | --- | --- | --- |
+| 2026-09-22 | Open | Mirage M4-02 交叉构建预检首次复现（全树诊断） | mira#75 |
+| 2026-10-05 | Open | 编译期最小复现复核通过；正式登记台账并经 mira#75 转交上游流程 | mira#75 |
+| 2026-10-05 | Open（上游复核） | 上游已更名 kairo 并发布 v0.6.0（破坏性变更窗口）；对照 tag `v0.6.0` 源码复核，同一表达式仍在 `src/kairo/blocking_io_executor.cpp:157`，且上游 tracker 无 MinGW/native_handle 相关 issue——本缺口未随 0.6.0 关闭，升级 pin 不能解决 | [kairo v0.6.0](https://github.com/Linductor-alkaid/kairo/releases/tag/v0.6.0) |

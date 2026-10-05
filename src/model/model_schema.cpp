@@ -366,12 +366,14 @@ DecisionParseResult parse_decision(const ModelRequest &request, const ModelRespo
         }
     }
 
-    if (contract.mode == OutputMode::StrictFunctionTool ||
-        (tool_calls > 0 && contract.mode != OutputMode::Text)) {
+    if (contract.mode == OutputMode::StrictFunctionTool || tool_calls > 0) {
         if (tool_calls > 0) {
-            // Tool proposals are resolved (IDs, duplicates, hosted names) by
-            // the tool bridge before the gateway admits them.
-            if (executable > 0) {
+            // Tool proposals are resolved (IDs, duplicates, hosted names) by the
+            // tool bridge before the gateway admits them. In Text mode a tool
+            // call always wins over accompanying commentary text — the
+            // conversational contract treats plain text as a terminal answer
+            // only when no tool call is present (DEC-047).
+            if (executable > 0 && contract.mode != OutputMode::Text) {
                 for (const auto &item : response.output) {
                     if (const auto *message = std::get_if<MessageOutput>(&item)) {
                         for (const auto &part : message->content) {
@@ -391,12 +393,6 @@ DecisionParseResult parse_decision(const ModelRequest &request, const ModelRespo
         }
         result.outcome = DecisionParseOutcome::Malformed;
         result.safe_summary = "strict tool mode requires a tool call";
-        return result;
-    }
-
-    if (tool_calls > 0) {
-        result.outcome = DecisionParseOutcome::Ambiguous;
-        result.safe_summary = "tool call appears in a non-tool output contract";
         return result;
     }
 

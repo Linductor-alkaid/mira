@@ -78,6 +78,14 @@ struct ToolExecutionRecord final {
 [[nodiscard]] Result<std::vector<JsonValue>>
 build_tool_result_input(ProtocolDialect dialect, std::span<const ToolExecutionRecord> records);
 
+// Canonical model-side round trip (DEC-047): the assistant call echo and the
+// executed result as ModelInputItems that join ModelRequest.input directly,
+// so tool conversations ride native function_call_output semantics instead of
+// flattened JSON text. Call echoes use the Assistant role; results use the
+// User role and stay untrusted data (never System/Developer authority).
+[[nodiscard]] ModelInputItem make_tool_call_item(const ToolProposal &proposal);
+[[nodiscard]] ModelInputItem make_tool_result_item(const ToolExecutionRecord &record);
+
 // Derives the stable operation ID for one tool call.
 [[nodiscard]] OperationId derive_tool_operation_id(const ModelRequestId &request_id,
                                                    const ProviderToolCallId &call_id,

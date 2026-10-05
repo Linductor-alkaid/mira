@@ -3,7 +3,8 @@
 > 头文件：`mira/model_contracts.hpp`、`model_profile.hpp`、`model_provider.hpp`、
 > `model_gateway.hpp`、`model_supervisor.hpp`、`model_budget.hpp`、`model_schema.hpp`、
 > `model_sse.hpp`、`model_dialect.hpp`、`model_transport.hpp`、`model_upload.hpp`、
-> `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`
+> `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
+> `mira/conversation_loop.hpp`
 
 模型层采用 API-first 设计：Core 只依赖 OpenAI-compatible HTTP 协议，不依赖任何供应商
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
@@ -12,7 +13,14 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 ## model_contracts.hpp：规范请求/响应
 
 - 输入是 `ModelInputItem` 列表，内容为 `TextPart` / `ImagePart`（`ImageDetail` 可选）/
-  `FilePart`（引用 `ArtifactRef`）的 `variant`。
+  `FilePart`（引用 `ArtifactRef`）/ `ToolCallPart` / `ToolResultPart` 的 `variant`。
+  后两者是工具往返的规范载体（[DEC-047](../decisions/DEC-047-conversational-loop-and-canonical-tool-parts.md)）：
+  `ToolCallPart` 回显一次 assistant 工具调用（provider call id、wire name、arguments 及
+  其 digest），`ToolResultPart` 携带一次已执行结果（镜像 `ToolExecutionRecord`，超限载荷
+  以 `ArtifactRef` 引用）。工具 part 必须独占其输入项；校验对 call id、arguments 对象
+  形状、digest 匹配与失败摘要上界 fail closed，并参与 canonical digest 与 JSON 往返。
+  两个 dialect 把它们渲染为原生线格式（Responses：`function_call` / `function_call_output`
+  顶层项；Chat Completions：assistant `tool_calls` / `role: tool` 消息）。
 - `ModelRequest` 携带角色（`ModelRole`）、输出模式（`OutputMode`）、推理力度
   （`ReasoningEffort`）、服务层级（`ServiceTier`）、schema 绑定（`SchemaId`）与数据
   策略（`ModelDataPolicy`：payload 远端存储是显式决定，绝不依赖 provider 默认值）。
@@ -81,14 +89,19 @@ route -> provider -> retry/circuit 监督 -> 预算结算 -> 本地决策解析�
 - `model_schema.hpp`：`gate_schema_subset()` 限制请求携带的 JSON Schema 子集；
   `parse_decision()` 把响应文本解析为 `DecisionCandidate`（`DecisionParseOutcome`），
   配合 `RepairPolicy`/`RepairBudget` 做有界修复。原始模型文本永远不能直接触发平台输入。
+  `OutputMode::Text` 下携带工具调用的响应解析为 `ToolProposals`（评注文本不构成终态）；
+  纯文本回答不产生 decision（[DEC-047](../decisions/DEC-047-conversational-loop-and-canonical-tool-parts.md)）。
 - `model_sse.hpp`：`SseFramingParser`（带 `SseFramingLimits` 的帧解析）与
   `ResponsesSseParser`（Responses 流事件到规范响应），`SseStreamStats` 记录流质量。
 - `model_dialect.hpp`：`IDialectMapper` 方言映射与 HTTP 错误码到稳定 `Error` 的转换。
 - `model_upload.hpp`：`IRemoteFileStore` / `OpenAiRemoteFileStore` 受管远端文件生命周期
   与审计（`RemoteFileAudit`）。
 - `model_tool.hpp`：provider 侧 hosted tool 的提案桥接（`ToolProposal`/`ToolProposalBatch`，
-  `kDefaultToolBridgeLimits`）；工具执行模组化属后续范围
-  （[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）。
+  `kDefaultToolBridgeLimits`）；`make_tool_call_item(proposal)` /
+  `make_tool_result_item(record)` 把一次往返构造为可直接进入 `ModelRequest.input` 的
+  规范输入项（[DEC-047](../decisions/DEC-047-conversational-loop-and-canonical-tool-parts.md)）；
+  `build_tool_result_input(dialect, records)` 仍提供线格式 `JsonValue` 形态。
+  工具执行模组化属后续范围（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）。
 
 ## agent_loop.hpp：离散闭环
 
@@ -188,6 +201,36 @@ loop.set_working_context_supplier(
 - **零自动化**：Loop 不发 W3 信号、不触发晋升、不调用 fork/merge——W3/W4/W5
   全部宿主显式编排（[Context 与 Memory API](context-memory.md) 对应节；参考
   宿主 `examples/working_context_host_consumer.cpp` 示范完整调用序）。
+
+## conversation_loop.hpp：无观察对话循环（DEC-047）
+
+`ConversationLoop` 是公开的无观察对话入口（mirage 反馈
+[mira#73](https://github.com/Linductor-alkaid/mira/issues/73)）：model → tool proposal →
+execute → result → model，纯文本回答即会话终态。不依赖 `IEnvironment`，没有截图、离散
+输入或设备验证，也不强制 done/action JSON：
+
+```cpp
+mira::ConversationLoop loop(gateway, ConversationLoopConfig{});
+loop.set_event_store(events, runtime_id, session_id);
+loop.set_tool_registry(registry);          // 可选；无注册表时工具提案 fail closed
+auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, context);
+// result.outcome == ConversationOutcome::Answered 时 result.answer 是终态文本
+```
+
+- 复用既有契约：`AgentLoopSpec` 任务帧、`ModelGateway` 的 admission/预算/监督、
+  DEC-015 的 `BuiltinToolRegistry` 执行边界与 `IEventStore` 事件面
+  （`ToolExecuted`、终态 `ConversationSettled`）。
+- 工具往返以规范 `ToolCallPart`/`ToolResultPart` 进入后续每轮请求（call 回显 + 结果
+  成对追加），供应商侧保持原生 function_call/function_call_output 语义。
+- 预算形状沿用 RULE-08：`max_turns`（耗尽终态 `MaxTurns`）、`max_recoveries`、
+  `max_tool_executions`、每轮 `max_output_tokens_per_turn` 与整环 request/output 预算。
+  整环输出信封（`per_turn × (max_turns + max_recoveries + 1)`）不得超过目标 profile 的
+  `capabilities.limits.max_output_tokens`（路由门禁）；默认值组合满足默认 profile 限额。
+  取消、准入拒绝和终态回答在任何新工具派发前停止循环。
+- 无注册表时工具提案 fail closed（`Failed`："tool proposals require a tool registry"）；
+  桥接拒绝（调用未暴露的工具、重复 call id 冲突）同样 fail closed 并透传桥接诊断。
+- `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
+  设备任务仍由 `AgentLoop` 承载。
 
 ## conversation_log.hpp：会话对话投影
 

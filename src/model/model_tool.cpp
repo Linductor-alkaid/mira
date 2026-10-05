@@ -189,4 +189,34 @@ build_tool_result_input(ProtocolDialect dialect, std::span<const ToolExecutionRe
     return items;
 }
 
+ModelInputItem make_tool_call_item(const ToolProposal &proposal) {
+    ModelInputItem item;
+    item.role = ModelRole::Assistant;
+    item.provenance.source = "mira.tool-call-echo.v1";
+    item.authority = Sensitivity::Internal;
+    ToolCallPart part;
+    part.provider_call_id = proposal.provider_call_id;
+    part.wire_name = proposal.wire_name;
+    part.arguments = proposal.arguments;
+    part.arguments_digest = proposal.arguments_digest;
+    item.content.emplace_back(std::move(part));
+    return item;
+}
+
+ModelInputItem make_tool_result_item(const ToolExecutionRecord &record) {
+    ModelInputItem item;
+    item.role = ModelRole::User;
+    item.provenance.source = "mira.tool-result.v1";
+    item.authority = Sensitivity::Internal;
+    ToolResultPart part;
+    part.provider_call_id = record.provider_call_id;
+    part.tool_id = record.tool_id;
+    part.result = record.result;
+    part.large_payload = record.large_payload;
+    part.failed = record.failed;
+    part.safe_error_summary = record.safe_error_summary;
+    item.content.emplace_back(std::move(part));
+    return item;
+}
+
 } // namespace mira

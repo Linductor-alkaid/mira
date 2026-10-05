@@ -1,4 +1,5 @@
 #include <mira/model_contracts.hpp>
+#include <mira/model_tool.hpp>
 
 #include <algorithm>
 #include <array>
@@ -605,6 +606,34 @@ Result<void> validate_model_request(const ModelRequest &request) {
                     return contract_error(
                         "file part requires an artifact reference and media type");
                 }
+            } else if (const auto *call = std::get_if<ToolCallPart>(&part)) {
+                if (call->provider_call_id.value.empty() || call->wire_name.empty()) {
+                    return contract_error(
+                        "tool call part requires a provider call id and wire name");
+                }
+                if (!call->arguments.is_object()) {
+                    return contract_error("tool call arguments must be a JSON object");
+                }
+                if (digest_string(to_json_string(call->arguments)) != call->arguments_digest) {
+                    return contract_error("tool call arguments digest does not match the payload");
+                }
+            } else if (const auto *tool_result = std::get_if<ToolResultPart>(&part)) {
+                if (tool_result->provider_call_id.value.empty() ||
+                    tool_result->tool_id.value.is_nil()) {
+                    return contract_error(
+                        "tool result part requires a provider call id and tool id");
+                }
+                if (tool_result->failed && tool_result->safe_error_summary.empty()) {
+                    return contract_error("failed tool result requires a safe error summary");
+                }
+                if (tool_result->safe_error_summary.size() > kMaxSafeMessageBytes) {
+                    return contract_error("tool result error summary exceeds the size limit");
+                }
+                if (!tool_result->large_payload.has_value() &&
+                    to_json_string(tool_result->result).size() >
+                        kDefaultToolBridgeLimits.max_result_bytes) {
+                    return contract_error("tool result payload must be stored as an artifact");
+                }
             }
         }
     }
@@ -755,6 +784,23 @@ JsonValue model_request_to_json(const ModelRequest &request) {
                 part_json.emplace_back("source", artifact_ref_to_json(file->source));
                 part_json.emplace_back("media_type", file->media_type);
                 part_json.emplace_back("display_name", file->display_name);
+            } else if (const auto *call = std::get_if<ToolCallPart>(&part)) {
+                part_json.emplace_back("kind", "tool_call");
+                part_json.emplace_back("provider_call_id", call->provider_call_id.value);
+                part_json.emplace_back("wire_name", call->wire_name);
+                part_json.emplace_back("arguments", call->arguments);
+                part_json.emplace_back("arguments_digest", call->arguments_digest.to_string());
+            } else if (const auto *tool_result = std::get_if<ToolResultPart>(&part)) {
+                part_json.emplace_back("kind", "tool_result");
+                part_json.emplace_back("provider_call_id", tool_result->provider_call_id.value);
+                part_json.emplace_back("tool_id", tool_result->tool_id.to_string());
+                part_json.emplace_back("result", tool_result->result);
+                if (tool_result->large_payload.has_value()) {
+                    part_json.emplace_back("large_payload",
+                                           artifact_ref_to_json(*tool_result->large_payload));
+                }
+                part_json.emplace_back("failed", tool_result->failed);
+                part_json.emplace_back("safe_error_summary", tool_result->safe_error_summary);
             }
             parts.emplace_back(std::move(part_json));
         }
@@ -1075,6 +1121,69 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
                 const auto *display_name = part_json.find("display_name");
                 if (display_name != nullptr && display_name->is_string()) {
                     part.display_name = *display_name->as_string();
+                }
+                item.content.emplace_back(std::move(part));
+            } else if (kind_text == "tool_call") {
+                ToolCallPart part;
+                const auto *call_id = part_json.find("provider_call_id");
+                if (call_id == nullptr || !call_id->is_string()) {
+                    return contract_error("tool call part requires a provider call id");
+                }
+                part.provider_call_id.value = *call_id->as_string();
+                const auto *wire_name = part_json.find("wire_name");
+                if (wire_name == nullptr || !wire_name->is_string()) {
+                    return contract_error("tool call part requires a wire name");
+                }
+                part.wire_name = *wire_name->as_string();
+                const auto *arguments = part_json.find("arguments");
+                if (arguments == nullptr || !arguments->is_object()) {
+                    return contract_error("tool call part requires object arguments");
+                }
+                part.arguments = *arguments;
+                const auto *arguments_digest = part_json.find("arguments_digest");
+                if (arguments_digest != nullptr && arguments_digest->is_string()) {
+                    auto parsed = digest_from_hex(*arguments_digest->as_string());
+                    if (!parsed) {
+                        return contract_error("tool call arguments digest is malformed");
+                    }
+                    part.arguments_digest = *parsed;
+                }
+                item.content.emplace_back(std::move(part));
+            } else if (kind_text == "tool_result") {
+                ToolResultPart part;
+                const auto *call_id = part_json.find("provider_call_id");
+                if (call_id == nullptr || !call_id->is_string()) {
+                    return contract_error("tool result part requires a provider call id");
+                }
+                part.provider_call_id.value = *call_id->as_string();
+                const auto *tool_id = part_json.find("tool_id");
+                if (tool_id == nullptr || !tool_id->is_string()) {
+                    return contract_error("tool result part requires a tool id");
+                }
+                const auto parsed_tool = ToolId::parse(*tool_id->as_string());
+                if (!parsed_tool) {
+                    return contract_error("tool result tool id is malformed");
+                }
+                part.tool_id = *parsed_tool;
+                const auto *result = part_json.find("result");
+                if (result != nullptr) {
+                    part.result = *result;
+                }
+                const auto *large_payload = part_json.find("large_payload");
+                if (large_payload != nullptr) {
+                    auto reference = artifact_ref_from(*large_payload);
+                    if (!reference) {
+                        return reference.error();
+                    }
+                    part.large_payload = std::move(reference).value();
+                }
+                const auto *failed = part_json.find("failed");
+                if (failed != nullptr && failed->is_boolean()) {
+                    part.failed = *failed->as_boolean();
+                }
+                const auto *summary = part_json.find("safe_error_summary");
+                if (summary != nullptr && summary->is_string()) {
+                    part.safe_error_summary = *summary->as_string();
                 }
                 item.content.emplace_back(std::move(part));
             } else {

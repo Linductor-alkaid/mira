@@ -350,6 +350,255 @@ int https_connect_proxy_then_verified_tls() {
     return 0;
 }
 
+#ifndef MIRA_TEST_MBEDTLS
+// ---------------------------------------------------------------------------
+// SNI probe (issue #72): a plain TCP listener captures the raw ClientHello a
+// client channel emits, so the server_name extension can be asserted directly
+// without completing a handshake. Limited to the OpenSSL adapter because the
+// SNI fix under test lives there; the Mbed TLS channel already calls
+// mbedtls_ssl_set_hostname and is out of scope for this round.
+// ---------------------------------------------------------------------------
+
+void close_probe_socket(TestSocket handle) {
+#ifdef _WIN32
+    closesocket(handle);
+#else
+    ::close(handle);
+#endif
+}
+
+void set_probe_non_blocking(TestSocket handle) {
+#ifdef _WIN32
+    u_long mode = 1;
+    ioctlsocket(handle, FIONBIO, &mode);
+#else
+    const int flags = ::fcntl(handle, F_GETFL, 0);
+    ::fcntl(handle, F_SETFL, flags | O_NONBLOCK);
+#endif
+}
+
+[[nodiscard]] bool probe_wait_readable(TestSocket handle, std::chrono::milliseconds timeout) {
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(handle, &set);
+    timeval wait{};
+    wait.tv_sec = static_cast<long>(timeout.count() / 1000);
+    wait.tv_usec = static_cast<long>((timeout.count() % 1000) * 1000);
+    return ::select(static_cast<int>(handle + 1), &set, nullptr, nullptr, &wait) > 0;
+}
+
+// Extracts the host_name entry of the server_name extension from a raw TLS
+// ClientHello record; empty when the extension (or entry) is absent or the
+// record is malformed in any way.
+[[nodiscard]] std::string client_hello_server_name(const std::string &raw) {
+    const auto byte = [&raw](std::size_t offset) -> unsigned {
+        return static_cast<unsigned char>(raw[offset]);
+    };
+    // record header (5) + handshake header (4) + version (2) + random (32)
+    if (raw.size() < 43) {
+        return {};
+    }
+    if (byte(0) != 22 || byte(5) != 1) { // handshake record, ClientHello
+        return {};
+    }
+    std::size_t cursor = 43;
+    if (cursor >= raw.size()) {
+        return {};
+    }
+    cursor += 1 + byte(cursor); // session id
+    if (cursor + 2 > raw.size()) {
+        return {};
+    }
+    const std::size_t cipher_suites = (byte(cursor) << 8) | byte(cursor + 1);
+    cursor += 2 + cipher_suites;
+    if (cursor >= raw.size()) {
+        return {};
+    }
+    cursor += 1 + byte(cursor); // compression methods
+    if (cursor + 2 > raw.size()) {
+        return {};
+    }
+    cursor += 2; // extensions total length
+    while (cursor + 4 <= raw.size()) {
+        const std::size_t type = (byte(cursor) << 8) | byte(cursor + 1);
+        const std::size_t length = (byte(cursor + 2) << 8) | byte(cursor + 3);
+        cursor += 4;
+        if (cursor + length > raw.size()) {
+            break;
+        }
+        if (type == 0) {
+            // server_name_list: 2-byte list length, then entries of
+            // 1-byte type + 2-byte length + name.
+            std::size_t entry = cursor + 2;
+            while (entry + 3 <= cursor + length) {
+                const std::size_t name_type = byte(entry);
+                const std::size_t name_length = (byte(entry + 1) << 8) | byte(entry + 2);
+                entry += 3;
+                if (entry + name_length > cursor + length) {
+                    break;
+                }
+                if (name_type == 0) {
+                    return raw.substr(entry, name_length);
+                }
+                entry += name_length;
+            }
+            return {};
+        }
+        cursor += length;
+    }
+    return {};
+}
+
+class RawClientHelloListener final {
+  public:
+    RawClientHelloListener() {
+        listener_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+        if (::bind(listener_, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0 ||
+            ::listen(listener_, 4) != 0) {
+            shutdown();
+            return;
+        }
+        sockaddr_in bound{};
+        socklen_t size = sizeof(bound);
+        if (::getsockname(listener_, reinterpret_cast<sockaddr *>(&bound), &size) == 0) {
+            port_ = ntohs(bound.sin_port);
+        }
+    }
+
+    ~RawClientHelloListener() { shutdown(); }
+
+    RawClientHelloListener(const RawClientHelloListener &) = delete;
+    RawClientHelloListener &operator=(const RawClientHelloListener &) = delete;
+
+    [[nodiscard]] bool valid() const noexcept {
+        return listener_ != MIRA_TEST_INVALID_SOCKET && port_ != 0;
+    }
+    [[nodiscard]] std::uint16_t port() const noexcept { return port_; }
+
+    [[nodiscard]] bool accept_client(std::chrono::milliseconds timeout) {
+        if (!valid() || !probe_wait_readable(listener_, timeout)) {
+            return false;
+        }
+        client_ = ::accept(listener_, nullptr, nullptr);
+        return client_ != MIRA_TEST_INVALID_SOCKET;
+    }
+
+    // Reads whatever the client sent within the window; select-gated so the
+    // read never blocks past the deadline on a silent peer.
+    [[nodiscard]] std::string read_raw(std::chrono::milliseconds timeout) {
+        std::string received;
+        if (client_ == MIRA_TEST_INVALID_SOCKET) {
+            return received;
+        }
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        char buffer[4096];
+        for (;;) {
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now());
+            if (remaining.count() <= 0 || !probe_wait_readable(client_, remaining)) {
+                break;
+            }
+            const int status =
+                static_cast<int>(::recv(client_, buffer, static_cast<int>(sizeof(buffer)), 0));
+            if (status <= 0) {
+                break;
+            }
+            received.append(buffer, static_cast<std::size_t>(status));
+            if (received.size() > 64U * 1024U) {
+                break;
+            }
+        }
+        return received;
+    }
+
+    void shutdown() {
+        if (client_ != MIRA_TEST_INVALID_SOCKET) {
+            close_probe_socket(client_);
+            client_ = MIRA_TEST_INVALID_SOCKET;
+        }
+        if (listener_ != MIRA_TEST_INVALID_SOCKET) {
+            close_probe_socket(listener_);
+            listener_ = MIRA_TEST_INVALID_SOCKET;
+        }
+    }
+
+  private:
+    TestSocket listener_ = MIRA_TEST_INVALID_SOCKET;
+    TestSocket client_ = MIRA_TEST_INVALID_SOCKET;
+    std::uint16_t port_ = 0;
+};
+
+// Connects a client channel for `host` against the local listener, drives one
+// handshake poll step so the ClientHello leaves the process, and returns the
+// server_name value the listener observed ("" when absent).
+[[nodiscard]] std::string probe_server_name(const std::string &host) {
+    RawClientHelloListener listener;
+    if (!listener.valid()) {
+        return std::string();
+    }
+    TestSocket client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (client == MIRA_TEST_INVALID_SOCKET) {
+        return std::string();
+    }
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(listener.port());
+    if (::connect(client, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0) {
+        close_probe_socket(client);
+        return std::string();
+    }
+    set_probe_non_blocking(client);
+
+    OpenSslTlsChannelFactory factory;
+    if (!factory.initialize()) {
+        close_probe_socket(client);
+        return std::string("factory-initialize-failed");
+    }
+    auto channel = factory.create(static_cast<std::intptr_t>(client), host, TlsOptions{});
+    if (!channel.has_value()) {
+        close_probe_socket(client);
+        return std::string("channel-create-failed");
+    }
+    bool want_read = false;
+    bool want_write = false;
+    // One poll step: the non-blocking socket makes this write the ClientHello
+    // and report WANT_READ; the handshake itself is not meant to complete.
+    const auto step = channel.value()->handshake(want_read, want_write);
+    if (!step.has_value()) {
+        close_probe_socket(client);
+        return std::string("handshake-error");
+    }
+
+    std::string observed;
+    if (listener.accept_client(std::chrono::milliseconds{2'000})) {
+        observed = listener.read_raw(std::chrono::milliseconds{300});
+    }
+    channel.value()->close();
+    close_probe_socket(client);
+    return client_hello_server_name(observed);
+}
+
+int sni_is_sent_for_dns_names() {
+    const std::string host = "sni-probe.example";
+    const auto observed = probe_server_name(host);
+    MIRA_CHECK(observed == host);
+    return 0;
+}
+
+int sni_is_skipped_for_ip_literals() {
+    // IPv4 literal: RFC 6066 §3 forbids it in server_name.
+    MIRA_CHECK(probe_server_name("127.0.0.1").empty());
+    // IPv6 literal (colon-bearing) is skipped the same way.
+    MIRA_CHECK(probe_server_name("::1").empty());
+    return 0;
+}
+#endif // !MIRA_TEST_MBEDTLS
+
 } // namespace
 
 int main() {
@@ -362,5 +611,13 @@ int main() {
     if (const int status = https_connect_proxy_then_verified_tls(); status != 0) {
         return status;
     }
+#ifndef MIRA_TEST_MBEDTLS
+    if (const int status = sni_is_sent_for_dns_names(); status != 0) {
+        return status;
+    }
+    if (const int status = sni_is_skipped_for_ip_literals(); status != 0) {
+        return status;
+    }
+#endif
     return 0;
 }
