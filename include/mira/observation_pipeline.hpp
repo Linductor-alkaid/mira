@@ -57,8 +57,7 @@ struct ObservationPipelineStats final {
 // a platform environment can.
 class ObservationPipeline final {
   public:
-    explicit ObservationPipeline(kairo::Executor &executor,
-                                 ObservationPipelineConfig config = {});
+    explicit ObservationPipeline(kairo::Executor &executor, ObservationPipelineConfig config = {});
     ~ObservationPipeline();
 
     ObservationPipeline(const ObservationPipeline &) = delete;

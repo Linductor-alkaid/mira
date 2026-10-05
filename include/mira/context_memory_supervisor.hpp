@@ -98,8 +98,7 @@ class ContextMemorySupervisor final {
     // The Executor must outlive the supervisor. The optional event sink
     // receives sanitized diagnostic events (design Context/Memory §20); the
     // runtime/session ids stamp those events.
-    ContextMemorySupervisor(kairo::Executor &executor,
-                            SupervisorConfig config = SupervisorConfig{},
+    ContextMemorySupervisor(kairo::Executor &executor, SupervisorConfig config = SupervisorConfig{},
                             IEventStore *event_sink = nullptr, RuntimeId runtime_id = RuntimeId{},
                             SessionId session_id = SessionId{});
     ~ContextMemorySupervisor();

@@ -262,8 +262,7 @@ BaselineResult RuntimeBaseline::cancel(std::uint64_t command_id) {
         return make_result(BaselineResultCode::Applied, command_id,
                            kairo::to_string(response.result));
     }
-    return make_result(BaselineResultCode::Rejected, command_id,
-                       kairo::to_string(response.result));
+    return make_result(BaselineResultCode::Rejected, command_id, kairo::to_string(response.result));
 }
 
 bool RuntimeBaseline::request_shutdown() {

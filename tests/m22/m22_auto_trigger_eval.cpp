@@ -1206,8 +1206,7 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
-                     ScriptedCuratorProvider &provider, kairo::Executor &exec,
-                     Counters &counters) {
+                     ScriptedCuratorProvider &provider, kairo::Executor &exec, Counters &counters) {
     for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);

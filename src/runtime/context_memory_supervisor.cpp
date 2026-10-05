@@ -280,9 +280,9 @@ class ContextMemorySupervisor::Impl final {
     SupervisorStats stats_;
 };
 
-ContextMemorySupervisor::ContextMemorySupervisor(kairo::Executor &executor,
-                                                 SupervisorConfig config, IEventStore *event_sink,
-                                                 RuntimeId runtime_id, SessionId session_id) {
+ContextMemorySupervisor::ContextMemorySupervisor(kairo::Executor &executor, SupervisorConfig config,
+                                                 IEventStore *event_sink, RuntimeId runtime_id,
+                                                 SessionId session_id) {
     const auto valid = config.validate();
     if (!valid) {
         throw std::invalid_argument(valid.error().safe_message);
