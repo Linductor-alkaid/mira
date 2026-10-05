@@ -115,3 +115,24 @@ include/CMake/治理文件迁移，并借升级吸收上游 v0.5.2/v0.5.3 的评
   Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、clang-format、docs、
   SBOM、平台边界）。Windows/Android/sanitizer 对 kairo 源的编译差异与 SBOM 一致性
   由本矩阵覆盖确认。
+
+2026-10-05：pin 升级轮（分支 `auto/mnt-202610-kairo-mingw-fix-pin`，承接
+EXE-20260922-001 上游修复）。
+
+- 上游证据：[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`，
+  合入 master `ef821dc`）按台账期望语义解耦 `native_handle_type`（新增
+  `set_current_thread_priority/affinity()`，两执行器 self_handle `#ifdef` 块删除，
+  foreign 线程句柄按线程模型折算）；提交记录 MinGW-w64 GCC 13 posix/win32 双模型全树
+  构建零诊断（GPU=ON 亦过）、Linux Release ctest 147/147；上游 master CI 绿。
+- Mira 侧：submodule `d9602ea` → `ef821dc`（`v0.6.0-12-gef821dc`）；lock、SBOM、
+  direct-dependencies 同步；台账 EXE-20260922-001 Open → Resolved；DEC-048 附记。
+- 验证：见下方 IV-Agent 记录与 PR CI（待回填）。
+  - IV-Agent 复验（clean-first 全量重建）：207 个 C++ TU 全部从零编译，Mira 自有代码
+    零警告（35 条警告全部位于 third_party/kairo 上游源，构成同前）；ctest **103/103**
+    （100.51s）；`docs-check`/`architecture-check`/`check_sbom.py` 全绿；源级确认
+    blocking/realtime 两执行器 `self_handle` 块已删（`realtime_thread_executor.cpp`
+    剩余 2 处 `native_handle` 命中为解释性注释），新 API
+    `util::set_current_thread_priority/affinity` 双平台实现就位。
+  - 限制：MinGW/Windows 路径无法在本 Linux 主机实测（上游提交记录 MinGW 双模型全树
+    零诊断、Linux ctest 147/147；Mira Windows 由 PR CI matrix 覆盖，MinGW 交叉全树
+    验收仍属 Mirage 门禁侧补跑项）。

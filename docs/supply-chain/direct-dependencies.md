@@ -6,7 +6,7 @@
 
 | 依赖 | 固定版本 | 来源 | 许可证 | 许可证文件 |
 | --- | --- | --- | --- | --- |
-| kairo | `d9602ea6762806be320b9543e3b36f27f7dd5b1a`（`v0.6.0`，上游 Executor 已更名 kairo） | git submodule | MIT | [`third_party/kairo/LICENSE`](../../third_party/kairo/LICENSE) |
+| kairo | `ef821dcca05bbf9038409a2ff9acc5ed729936bc`（`v0.6.0-12-gef821dc`，携 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215) MinGW 修复） | git submodule | MIT | [`third_party/kairo/LICENSE`](../../third_party/kairo/LICENSE) |
 | Mbed TLS | `068ff080b369adfac81509f9b57b2afabaf82dc5`（`v3.6.7`，3.6 LTS；framework `dde0c4a`） | recursive git submodule | Apache-2.0（从双许可证中选择） | [`third_party/mbedtls/LICENSE`](../../third_party/mbedtls/LICENSE) |
 | SQLite | `3.53.4`（amalgamation `3530400`，archive SHA-256 `1e71ddf9…e87d`） | vendored source archive | Public Domain | [`third_party/sqlite/LICENSE.md`](../../third_party/sqlite/LICENSE.md) |
 
