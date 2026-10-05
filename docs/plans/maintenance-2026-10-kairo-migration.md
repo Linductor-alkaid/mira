@@ -101,3 +101,17 @@ include/CMake/治理文件迁移，并借升级吸收上游 v0.5.2/v0.5.3 的评
   通过。
 - 未执行项：Windows/Android 构建与 sanitizer 变体（PR CI matrix 覆盖）；kairo 定时器
   事件驱动后的长时空转 CPU 独立测量（上游文档口径 ~0.024%，无 CI 目标）。
+
+2026-10-05：PR #77（分支 `auto/mnt-202610-kairo-migration`）CI 验证。
+
+- 第 1 轮（commit `160b342`，runs `37301739029`/`37301769318`）：22/24 通过，`quality`
+  因 clang-format 失败——kairo 改名使 `executor::`→`kairo::` 变短后，8 个文件的既有
+  续行对齐失效（`context_memory_supervisor.hpp:101` 首个暴露）。本地对全部 282 个
+  Mira C++ 源文件穷尽执行 `clang-format -i`（纯格式 diff），重编译零警告。
+- 第 2 轮（commit `246d460`，runs
+  [`37304547969`](https://github.com/Linductor-alkaid/mira/actions/runs/37304547969) /
+  [`37304542092`](https://github.com/Linductor-alkaid/mira/actions/runs/37304542092)）：
+  **24/24 检查全部通过**——Linux GCC/Clang Debug+Release、Windows Debug+Release、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、clang-format、docs、
+  SBOM、平台边界）。Windows/Android/sanitizer 对 kairo 源的编译差异与 SBOM 一致性
+  由本矩阵覆盖确认。
