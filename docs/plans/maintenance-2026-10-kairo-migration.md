@@ -136,3 +136,11 @@ EXE-20260922-001 上游修复）。
   - 限制：MinGW/Windows 路径无法在本 Linux 主机实测（上游提交记录 MinGW 双模型全树
     零诊断、Linux ctest 147/147；Mira Windows 由 PR CI matrix 覆盖，MinGW 交叉全树
     验收仍属 Mirage 门禁侧补跑项）。
+
+2026-10-05：PR #78（pin 升级轮）CI 验证。
+
+- 首跑（commit `e31c024`，run `37322961273`）：23/24——`android (android-arm64)`
+  失败于 **Install Android NDK 步骤**（`Error on ZipFile unknown archive`，runner 侧
+  NDK 包下载损坏，非代码问题；android-x86_64 同套代码通过）。`gh run rerun --failed`
+  重跑后 **24/24 全部通过**——Linux GCC/Clang、Windows（覆盖 kairo #215 的 MSVC 路径）、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality。
