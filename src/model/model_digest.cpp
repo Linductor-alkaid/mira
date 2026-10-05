@@ -109,6 +109,16 @@ Hash prompt_digest(std::span<const ModelInputItem> input) {
             } else if (const auto *file = std::get_if<FilePart>(&part)) {
                 part_json.emplace_back("kind", "file");
                 part_json.emplace_back("digest", file->source.digest.to_string());
+            } else if (const auto *call = std::get_if<ToolCallPart>(&part)) {
+                part_json.emplace_back("kind", "tool_call");
+                part_json.emplace_back("digest", call->arguments_digest.to_string());
+            } else if (const auto *tool_result = std::get_if<ToolResultPart>(&part)) {
+                part_json.emplace_back("kind", "tool_result");
+                // Result content contributes its digest, mirroring text parts.
+                part_json.emplace_back(
+                    "digest", tool_result->large_payload.has_value()
+                                  ? tool_result->large_payload->digest.to_string()
+                                  : digest_string(to_json_string(tool_result->result)).to_string());
             }
             parts.emplace_back(std::move(part_json));
         }

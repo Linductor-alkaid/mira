@@ -97,7 +97,30 @@ struct FilePart final {
     std::string display_name;
 };
 
-using ModelContentPart = std::variant<TextPart, ImagePart, FilePart>;
+// Canonical echo of one assistant-issued tool call, replayed into the next
+// request so providers can pair each result with its call (DEC-047). The
+// arguments digest must match the payload; consumers verify instead of
+// trusting the field.
+struct ToolCallPart final {
+    ProviderToolCallId provider_call_id;
+    std::string wire_name;
+    JsonValue arguments;
+    Hash arguments_digest{};
+};
+
+// Canonical result of one executed tool call, replayed into the next request.
+// Mirrors ToolExecutionRecord (model_tool.hpp): failed results carry a bounded
+// safe summary; large payloads travel as artifact references, never inline.
+struct ToolResultPart final {
+    ProviderToolCallId provider_call_id;
+    ToolId tool_id;
+    JsonValue result;
+    std::optional<ArtifactRef> large_payload;
+    bool failed = false;
+    std::string safe_error_summary;
+};
+
+using ModelContentPart = std::variant<TextPart, ImagePart, FilePart, ToolCallPart, ToolResultPart>;
 
 struct ModelInputItem final {
     ModelRole role = ModelRole::User;

@@ -112,6 +112,71 @@ int runs_pin_their_creation_time_digest() {
     return 0;
 }
 
+// Issue #74 acceptance: a draft -> publish flow of identical IR appends two
+// records with the same content digest; digest resolution must read the
+// digest's current validation state (the newest record), not be shadowed by
+// the stale draft.
+int same_digest_draft_then_publish_resolves_newest() {
+    WorkflowVersionHistory history;
+    history.workflow_id = WorkflowId::generate();
+    const Sha256Digest content = digest_string("issue-74-definition");
+
+    // The draft append: NotValidated, first record chains from nil.
+    MIRA_CHECK(append_workflow_version(
+                   history, make_record({1, 0, 0}, content, Sha256Digest{},
+                                        WorkflowValidationResult::NotValidated, false))
+                   .has_value());
+    // While only the draft exists, the digest is not runnable.
+    auto draft = resolve_workflow_version(history, content);
+    MIRA_CHECK(draft.has_value());
+    MIRA_CHECK(draft.value().validation == WorkflowValidationResult::NotValidated);
+    MIRA_CHECK(!workflow_version_is_runnable(draft.value()));
+
+    // The publish append: identical content digest, higher version, parent
+    // chained to the draft's content digest, dry-run evidence attached.
+    MIRA_CHECK(append_workflow_version(
+                   history, make_record({1, 0, 1}, content, content,
+                                        WorkflowValidationResult::DryRunPassed))
+                   .has_value());
+
+    auto resolved = resolve_workflow_version(history, content);
+    MIRA_CHECK(resolved.has_value());
+    MIRA_CHECK(resolved.value().content_digest == content);
+    MIRA_CHECK(resolved.value().validation == WorkflowValidationResult::DryRunPassed);
+    MIRA_CHECK(resolved.value().version.major == 1);
+    MIRA_CHECK(resolved.value().version.patch == 1);
+    MIRA_CHECK(workflow_version_is_runnable(resolved.value()));
+    MIRA_CHECK(history.records.size() == 2);
+    return 0;
+}
+
+// Old-run replay semantics are unchanged: distinct digests keep resolving to
+// their own records even after newer versions exist.
+int distinct_digests_still_resolve_their_own_records() {
+    WorkflowVersionHistory history;
+    history.workflow_id = WorkflowId::generate();
+    const Sha256Digest first = digest_string("definition-v1");
+    const Sha256Digest second = digest_string("definition-v2");
+    MIRA_CHECK(append_workflow_version(history, make_record({1, 0, 0}, first, Sha256Digest{},
+                                                            WorkflowValidationResult::DryRunPassed))
+                   .has_value());
+    MIRA_CHECK(append_workflow_version(
+                   history, make_record({2, 0, 0}, second, first,
+                                        WorkflowValidationResult::Validated))
+                   .has_value());
+
+    auto replayed = resolve_workflow_version(history, first);
+    MIRA_CHECK(replayed.has_value());
+    MIRA_CHECK(replayed.value().content_digest == first);
+    MIRA_CHECK(replayed.value().version.major == 1);
+
+    auto latest = resolve_workflow_version(history, second);
+    MIRA_CHECK(latest.has_value());
+    MIRA_CHECK(latest.value().content_digest == second);
+    MIRA_CHECK(latest.value().version.major == 2);
+    return 0;
+}
+
 int only_validated_versions_are_runnable() {
     WorkflowVersionHistory history;
     history.workflow_id = WorkflowId::generate();
@@ -173,6 +238,12 @@ int main() {
         return 1;
     }
     if (runs_pin_their_creation_time_digest() != 0) {
+        return 1;
+    }
+    if (same_digest_draft_then_publish_resolves_newest() != 0) {
+        return 1;
+    }
+    if (distinct_digests_still_resolve_their_own_records() != 0) {
         return 1;
     }
     if (only_validated_versions_are_runnable() != 0) {

@@ -32,11 +32,16 @@ namespace {
         for (const auto &part : item.content) {
             if (const auto *text = std::get_if<TextPart>(&part)) {
                 result = std::max(result, text->sensitivity);
-            } else {
-                const auto &reference = std::get_if<ImagePart>(&part) != nullptr
-                                            ? std::get_if<ImagePart>(&part)->source
-                                            : std::get_if<FilePart>(&part)->source;
-                result = std::max(result, reference.sensitivity);
+            } else if (const auto *image = std::get_if<ImagePart>(&part)) {
+                result = std::max(result, image->source.sensitivity);
+            } else if (const auto *file = std::get_if<FilePart>(&part)) {
+                result = std::max(result, file->source.sensitivity);
+            } else if (std::get_if<ToolCallPart>(&part) != nullptr ||
+                       std::get_if<ToolResultPart>(&part) != nullptr) {
+                // Tool round-trip parts carry model/tool-derived data without a
+                // per-part label (DEC-047); they count as Internal, never a
+                // downgrade of the request's sensitivity floor.
+                result = std::max(result, Sensitivity::Internal);
             }
         }
     }

@@ -115,6 +115,7 @@ add_library(mira_core
     src/model/model_dialect.cpp
     src/model/model_sse.cpp
     src/model/model_tool.cpp
+    src/model/model_tool_wire.cpp
     src/model/provider_continuation.cpp
     src/model/model_budget.cpp
     src/model/model_supervisor.cpp
@@ -125,6 +126,7 @@ add_library(mira_core
     src/model/tool_executor.cpp
     src/model/conversation_log.cpp
     src/model/agent_loop.cpp
+    src/model/conversation_loop.cpp
     src/tool/tool_module.cpp
     src/tool/tool_module_registry.cpp
     src/tool/tool_module_exposure.cpp

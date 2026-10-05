@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "loop_support.hpp"
+
 namespace mira {
 namespace {
 
@@ -42,20 +44,6 @@ namespace {
     error.domain = "mira.agent_loop";
     error.safe_message = std::move(message);
     return error;
-}
-
-[[nodiscard]] bool recoverable_model_failure(const Error &error) {
-    if (!error.retryable) {
-        return false;
-    }
-    if (error.domain != "mira.model") {
-        return true;
-    }
-    // Rate limits and overload are recoverable within the step budget;
-    // permission, policy and request-shape failures are not.
-    return error.domain_code == static_cast<std::int32_t>(ModelDomainCode::RateLimited) ||
-           error.domain_code == static_cast<std::int32_t>(ModelDomainCode::ProviderOverloaded) ||
-           error.domain_code == static_cast<std::int32_t>(ModelDomainCode::TransportFailed);
 }
 
 [[nodiscard]] std::string summarize_action(const InputSequence &sequence) {
@@ -616,7 +604,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 result.safe_summary = "model call was cancelled";
                 break;
             }
-            if (recoverable_model_failure(call.error()) &&
+            if (loop_support::recoverable_model_failure(call.error()) &&
                 result.recoveries < config_.max_recoveries_per_step) {
                 ++result.recoveries;
                 record.phase = StepPhase::Recovering;

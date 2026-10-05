@@ -1,5 +1,7 @@
 #include <mira/model_dialect.hpp>
 
+#include "model_tool_wire.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -348,6 +350,33 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
 
     JsonValue::Array input;
     for (const auto &item : request.input) {
+        // Canonical tool round-trip items (DEC-047) render as native
+        // function_call / function_call_output items, not role+content.
+        switch (tool_wire::classify_item(item)) {
+        case tool_wire::ItemShape::Mixed:
+            return make_model_error(ModelDomainCode::InvalidModelRequest,
+                                    "tool call/result parts must not mix with other content");
+        case tool_wire::ItemShape::CallsOnly:
+        case tool_wire::ItemShape::ResultsOnly: {
+            if (!profile.capabilities.function_tools.supported) {
+                return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                        "profile does not support function tools");
+            }
+            const auto dialect = ProtocolDialect::OpenAIResponsesV1;
+            auto encoded = tool_wire::classify_item(item) == tool_wire::ItemShape::CallsOnly
+                               ? tool_wire::encode_calls(item, dialect)
+                               : tool_wire::encode_results(item, dialect);
+            if (!encoded) {
+                return encoded.error();
+            }
+            for (auto &wire : encoded.value()) {
+                input.emplace_back(std::move(wire));
+            }
+            continue;
+        }
+        case tool_wire::ItemShape::Ordinary:
+            break;
+        }
         JsonValue::Object item_json;
         switch (item.role) {
         case ModelRole::System:
@@ -737,6 +766,33 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
 
     JsonValue::Array messages;
     for (const auto &item : request.input) {
+        // Canonical tool round-trip items (DEC-047) render as native
+        // assistant tool_calls / tool role messages on this dialect.
+        switch (tool_wire::classify_item(item)) {
+        case tool_wire::ItemShape::Mixed:
+            return make_model_error(ModelDomainCode::InvalidModelRequest,
+                                    "tool call/result parts must not mix with other content");
+        case tool_wire::ItemShape::CallsOnly:
+        case tool_wire::ItemShape::ResultsOnly: {
+            if (!profile.capabilities.function_tools.supported) {
+                return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                        "profile does not support function tools");
+            }
+            const auto dialect = ProtocolDialect::OpenAIChatCompletionsV1;
+            auto encoded = tool_wire::classify_item(item) == tool_wire::ItemShape::CallsOnly
+                               ? tool_wire::encode_calls(item, dialect)
+                               : tool_wire::encode_results(item, dialect);
+            if (!encoded) {
+                return encoded.error();
+            }
+            for (auto &wire : encoded.value()) {
+                messages.emplace_back(std::move(wire));
+            }
+            continue;
+        }
+        case tool_wire::ItemShape::Ordinary:
+            break;
+        }
         JsonValue::Object message;
         switch (item.role) {
         case ModelRole::System:

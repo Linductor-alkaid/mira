@@ -23,6 +23,19 @@ namespace {
     return error;
 }
 
+[[nodiscard]] bool is_ip_literal(std::string_view host) {
+    if (host.empty()) {
+        return false;
+    }
+    // Bracketed or colon-bearing hosts are IPv6 literals.
+    if (host.front() == '[' || host.find(':') != std::string_view::npos) {
+        return true;
+    }
+    // Digits-and-dots only strings are IPv4 literals (or malformed addresses),
+    // never DNS names; anything else is treated as a hostname.
+    return host.find_first_not_of(".0123456789") == std::string_view::npos;
+}
+
 class OpenSslChannel final : public ITlsChannel {
   public:
     OpenSslChannel(SSL_CTX *context, std::intptr_t handle, std::string host)
@@ -49,6 +62,18 @@ class OpenSslChannel final : public ITlsChannel {
         auto *param = SSL_get0_param(ssl_);
         if (X509_VERIFY_PARAM_set1_host(param, host_.c_str(), host_.size()) != 1) {
             return false;
+        }
+        // SNI routes certificate selection on name-based vhosts; without it
+        // SNI-routed HTTPS model endpoints serve a default (wrong) certificate
+        // and the mandatory verification above fails the handshake (issue #72).
+        // IP literals are not valid SNI (RFC 6066 §3) and are skipped. The
+        // SSL_set_tlsext_host_name macro is avoided because its expansion uses
+        // an old-style cast, which this target rejects.
+        if (!is_ip_literal(host_)) {
+            if (SSL_ctrl(ssl_, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
+                         const_cast<char *>(host_.c_str())) != 1) {
+                return false;
+            }
         }
         SSL_set_connect_state(ssl_);
         return true;
