@@ -143,8 +143,8 @@ class ConversationFixture final {
                                                   const OperationContext &context,
                                                   const ProviderInferOptions &) override {
             if (context.cancelled()) {
-                return make_model_error(ModelDomainCode::ModelCancelled,
-                                        "flaky provider cancelled", false, request.operation_id);
+                return make_model_error(ModelDomainCode::ModelCancelled, "flaky provider cancelled",
+                                        false, request.operation_id);
             }
             const std::lock_guard lock(mutex_);
             if (failure_cursor_ < failures_.size()) {
@@ -745,7 +745,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
     auto wire = responses.encode_request(request, *responses_profile, false, artifacts);
     MIRA_CHECK(wire.has_value());
     const auto *input_array = wire.value().find("input");
-    MIRA_CHECK(input_array != nullptr && input_array->is_array() && input_array->as_array() != nullptr);
+    MIRA_CHECK(input_array != nullptr && input_array->is_array() &&
+               input_array->as_array() != nullptr);
     const JsonValue *call_wire = nullptr;
     const JsonValue *output_wire = nullptr;
     for (const auto &element : *input_array->as_array()) {
@@ -773,8 +774,7 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
                *output_wire->find("call_id")->as_string() == "call-9");
     MIRA_CHECK(output_wire->find("output") != nullptr &&
                output_wire->find("output")->as_string() != nullptr);
-    const auto envelope =
-        parse_json(*output_wire->find("output")->as_string());
+    const auto envelope = parse_json(*output_wire->find("output")->as_string());
     MIRA_CHECK(envelope.has_value());
     const auto *status = envelope.value().find("status");
     MIRA_CHECK(status != nullptr && status->is_string() && *status->as_string() == "ok");
@@ -804,8 +804,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
     MIRA_CHECK(assistant_wire->find("content") != nullptr &&
                !assistant_wire->find("content")->is_string());
     const auto *tool_calls = assistant_wire->find("tool_calls");
-    MIRA_CHECK(tool_calls != nullptr && tool_calls->is_array() && tool_calls->as_array() != nullptr &&
-               tool_calls->as_array()->size() == 1);
+    MIRA_CHECK(tool_calls != nullptr && tool_calls->is_array() &&
+               tool_calls->as_array() != nullptr && tool_calls->as_array()->size() == 1);
     const auto &entry = tool_calls->as_array()->front();
     MIRA_CHECK(entry.find("id") != nullptr && *entry.find("id")->as_string() == "call-9");
     MIRA_CHECK(entry.find("type") != nullptr && *entry.find("type")->as_string() == "function");
@@ -837,7 +837,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
     mixed_item.content.emplace_back(std::move(stray));
     auto mixed_request = request;
     mixed_request.input.push_back(mixed_item);
-    auto mixed_responses = responses.encode_request(mixed_request, *responses_profile, false, artifacts);
+    auto mixed_responses =
+        responses.encode_request(mixed_request, *responses_profile, false, artifacts);
     MIRA_CHECK(!mixed_responses.has_value());
     MIRA_CHECK(mixed_responses.error().domain == "mira.model");
     MIRA_CHECK(mixed_responses.error().code == ErrorCode::InvalidArgument);

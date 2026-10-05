@@ -615,8 +615,7 @@ Result<void> validate_model_request(const ModelRequest &request) {
                     return contract_error("tool call arguments must be a JSON object");
                 }
                 if (digest_string(to_json_string(call->arguments)) != call->arguments_digest) {
-                    return contract_error(
-                        "tool call arguments digest does not match the payload");
+                    return contract_error("tool call arguments digest does not match the payload");
                 }
             } else if (const auto *tool_result = std::get_if<ToolResultPart>(&part)) {
                 if (tool_result->provider_call_id.value.empty() ||

@@ -122,10 +122,10 @@ int same_digest_draft_then_publish_resolves_newest() {
     const Sha256Digest content = digest_string("issue-74-definition");
 
     // The draft append: NotValidated, first record chains from nil.
-    MIRA_CHECK(append_workflow_version(
-                   history, make_record({1, 0, 0}, content, Sha256Digest{},
-                                        WorkflowValidationResult::NotValidated, false))
-                   .has_value());
+    MIRA_CHECK(
+        append_workflow_version(history, make_record({1, 0, 0}, content, Sha256Digest{},
+                                                     WorkflowValidationResult::NotValidated, false))
+            .has_value());
     // While only the draft exists, the digest is not runnable.
     auto draft = resolve_workflow_version(history, content);
     MIRA_CHECK(draft.has_value());
@@ -134,9 +134,8 @@ int same_digest_draft_then_publish_resolves_newest() {
 
     // The publish append: identical content digest, higher version, parent
     // chained to the draft's content digest, dry-run evidence attached.
-    MIRA_CHECK(append_workflow_version(
-                   history, make_record({1, 0, 1}, content, content,
-                                        WorkflowValidationResult::DryRunPassed))
+    MIRA_CHECK(append_workflow_version(history, make_record({1, 0, 1}, content, content,
+                                                            WorkflowValidationResult::DryRunPassed))
                    .has_value());
 
     auto resolved = resolve_workflow_version(history, content);
@@ -160,9 +159,8 @@ int distinct_digests_still_resolve_their_own_records() {
     MIRA_CHECK(append_workflow_version(history, make_record({1, 0, 0}, first, Sha256Digest{},
                                                             WorkflowValidationResult::DryRunPassed))
                    .has_value());
-    MIRA_CHECK(append_workflow_version(
-                   history, make_record({2, 0, 0}, second, first,
-                                        WorkflowValidationResult::Validated))
+    MIRA_CHECK(append_workflow_version(history, make_record({2, 0, 0}, second, first,
+                                                            WorkflowValidationResult::Validated))
                    .has_value());
 
     auto replayed = resolve_workflow_version(history, first);

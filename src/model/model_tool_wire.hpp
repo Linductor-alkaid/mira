@@ -12,8 +12,8 @@
 namespace mira::tool_wire {
 
 enum class ItemShape : std::uint8_t {
-    Ordinary,   // No tool parts: the mapper's default role/content path.
-    CallsOnly,  // Assistant call echo item.
+    Ordinary,  // No tool parts: the mapper's default role/content path.
+    CallsOnly, // Assistant call echo item.
     ResultsOnly,
     Mixed, // Tool parts combined with other content or with each other.
 };

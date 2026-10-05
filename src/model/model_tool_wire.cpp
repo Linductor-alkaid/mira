@@ -76,8 +76,7 @@ Result<std::vector<JsonValue>> encode_calls(const ModelInputItem &item, Protocol
     return encoded;
 }
 
-Result<std::vector<JsonValue>> encode_results(const ModelInputItem &item,
-                                              ProtocolDialect dialect) {
+Result<std::vector<JsonValue>> encode_results(const ModelInputItem &item, ProtocolDialect dialect) {
     std::vector<ToolExecutionRecord> records;
     records.reserve(item.content.size());
     for (const auto &part : item.content) {

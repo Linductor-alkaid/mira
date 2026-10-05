@@ -42,10 +42,9 @@ namespace {
 }
 
 [[nodiscard]] bool carries_tool_calls(const ModelResponse &response) {
-    return std::any_of(response.output.begin(), response.output.end(),
-                       [](const ModelOutputItem &item) {
-                           return std::get_if<ToolCallOutput>(&item) != nullptr;
-                       });
+    return std::any_of(
+        response.output.begin(), response.output.end(),
+        [](const ModelOutputItem &item) { return std::get_if<ToolCallOutput>(&item) != nullptr; });
 }
 
 } // namespace
@@ -97,9 +96,9 @@ void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonVal
     (void)events_->append(append);
 }
 
-Result<ModelRequest>
-ConversationLoop::build_request(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
-                                const std::string &feedback) {
+Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
+                                                     const std::vector<ModelInputItem> &history,
+                                                     const std::string &feedback) {
     ModelRequest request;
     request.contract_version = SchemaVersion{1, 0};
     request.request_id = ModelRequestId::generate();
@@ -164,7 +163,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                                                      const OperationContext &context) {
     ConversationLoopResult result;
     if (spec.goal.empty()) {
-        return conversation_error(ErrorCode::InvalidArgument, "conversation goal must not be empty");
+        return conversation_error(ErrorCode::InvalidArgument,
+                                  "conversation goal must not be empty");
     }
     // Exhausting the turn budget is the default terminal; every early exit
     // assigns a specific outcome before leaving the loop.
@@ -257,13 +257,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         if (parse_outcome == DecisionParseOutcome::ToolProposals) {
             if (tools_ == nullptr) {
                 result.outcome = ConversationOutcome::Failed;
-                result.safe_summary =
-                    "tool proposals require a tool registry; none is attached";
+                result.safe_summary = "tool proposals require a tool registry; none is attached";
                 result.turns.push_back(std::move(record));
                 break;
             }
-            if (!outcome.tool_proposals.has_value() ||
-                outcome.tool_proposals->proposals.empty()) {
+            if (!outcome.tool_proposals.has_value() || outcome.tool_proposals->proposals.empty()) {
                 result.outcome = ConversationOutcome::Failed;
                 result.safe_summary = "tool proposal batch carried no executable proposal";
                 result.turns.push_back(std::move(record));
@@ -301,8 +299,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                      JsonValue::Object{{"wire_name", proposal.wire_name},
                                        {"operation_id", proposal.operation_id.to_string()},
                                        {"failed", executed.value().failed},
-                                       {"arguments_digest",
-                                        proposal.arguments_digest.to_string()}},
+                                       {"arguments_digest", proposal.arguments_digest.to_string()}},
                      EventClass::State);
                 if (!record.summary.empty()) {
                     record.summary += ";";
@@ -346,10 +343,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             continue;
         }
         result.outcome = ConversationOutcome::Failed;
-        result.safe_summary =
-            parse_outcome == DecisionParseOutcome::Incomplete
-                ? "model output remained incomplete after recovery budget"
-                : "model output carried no answer text";
+        result.safe_summary = parse_outcome == DecisionParseOutcome::Incomplete
+                                  ? "model output remained incomplete after recovery budget"
+                                  : "model output carried no answer text";
         result.turns.push_back(std::move(record));
         break;
     }
