@@ -331,8 +331,8 @@ int mutation_corpus() {
     return 0;
 }
 int authentication() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = config.max_threads = 2;
     executor.initialize(config);
     auto secrets = std::make_shared<MapSecretResolver>();
