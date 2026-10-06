@@ -39,4 +39,14 @@ m3_messages_probe 仍链接 executor::executor / 旧 include 路径，导致合�
 同步探针 target/header/namespace 和新增认证测试的类型引用到现有 kairo 公开入口，无新并发行为或 nested pin 变更。
 Mirage 继续 pin pre-kairo fbc644b，本次 upstream 同步不等于下游并发设施迁移。
 
-当前主干模型 Debug/完整 CI 验收进行中；通过后按维护者授权合并 #81，记录精确 head 与运行结果。
+当前主干 ec1967c（仅功能/构建修复）在 Linux GCC Debug 全量 104/104 通过；
+format/docs/SBOM/platform-boundary/architecture 检查通过。复现命令：
+`cmake --build /tmp/mira-current-master-thinking-build-20261007 -j4`，
+`ctest --test-dir /tmp/mira-current-master-thinking-build-20261007 --output-on-failure`，
+`cmake --build /tmp/mira-current-master-thinking-build-20261007 --target format-check docs-check sbom-check platform-boundary-check architecture-check`。
+
+当前主干 Windows Debug/Release、Clang Debug/Release、ASAN、TSAN 的 CI 已成功取证；
+完整矩阵、最新验收 head 和合并提交以 [PR#81](https://github.com/Linductor-alkaid/mira/pull/81)
+的检查及合并记录为准，全部门禁成功后方可合入。下游维护记录在 Mirage M6-28 中关联；
+文档同步不修改运行代码或依赖 pin。其他厂商在线请求、legacy extended thinking 保持未验收，
+由维护者在具备目标配置后补跑。
