@@ -150,6 +150,7 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
     request.output_contract.mode = OutputMode::Text;
     request.generation.max_output_tokens = config_.max_output_tokens_per_turn;
     request.generation.reasoning_effort = config_.reasoning_effort;
+    request.generation.thinking = config_.thinking;
     request.budget.max_output_tokens =
         config_.max_output_tokens_per_turn *
         (static_cast<std::uint64_t>(config_.max_turns) + config_.max_recoveries + 1);
@@ -277,6 +278,26 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.turns.push_back(std::move(record));
                 break;
             }
+            const bool thinking_replay = std::any_of(
+                outcome.response.output.begin(), outcome.response.output.end(),
+                [](const auto &item) { return std::holds_alternative<ThinkingPart>(item); });
+            if (thinking_replay) {
+                ModelInputItem assistant;
+                assistant.role = ModelRole::Assistant;
+                for (const auto &item : outcome.response.output) {
+                    if (const auto *thinking = std::get_if<ThinkingPart>(&item))
+                        assistant.content.emplace_back(*thinking);
+                    else if (const auto *message = std::get_if<MessageOutput>(&item)) {
+                        for (const auto &part : message->content)
+                            if (const auto *text = std::get_if<OutputTextPart>(&part))
+                                assistant.content.emplace_back(TextPart{text->text});
+                    } else if (const auto *tool_call = std::get_if<ToolCallOutput>(&item))
+                        assistant.content.emplace_back(
+                            ToolCallPart{tool_call->provider_call_id, tool_call->provider_name,
+                                         tool_call->arguments, tool_call->arguments_digest});
+                }
+                history.push_back(std::move(assistant));
+            }
             std::optional<ConversationOutcome> abort;
             std::string abort_summary;
             for (const auto &proposal : outcome.tool_proposals->proposals) {
@@ -310,7 +331,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 record.summary += "tool:" + proposal.wire_name;
                 // The canonical round trip: echo the call, then carry the
                 // result — the provider pairs them by call id.
-                history.push_back(make_tool_call_item(proposal));
+                if (!thinking_replay)
+                    history.push_back(make_tool_call_item(proposal));
                 history.push_back(make_tool_result_item(executed.value()));
             }
             if (abort.has_value()) {

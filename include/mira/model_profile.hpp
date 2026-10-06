@@ -71,6 +71,7 @@ struct GenerationParamPolicy final {
     ParamMapping top_p = ParamMapping::Native;
     ParamMapping seed = ParamMapping::Unsupported;
     ParamMapping reasoning_effort = ParamMapping::Unsupported;
+    ParamMapping thinking = ParamMapping::Unsupported;
     ParamMapping service_tier = ParamMapping::Unsupported;
 };
 

@@ -108,7 +108,8 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
         if (position != blocks_.size() || !block || !block->is_object())
             return invalid();
         const auto *kind = string(*block, "type");
-        if (!kind || (*kind != "text" && *kind != "tool_use"))
+        if (!kind || (*kind != "text" && *kind != "tool_use" && *kind != "thinking" &&
+                      *kind != "redacted_thinking"))
             return make_model_error(ModelDomainCode::CapabilityMismatch,
                                     "unsupported Messages content block");
         Block entry{*block, {}, {}, false};
@@ -116,6 +117,16 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
             const auto *initial = string(*block, "text");
             if (!initial || !initial->empty())
                 return invalid();
+        } else if (*kind == "thinking") {
+            const auto *initial = string(*block, "thinking"),
+                       *signature = string(*block, "signature");
+            if (!initial || !initial->empty() || (signature && !signature->empty()))
+                return invalid();
+        } else if (*kind == "redacted_thinking") {
+            const auto *data = string(*block, "data");
+            if (!data || data->size() > limits_.max_accumulated_text_bytes - text_bytes_)
+                return invalid();
+            text_bytes_ += data->size();
         } else {
             const auto *input = block->find("input");
             if (!input || !input->is_object() || !input->as_object()->empty())
@@ -146,6 +157,17 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
                 ++pending_drops_;
                 ++stats_.preview_drops;
             }
+        } else if (kind == "thinking" &&
+                   (*delta_type == "thinking_delta" || *delta_type == "signature_delta")) {
+            const auto *part =
+                string(*delta, *delta_type == "thinking_delta" ? "thinking" : "signature");
+            if (!part || part->size() > limits_.max_accumulated_text_bytes - text_bytes_)
+                return invalid();
+            if (*delta_type == "thinking_delta")
+                block.text += *part;
+            else
+                block.arguments += *part;
+            text_bytes_ += part->size();
         } else if (kind == "tool_use" && *delta_type == "input_json_delta") {
             const auto *part = string(*delta, "partial_json");
             if (!part || part->size() > limits_.max_arguments_buffer_bytes - argument_bytes_)
@@ -159,7 +181,10 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
     if (*type == "content_block_stop") {
         if (kind == "text")
             set(block.value, "text", block.text);
-        else if (!block.arguments.empty()) {
+        else if (kind == "thinking") {
+            set(block.value, "thinking", block.text);
+            set(block.value, "signature", block.arguments);
+        } else if (kind == "tool_use" && !block.arguments.empty()) {
             auto arguments = parse_json(block.arguments);
             if (!arguments || !arguments.value().is_object())
                 return invalid();

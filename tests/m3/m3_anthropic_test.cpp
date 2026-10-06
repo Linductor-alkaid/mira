@@ -80,6 +80,20 @@ int mappings() {
     MIRA_CHECK(*part.find("type")->as_string() == "image");
     MIRA_CHECK(*part.find("source")->find("data")->as_string() == "AQI=");
     MIRA_CHECK(!mapper.encode_request(r, p, false, none));
+    r.input.back().role = ModelRole::Assistant;
+    auto assistant_image = mapper.encode_request(r, p, false, images);
+    MIRA_CHECK(assistant_image);
+    MIRA_CHECK(*assistant_image.value()
+                    .find("messages")
+                    ->as_array()
+                    ->front()
+                    .find("content")
+                    ->as_array()
+                    ->back()
+                    .find("source")
+                    ->find("data")
+                    ->as_string() == "AQI=");
+    r.input.back().role = ModelRole::User;
     p.capabilities.image_input.supported = false;
     MIRA_CHECK(!mapper.encode_request(r, p, false, images));
     r = request();
@@ -123,7 +137,7 @@ int mappings() {
                                    }));
     MIRA_CHECK(sync.value().usage.input_tokens == 12);
     MIRA_CHECK(sync.value().usage.cached_input_tokens == 3);
-    MIRA_CHECK(!mapper.decode_response(
+    MIRA_CHECK(mapper.decode_response(
         r, p,
         {200,
          {},
@@ -134,6 +148,97 @@ int mappings() {
         {200,
          {},
          R"({"id":"x","type":"message","role":"assistant","model":"m","content":[],"stop_reason":"pause_turn"})"}));
+    return 0;
+}
+int thinking() {
+    auto r = request();
+    auto p = make_profile(ProtocolDialect::AnthropicMessagesV1, "https://example.com");
+    r.operation_id = OperationId::generate();
+    r.task_id = TaskId::generate();
+    r.profile_id = p.id;
+    NullArtifactSource none;
+    AnthropicMessagesV1Mapper mapper;
+    p.capabilities.generation.thinking = ParamMapping::Native;
+    p.capabilities.generation.reasoning_effort = ParamMapping::Native;
+    r.generation.thinking = ThinkingMode::Adaptive;
+    r.generation.reasoning_effort = ReasoningEffort::Max;
+    auto encoded = mapper.encode_request(r, p, true, none);
+    MIRA_CHECK(encoded &&
+               *encoded.value().find("thinking")->find("type")->as_string() == "adaptive");
+    MIRA_CHECK(*encoded.value().find("output_config")->find("effort")->as_string() == "max");
+    r.generation.thinking = ThinkingMode::Disabled;
+    r.generation.reasoning_effort.reset();
+    MIRA_CHECK(*mapper.encode_request(r, p, false, none)
+                    .value()
+                    .find("thinking")
+                    ->find("type")
+                    ->as_string() == "disabled");
+    r.generation.thinking = static_cast<ThinkingMode>(255);
+    MIRA_CHECK(!mapper.encode_request(r, p, false, none));
+    r.generation.thinking.reset();
+    r.generation.reasoning_effort = static_cast<ReasoningEffort>(255);
+    MIRA_CHECK(!mapper.encode_request(r, p, false, none));
+    r.generation.reasoning_effort.reset();
+    const std::string wire =
+        R"({"id":"x","type":"message","role":"assistant","model":"m","content":[{"type":"thinking","thinking":"plan","signature":"signed"},{"type":"redacted_thinking","data":"opaque"},{"type":"text","text":"answer"}],"stop_reason":"end_turn"})";
+    auto response = mapper.decode_response(r, p, {200, {}, wire});
+    MIRA_CHECK(response);
+    MIRA_CHECK(response.value().output.size() == 3);
+    MIRA_CHECK(std::get<ThinkingPart>(response.value().output[0]).signature == "signed");
+    MIRA_CHECK(std::get<ThinkingPart>(response.value().output[1]).redacted);
+    auto assistant = ModelInputItem{};
+    assistant.role = ModelRole::Assistant;
+    assistant.content = {ThinkingPart{"plan", "signed", false}, ThinkingPart{"opaque", "", true},
+                         TextPart{"answer"}};
+    r.input.push_back(assistant);
+    r.input.push_back({ModelRole::User, {TextPart{"continue"}}, {}, Sensitivity::Internal});
+    auto request_roundtrip = model_request_from_json(model_request_to_json(r));
+    MIRA_CHECK(request_roundtrip);
+    MIRA_CHECK(std::get<ThinkingPart>(request_roundtrip.value().input[2].content[0]).signature ==
+               "signed");
+    auto response_roundtrip = model_response_from_json(model_response_to_json(response.value()));
+    MIRA_CHECK(response_roundtrip);
+    MIRA_CHECK(std::get<ThinkingPart>(response_roundtrip.value().output[1]).redacted);
+    auto replay = mapper.encode_request(r, p, false, none);
+    MIRA_CHECK(replay);
+    const auto &blocks =
+        *replay.value().find("messages")->as_array()->at(1).find("content")->as_array();
+    MIRA_CHECK(*blocks[0].find("signature")->as_string() == "signed");
+    MIRA_CHECK(*blocks[1].find("data")->as_string() == "opaque");
+    MIRA_CHECK(*blocks[2].find("text")->as_string() == "answer");
+    MIRA_CHECK(!ChatCompletionsV1Mapper{}.encode_request(r, p, false, none));
+    MIRA_CHECK(!ResponsesV1Mapper{}.encode_request(r, p, false, none));
+    r.input.back().content = {ThinkingPart{"bad role", "sig", false}};
+    MIRA_CHECK(!mapper.encode_request(r, p, false, none));
+    const auto stream =
+        start +
+        event(
+            "content_block_start",
+            R"({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}})") +
+        event(
+            "content_block_delta",
+            R"({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}})") +
+        event(
+            "content_block_delta",
+            R"({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed"}})") +
+        event("content_block_stop", R"({"type":"content_block_stop","index":0})") +
+        event(
+            "message_delta",
+            R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}})") +
+        event("message_stop", R"({"type":"message_stop"})");
+    for (std::size_t split = 0; split <= stream.size(); ++split) {
+        AnthropicMessagesSseParser parser(r, p);
+        MIRA_CHECK(parser.feed(std::string_view(stream).substr(0, split)));
+        MIRA_CHECK(parser.feed(std::string_view(stream).substr(split)));
+        auto result = parser.finish();
+        MIRA_CHECK(result);
+        MIRA_CHECK(std::get<ThinkingPart>(result.value().output[0]).signature == "signed");
+        MIRA_CHECK(parser.take_preview().text.empty()); // Reasoning never becomes answer preview.
+    }
+    SseStreamLimits limits;
+    limits.max_accumulated_text_bytes = 3;
+    AnthropicMessagesSseParser bounded(r, p, limits);
+    MIRA_CHECK(!bounded.feed(stream));
     return 0;
 }
 int streams() {
@@ -270,7 +375,7 @@ int authentication() {
 }
 } // namespace
 int main() {
-    if (mappings() || streams() || mutation_corpus() || authentication())
+    if (mappings() || thinking() || streams() || mutation_corpus() || authentication())
         return 1;
     return 0;
 }

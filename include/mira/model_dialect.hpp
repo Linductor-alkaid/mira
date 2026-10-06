@@ -93,7 +93,7 @@ class ChatCompletionsV1Mapper final : public IDialectMapper {
 };
 
 // Fixed Messages dialect: text, inline images and ordinary client tools.
-// Extended thinking and provider-hosted tools fail closed until canonical
+// Adaptive thinking replay is supported; provider-hosted tools fail closed until canonical
 // echo contracts exist for their signed/provider-local blocks (DEC-050).
 class AnthropicMessagesV1Mapper final : public IDialectMapper {
   public:

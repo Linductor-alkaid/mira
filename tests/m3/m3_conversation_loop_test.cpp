@@ -248,6 +248,33 @@ int plain_text_answer_settles_immediately() {
     return 0;
 }
 
+int signed_thinking_replayed_before_tool_results() {
+    ConversationFixture fixture;
+    auto first = tool_call_response(fixture.echo_spec(), R"({"message":"ping"})");
+    first.output.insert(first.output.begin(), ThinkingPart{"plan", "signed", false});
+    first.output.insert(first.output.begin() + 1,
+                        MessageOutput{ModelRole::Assistant, {OutputTextPart{"comment", {}}}});
+    fixture.use_provider({first, text_response("done")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result && result.value().outcome == ConversationOutcome::Answered);
+    const auto requests = fixture.provider_->requests();
+    MIRA_CHECK(requests.size() == 2);
+    auto found =
+        std::find_if(requests[1].input.begin(), requests[1].input.end(), [](const auto &item) {
+            return !item.content.empty() &&
+                   std::holds_alternative<ThinkingPart>(item.content.front());
+        });
+    MIRA_CHECK(found != requests[1].input.end() && found->role == ModelRole::Assistant);
+    MIRA_CHECK(found->content.size() == 3);
+    MIRA_CHECK(std::get<ThinkingPart>(found->content[0]).signature == "signed");
+    MIRA_CHECK(std::get<TextPart>(found->content[1]).text == "comment");
+    MIRA_CHECK(std::holds_alternative<ToolCallPart>(found->content[2]));
+    MIRA_CHECK(std::next(found) != requests[1].input.end() &&
+               std::holds_alternative<ToolResultPart>(std::next(found)->content[0]));
+    return 0;
+}
+
 int tool_round_trip_replays_canonical_parts() {
     ConversationFixture fixture;
     const auto arguments = parse_json(R"json({"message": "ping"})json");
@@ -883,6 +910,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
 } // namespace
 
 int main() {
+    if (signed_thinking_replayed_before_tool_results())
+        return 1;
     if (auto status = conversation_stream_options_are_forwarded())
         return status;
     if (const int code = plain_text_answer_settles_immediately(); code != 0) {

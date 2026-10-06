@@ -268,6 +268,17 @@ EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与
 
 `AnthropicMessagesV1Mapper`及`ProtocolDialect::AnthropicMessagesV1`使用`anthropic.messages.v1`，`request_path()`将`/messages`追加到api_prefix；官方API设`/v1`，MiniMax兼容API设`/anthropic/v1`。Provider仍为`OpenAiCompatibleProvider`（保留原公开类名），实例内无方言回退。`HttpRequest::credential_scheme`默认Bearer；Messages选择ApiKey，经SecretRef在transport内生成x-api-key，另加anthropic-version:2023-06-01。应用不得把Key放入普通headers；transport拒绝x-api-key/authorization与换行注入，跨origin重定向剥离凭据。
 
-文本、Auto细节内联图片、普通client工具、工具结果可表达；`max_output_tokens`必须明确且非零。seed、reasoning_effort、service_tier、continuation、store=true、非Text输出/文件和扩展thinking/未知内容显式拒绝。`AnthropicMessagesSseParser`复用有界framer/preview，要求message_start、block start/delta/stop、message_delta及唯一message_stop；EOF无终态为AmbiguousCompletion，工具JSON在block stop时完整解析。usage的已知计数须非负且不回退，额外metadata保留兼容性；input_tokens加上cache read/creation后进入上下文用量。
+文本、Auto细节内联图片、普通client工具、工具结果可表达；`max_output_tokens`必须明确且非零。seed、service_tier、continuation、store=true、非Text输出/文件和未知内容显式拒绝。M3-21 初版不支持 reasoning_effort / thinking；DEC-051 增量的当前契约见下节。`AnthropicMessagesSseParser`复用有界framer/preview，要求message_start、block start/delta/stop、message_delta及唯一message_stop；EOF无终态为AmbiguousCompletion，工具JSON在block stop时完整解析。usage的已知计数须非负且不回退，额外metadata保留兼容性；input_tokens加上cache read/creation后进入上下文用量。
 
 测试`mira_m3_anthropic_test`包括所有双片切点、逐字节工具、错误/越界/EOF、真实socket认证及注入拒绝。`mira_m3_messages_probe`仅在显式私有环境变量MIRA_MESSAGES_PROBE=1时发起一次付费请求，Key经环境引用读取，图片仅用公开合成夹具；默认不属于ctest且拒绝运行。
+
+## Messages 自适应思考（DEC-051）
+
+宿主通过 profile.capabilities.generation.thinking / reasoning_effort 声明能力，设置
+ModelGenerationOptions::thinking（Disabled / Adaptive），或 ConversationLoopConfig::thinking。
+Messages 输出 thinking.type 与 output_config.effort；Minimal 没有映射，明确拒绝。
+ReasoningEffort 新增 XHigh / Max。模型是否接受档位是宿主能力声明，不是协议自动发现。
+ThinkingPart 保留正文、签名或 redacted data，规范 JSON kind/type=thinking。
+SSE 思考不进入文本预览，仍受累积文本预算和终态验证；完整 assistant 回填发生在同一
+harness 内的工具循环，不会将思考作为答案或动作执行。legacy enabled/budget_tokens 与
+between_tools 暂不提供。其他方言显式拒绝 thinking；旧契约读取器遇到新内容应失败闭合。
