@@ -191,4 +191,32 @@ class ChatCompletionsSseParser final {
     std::optional<JsonValue> usage_;
 };
 
+// Messages lifecycle reducer; only message_stop authorizes settlement.
+class AnthropicMessagesSseParser final {
+  public:
+    AnthropicMessagesSseParser(const ModelRequest &, const ModelProfile &, SseStreamLimits = {});
+    [[nodiscard]] Result<void> feed(std::string_view);
+    [[nodiscard]] Result<ModelResponse> finish();
+    [[nodiscard]] UnvalidatedModelPreview take_preview();
+    [[nodiscard]] const SseStreamStats &stats() const noexcept { return stats_; }
+
+  private:
+    struct Block {
+        JsonValue value;
+        std::string text, arguments;
+        bool closed = false;
+    };
+    [[nodiscard]] Result<void> reduce(const SseMessage &);
+    ModelRequest request_;
+    ModelProfile profile_;
+    SseStreamLimits limits_;
+    SseFramingParser framer_;
+    SseStreamStats stats_;
+    std::vector<Block> blocks_;
+    JsonValue message_;
+    bool started_ = false, delta_seen_ = false;
+    std::size_t text_bytes_ = 0, argument_bytes_ = 0, pending_drops_ = 0;
+    std::string preview_;
+};
+
 } // namespace mira

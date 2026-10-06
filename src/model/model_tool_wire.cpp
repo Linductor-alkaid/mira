@@ -38,6 +38,21 @@ ItemShape classify_item(const ModelInputItem &item) {
 
 Result<std::vector<JsonValue>> encode_calls(const ModelInputItem &item, ProtocolDialect dialect) {
     std::vector<JsonValue> encoded;
+    if (dialect == ProtocolDialect::AnthropicMessagesV1) {
+        JsonValue::Array blocks;
+        for (const auto &part : item.content) {
+            const auto *call = std::get_if<ToolCallPart>(&part);
+            if (!call)
+                return wire_error("tool call item mixes other content");
+            blocks.emplace_back(JsonValue::Object{{"type", "tool_use"},
+                                                  {"id", call->provider_call_id.value},
+                                                  {"name", call->wire_name},
+                                                  {"input", call->arguments}});
+        }
+        encoded.emplace_back(
+            JsonValue::Object{{"role", "assistant"}, {"content", std::move(blocks)}});
+        return encoded;
+    }
     if (dialect == ProtocolDialect::OpenAIChatCompletionsV1) {
         JsonValue::Object message;
         message.emplace_back("role", "assistant");

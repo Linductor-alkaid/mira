@@ -651,7 +651,7 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
         if (!valid_header_name(header.first) || header.second.find('\r') != std::string::npos ||
             header.second.find('\n') != std::string::npos || lowered == "host" ||
             lowered == "content-length" || lowered == "connection" || lowered == "authorization" ||
-            lowered == "proxy-authorization") {
+            lowered == "proxy-authorization" || lowered == "x-api-key") {
             return transport_error(ModelDomainCode::EndpointPolicyDenied,
                                    "http request header is invalid or reserved", false);
         }
@@ -664,6 +664,13 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
             return secret.error();
         }
         authorization = std::move(secret).value();
+        if (authorization->find_first_of("\r\n") != std::string::npos)
+            return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                                   "authorization contains invalid characters", false);
+        if (job.request.credential_scheme != HttpCredentialScheme::Bearer &&
+            job.request.credential_scheme != HttpCredentialScheme::ApiKey)
+            return transport_error(ModelDomainCode::EndpointPolicyDenied,
+                                   "invalid credential scheme", false);
     }
 
     std::optional<std::string> proxy_authorization;
@@ -928,7 +935,10 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
     request_text += "Accept: application/json, text/event-stream\r\n";
     // Credentials follow redirects only within the original origin.
     if (authorization.has_value() && !cross_origin) {
-        request_text += "Authorization: Bearer " + *authorization + "\r\n";
+        request_text += (job.request.credential_scheme == HttpCredentialScheme::ApiKey
+                             ? "x-api-key: "
+                             : "Authorization: Bearer ") +
+                        *authorization + "\r\n";
     }
     if (forward_proxy && proxy_authorization.has_value()) {
         request_text += "Proxy-Authorization: " + *proxy_authorization + "\r\n";

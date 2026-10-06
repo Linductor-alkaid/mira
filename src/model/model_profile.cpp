@@ -93,6 +93,8 @@ std::string protocol_dialect_name(ProtocolDialect dialect) {
         return "openai.responses.v1";
     case ProtocolDialect::OpenAIChatCompletionsV1:
         return "openai.chat-completions.v1";
+    case ProtocolDialect::AnthropicMessagesV1:
+        return "anthropic.messages.v1";
     }
     return "unknown";
 }
@@ -104,6 +106,8 @@ std::optional<ProtocolDialect> protocol_dialect_from(std::string_view name) {
     if (name == "openai.chat-completions.v1") {
         return ProtocolDialect::OpenAIChatCompletionsV1;
     }
+    if (name == "anthropic.messages.v1")
+        return ProtocolDialect::AnthropicMessagesV1;
     return std::nullopt;
 }
 
@@ -144,6 +148,8 @@ std::string ModelProfile::request_path() const {
     case ProtocolDialect::OpenAIChatCompletionsV1:
         prefix += "/chat/completions";
         return prefix;
+    case ProtocolDialect::AnthropicMessagesV1:
+        return prefix + "/messages";
     }
     return prefix;
 }

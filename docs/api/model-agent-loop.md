@@ -6,7 +6,7 @@
 > `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
 > `mira/conversation_loop.hpp`
 
-模型层采用 API-first 设计：Core 只依赖 OpenAI-compatible HTTP 协议，不依赖任何供应商
+模型层采用 API-first 设计：Core 依赖显式 HTTP 模型方言（OpenAI / Anthropic Messages），不依赖任何供应商
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
 （[DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md)）。
 
@@ -19,7 +19,7 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
   其 digest），`ToolResultPart` 携带一次已执行结果（镜像 `ToolExecutionRecord`，超限载荷
   以 `ArtifactRef` 引用）。工具 part 必须独占其输入项；校验对 call id、arguments 对象
   形状、digest 匹配与失败摘要上界 fail closed，并参与 canonical digest 与 JSON 往返。
-  两个 dialect 把它们渲染为原生线格式（Responses：`function_call` / `function_call_output`
+  三个 dialect 把它们渲染为原生线格式（Responses：`function_call` / `function_call_output`
   顶层项；Chat Completions：assistant `tool_calls` / `role: tool` 消息）。
 - `ModelRequest` 携带角色（`ModelRole`）、输出模式（`OutputMode`）、推理力度
   （`ReasoningEffort`）、服务层级（`ServiceTier`）、schema 绑定（`SchemaId`）与数据
@@ -46,7 +46,7 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 - `IModelProvider`：`profile()` + `infer(request, context, options)`；实现不拥有超出
   注入 transport 的生命周期，也从不推进任务状态。`ProviderInferOptions` 控制流式与
   原始响应捕获（写入受保护 Artifact 并挂引用）。
-- `OpenAiCompatibleProvider`：两个固定方言（Responses / Chat Completions）的具体实现；
+- `OpenAiCompatibleProvider`：三个固定方言（Responses / Chat Completions / Messages）的具体实现；
   一个实例服务一个 profile，方言回退从不发生在单次操作内。
 - `IHttpTransport` + `HttpRequest`/`TransportLimits`/`TransportTrace`/`TlsOptions`：
   传输抽象。官方实现由 `Mira::net_transport`（`mira/adapters/net/socket_transport.hpp`，
@@ -263,3 +263,11 @@ EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与
 稳定身份、有界文本/工具片段、有效finish_reason及[DONE]；断流失败。工具参数只在终态归约后
 执行，未验证的片段不向UI投递。`ConversationLoopConfig::inference`透传请求选项，
 `reasoning_effort`进入generation；结果新增`last_usage`（最后模型请求）和`tool_executions`。
+
+## Anthropic Messages增量（DEC-050 / M3-21）
+
+`AnthropicMessagesV1Mapper`及`ProtocolDialect::AnthropicMessagesV1`使用`anthropic.messages.v1`，`request_path()`将`/messages`追加到api_prefix；官方API设`/v1`，MiniMax兼容API设`/anthropic/v1`。Provider仍为`OpenAiCompatibleProvider`（保留原公开类名），实例内无方言回退。`HttpRequest::credential_scheme`默认Bearer；Messages选择ApiKey，经SecretRef在transport内生成x-api-key，另加anthropic-version:2023-06-01。应用不得把Key放入普通headers；transport拒绝x-api-key/authorization与换行注入，跨origin重定向剥离凭据。
+
+文本、Auto细节内联图片、普通client工具、工具结果可表达；`max_output_tokens`必须明确且非零。seed、reasoning_effort、service_tier、continuation、store=true、非Text输出/文件和扩展thinking/未知内容显式拒绝。`AnthropicMessagesSseParser`复用有界framer/preview，要求message_start、block start/delta/stop、message_delta及唯一message_stop；EOF无终态为AmbiguousCompletion，工具JSON在block stop时完整解析。usage的已知计数须非负且不回退，额外metadata保留兼容性；input_tokens加上cache read/creation后进入上下文用量。
+
+测试`mira_m3_anthropic_test`包括所有双片切点、逐字节工具、错误/越界/EOF、真实socket认证及注入拒绝。`mira_m3_messages_probe`仅在显式私有环境变量MIRA_MESSAGES_PROBE=1时发起一次付费请求，Key经环境引用读取，图片仅用公开合成夹具；默认不属于ctest且拒绝运行。

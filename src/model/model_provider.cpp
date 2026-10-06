@@ -133,6 +133,8 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
                                                       const ProviderInferOptions &options) {
     const IDialectMapper &mapper = profile_->dialect == ProtocolDialect::OpenAIResponsesV1
                                        ? static_cast<const IDialectMapper &>(responses_)
+                                   : profile_->dialect == ProtocolDialect::AnthropicMessagesV1
+                                       ? static_cast<const IDialectMapper &>(messages_)
                                        : static_cast<const IDialectMapper &>(chat_);
 
     BoundArtifactSource bound_artifacts(artifacts_);
@@ -182,6 +184,10 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
         http.headers.emplace_back("OpenAI-Project", *request.data_policy.project);
     }
     http.authorization = profile_->credential;
+    if (profile_->dialect == ProtocolDialect::AnthropicMessagesV1) {
+        http.credential_scheme = HttpCredentialScheme::ApiKey;
+        http.headers.emplace_back("anthropic-version", "2023-06-01");
+    }
 
     TransportTrace trace;
     last_trace_ = TransportTrace{};
@@ -263,6 +269,10 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
         };
         if (profile_->dialect == ProtocolDialect::OpenAIResponsesV1) {
             ResponsesSseParser parser(request, *profile_);
+            return consume(parser);
+        }
+        if (profile_->dialect == ProtocolDialect::AnthropicMessagesV1) {
+            AnthropicMessagesSseParser parser(request, *profile_);
             return consume(parser);
         }
         ChatCompletionsSseParser parser(request, *profile_);

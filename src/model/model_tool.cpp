@@ -176,6 +176,15 @@ build_tool_result_input(ProtocolDialect dialect, std::span<const ToolExecutionRe
             items.emplace_back(std::move(item));
             break;
         }
+        case ProtocolDialect::AnthropicMessagesV1: {
+            JsonValue::Object block{{"type", "tool_result"},
+                                    {"tool_use_id", record.provider_call_id.value},
+                                    {"content", serialized},
+                                    {"is_error", record.failed}};
+            items.emplace_back(JsonValue::Object{
+                {"role", "user"}, {"content", JsonValue::Array{JsonValue{std::move(block)}}}});
+            break;
+        }
         case ProtocolDialect::OpenAIChatCompletionsV1: {
             JsonValue::Object item;
             item.emplace_back("role", "tool");

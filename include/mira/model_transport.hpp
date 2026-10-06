@@ -22,12 +22,15 @@ namespace mira {
 
 // One outbound HTTP request. Headers here are never secret; credentials are
 // referenced by name and resolved only inside the transport.
+enum class HttpCredentialScheme : std::uint8_t { Bearer, ApiKey };
+
 struct HttpRequest final {
     std::string method = "POST";
     std::string url;
     std::vector<std::pair<std::string, std::string>> headers;
     std::string body;
     std::optional<SecretRef> authorization;
+    HttpCredentialScheme credential_scheme = HttpCredentialScheme::Bearer;
 };
 
 // Staged deadlines plus hard caps for one exchange. The final deadline is the
