@@ -30,3 +30,13 @@ Windows、其他供应商和 legacy extended thinking 未验收；负责人维�
 
 交付通过独立 `codex/messages-thinking` 分支 PR；当前主干已迁移 kairo，本修复基于 Mirage
 获授权的 pre-kairo 基线，不能把下游结果当成当前主干、Windows 或其他厂商在线验证。
+
+## 2026-10-07 当前主干同步验收
+
+维护者明确要求这批 PR 验收 CI 后合并。原 fbc644b 已保留，普通 merge 同步 a0e3f6b
+当前 master，不改写发布历史。该 master 已迁移 kairo；Messages PR#80 后新增的 opt-in
+m3_messages_probe 仍链接 executor::executor / 旧 include 路径，导致合并基础 configure 失败。
+同步探针 target/header/namespace 到现有 kairo 公开入口，无新并发行为或 nested pin 变更。
+Mirage 继续 pin pre-kairo fbc644b，本次 upstream 同步不等于下游并发设施迁移。
+
+当前主干模型 Debug/完整 CI 验收进行中；通过后按维护者授权合并 #81，记录精确 head 与运行结果。

@@ -1,10 +1,10 @@
 // Explicit opt-in paid interop probe. Inputs/credentials arrive through private
 // child environment; no credential or wire body is written to output.
 #include <cstdlib>
-#include <executor/executor.hpp>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <kairo/executor.hpp>
 #include <mira/adapters/net/openssl_tls.hpp>
 #include <mira/adapters/net/socket_transport.hpp>
 #include <mira/model_digest.hpp>
@@ -74,8 +74,8 @@ int main() {
     profile->deadlines.total = std::chrono::seconds{90};
     if (!profile->validate())
         return 2;
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = config.max_threads = 2;
     config.queue_capacity = 8;
     if (!executor.initialize(config))
