@@ -22,9 +22,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -170,7 +170,7 @@ struct WorkflowRecoveryShutdownReport final {
 // WorkflowRuntime::shutdown(); the executor itself stays owned by the host.
 class WorkflowRecoveryOrchestrator final {
   public:
-    WorkflowRecoveryOrchestrator(executor::Executor &executor, WorkflowRuntime &runtime,
+    WorkflowRecoveryOrchestrator(kairo::Executor &executor, WorkflowRuntime &runtime,
                                  MiraRuntime &control, ModelGateway &gateway, SessionId session,
                                  WorkflowRecoveryConfig config);
     ~WorkflowRecoveryOrchestrator();
@@ -254,7 +254,7 @@ class WorkflowRecoveryOrchestrator final {
                                              std::uint32_t &offered, std::uint32_t &stale,
                                              std::uint32_t &unparseable, std::uint32_t &kept);
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     WorkflowRuntime &runtime_;
     MiraRuntime &control_;
     ModelGateway &gateway_;

@@ -9,9 +9,9 @@
 #include <cstdint>
 #include <memory>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira::adapters::android {
 
@@ -39,7 +39,7 @@ class AndroidHostAdapter final : public IEnvironment {
     // Creates the host through the frozen ABI with the bridge callbacks,
     // starts it and records the initial capability snapshot.
     [[nodiscard]] static Result<std::unique_ptr<AndroidHostAdapter>>
-    create(executor::Executor &executor, const AndroidHostAdapterOptions &options = {});
+    create(kairo::Executor &executor, const AndroidHostAdapterOptions &options = {});
     ~AndroidHostAdapter() override;
 
     AndroidHostAdapter(const AndroidHostAdapter &) = delete;
@@ -63,7 +63,7 @@ class AndroidHostAdapter final : public IEnvironment {
     [[nodiscard]] MiraAndroidHostV1 *host() const noexcept { return host_; }
 
   private:
-    AndroidHostAdapter(executor::Executor &executor, MiraAndroidHostV1 *host,
+    AndroidHostAdapter(kairo::Executor &executor, MiraAndroidHostV1 *host,
                        std::shared_ptr<IArtifactStore> artifacts);
 
     Result<ObservationComponent<ScreenFrameDescriptor>>

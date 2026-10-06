@@ -30,7 +30,7 @@
 #include <mira/context_working_context_promotion.hpp>
 #include <mira/memory_consolidation.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -737,8 +737,8 @@ int empty_snapshot_promotes_nothing() {
 // ---------------------------------------------------------------------------
 
 int supervisor_routes_cancels_and_rejects_promotion() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         ContextMemorySupervisor supervisor(exec);
         const MemoryScope scope = m23_env_scope("env-42");
@@ -828,7 +828,7 @@ int supervisor_routes_cancels_and_rejects_promotion() {
         MIRA_CHECK(stats.failed == 1);
         MIRA_CHECK(stats.rejected_closed == 1);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

@@ -1,7 +1,10 @@
 # Executor 能力反馈台账
 
-本台账记录 Mira 集成 `third_party/executor` 时确认的通用能力缺口。它不是普通 bug 列表，
+本台账记录 Mira 集成随附并发/生命周期库时确认的通用能力缺口。它不是普通 bug 列表，
 也不用于记录应用层、模型供应商或平台 Adapter 的需求。
+
+> 2026-10-05 起随附库为 `third_party/kairo`（上游项目 v0.6.0 起由 Executor 更名 kairo，
+> 命名空间 `kairo::`）。目录与条目编号沿用历史命名；此后新条目仍登记于本文件。
 
 ## 状态定义
 
@@ -18,7 +21,7 @@
 | `EXE-20260830-001` | 2026-08-30 | Resolved | 默认异步提交缺少总量有界 admission | 已迁移到 `max_in_flight_tasks` | 已删除 Mira 在途计数，使用 Executor 原生 admission | [executor#179](https://github.com/Linductor-alkaid/executor/issues/179)（`4fd8e60`） |
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
-| `EXE-20260922-001` | 2026-09-22 | Open | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | Windows MinGW 交叉门禁只能构建不含 executor 的目标子集 | 无（不修改 pinned 依赖；门禁按 DEC-017 决策 9 构建子集） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)（MIRA-20260922-001）；executor 侧 issue 待提出 |
+| `EXE-20260922-001` | 2026-09-22 | Resolved | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | 已随 pin 升级（`ef821dc`，上游 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)）恢复 MinGW 全树可构建 | 已删除（pin 升级后无需子集回避） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)、[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`） |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -271,12 +274,12 @@ future ready 语义，也不能要求应用延长栈对象生命周期。
 
 ### EXE-20260922-001：blocking_io_executor 的 native_handle static_cast 阻塞 MinGW-w64 posix 构建
 
-- 状态：`Open`
+- 状态：`Resolved`
 - 发现日期：`2026-09-22`（2026-10-05 登记并转交上游流程）
 - 记录人/责任人：Mira Maintainers（反馈来源：Mirage 桌面 Host，编号 MIRA-20260922-001）
 - 影响组件：Windows MinGW-w64 交叉构建门禁（posix 线程模型）
 - Executor 版本或提交：`2ae4fc8985af8962e08e3282a9330de5445d0d10`（随附于 `dependencies.lock.json`）
-- 关联代码/测试：`third_party/executor/src/executor/blocking_io_executor.cpp:157`；反馈详情见
+- 关联代码/测试：`third_party/kairo/src/kairo/blocking_io_executor.cpp:157`（随附依赖升级 kairo v0.6.0 后路径，原 `third_party/executor/src/executor/`）；反馈详情见
   [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)
 - 上游 issue/PR：executor 仓库 issue 待提出（本条即转交记录）
 
@@ -288,7 +291,7 @@ Mirage 桌面 Host 按 DEC-017 引导方式用 MinGW-w64 x86_64 GCC 13.2.0（pos
 
 #### 已核查证据
 
-已核对 pinned 版本 `blocking_io_executor.cpp:157`：
+已核对 pinned 版本 `blocking_io_executor.cpp:157`（升级 kairo v0.6.0 后仍为 `src/kairo/blocking_io_executor.cpp:157`，同一表达式）：
 
 ```cpp
 auto self_handle = static_cast<std::thread::native_handle_type>(GetCurrentThread());
@@ -334,3 +337,5 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
 | 2026-09-22 | Open | Mirage M4-02 交叉构建预检首次复现（全树诊断） | mira#75 |
 | 2026-10-05 | Open | 编译期最小复现复核通过；正式登记台账并经 mira#75 转交上游流程 | mira#75 |
 | 2026-10-05 | Open（上游复核） | 上游已更名 kairo 并发布 v0.6.0（破坏性变更窗口）；对照 tag `v0.6.0` 源码复核，同一表达式仍在 `src/kairo/blocking_io_executor.cpp:157`，且上游 tracker 无 MinGW/native_handle 相关 issue——本缺口未随 0.6.0 关闭，升级 pin 不能解决 | [kairo v0.6.0](https://github.com/Linductor-alkaid/kairo/releases/tag/v0.6.0) |
+| 2026-10-05 | Open（pin 迁移） | Mira 随附依赖升级为 kairo v0.6.0（`d9602ea`，上游更名 + 兼容层清理 + Scheduling Runtime）；迁移复核确认缺陷仍在，条目保持 Open，关联路径更新为 `third_party/kairo` | 维护计划 maintenance-2026-10-kairo-migration.md |
+| 2026-10-05 | Open → Resolved | 上游修复合入 master：[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`，合入 `ef821dc`）按本条期望语义解耦 `native_handle_type`——新增 `set_current_thread_priority/affinity()`，两执行器 self_handle `#ifdef` 块删除；MinGW posix/win32 双模型全树构建零诊断、Linux ctest 147/147；上游 master CI 绿。Mira pin 升级至 `ef821dc`（`v0.6.0-12-gef821dc`），Mira 全量回归见维护计划。MinGW 交叉全树验收（Mirage 门禁侧）与 MSVC 复验由本 PR CI/mirage 补跑承接 | kairo#215、mira#75 |

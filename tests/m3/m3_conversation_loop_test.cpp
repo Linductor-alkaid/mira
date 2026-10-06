@@ -18,7 +18,7 @@
 #include <mira/model_schema.hpp>
 #include <mira/model_tool.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -42,7 +42,7 @@ using namespace mira::testing;
 class ConversationFixture final {
   public:
     ConversationFixture() {
-        executor::ExecutorConfig executor_config;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 2;
         executor_config.max_threads = 2;
         executor_config.queue_capacity = 32;
@@ -116,7 +116,7 @@ class ConversationFixture final {
         return seen_arguments_;
     }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;
     std::unique_ptr<ModelGateway> gateway_;

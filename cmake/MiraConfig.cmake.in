@@ -1,6 +1,6 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
-find_dependency(executor 0.4 CONFIG REQUIRED)
+find_dependency(kairo 0.6 CONFIG REQUIRED)
 find_dependency(Threads)
 include("${CMAKE_CURRENT_LIST_DIR}/MiraTargets.cmake")

@@ -11,7 +11,7 @@
 #include <filesystem>
 #include <random>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -37,7 +37,7 @@ std::filesystem::path temp_dir() {
 
 struct Fixture final {
     Fixture() {
-        executor_.initialize(executor::ExecutorConfig{});
+        executor_.initialize(kairo::ExecutorConfig{});
         checkpoint_options.path = temp_dir() / "replay-checkpoints.db";
         memory_options.path = temp_dir() / "replay-memory.db";
         auto checkpoints = SqliteCheckpointStore::open(executor_, checkpoint_options);
@@ -50,7 +50,7 @@ struct Fixture final {
         (void)checkpoint_store->close();
         (void)executor_.shutdown(true);
     }
-    executor::Executor executor_;
+    kairo::Executor executor_;
     SqliteStoreOptions checkpoint_options;
     SqliteMemoryStoreOptions memory_options;
     MemoryEventStore events;

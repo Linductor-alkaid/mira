@@ -18,7 +18,7 @@
 #include <mira/runtime.hpp>
 #include <mira/tool_executor.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -80,8 +80,8 @@ using namespace mira::testing;
 int full_harness_session() {
     // The host owns one Executor for loop work; the runtime owns its own
     // serial control plane (DEC-001).
-    executor::Executor executor;
-    executor::ExecutorConfig executor_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = 2;
     executor_config.max_threads = 2;
     executor_config.queue_capacity = 32;
@@ -221,7 +221,7 @@ int full_harness_session() {
     const auto shutdown = runtime.request_shutdown();
     MIRA_CHECK(shutdown && shutdown.value().outcome(std::chrono::seconds(2)));
     MIRA_CHECK(runtime.finish_shutdown().clean);
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

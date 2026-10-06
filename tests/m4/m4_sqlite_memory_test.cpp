@@ -8,7 +8,7 @@
 #include <random>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -73,8 +73,8 @@ std::filesystem::path temp_dir() {
 }
 
 int add_get_and_idempotent_replay() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "memory-basic.db";
@@ -105,13 +105,13 @@ int add_get_and_idempotent_replay() {
         MIRA_CHECK(found.records.size() == 1);
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int update_conflict_and_supersede_chain() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "memory-versions.db";
@@ -189,13 +189,13 @@ int update_conflict_and_supersede_chain() {
         MIRA_CHECK(nothing.value().records.empty());
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int tombstone_and_ttl_expiry() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "memory-ttl.db";
@@ -243,13 +243,13 @@ int tombstone_and_ttl_expiry() {
         MIRA_CHECK(still_there.value()->status == MemoryStatus::Tombstoned);
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int scope_acl_and_provenance_enforcement() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "memory-acl.db";
@@ -321,13 +321,13 @@ int scope_acl_and_provenance_enforcement() {
         }
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int erasure_complete_and_pending_hold() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         // Artifact store that rejects the first erasure to force the Pending
         // path deterministically.
@@ -423,13 +423,13 @@ int erasure_complete_and_pending_hold() {
         MIRA_CHECK(!erased_artifact.has_value());
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int reopen_reuses_existing_schema() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteMemoryStoreOptions options;
         options.path = temp_dir() / "memory-reopen.db";
@@ -452,7 +452,7 @@ int reopen_reuses_existing_schema() {
             MIRA_CHECK(store.value()->close().has_value());
         }
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

@@ -306,7 +306,7 @@ class Recorder final {
 class EvalFixture final {
   public:
     EvalFixture(int seed, const std::string &tag) {
-        executor::ExecutorConfig executor_config;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 4;
         executor_config.max_threads = 4;
         executor_config.queue_capacity = 64;
@@ -401,7 +401,7 @@ class EvalFixture final {
         return workflow_->set_learning_context(memory_, learning_scope()).has_value();
     }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::unique_ptr<MiraRuntime> runtime_;
     std::shared_ptr<SimulatorEnvironment> environment_;
     std::shared_ptr<BuiltinToolRegistry> registry_;

@@ -18,9 +18,9 @@
 #include <string>
 #include <vector>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -104,7 +104,7 @@ class SimpleAdmissionGate final : public TaskAdmissionGate {
 // never advances task state itself; admission is asked through the gate.
 class ModelGateway final {
   public:
-    ModelGateway(executor::Executor &executor, ModelRouter router,
+    ModelGateway(kairo::Executor &executor, ModelRouter router,
                  std::shared_ptr<IArtifactSource> artifacts, PriceTable prices,
                  ModelGatewayConfig config = ModelGatewayConfig{});
 
@@ -131,7 +131,7 @@ class ModelGateway final {
     void emit(const ModelRequest &request, std::string type, JsonValue summary,
               EventClass classification) const;
 
-    executor::Executor &executor_;
+    kairo::Executor &executor_;
     ModelRouter router_;
     std::shared_ptr<IArtifactSource> artifacts_;
     ModelGatewayConfig config_;

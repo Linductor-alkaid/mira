@@ -1,6 +1,6 @@
 #include <mira/observation_pipeline.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -94,10 +94,10 @@ ComponentQuality worst_present_quality(const Observation &observation) {
 
 class ObservationPipeline::Impl final {
   public:
-    Impl(executor::Executor &executor_ref, ObservationPipelineConfig config_ref)
+    Impl(kairo::Executor &executor_ref, ObservationPipelineConfig config_ref)
         : executor(executor_ref), config(config_ref) {}
 
-    executor::Executor &executor;
+    kairo::Executor &executor;
     ObservationPipelineConfig config;
 
     mutable std::mutex mutex;
@@ -128,10 +128,10 @@ class ObservationPipeline::Impl final {
                 return source(request, source_context);
             });
             return PendingSlot<T>{std::move(future), std::move(cancel)};
-        } catch (const executor::CapacityExhaustedException &) {
+        } catch (const kairo::CapacityExhaustedException &) {
             ++stats.submission_rejections;
             return std::nullopt;
-        } catch (const executor::ExecutorStopping &) {
+        } catch (const kairo::ExecutorStopping &) {
             ++stats.submission_rejections;
             return std::nullopt;
         } catch (...) {
@@ -191,7 +191,7 @@ class ObservationPipeline::Impl final {
     }
 };
 
-ObservationPipeline::ObservationPipeline(executor::Executor &executor,
+ObservationPipeline::ObservationPipeline(kairo::Executor &executor,
                                          ObservationPipelineConfig config)
     : impl_(std::make_unique<Impl>(executor, config)) {}
 

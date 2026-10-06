@@ -16,7 +16,7 @@
 #include "../support/harness_support.hpp"
 #include "../support/test.hpp"
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/agent_loop.hpp>
 #include <mira/context_consolidation.hpp>
@@ -393,7 +393,7 @@ class SeamLoopHarness final {
     SeamLoopHarness(const SessionId &session, const TaskId &task,
                     ModelProfileId profile_id = ModelProfileId::generate())
         : environment_(std::make_shared<mira::test::FakeEnvironment>()) {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -419,7 +419,7 @@ class SeamLoopHarness final {
     SeamLoopHarness(const SeamLoopHarness &) = delete;
     SeamLoopHarness &operator=(const SeamLoopHarness &) = delete;
 
-    [[nodiscard]] executor::Executor &executor() { return executor_; }
+    [[nodiscard]] kairo::Executor &executor() { return executor_; }
     [[nodiscard]] ModelGateway &gateway() { return *gateway_; }
     [[nodiscard]] AgentLoopSpec &spec() { return spec_; }
     [[nodiscard]] IEventStore &events() { return *events_; }
@@ -451,7 +451,7 @@ class SeamLoopHarness final {
     }
 
   private:
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<mira::test::FakeEnvironment> environment_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;

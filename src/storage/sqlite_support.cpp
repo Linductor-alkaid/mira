@@ -231,11 +231,11 @@ Result<std::vector<std::string>> list_tables(sqlite3 *database) {
 // The Executor owns and deletes this object; it only references ChannelShared.
 namespace {
 
-class LoopWorker final : public executor::IBlockingIoWorker {
+class LoopWorker final : public kairo::IBlockingIoWorker {
   public:
     explicit LoopWorker(std::shared_ptr<ChannelShared> shared) : shared_(std::move(shared)) {}
 
-    void run(executor::StopToken stop) override {
+    void run(kairo::StopToken stop) override {
         auto &state = *shared_;
         {
             std::lock_guard lock(state.mutex);
@@ -275,7 +275,7 @@ class LoopWorker final : public executor::IBlockingIoWorker {
 
 } // namespace
 
-StoreChannel::StoreChannel(executor::Executor &executor, sqlite3 *database, Config config)
+StoreChannel::StoreChannel(kairo::Executor &executor, sqlite3 *database, Config config)
     : shared_(std::make_shared<ChannelShared>()), config_(std::move(config)) {
     static std::atomic<std::uint64_t> channel_counter{0};
     // Executor worker registration is keyed by name; every channel instance
@@ -284,7 +284,7 @@ StoreChannel::StoreChannel(executor::Executor &executor, sqlite3 *database, Conf
         config_.worker_name + "-" + std::to_string(channel_counter.fetch_add(1));
     config_.worker_name = unique_name;
     shared_->database = database;
-    executor::BlockingWorkerSpec spec;
+    kairo::BlockingWorkerSpec spec;
     spec.name = unique_name;
     spec.config.thread_name = unique_name;
     spec.worker = std::make_unique<LoopWorker>(shared_);

@@ -36,7 +36,7 @@
 #include <utility>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -64,7 +64,7 @@ using namespace mira::testing;
 
 struct PersistenceHarness final {
     std::filesystem::path root;
-    executor::Executor executor;
+    kairo::Executor executor;
     std::unique_ptr<MiraRuntime> runtime;
     std::shared_ptr<SimulatorEnvironment> environment;
     std::shared_ptr<BuiltinToolRegistry> registry;
@@ -74,7 +74,7 @@ struct PersistenceHarness final {
     std::shared_ptr<SqliteMemoryStore> store;
 
     explicit PersistenceHarness(std::filesystem::path root_dir) : root(std::move(root_dir)) {
-        executor::ExecutorConfig executor_config;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 4;
         executor_config.max_threads = 4;
         executor_config.queue_capacity = 64;
@@ -139,7 +139,7 @@ struct PersistenceHarness final {
             static_cast<void>(runtime->finish_shutdown());
             runtime.reset();
         }
-        if (executor.shutdown(true) != executor::ShutdownResult::Completed) {
+        if (executor.shutdown(true) != kairo::ShutdownResult::Completed) {
             std::cerr << "executor shutdown did not complete\n";
             std::abort();
         }
@@ -479,8 +479,8 @@ int sqlite_records_survive_owner_rebuild() {
 
     // Rebuild the whole owner stack against the same database file.
     {
-        executor::Executor executor;
-        executor::ExecutorConfig executor_config;
+        kairo::Executor executor;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 4;
         executor_config.max_threads = 4;
         executor_config.queue_capacity = 64;
@@ -570,7 +570,7 @@ int sqlite_records_survive_owner_rebuild() {
 
             MIRA_CHECK(store.close().has_value());
         }
-        MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     }
     return 0;
 }

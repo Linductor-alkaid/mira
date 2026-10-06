@@ -1,6 +1,6 @@
 #include <mira/adapters/android/android_host_adapter.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <mira/json.hpp>
 
 #include <algorithm>
@@ -413,7 +413,7 @@ Result<UiTreeSnapshot> parse_host_ui_tree(const std::vector<std::byte> &bytes,
 } // namespace
 
 Result<std::unique_ptr<AndroidHostAdapter>>
-AndroidHostAdapter::create(executor::Executor &executor, const AndroidHostAdapterOptions &options) {
+AndroidHostAdapter::create(kairo::Executor &executor, const AndroidHostAdapterOptions &options) {
     std::shared_ptr<IArtifactStore> artifacts = options.artifact_store;
     if (!artifacts) {
         artifacts = std::make_shared<MemoryArtifactStore>(options.memory_artifact_capacity_bytes);
@@ -448,7 +448,7 @@ AndroidHostAdapter::create(executor::Executor &executor, const AndroidHostAdapte
     return adapter;
 }
 
-AndroidHostAdapter::AndroidHostAdapter(executor::Executor &executor, MiraAndroidHostV1 *host,
+AndroidHostAdapter::AndroidHostAdapter(kairo::Executor &executor, MiraAndroidHostV1 *host,
                                        std::shared_ptr<IArtifactStore> artifacts)
     : bridge_(executor), host_(host), artifacts_(std::move(artifacts)) {}
 

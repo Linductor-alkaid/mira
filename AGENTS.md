@@ -36,9 +36,9 @@ SDK、JNI、Activity、AccessibilityService、MediaProjection 或同类平台 AP
 
 ## Executor 是强制基础设施
 
-Mira 必须依赖仓库中的 `third_party/executor` 管理并发任务和运行生命周期。集成时以
-`third_party/executor/include/` 的公开头文件、`third_party/executor/docs/API.md` 和
-`third_party/executor/docs/skill/executor-integration/SKILL.md` 为准。
+Mira 必须依赖仓库中的 `third_party/kairo`（上游 Executor 已于 v0.6.0 更名 kairo）管理并发任务和运行生命周期。集成时以
+`third_party/kairo/include/`（`kairo/` 头族）的公开头文件、`third_party/kairo/docs/API.md` 和
+`third_party/kairo/docs/skill/kairo-integration/SKILL.md` 为准。
 
 以下规则是强制要求：
 
@@ -71,13 +71,13 @@ Mira 必须依赖仓库中的 `third_party/executor` 管理并发任务和运行
 
 1. 先核对当前版本的公开头文件、API 文档、集成指南及相关测试，排除 API 选型错误、配置
    错误、平台限制和应用层职责。
-2. 在 `docs/executor_feedback/ledger.md` 中新增一条唯一编号的反馈记录，附上可复现证据、
+2. 在 `docs/executor_feedback/ledger.md`（kairo 反馈台账，目录名沿用历史）中新增一条唯一编号的反馈记录，附上可复现证据、
    影响范围、期望语义和可验收结果。只写“Executor 不支持”不构成有效记录。
 3. 在相关代码、测试或设计文档中引用该反馈编号。
 4. 确需临时方案时，将其限制在单一 Adapter/compatibility boundary 内，说明行为差异、风险、
    移除条件和测试覆盖。临时方案不得改变“Mira 的任务与生命周期由 Executor 管理”这一
    总体约束。
-5. 未经明确授权，不直接修改 `third_party/executor` 来掩盖集成问题，也不把项目特有策略
+5. 未经明确授权，不直接修改 `third_party/kairo` 来掩盖集成问题，也不把项目特有策略
    下沉到通用 Executor。
 
 以下情况不是 Executor 能力缺口：模型供应商协议适配、Android 手势映射、业务状态机策略、

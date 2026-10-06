@@ -2,7 +2,7 @@
 
 #include <mira/runtime_baseline.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -15,11 +15,11 @@
 
 namespace {
 
-class BlockingProbe final : public executor::IBlockingIoWorker {
+class BlockingProbe final : public kairo::IBlockingIoWorker {
   public:
     explicit BlockingProbe(std::promise<void> &started) : started_(started) {}
 
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         started_.set_value();
         std::unique_lock lock(mutex_);
         condition_.wait(lock, [&] { return stop_token.stop_requested() || wakeup_requested_; });
@@ -109,8 +109,8 @@ int main() {
     MIRA_CHECK(status.unobserved_results == 0);
 
     // A closed context settles a future with an explicit stopping error.
-    executor::Executor direct_executor;
-    executor::ExecutorConfig direct_config;
+    kairo::Executor direct_executor;
+    kairo::ExecutorConfig direct_config;
     direct_config.min_threads = 1;
     direct_config.max_threads = 1;
     direct_config.queue_capacity = 1;
@@ -126,7 +126,7 @@ int main() {
     bool saw_capacity = false;
     try {
         static_cast<void>(capacity_rejection.get());
-    } catch (const executor::CapacityExhaustedException &) {
+    } catch (const kairo::CapacityExhaustedException &) {
         saw_capacity = true;
     }
     MIRA_CHECK(saw_capacity);
@@ -134,13 +134,13 @@ int main() {
     admission_blocker.get();
     MIRA_CHECK(direct_executor.get_in_flight_submissions() == 0);
 
-    executor::SerialExecutionContext stopped_context;
+    kairo::SerialExecutionContext stopped_context;
     stopped_context.shutdown();
     auto stopped_future = direct_executor.submit_on(stopped_context, [] { return 1; });
     bool saw_context_stopped = false;
     try {
         static_cast<void>(stopped_future.get());
-    } catch (const executor::ExecutorStopping &) {
+    } catch (const kairo::ExecutorStopping &) {
         saw_context_stopped = true;
     }
     MIRA_CHECK(saw_context_stopped);
@@ -149,9 +149,9 @@ int main() {
     // before final facade shutdown; default-pool idle is not used as proof.
     std::promise<void> worker_started;
     auto worker_started_future = worker_started.get_future();
-    executor::BlockingIoConfig io_config;
+    kairo::BlockingIoConfig io_config;
     io_config.thread_name = "mira-m0-io";
-    executor::BlockingWorkerSpec worker_spec;
+    kairo::BlockingWorkerSpec worker_spec;
     worker_spec.name = "mira-m0-io";
     worker_spec.config = io_config;
     worker_spec.worker = std::make_unique<BlockingProbe>(worker_started);
@@ -163,7 +163,7 @@ int main() {
     MIRA_CHECK(!worker.status().is_running);
 
     std::atomic<std::uint64_t> realtime_cycles{0};
-    executor::RealtimeThreadConfig realtime_config;
+    kairo::RealtimeThreadConfig realtime_config;
     realtime_config.thread_name = "mira-m0-rt";
     realtime_config.cycle_period_ns = 1'000'000;
     realtime_config.cycle_callback = [&] {
@@ -179,24 +179,24 @@ int main() {
     MIRA_CHECK(realtime_cycles.load(std::memory_order_relaxed) > 0);
     direct_executor.stop_realtime_task("mira-m0-rt");
 
-    auto delayed = direct_executor.submit_delayed_with_handle(10'000, [] { return 7; });
-    MIRA_CHECK(delayed.handle.cancel() == executor::TimerOperationResult::CancelledBeforeDispatch);
+    auto delayed = direct_executor.submit_delayed(10'000, [] { return 7; });
+    MIRA_CHECK(delayed.handle.cancel() == kairo::TimerOperationResult::CancelledBeforeDispatch);
     bool saw_timer_cancelled = false;
     try {
         static_cast<void>(delayed.future.get());
-    } catch (const executor::TaskCancelled &) {
+    } catch (const kairo::TaskCancelled &) {
         saw_timer_cancelled = true;
     }
     MIRA_CHECK(saw_timer_cancelled);
-    MIRA_CHECK(direct_executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(direct_executor.shutdown(true) == kairo::ShutdownResult::Completed);
 
     // Queued cancellation, deterministically: the occupier pins the only
     // worker, so the victim is provably still queued when the cancel request
     // lands. The executor contract then guarantees the victim never runs and
     // its future settles with TaskCancelled -- the same semantics the runtime
     // baseline maps to a Cancelled command result.
-    executor::Executor queued_cancel_executor;
-    executor::ExecutorConfig queued_cancel_config;
+    kairo::Executor queued_cancel_executor;
+    kairo::ExecutorConfig queued_cancel_config;
     queued_cancel_config.min_threads = 1;
     queued_cancel_config.max_threads = 1;
     queued_cancel_config.queue_capacity = 2;
@@ -215,18 +215,18 @@ int main() {
 
     auto victim = queued_cancel_executor.submit_with_handle([] { return 1; });
     MIRA_CHECK(queued_cancel_executor.request_task_cancel(victim.handle).result ==
-               executor::TaskCancellationResult::RequestedBeforeStart);
+               kairo::TaskCancellationResult::RequestedBeforeStart);
     occupier_release.set_value();
     MIRA_CHECK(occupier.future.wait_for(2s) == std::future_status::ready);
     bool victim_cancelled = false;
     try {
         MIRA_CHECK(victim.future.wait_for(2s) == std::future_status::ready);
         static_cast<void>(victim.future.get());
-    } catch (const executor::TaskCancelled &) {
+    } catch (const kairo::TaskCancelled &) {
         victim_cancelled = true;
     }
     MIRA_CHECK(victim_cancelled);
     MIRA_CHECK(queued_cancel_executor.get_in_flight_submissions() == 0);
-    MIRA_CHECK(queued_cancel_executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(queued_cancel_executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }

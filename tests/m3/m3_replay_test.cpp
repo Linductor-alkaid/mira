@@ -1,7 +1,7 @@
 #include "support/m3_support.hpp"
 
 #include "support/test.hpp"
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <mira/adapters/simulator/simulator_environment.hpp>
 #include <mira/agent_loop.hpp>
@@ -20,7 +20,7 @@ using namespace mira::testing;
 class ReplayFixture final {
   public:
     ReplayFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
@@ -35,7 +35,7 @@ class ReplayFixture final {
     }
     ~ReplayFixture() { (void)executor_.shutdown(true); }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::shared_ptr<ModelProfile> profile_;
     ModelRouter router_;
     std::unique_ptr<ModelGateway> gateway_;

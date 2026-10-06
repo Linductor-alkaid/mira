@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <random>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -26,7 +26,7 @@ std::filesystem::path temp_dir() {
 
 struct Fixture final {
     explicit Fixture(std::filesystem::path path) {
-        executor_.initialize(executor::ExecutorConfig{});
+        executor_.initialize(kairo::ExecutorConfig{});
         SqliteMemoryStoreOptions options;
         options.path = std::move(path);
         auto opened = SqliteMemoryStore::open(executor_, options);
@@ -38,7 +38,7 @@ struct Fixture final {
         }
         (void)executor_.shutdown(true);
     }
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::unique_ptr<SqliteMemoryStore> store;
 };
 

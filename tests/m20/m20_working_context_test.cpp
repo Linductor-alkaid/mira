@@ -15,7 +15,7 @@
 #include <mira/context_memory_supervisor.hpp>
 #include <mira/context_working_context.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <string>
@@ -499,8 +499,8 @@ int items_from_working_context_mapping() {
 // ---------------------------------------------------------------------------
 
 int supervisor_routes_working_context_commits() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(90);
         const TaskId task = task_from_seed(91);
@@ -566,7 +566,7 @@ int supervisor_routes_working_context_commits() {
         }
         MIRA_CHECK(store.count(session).value() <= 2);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

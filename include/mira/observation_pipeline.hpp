@@ -10,9 +10,9 @@
 #include <functional>
 #include <memory>
 
-namespace executor {
+namespace kairo {
 class Executor;
-} // namespace executor
+} // namespace kairo
 
 namespace mira {
 
@@ -57,8 +57,7 @@ struct ObservationPipelineStats final {
 // a platform environment can.
 class ObservationPipeline final {
   public:
-    explicit ObservationPipeline(executor::Executor &executor,
-                                 ObservationPipelineConfig config = {});
+    explicit ObservationPipeline(kairo::Executor &executor, ObservationPipelineConfig config = {});
     ~ObservationPipeline();
 
     ObservationPipeline(const ObservationPipeline &) = delete;

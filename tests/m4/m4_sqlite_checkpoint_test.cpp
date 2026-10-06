@@ -11,7 +11,7 @@
 #include <string>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -53,8 +53,8 @@ std::filesystem::path temp_dir() {
 }
 
 int open_put_latest_roundtrip() {
-    executor::Executor exec;
-    executor::ExecutorConfig config;
+    kairo::Executor exec;
+    kairo::ExecutorConfig config;
     MIRA_CHECK(exec.initialize(config));
     {
         SqliteStoreOptions options;
@@ -96,13 +96,13 @@ int open_put_latest_roundtrip() {
         MIRA_CHECK(again.value()->through_event_sequence == 20);
         MIRA_CHECK(reopened.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int invalid_input_rejected() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteStoreOptions options;
         options.path = temp_dir() / "checkpoint-invalid.db";
@@ -121,13 +121,13 @@ int invalid_input_rejected() {
         MIRA_CHECK(!bad.has_value());
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int garbage_file_fails_without_wipe() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const auto path = temp_dir() / "checkpoint-garbage.db";
         {
@@ -142,13 +142,13 @@ int garbage_file_fails_without_wipe() {
         MIRA_CHECK(std::filesystem::file_size(path) > 0);
         std::filesystem::remove(path);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int future_schema_opens_read_only_diagnostic() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const auto path = temp_dir() / "checkpoint-future.db";
         const auto task = TaskId::generate();
@@ -192,13 +192,13 @@ int future_schema_opens_read_only_diagnostic() {
         MIRA_CHECK(write.error().code == ErrorCode::InvalidState);
         MIRA_CHECK(ro.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int erase_task_removes_and_logs() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteStoreOptions options;
         options.path = temp_dir() / "checkpoint-erase.db";
@@ -214,13 +214,13 @@ int erase_task_removes_and_logs() {
         MIRA_CHECK(after.has_value() && !after.value().has_value());
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int bounded_queue_rejects_and_settles() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteStoreOptions options;
         options.path = temp_dir() / "checkpoint-bounded.db";
@@ -262,13 +262,13 @@ int bounded_queue_rejects_and_settles() {
         MIRA_CHECK(!rejected.has_value());
         MIRA_CHECK(rejected.error().code == ErrorCode::Unavailable);
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int concurrent_puts_settle_through_single_writer() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteStoreOptions options;
         options.path = temp_dir() / "checkpoint-concurrent.db";
@@ -294,13 +294,13 @@ int concurrent_puts_settle_through_single_writer() {
         MIRA_CHECK(latest.value()->through_event_sequence == 24);
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
 int per_task_cap_prunes_oldest() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         SqliteStoreOptions options;
         options.path = temp_dir() / "checkpoint-cap.db";
@@ -319,7 +319,7 @@ int per_task_cap_prunes_oldest() {
         MIRA_CHECK(earliest.value()->through_event_sequence == 5);
         MIRA_CHECK(store.value()->close().has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

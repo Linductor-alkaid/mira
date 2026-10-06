@@ -1,6 +1,6 @@
 #include <mira/runtime.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <array>
 #include <atomic>
@@ -135,8 +135,8 @@ class MiraRuntime::Impl final {
 
     RuntimeConfig config;
     RuntimeId runtime_id;
-    executor::Executor executor;
-    executor::SerialExecutionContext control_context;
+    kairo::Executor executor;
+    kairo::SerialExecutionContext control_context;
     std::atomic<RuntimeState> runtime_state{RuntimeState::Constructed};
     std::atomic<std::uint64_t> control_sequence{0};
 
@@ -203,12 +203,12 @@ class MiraRuntime::Impl final {
                 std::future_status::ready) {
                 try {
                     submission_future.get();
-                } catch (const executor::CapacityExhaustedException &exception) {
+                } catch (const kairo::CapacityExhaustedException &exception) {
                     auto failure = make_error(ErrorCode::ResourceExhausted, exception.what(), true);
                     set_receipt(handle_state, kind, ReceiptStatus::Rejected, 0, failure);
                     set_outcome(handle_state, SettlementStatus::Failed, failure);
                     return failure;
-                } catch (const executor::ExecutorStopping &exception) {
+                } catch (const kairo::ExecutorStopping &exception) {
                     auto failure = make_error(ErrorCode::Unavailable, exception.what(), true);
                     set_receipt(handle_state, kind, ReceiptStatus::Rejected, 0, failure);
                     set_outcome(handle_state, SettlementStatus::Failed, failure);
@@ -379,7 +379,7 @@ Result<void> MiraRuntime::initialize() {
         impl_->runtime_state.store(RuntimeState::Failed, std::memory_order_release);
         return make_error(ErrorCode::InvalidArgument, "runtime limits must be positive");
     }
-    executor::ExecutorConfig executor_config;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = impl_->config.worker_threads;
     executor_config.max_threads = impl_->config.worker_threads;
     executor_config.queue_capacity = impl_->config.executor_queue_capacity;
@@ -781,7 +781,7 @@ ShutdownReport MiraRuntime::finish_shutdown() {
         }
     }
     const auto shutdown_result = impl_->executor.shutdown(true);
-    const auto clean = shutdown_result == executor::ShutdownResult::Completed;
+    const auto clean = shutdown_result == kairo::ShutdownResult::Completed;
     impl_->runtime_state.store(RuntimeState::Stopped, std::memory_order_release);
     return {clean, RuntimeState::Stopped, 0,
             clean ? "runtime stopped" : "executor shutdown requested from worker"};

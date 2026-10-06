@@ -7,7 +7,7 @@
 #include <mira/conversation_log.hpp>
 #include <mira/memory_contracts.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -722,8 +722,8 @@ int candidate_json_round_trips() {
 // ---------------------------------------------------------------------------
 
 int supervisor_routes_and_closes_retrieval() {
-    executor::Executor exec;
-    MIRA_CHECK(exec.initialize(executor::ExecutorConfig{}));
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
     {
         const SessionId session = session_from_seed(17);
         InMemoryContextIndex index;
@@ -751,7 +751,7 @@ int supervisor_routes_and_closes_retrieval() {
         const auto rejection = rejected.get();
         MIRA_CHECK(!rejection.has_value());
     }
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 

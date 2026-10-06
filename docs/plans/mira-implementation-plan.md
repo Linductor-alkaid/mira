@@ -1243,6 +1243,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 | [DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md) | Agent Loop 的 Working Context 快照供给缝与宿主编排边界（宿主集成轮：可选供给依赖 + `build_request` 经 Layer 0 转换注入已提交快照（身份对齐/有界/降级）；Loop 零自动化，W3/W4/W5 宿主显式编排；自动 fork-merge/自动晋升/模型介导合并须各自上位决策） | Accepted（实现已由 [M25](m25-host-integration-round.md) 交付关闭，PR #69） | M25（宿主集成轮） |
 | [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md) | 跨投影实体词表对齐——ElementRef / App Model state_id / toolref / L0 事件引用的共享词表 v1（DEC-038/DEC-041 共同立项前置；四组既有契约实体集为基线，Memory `subject_id` 与 T1 `entity_key` 以映射规则登记；词表唯一承载 [实体词表设计](../design/entity_vocabulary_design.md)） | Accepted | M27 |
 | [DEC-047](../decisions/DEC-047-conversational-loop-and-canonical-tool-parts.md) | 无观察对话循环与规范工具回填契约（Issue #73 / MIRA-20261004-001；`ToolCallPart`/`ToolResultPart` + `make_tool_*_item` 进 `ModelRequest.input`、两 dialect 原生线格式、`parse_decision` Text 模式工具提案语义、公开 `ConversationLoop` 文本回答终态；AgentLoop 设备闭环语义不变） | Accepted | [维护轮 2026-10](maintenance-2026-10-mirage-feedback-round2.md) |
+| [DEC-048](../decisions/DEC-048-kairo-0.6.0-migration.md) | 随附并发库升级 kairo v0.6.0（上游 Executor 更名 + 兼容层清理窗口；submodule `third_party/kairo`、全树 `kairo::`/`<kairo/...>` 迁移、6 处 API 适配；吸收 0.5.2/0.5.3 评审修复；Scheduling Runtime 暂不接入；EXE-20260922-001 不随升级关闭） | Accepted | [维护轮 2026-10（kairo 迁移）](maintenance-2026-10-kairo-migration.md) |
 
 “Accepted”表示架构方向已生效，不表示对应实现工作项已经完成。具体实现仍由里程碑复选框和
 验证记录证明。DEC-006 与 DEC-009 的架构方向保留；其落地里程碑（M5、M7）分别被 DEC-011

@@ -135,7 +135,7 @@ class HostGate final {
 // Drives the main-session closed loop. Returns the parent requests, the
 // store and the curator stats through out-params for the assertions.
 int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnvironment> &environment,
-                             executor::Executor &executor, IWorkingContextStore &store,
+                             kairo::Executor &executor, IWorkingContextStore &store,
                              FaithfulMemory &memory, MemoryConsolidator &consolidator) {
     const auto session = runtime.open_session(environment);
     MIRA_CHECK(session);
@@ -407,7 +407,7 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
 
 int seam_degradation_visible_in_closed_loop(MiraRuntime &runtime,
                                             const std::shared_ptr<IEnvironment> &environment,
-                                            executor::Executor &executor,
+                                            kairo::Executor &executor,
                                             IWorkingContextStore &store) {
     const auto session = runtime.open_session(environment);
     MIRA_CHECK(session);
@@ -492,8 +492,8 @@ int seam_degradation_visible_in_closed_loop(MiraRuntime &runtime,
 } // namespace
 
 int main() {
-    executor::Executor executor;
-    executor::ExecutorConfig executor_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = 2;
     executor_config.max_threads = 4;
     executor_config.queue_capacity = 64;
@@ -521,6 +521,6 @@ int main() {
     const auto shutdown = runtime.request_shutdown();
     MIRA_CHECK(shutdown && shutdown.value().outcome(std::chrono::seconds(2)));
     MIRA_CHECK(runtime.finish_shutdown().clean);
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }

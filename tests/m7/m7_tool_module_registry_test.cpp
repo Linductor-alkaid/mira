@@ -11,7 +11,7 @@
 #include <mira/tool_module.hpp>
 #include <mira/tool_module_registry.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <cstddef>
@@ -1613,8 +1613,8 @@ int g5_submit_verification_settlement_matrix() {
     const Hash builtin_digest = tool_module_manifest_digest(builtin);
     const ModuleTrustConfig builtin_trust = builtin_trust_for({builtin});
 
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 2;
     config.queue_capacity = 64;
@@ -1673,7 +1673,7 @@ int g5_submit_verification_settlement_matrix() {
         MIRA_CHECK(thrower.calls_.load() == 1);
     }
 
-    MIRA_CHECK(executor.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(executor.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
 
@@ -1686,12 +1686,12 @@ int g5_submission_rejection_converts_to_error_result() {
     // stopped or uninitialized submission path as a plain runtime_error, which
     // submit_module_verification must convert to Unavailable with no future.
     {
-        executor::Executor stopped;
-        executor::ExecutorConfig config;
+        kairo::Executor stopped;
+        kairo::ExecutorConfig config;
         config.min_threads = 1;
         config.max_threads = 1;
         MIRA_CHECK(stopped.initialize(config));
-        MIRA_CHECK(stopped.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(stopped.shutdown(true) == kairo::ShutdownResult::Completed);
 
         auto rejected = submit_module_verification(stopped, builtin, trust);
         MIRA_CHECK(!rejected.has_value()); // no future escapes
@@ -1706,8 +1706,8 @@ int g5_submission_rejection_converts_to_error_result() {
     // ResourceExhausted error result — never an escaping exception. A facade
     // that instead rejects synchronously must use the same error code.
     {
-        executor::Executor bounded;
-        executor::ExecutorConfig config;
+        kairo::Executor bounded;
+        kairo::ExecutorConfig config;
         config.min_threads = 1;
         config.max_threads = 1;
         config.queue_capacity = 4;
@@ -1737,7 +1737,7 @@ int g5_submission_rejection_converts_to_error_result() {
 
         gate.set_value();
         blocker.get(); // consume the blocker future before shutdown
-        MIRA_CHECK(bounded.shutdown(true) == executor::ShutdownResult::Completed);
+        MIRA_CHECK(bounded.shutdown(true) == kairo::ShutdownResult::Completed);
     }
     return 0;
 }

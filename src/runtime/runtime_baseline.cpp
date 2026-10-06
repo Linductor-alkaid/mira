@@ -1,6 +1,6 @@
 #include <mira/runtime_baseline.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -32,9 +32,9 @@ BaselineResult consume_result(const std::shared_future<BaselineResult> &future,
     }
     try {
         return future.get();
-    } catch (const executor::TaskCancelled &error) {
+    } catch (const kairo::TaskCancelled &error) {
         return make_result(BaselineResultCode::Cancelled, command_id, error.what());
-    } catch (const executor::ExecutorStopping &error) {
+    } catch (const kairo::ExecutorStopping &error) {
         return make_result(BaselineResultCode::ContextStopped, command_id, error.what());
     } catch (const std::exception &error) {
         return make_result(BaselineResultCode::Failed, command_id, error.what());
@@ -51,7 +51,7 @@ class RuntimeBaseline::Impl final {
     explicit Impl(BaselineRuntimeConfig runtime_config) : config(runtime_config) {}
 
     struct CommandEntry final {
-        executor::TaskHandle handle;
+        kairo::TaskHandle handle;
         std::shared_future<BaselineResult> future;
         bool observed = false;
     };
@@ -104,8 +104,8 @@ class RuntimeBaseline::Impl final {
     }
 
     BaselineRuntimeConfig config;
-    executor::Executor executor;
-    executor::SerialExecutionContext control_context;
+    kairo::Executor executor;
+    kairo::SerialExecutionContext control_context;
 
     mutable std::mutex entries_mutex;
     std::unordered_map<std::uint64_t, CommandEntry> entries;
@@ -142,7 +142,7 @@ bool RuntimeBaseline::initialize() {
         return false;
     }
 
-    executor::ExecutorConfig executor_config;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = impl_->config.worker_threads;
     executor_config.max_threads = impl_->config.worker_threads;
     executor_config.queue_capacity = impl_->config.executor_queue_capacity;
@@ -150,7 +150,7 @@ bool RuntimeBaseline::initialize() {
     executor_config.task_graph_retention_capacity = impl_->config.max_in_flight;
     executor_config.max_in_flight_tasks = impl_->config.max_in_flight;
     impl_->executor.set_cancellation_registry_capacity(impl_->config.max_in_flight + 1);
-    const auto initialized = impl_->executor.initialize_ex(executor_config);
+    const auto initialized = impl_->executor.initialize(executor_config);
     if (!initialized.ok) {
         impl_->state.store(BaselineRuntimeState::Failed);
         return false;
@@ -191,12 +191,12 @@ BaselineSubmission RuntimeBaseline::submit(BaselineCommand command) {
         if (result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
             try {
                 static_cast<void>(result_future.get());
-            } catch (const executor::CapacityExhaustedException &error) {
+            } catch (const kairo::CapacityExhaustedException &error) {
                 submission.rejection =
                     make_result(BaselineResultCode::Rejected, command.command_id, error.what());
                 impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
                 return submission;
-            } catch (const executor::ExecutorStopping &error) {
+            } catch (const kairo::ExecutorStopping &error) {
                 submission.rejection =
                     make_result(BaselineResultCode::Rejected, command.command_id, error.what());
                 impl_->admission_rejections.fetch_add(1, std::memory_order_relaxed);
@@ -242,7 +242,7 @@ BaselineResult RuntimeBaseline::wait(std::uint64_t command_id, std::chrono::mill
 }
 
 BaselineResult RuntimeBaseline::cancel(std::uint64_t command_id) {
-    executor::TaskHandle handle;
+    kairo::TaskHandle handle;
     {
         std::lock_guard lock(impl_->entries_mutex);
         const auto found = impl_->entries.find(command_id);
@@ -252,18 +252,17 @@ BaselineResult RuntimeBaseline::cancel(std::uint64_t command_id) {
         handle = found->second.handle;
     }
     const auto response = impl_->executor.request_task_cancel(handle);
-    if (response.result == executor::TaskCancellationResult::RequestedBeforeStart ||
-        response.result == executor::TaskCancellationResult::RequestedRunning ||
-        response.result == executor::TaskCancellationResult::AlreadyRequested) {
+    if (response.result == kairo::TaskCancellationResult::RequestedBeforeStart ||
+        response.result == kairo::TaskCancellationResult::RequestedRunning ||
+        response.result == kairo::TaskCancellationResult::AlreadyRequested) {
         return make_result(BaselineResultCode::Cancelled, command_id,
-                           executor::to_string(response.result));
+                           kairo::to_string(response.result));
     }
-    if (response.result == executor::TaskCancellationResult::AlreadyCompleted) {
+    if (response.result == kairo::TaskCancellationResult::AlreadyCompleted) {
         return make_result(BaselineResultCode::Applied, command_id,
-                           executor::to_string(response.result));
+                           kairo::to_string(response.result));
     }
-    return make_result(BaselineResultCode::Rejected, command_id,
-                       executor::to_string(response.result));
+    return make_result(BaselineResultCode::Rejected, command_id, kairo::to_string(response.result));
 }
 
 bool RuntimeBaseline::request_shutdown() {

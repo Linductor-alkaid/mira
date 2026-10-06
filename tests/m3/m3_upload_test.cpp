@@ -4,7 +4,7 @@
 #include <mira/model_provider.hpp>
 #include <mira/model_upload.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <memory>
@@ -19,17 +19,17 @@ using namespace mira::testing;
 class ExecutorFixture final {
   public:
     ExecutorFixture() {
-        executor::ExecutorConfig config;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.queue_capacity = 32;
         executor_.initialize(config);
     }
     ~ExecutorFixture() { static_cast<void>(executor_.shutdown(true)); }
-    executor::Executor &executor() noexcept { return executor_; }
+    kairo::Executor &executor() noexcept { return executor_; }
 
   private:
-    executor::Executor executor_;
+    kairo::Executor executor_;
 };
 
 class FixedArtifactSource final : public IArtifactSource {
@@ -163,7 +163,7 @@ int delayed_cleanup_executes_on_executor_timer() {
     auto scheduled = remote->retire(file, std::chrono::seconds{1});
     MIRA_CHECK(scheduled.has_value());
     auto guard = fixture.executor().submit_delayed(1'200, [] {});
-    guard.get();
+    guard.future.get();
     const auto audit = remote->audit();
     MIRA_CHECK(audit.size() == 2);
     MIRA_CHECK(audit[0].kind == RemoteFileAuditKind::DeleteScheduled);

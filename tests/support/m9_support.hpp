@@ -12,7 +12,7 @@
 #include <mira/tool_executor.hpp>
 #include <mira/workflow_runtime.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -39,7 +39,7 @@ using mira::adapters::simulator::SimulatorSetup;
 class WorkflowFixture final {
   public:
     WorkflowFixture() {
-        executor::ExecutorConfig executor_config;
+        kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 4;
         executor_config.max_threads = 4;
         executor_config.queue_capacity = 64;
@@ -74,7 +74,7 @@ class WorkflowFixture final {
         return workflow;
     }
 
-    executor::Executor executor_;
+    kairo::Executor executor_;
     std::unique_ptr<MiraRuntime> runtime_;
     std::shared_ptr<SimulatorEnvironment> environment_;
     std::shared_ptr<BuiltinToolRegistry> registry_;

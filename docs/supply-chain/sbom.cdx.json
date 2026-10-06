@@ -14,18 +14,30 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "pkg:github/Linductor-alkaid/executor@2ae4fc8985af8962e08e3282a9330de5445d0d10",
-      "name": "executor",
-      "version": "2ae4fc8985af8962e08e3282a9330de5445d0d10",
-      "licenses": [{ "license": { "id": "MIT" } }],
-      "purl": "pkg:github/Linductor-alkaid/executor@2ae4fc8985af8962e08e3282a9330de5445d0d10"
+      "bom-ref": "pkg:github/Linductor-alkaid/kairo@ef821dcca05bbf9038409a2ff9acc5ed729936bc",
+      "name": "kairo",
+      "version": "ef821dcca05bbf9038409a2ff9acc5ed729936bc",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:github/Linductor-alkaid/kairo@ef821dcca05bbf9038409a2ff9acc5ed729936bc"
     },
     {
       "type": "library",
       "bom-ref": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5",
       "name": "mbedtls",
       "version": "068ff080b369adfac81509f9b57b2afabaf82dc5",
-      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
       "purl": "pkg:github/Mbed-TLS/mbedtls@068ff080b369adfac81509f9b57b2afabaf82dc5"
     },
     {
@@ -33,9 +45,18 @@
       "bom-ref": "pkg:generic/sqlite@3.53.4",
       "name": "sqlite",
       "version": "3.53.4",
-      "licenses": [{ "license": { "name": "Public Domain" } }],
+      "licenses": [
+        {
+          "license": {
+            "name": "Public Domain"
+          }
+        }
+      ],
       "hashes": [
-        { "alg": "SHA-256", "content": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d" }
+        {
+          "alg": "SHA-256",
+          "content": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d"
+        }
       ],
       "purl": "pkg:generic/sqlite@3.53.4"
     }

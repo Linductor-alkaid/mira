@@ -32,7 +32,7 @@
 #include <mira/json.hpp>
 #include <mira/model_provider.hpp>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -986,7 +986,7 @@ struct ChainRun final {
 };
 
 [[nodiscard]] ChainRun run_auto_chain(const Dataset &dataset, const FrozenConfig &config,
-                                      ScriptedCuratorProvider &provider, executor::Executor &exec,
+                                      ScriptedCuratorProvider &provider, kairo::Executor &exec,
                                       Counters &counters) {
     ChainRun run;
     run.committed_json.resize(dataset.sessions.size());
@@ -1118,7 +1118,7 @@ struct ChainRun final {
 // ---------------------------------------------------------------------------
 
 void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
-                      ScriptedCuratorProvider &provider, executor::Executor &exec,
+                      ScriptedCuratorProvider &provider, kairo::Executor &exec,
                       Counters &counters) {
     CuratorGate gate;
     provider.arm_gate(gate);
@@ -1206,8 +1206,7 @@ void run_absorb_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
-                     ScriptedCuratorProvider &provider, executor::Executor &exec,
-                     Counters &counters) {
+                     ScriptedCuratorProvider &provider, kairo::Executor &exec, Counters &counters) {
     for (std::size_t session_index = 0; session_index < dataset.sessions.size(); ++session_index) {
         const auto &eval_session = dataset.sessions[session_index];
         const auto identity = make_identity(eval_session, config, config.environment_epoch);
@@ -1386,7 +1385,7 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
-                       ScriptedCuratorProvider &provider, executor::Executor &exec,
+                       ScriptedCuratorProvider &provider, kairo::Executor &exec,
                        Counters &counters) {
     struct ClassCase final {
         const char *name;
@@ -1548,7 +1547,7 @@ void run_failure_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_previous_round(const Dataset &dataset, const FrozenConfig &config,
-                        ScriptedCuratorProvider &provider, executor::Executor &exec,
+                        ScriptedCuratorProvider &provider, kairo::Executor &exec,
                         Counters &counters) {
     InMemoryWorkingContextStore store;
     ProviderContextCurator curator(provider);
@@ -1633,7 +1632,7 @@ void run_previous_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_shutdown_round(const Dataset &dataset, const FrozenConfig &config,
-                        ScriptedCuratorProvider &provider, executor::Executor &exec,
+                        ScriptedCuratorProvider &provider, kairo::Executor &exec,
                         Counters &counters) {
     CuratorGate gate;
     provider.arm_gate(gate);
@@ -1729,7 +1728,7 @@ void run_shutdown_round(const Dataset &dataset, const FrozenConfig &config,
 // ---------------------------------------------------------------------------
 
 void run_rejection_round(const Dataset &dataset, const FrozenConfig &config,
-                         ScriptedCuratorProvider &provider, executor::Executor &exec,
+                         ScriptedCuratorProvider &provider, kairo::Executor &exec,
                          Counters &counters) {
     InMemoryWorkingContextStore store;
     ProviderContextCurator curator(provider);
@@ -1856,8 +1855,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    executor::Executor exec;
-    if (!exec.initialize(executor::ExecutorConfig{})) {
+    kairo::Executor exec;
+    if (!exec.initialize(kairo::ExecutorConfig{})) {
         std::cerr << "executor initialization failed\n";
         return 2;
     }
@@ -2110,7 +2109,7 @@ int main(int argc, char **argv) {
         file << json << '\n';
     }
 
-    MIRA_CHECK(exec.shutdown(true) == executor::ShutdownResult::Completed);
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
     if (!gates_ok) {
         for (const auto &message : failures) {
             std::cerr << "gate failure: " << message << '\n';

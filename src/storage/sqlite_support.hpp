@@ -20,8 +20,8 @@
 #include <thread>
 #include <utility>
 
-#include <executor/blocking_io.hpp>
-#include <executor/executor.hpp>
+#include <kairo/blocking_io.hpp>
+#include <kairo/executor.hpp>
 
 namespace mira::storage {
 
@@ -178,7 +178,7 @@ class StoreChannel final {
 
     // The Executor must outlive the channel; the database must outlive every
     // accepted operation (close it after close()).
-    StoreChannel(executor::Executor &executor, sqlite3 *database, Config config);
+    StoreChannel(kairo::Executor &executor, sqlite3 *database, Config config);
     ~StoreChannel();
 
     StoreChannel(const StoreChannel &) = delete;
@@ -207,7 +207,7 @@ class StoreChannel final {
 
     std::shared_ptr<ChannelShared> shared_;
     Config config_;
-    std::optional<executor::WorkerHandle> handle_;
+    std::optional<kairo::WorkerHandle> handle_;
 };
 
 [[nodiscard]] inline Error channel_error(const char *message, ErrorCode code) {

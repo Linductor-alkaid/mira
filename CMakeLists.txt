@@ -44,12 +44,12 @@ endif()
 
 # Executor is pinned as a git submodule. Mira owns its lifecycle but does not
 # modify its build defaults globally or build its upstream tests here.
-set(EXECUTOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_ENABLE_GPU OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_ENABLE_CUDA OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_ENABLE_OPENCL OFF CACHE BOOL "" FORCE)
-add_subdirectory(third_party/executor)
+set(KAIRO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(KAIRO_ENABLE_GPU OFF CACHE BOOL "" FORCE)
+set(KAIRO_ENABLE_CUDA OFF CACHE BOOL "" FORCE)
+set(KAIRO_ENABLE_OPENCL OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/kairo)
 
 if(MIRA_WITH_MBEDTLS)
     set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -65,16 +65,16 @@ endif()
 add_subdirectory(third_party/sqlite)
 
 if(MIRA_ENABLE_ASAN)
-    target_compile_options(executor PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(executor PRIVATE -fsanitize=address)
+    target_compile_options(kairo PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(kairo PRIVATE -fsanitize=address)
 endif()
 if(MIRA_ENABLE_UBSAN)
-    target_compile_options(executor PRIVATE -fsanitize=undefined -fno-omit-frame-pointer)
-    target_link_options(executor PRIVATE -fsanitize=undefined)
+    target_compile_options(kairo PRIVATE -fsanitize=undefined -fno-omit-frame-pointer)
+    target_link_options(kairo PRIVATE -fsanitize=undefined)
 endif()
 if(MIRA_ENABLE_TSAN)
-    target_compile_options(executor PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
-    target_link_options(executor PRIVATE -fsanitize=thread)
+    target_compile_options(kairo PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(kairo PRIVATE -fsanitize=thread)
 endif()
 
 add_library(mira_core
@@ -167,9 +167,9 @@ target_include_directories(mira_workflow
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(mira_workflow PUBLIC Mira::core PRIVATE executor::executor)
+target_link_libraries(mira_workflow PUBLIC Mira::core PRIVATE kairo::kairo)
 target_include_directories(mira_workflow SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
 )
 target_compile_features(mira_workflow PUBLIC cxx_std_20)
 mira_enable_warnings(mira_workflow)
@@ -201,10 +201,10 @@ target_include_directories(mira_state_store
 )
 target_link_libraries(mira_state_store
     PUBLIC Mira::core
-    PRIVATE Mira::sqlite3 executor::executor
+    PRIVATE Mira::sqlite3 kairo::kairo
 )
 target_include_directories(mira_state_store SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
 )
 target_compile_features(mira_state_store PUBLIC cxx_std_20)
 mira_enable_warnings(mira_state_store)
@@ -222,9 +222,9 @@ target_include_directories(mira_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(mira_core PRIVATE executor::executor)
+target_link_libraries(mira_core PRIVATE kairo::kairo)
 target_include_directories(mira_core SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
 )
 target_compile_features(mira_core PUBLIC cxx_std_20)
 mira_enable_warnings(mira_core)
@@ -275,9 +275,9 @@ target_include_directories(mira_android_adapter
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_link_libraries(mira_android_adapter PUBLIC Mira::core)
-target_link_libraries(mira_android_adapter PRIVATE executor::executor)
+target_link_libraries(mira_android_adapter PRIVATE kairo::kairo)
 target_include_directories(mira_android_adapter SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
 )
 target_compile_features(mira_android_adapter PUBLIC cxx_std_20)
 mira_enable_warnings(mira_android_adapter)
@@ -304,10 +304,10 @@ target_include_directories(mira_net_transport
 )
 target_link_libraries(mira_net_transport
     PUBLIC Mira::core
-    PRIVATE executor::executor
+    PRIVATE kairo::kairo
 )
 target_include_directories(mira_net_transport SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
 )
 target_compile_features(mira_net_transport PUBLIC cxx_std_20)
 mira_enable_warnings(mira_net_transport)
@@ -342,10 +342,10 @@ if(MIRA_WITH_OPENSSL AND UNIX AND NOT ANDROID)
         )
         target_link_libraries(mira_openssl_transport
             PUBLIC Mira::core
-            PRIVATE OpenSSL::SSL executor::executor
+            PRIVATE OpenSSL::SSL kairo::kairo
         )
         target_include_directories(mira_openssl_transport SYSTEM PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include"
         )
         target_compile_features(mira_openssl_transport PUBLIC cxx_std_20)
         mira_enable_warnings(mira_openssl_transport)
@@ -422,9 +422,9 @@ endif()
 # Stateful agent beta example (M4-18): durable stores are in-tree targets.
 add_executable(mira_stateful_consumer examples/stateful_agent_consumer.cpp)
 target_link_libraries(mira_stateful_consumer PRIVATE
-    Mira::core Mira::state_store executor::executor)
+    Mira::core Mira::state_store kairo::kairo)
 target_include_directories(mira_stateful_consumer SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include")
 mira_enable_warnings(mira_stateful_consumer)
 mira_enable_sanitizers(mira_stateful_consumer)
 if(MIRA_BUILD_TESTS)
@@ -438,9 +438,9 @@ endif()
 # with the curation and promotion planes routed through the supervisor.
 add_executable(mira_working_context_host_consumer examples/working_context_host_consumer.cpp)
 target_link_libraries(mira_working_context_host_consumer PRIVATE
-    Mira::core Mira::simulator_adapter Mira::state_store executor::executor)
+    Mira::core Mira::simulator_adapter Mira::state_store kairo::kairo)
 target_include_directories(mira_working_context_host_consumer SYSTEM PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/executor/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include")
 mira_enable_warnings(mira_working_context_host_consumer)
 mira_enable_sanitizers(mira_working_context_host_consumer)
 if(MIRA_BUILD_TESTS)
