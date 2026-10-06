@@ -205,6 +205,30 @@ class ConversationFixture final {
 // ConversationLoop scenarios
 // ---------------------------------------------------------------------------
 
+int conversation_stream_options_are_forwarded() {
+    ConversationFixture fixture;
+    fixture.profile_->capabilities.generation.reasoning_effort = ParamMapping::OmitIfUnset;
+    auto answer = text_response("canonical answer");
+    answer.usage.input_tokens = 123;
+    answer.usage.quality = UsageQuality::ProviderReported;
+    fixture.use_provider({answer});
+    ConversationLoopConfig config;
+    config.reasoning_effort = ReasoningEffort::High;
+    config.inference.stream = true;
+    std::string preview;
+    config.inference.preview_sink = [&](const auto &, const auto &snapshot) {
+        preview = snapshot.text;
+    };
+    auto loop = fixture.make_loop(config);
+    auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result && result.value().answer == "canonical answer");
+    MIRA_CHECK(preview == "fixture preview");
+    MIRA_CHECK(result.value().last_usage.input_tokens == 123);
+    MIRA_CHECK(fixture.provider_->requests()[0].generation.reasoning_effort ==
+               ReasoningEffort::High);
+    return 0;
+}
+
 int plain_text_answer_settles_immediately() {
     ConversationFixture fixture;
     fixture.use_provider({text_response("the answer is 42")});
@@ -238,6 +262,7 @@ int tool_round_trip_replays_canonical_parts() {
     MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
     MIRA_CHECK(result.value().answer == "final answer after the tool");
     MIRA_CHECK(result.value().turns.size() == 2);
+    MIRA_CHECK(result.value().tool_executions == 1);
     MIRA_CHECK(result.value().turns.front().summary == "tool:echo");
     MIRA_CHECK(result.value().turns.back().summary == "answer");
 
@@ -858,6 +883,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
 } // namespace
 
 int main() {
+    if (auto status = conversation_stream_options_are_forwarded())
+        return status;
     if (const int code = plain_text_answer_settles_immediately(); code != 0) {
         return code;
     }

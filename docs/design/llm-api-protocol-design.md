@@ -701,3 +701,10 @@ OpenAI 官方协议参考（访问并核对日期：2026-08-30）：
 - [Counting tokens](https://developers.openai.com/api/docs/guides/token-counting)
 - [Rate limits](https://developers.openai.com/api/docs/guides/rate-limits)
 - [Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)
+
+## 2026-10-05：流式会话显示边界
+
+[DEC-049](../decisions/DEC-049-conversation-stream-previews.md)使Provider与ConversationLoop
+公开有界、非权威完整预览快照，Chat SSE由Mira归约后复用规范mapper。
+PreviewSink在现有传输上下文运行，只允许有界投递；终态admission、取消、历史和工具边界保持不变。
+校验矩阵和平台限制见[维护计划](../plans/maintenance-2026-10-conversation-streaming.md)。

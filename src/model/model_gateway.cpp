@@ -241,6 +241,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
 
             ProviderInferOptions provider_options;
             provider_options.stream = options.stream;
+            provider_options.preview_sink = options.preview_sink;
             provider_options.capture_raw_response = options.capture_raw_response;
             auto response = provider->infer(attempt_request, context, provider_options);
             if (response) {
