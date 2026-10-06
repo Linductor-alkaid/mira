@@ -24,9 +24,9 @@ Result<JsonValue> AnthropicMessagesV1Mapper::encode_request(const ModelRequest &
                                                             bool stream,
                                                             IArtifactSource &artifacts) const {
     if (request.output_contract.mode != OutputMode::Text || request.generation.seed ||
-        request.generation.reasoning_effort || request.generation.service_tier ||
-        request.data_policy.organization || request.data_policy.project ||
-        !request.generation.max_output_tokens || *request.generation.max_output_tokens == 0)
+        request.generation.service_tier || request.data_policy.organization ||
+        request.data_policy.project || !request.generation.max_output_tokens ||
+        *request.generation.max_output_tokens == 0)
         return unsupported();
     for (const auto &item : request.input)
         for (const auto &part : item.content)
@@ -35,7 +35,79 @@ Result<JsonValue> AnthropicMessagesV1Mapper::encode_request(const ModelRequest &
                 return unsupported();
     // Reuse the verified canonical text/image/tool and generation validation;
     // only this intermediate representation is translated, never endpoints.
-    auto common = ChatCompletionsV1Mapper{}.encode_request(request, profile, stream, artifacts);
+    if (request.generation.thinking && *request.generation.thinking != ThinkingMode::Disabled &&
+        *request.generation.thinking != ThinkingMode::Adaptive)
+        return unsupported();
+    if (request.generation.thinking &&
+        profile.capabilities.generation.thinking == ParamMapping::Unsupported)
+        return unsupported();
+    if (request.generation.reasoning_effort &&
+        (profile.capabilities.generation.reasoning_effort == ParamMapping::Unsupported ||
+         *request.generation.reasoning_effort == ReasoningEffort::Minimal))
+        return unsupported();
+    // Split assistant replay for common validation, then restore its exact block order.
+    auto translated = request;
+    translated.generation.thinking.reset();
+    translated.generation.reasoning_effort.reset();
+    translated.input.clear();
+    std::vector<JsonValue::Array> assistant_groups;
+    bool last_assistant = false;
+    for (const auto &item : request.input) {
+        if (item.role == ModelRole::Assistant) {
+            if (!last_assistant)
+                assistant_groups.emplace_back();
+            last_assistant = true;
+            for (const auto &part : item.content) {
+                JsonValue block;
+                if (const auto *thinking = std::get_if<ThinkingPart>(&part)) {
+                    if (thinking->text.size() > 4 * 1024 * 1024 ||
+                        thinking->signature.size() > 4 * 1024 * 1024 ||
+                        (thinking->redacted && !thinking->signature.empty()))
+                        return unsupported();
+                    block = thinking->redacted
+                                ? JsonValue{JsonValue::Object{{"type", "redacted_thinking"},
+                                                              {"data", thinking->text}}}
+                                : JsonValue{JsonValue::Object{{"type", "thinking"},
+                                                              {"thinking", thinking->text},
+                                                              {"signature", thinking->signature}}};
+                } else {
+                    auto single = item;
+                    single.content = {part};
+                    translated.input.push_back(std::move(single));
+                    if (const auto *text = std::get_if<TextPart>(&part))
+                        block = JsonValue::Object{{"type", "text"}, {"text", text->text}};
+                    else if (const auto *call = std::get_if<ToolCallPart>(&part))
+                        block = JsonValue::Object{{"type", "tool_use"},
+                                                  {"id", call->provider_call_id.value},
+                                                  {"name", call->wire_name},
+                                                  {"input", call->arguments}};
+                    else if (std::holds_alternative<ImagePart>(part))
+                        block = JsonValue::Object{{"type", "validated_image"}};
+                    else
+                        return unsupported();
+                }
+                assistant_groups.back().push_back(std::move(block));
+            }
+            // Keep an assistant position even for a reasoning-only message.
+            if (!item.content.empty() &&
+                std::all_of(item.content.begin(), item.content.end(), [](const auto &part) {
+                    return std::holds_alternative<ThinkingPart>(part);
+                })) {
+                auto placeholder = item;
+                placeholder.content = {TextPart{""}};
+                translated.input.push_back(std::move(placeholder));
+            }
+        } else {
+            if (item.role != ModelRole::System && item.role != ModelRole::Developer)
+                last_assistant = false;
+            if (std::any_of(item.content.begin(), item.content.end(), [](const auto &part) {
+                    return std::holds_alternative<ThinkingPart>(part);
+                }))
+                return unsupported();
+            translated.input.push_back(item);
+        }
+    }
+    auto common = ChatCompletionsV1Mapper{}.encode_request(translated, profile, stream, artifacts);
     if (!common)
         return common.error();
     JsonValue::Object root{
@@ -107,6 +179,54 @@ Result<JsonValue> AnthropicMessagesV1Mapper::encode_request(const ModelRequest &
                 messages.emplace_back(
                     JsonValue::Object{{"role", wire_role}, {"content", std::move(blocks)}});
         }
+    }
+    std::size_t assistant_index = 0;
+    for (auto &message : messages)
+        if (*message.find("role")->as_string() == "assistant") {
+            if (assistant_index >= assistant_groups.size())
+                return unsupported();
+            auto replay = assistant_groups[assistant_index++];
+            const auto &validated = *message.find("content")->as_array();
+            auto image = validated.begin();
+            for (auto &block : replay)
+                if (*block.find("type")->as_string() == "validated_image") {
+                    image = std::find_if(image, validated.end(), [](const auto &part) {
+                        return string(part, "type") && *string(part, "type") == "image";
+                    });
+                    if (image == validated.end())
+                        return unsupported();
+                    block = *image++;
+                }
+            message.set("content", std::move(replay));
+        }
+    if (request.generation.thinking)
+        root.emplace_back("thinking", JsonValue::Object{{"type", *request.generation.thinking ==
+                                                                         ThinkingMode::Adaptive
+                                                                     ? "adaptive"
+                                                                     : "disabled"}});
+    if (request.generation.reasoning_effort) {
+        const auto effort = *request.generation.reasoning_effort;
+        const char *name = nullptr;
+        switch (effort) {
+        case ReasoningEffort::Low:
+            name = "low";
+            break;
+        case ReasoningEffort::Medium:
+            name = "medium";
+            break;
+        case ReasoningEffort::High:
+            name = "high";
+            break;
+        case ReasoningEffort::XHigh:
+            name = "xhigh";
+            break;
+        case ReasoningEffort::Max:
+            name = "max";
+            break;
+        default:
+            return unsupported();
+        }
+        root.emplace_back("output_config", JsonValue::Object{{"effort", name}});
     }
     if (!system.empty())
         root.emplace_back("system", std::move(system));
@@ -185,8 +305,15 @@ AnthropicMessagesV1Mapper::decode_response(const ModelRequest &request, const Mo
                 {"type", "function"},
                 {"function",
                  JsonValue::Object{{"name", *name}, {"arguments", to_json_string(*input)}}}});
+        } else if (*kind == "thinking" || *kind == "redacted_thinking") {
+            const bool redacted = *kind == "redacted_thinking";
+            const auto *value = string(block, redacted ? "data" : "thinking");
+            const auto *signature = string(block, "signature");
+            if (!value || value->size() > 4 * 1024 * 1024 ||
+                (!redacted && (!signature || signature->size() > 4 * 1024 * 1024)))
+                return invalid();
         } else
-            return unsupported(); // Signed thinking must never be silently discarded.
+            return unsupported();
     }
     if ((finish == "tool_calls") != !calls.empty() && finish != "length")
         return invalid();
@@ -226,9 +353,41 @@ AnthropicMessagesV1Mapper::decode_response(const ModelRequest &request, const Mo
             mapped.set("input_tokens", JsonValue{static_cast<std::int64_t>(total)});
         converted.emplace_back("usage", std::move(mapped));
     }
-    return ChatCompletionsV1Mapper{}.decode_response(
+    auto decoded = ChatCompletionsV1Mapper{}.decode_response(
         request, profile,
         WireHttpResponse{wire.status, wire.headers,
                          to_json_string(JsonValue{std::move(converted)})});
+    if (!decoded)
+        return decoded.error();
+    // Normalization validates calls/finish status; preserve original assistant block order.
+    auto result = std::move(decoded).value();
+    auto normalized = std::move(result.output);
+    result.output.clear();
+    for (const auto &block : *content->as_array()) {
+        const auto &kind = *string(block, "type");
+        if (kind == "thinking" || kind == "redacted_thinking") {
+            const bool redacted = kind == "redacted_thinking";
+            result.output.emplace_back(ThinkingPart{*string(block, redacted ? "data" : "thinking"),
+                                                    redacted ? "" : *string(block, "signature"),
+                                                    redacted});
+        } else if (kind == "text") {
+            MessageOutput output_message;
+            output_message.content.emplace_back(OutputTextPart{*string(block, "text"), {}});
+            result.output.emplace_back(std::move(output_message));
+        } else if (kind == "tool_use") {
+            auto found = std::find_if(normalized.begin(), normalized.end(), [&](const auto &item) {
+                const auto *call = std::get_if<ToolCallOutput>(&item);
+                return call && call->provider_call_id.value == *string(block, "id");
+            });
+            if (found == normalized.end())
+                return invalid();
+            result.output.push_back(*found);
+        }
+    }
+    // Preserve refusals generated by normalized stop status.
+    for (const auto &item : normalized)
+        if (std::holds_alternative<RefusalOutput>(item))
+            result.output.push_back(item);
+    return result;
 }
 } // namespace mira

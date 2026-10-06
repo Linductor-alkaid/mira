@@ -181,6 +181,10 @@ constexpr std::size_t kMaxSafeMessageBytes = 2048;
         return "medium";
     case ReasoningEffort::High:
         return "high";
+    case ReasoningEffort::XHigh:
+        return "xhigh";
+    case ReasoningEffort::Max:
+        return "max";
     }
     return "medium";
 }
@@ -199,6 +203,10 @@ constexpr std::size_t kMaxSafeMessageBytes = 2048;
     if (*text == "medium") {
         return ReasoningEffort::Medium;
     }
+    if (*text == "xhigh")
+        return ReasoningEffort::XHigh;
+    if (*text == "max")
+        return ReasoningEffort::Max;
     if (*text == "high") {
         return ReasoningEffort::High;
     }
@@ -593,6 +601,12 @@ Result<void> validate_model_request(const ModelRequest &request) {
                 if (text->sensitivity == Sensitivity::Secret) {
                     return contract_error("secret text must not enter a model request");
                 }
+            } else if (const auto *thinking = std::get_if<ThinkingPart>(&part)) {
+                if (item.role != ModelRole::Assistant ||
+                    thinking->text.size() > kMaxTextPartBytes ||
+                    thinking->signature.size() > kMaxTextPartBytes ||
+                    (thinking->redacted && !thinking->signature.empty()))
+                    return contract_error("invalid thinking replay part");
             } else if (const auto *image = std::get_if<ImagePart>(&part)) {
                 if (image->source.id.is_nil() || image->media_type.empty()) {
                     return contract_error(
@@ -723,6 +737,12 @@ Result<void> validate_model_response(const ModelResponse &response) {
     if (response.output.size() > kMaxOutputItems) {
         return contract_error("model response exceeds the output item limit");
     }
+    for (const auto &item : response.output)
+        if (const auto *thinking = std::get_if<ThinkingPart>(&item);
+            thinking && (thinking->text.size() > kMaxTextPartBytes ||
+                         thinking->signature.size() > kMaxTextPartBytes ||
+                         (thinking->redacted && !thinking->signature.empty())))
+            return contract_error("invalid thinking output");
     const auto &usage = response.usage;
     const bool any_usage = usage.input_tokens.has_value() || usage.output_tokens.has_value() ||
                            usage.cached_input_tokens.has_value() ||
@@ -774,6 +794,11 @@ JsonValue model_request_to_json(const ModelRequest &request) {
                 part_json.emplace_back("kind", "text");
                 part_json.emplace_back("text", text->text);
                 part_json.emplace_back("sensitivity", sensitivity_name(text->sensitivity));
+            } else if (const auto *thinking = std::get_if<ThinkingPart>(&part)) {
+                part_json.emplace_back("kind", "thinking");
+                part_json.emplace_back("text", thinking->text);
+                part_json.emplace_back("signature", thinking->signature);
+                part_json.emplace_back("redacted", thinking->redacted);
             } else if (const auto *image = std::get_if<ImagePart>(&part)) {
                 part_json.emplace_back("kind", "image");
                 part_json.emplace_back("source", artifact_ref_to_json(image->source));
@@ -867,6 +892,10 @@ JsonValue model_request_to_json(const ModelRequest &request) {
         generation.emplace_back("reasoning_effort",
                                 reasoning_effort_name(*request.generation.reasoning_effort));
     }
+    if (request.generation.thinking)
+        generation.emplace_back("thinking", *request.generation.thinking == ThinkingMode::Adaptive
+                                                ? "adaptive"
+                                                : "disabled");
     if (request.generation.service_tier.has_value()) {
         generation.emplace_back("service_tier",
                                 service_tier_name(*request.generation.service_tier));
@@ -1076,6 +1105,17 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
                     }
                     part.sensitivity = *parsed;
                 }
+                item.content.emplace_back(std::move(part));
+            } else if (kind_text == "thinking") {
+                ThinkingPart part;
+                const auto *text = part_json.find("text"), *signature = part_json.find("signature"),
+                           *redacted = part_json.find("redacted");
+                if (!text || !text->is_string() || !signature || !signature->is_string() ||
+                    !redacted || !redacted->as_boolean())
+                    return contract_error("malformed thinking content");
+                part.text = *text->as_string();
+                part.signature = *signature->as_string();
+                part.redacted = *redacted->as_boolean();
                 item.content.emplace_back(std::move(part));
             } else if (kind_text == "image") {
                 ImagePart part;
@@ -1342,6 +1382,13 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
             }
             request.generation.reasoning_effort = parsed;
         }
+        if (const auto *field = generation->find("thinking")) {
+            if (!field->is_string() ||
+                (*field->as_string() != "adaptive" && *field->as_string() != "disabled"))
+                return contract_error("unknown thinking mode");
+            request.generation.thinking =
+                *field->as_string() == "adaptive" ? ThinkingMode::Adaptive : ThinkingMode::Disabled;
+        }
         if (const auto *field = generation->find("service_tier"); field != nullptr) {
             const auto parsed = service_tier_from(*field);
             if (!parsed) {
@@ -1537,6 +1584,11 @@ JsonValue model_response_to_json(const ModelResponse &response) {
             if (refusal->provider_code.has_value()) {
                 item_json.emplace_back("provider_code", *refusal->provider_code);
             }
+        } else if (const auto *thinking = std::get_if<ThinkingPart>(&item)) {
+            item_json.emplace_back("type", "thinking");
+            item_json.emplace_back("text", thinking->text);
+            item_json.emplace_back("signature", thinking->signature);
+            item_json.emplace_back("redacted", thinking->redacted);
         } else if (const auto *unknown = std::get_if<UnknownOutput>(&item)) {
             item_json.emplace_back("type", "unknown_output");
             item_json.emplace_back("provider_type", unknown->provider_type);
@@ -1717,6 +1769,17 @@ Result<ModelResponse> model_response_from_json(const JsonValue &json) {
                     }
                 }
                 response.output.emplace_back(std::move(message));
+            } else if (type_text == "thinking") {
+                ThinkingPart part;
+                const auto *text = item_json.find("text"), *signature = item_json.find("signature"),
+                           *redacted = item_json.find("redacted");
+                if (!text || !text->is_string() || !signature || !signature->is_string() ||
+                    !redacted || !redacted->as_boolean())
+                    return contract_error("malformed thinking content");
+                part.text = *text->as_string();
+                part.signature = *signature->as_string();
+                part.redacted = *redacted->as_boolean();
+                response.output.emplace_back(std::move(part));
             } else if (type_text == "tool_call") {
                 ToolCallOutput call;
                 const auto *call_id = item_json.find("provider_call_id");

@@ -103,6 +103,14 @@ Hash prompt_digest(std::span<const ModelInputItem> input) {
                 // Only the text digest contributes: prompts can be huge and the
                 // digest must remain bounded.
                 part_json.emplace_back("digest", digest_string(text->text).to_string());
+            } else if (const auto *thinking = std::get_if<ThinkingPart>(&part)) {
+                part_json.emplace_back("kind", "thinking");
+                part_json.emplace_back(
+                    "digest",
+                    canonical_json_digest(JsonValue::Object{{"text", thinking->text},
+                                                            {"signature", thinking->signature}})
+                        .to_string());
+                part_json.emplace_back("redacted", thinking->redacted);
             } else if (const auto *image = std::get_if<ImagePart>(&part)) {
                 part_json.emplace_back("kind", "image");
                 part_json.emplace_back("digest", image->source.digest.to_string());

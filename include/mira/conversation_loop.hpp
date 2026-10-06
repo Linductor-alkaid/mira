@@ -32,6 +32,7 @@ struct ConversationLoopConfig final {
     // Per-turn generation bound.
     std::uint64_t max_output_tokens_per_turn = 1024;
     std::optional<ReasoningEffort> reasoning_effort{};
+    std::optional<ThinkingMode> thinking{};
     InferOptions inference{};
 };
 

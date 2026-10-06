@@ -212,6 +212,7 @@ JsonValue ModelProfile::manifest_to_json() const {
     generation_json.emplace_back("seed", param_mapping_name(capabilities.generation.seed));
     generation_json.emplace_back("reasoning_effort",
                                  param_mapping_name(capabilities.generation.reasoning_effort));
+    generation_json.emplace_back("thinking", param_mapping_name(capabilities.generation.thinking));
     generation_json.emplace_back("service_tier",
                                  param_mapping_name(capabilities.generation.service_tier));
     capabilities_json.emplace_back("generation", std::move(generation_json));
@@ -366,6 +367,7 @@ unsupported_generation_parameters(const GenerationParamPolicy &policy,
     check("top_p", policy.top_p, generation.top_p.has_value());
     check("seed", policy.seed, generation.seed.has_value());
     check("reasoning_effort", policy.reasoning_effort, generation.reasoning_effort.has_value());
+    check("thinking", policy.thinking, generation.thinking.has_value());
     check("service_tier", policy.service_tier, generation.service_tier.has_value());
     return unsupported;
 }

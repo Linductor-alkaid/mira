@@ -120,7 +120,15 @@ struct ToolResultPart final {
     std::string safe_error_summary;
 };
 
-using ModelContentPart = std::variant<TextPart, ImagePart, FilePart, ToolCallPart, ToolResultPart>;
+// Provider-produced reasoning is opaque replay content, never user instructions.
+// Redacted content stores its provider data in text and has no signature.
+struct ThinkingPart final {
+    std::string text;
+    std::string signature;
+    bool redacted = false;
+};
+using ModelContentPart =
+    std::variant<TextPart, ImagePart, FilePart, ToolCallPart, ToolResultPart, ThinkingPart>;
 
 struct ModelInputItem final {
     ModelRole role = ModelRole::User;
@@ -138,7 +146,8 @@ enum class OutputMode : std::uint8_t {
     Text,
 };
 
-enum class ReasoningEffort : std::uint8_t { Minimal, Low, Medium, High };
+enum class ReasoningEffort : std::uint8_t { Minimal, Low, Medium, High, XHigh, Max };
+enum class ThinkingMode : std::uint8_t { Disabled, Adaptive };
 enum class ServiceTier : std::uint8_t { Auto, Default, Flex, Priority };
 
 struct JsonSchema final {
@@ -160,6 +169,7 @@ struct ModelGenerationOptions final {
     std::optional<double> top_p;
     std::optional<std::uint64_t> seed;
     std::optional<ReasoningEffort> reasoning_effort;
+    std::optional<ThinkingMode> thinking;
     std::optional<ServiceTier> service_tier;
 };
 
@@ -323,7 +333,8 @@ struct UnknownOutput final {
     std::optional<ArtifactRef> protected_payload;
 };
 
-using ModelOutputItem = std::variant<MessageOutput, ToolCallOutput, RefusalOutput, UnknownOutput>;
+using ModelOutputItem =
+    std::variant<MessageOutput, ToolCallOutput, RefusalOutput, UnknownOutput, ThinkingPart>;
 
 enum class UsageQuality : std::uint8_t { Exact, ProviderReported, Estimated, Partial, Missing };
 

@@ -157,6 +157,9 @@ find_header(const std::vector<std::pair<std::string, std::string>> &headers,
 
 [[nodiscard]] Result<void> gate_generation_options(const ModelProfile &profile,
                                                    const ModelGenerationOptions &generation) {
+    if (profile.dialect != ProtocolDialect::AnthropicMessagesV1 && generation.thinking)
+        return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                "thinking requires Messages dialect");
     const auto unsupported =
         unsupported_generation_parameters(profile.capabilities.generation, generation);
     if (!unsupported.empty()) {
@@ -342,6 +345,11 @@ parse_rate_limit_headers(const std::vector<std::pair<std::string, std::string>> 
 Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
                                                     const ModelProfile &profile, bool stream,
                                                     IArtifactSource &artifacts) const {
+    for (const auto &item : request.input)
+        for (const auto &part : item.content)
+            if (std::holds_alternative<ThinkingPart>(part))
+                return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                        "thinking replay requires Messages mapper");
     if (auto gate = gate_generation_options(profile, request.generation); !gate) {
         return gate.error();
     }
@@ -743,6 +751,11 @@ Result<ModelResponse> ResponsesV1Mapper::decode_response(const ModelRequest &req
 Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &request,
                                                           const ModelProfile &profile, bool stream,
                                                           IArtifactSource &artifacts) const {
+    for (const auto &item : request.input)
+        for (const auto &part : item.content)
+            if (std::holds_alternative<ThinkingPart>(part))
+                return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                        "thinking replay requires Messages mapper");
     if (auto gate = gate_generation_options(profile, request.generation); !gate) {
         return gate.error();
     }
@@ -980,6 +993,12 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
             break;
         case ReasoningEffort::High:
             root.emplace_back("reasoning_effort", "high");
+            break;
+        case ReasoningEffort::XHigh:
+            root.emplace_back("reasoning_effort", "xhigh");
+            break;
+        case ReasoningEffort::Max:
+            root.emplace_back("reasoning_effort", "max");
             break;
         }
     }
