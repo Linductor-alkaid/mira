@@ -455,3 +455,9 @@ compile 阶段 fail-closed 且无 repair 重试。修复采用可恢复语义—
 支持度风险暂缓。实现、测试与验收见
 [维护计划 maintenance-2026-09-decision-compile-repair.md](maintenance-2026-09-decision-compile-repair.md)。
 本里程碑既有验证记录保留不变。
+
+## 2026-10-06：Messages方言增量
+
+M3-21（Completed，Linux本地范围）：响应Mirage MIRA-20261006-001，新增显式anthropic.messages.v1，文本/图片/普通工具请求、同步与流式终态、SecretRef认证模式。复用受管transport；不修改Executor。初阶段不支持extended thinking、服务端工具和结构化输出模式，明确拒绝。实际测试和互操作证据完成后登记。
+
+M3-21验收：ASAN/UBSAN/TSAN Messages fixture与确定性变异种子通过（TSAN受控ASLR）；7/7协议/transport/Gateway/loop回归与质量门禁通过；MiniMax-M3图片2/2及真实工具往返通过。目标平台与CI结论分开登记，见[兼容性证据](../compatibility/anthropic-messages-20261006.md)。

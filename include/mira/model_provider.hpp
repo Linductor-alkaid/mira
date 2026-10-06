@@ -38,7 +38,7 @@ class IModelProvider {
     [[nodiscard]] virtual std::optional<std::chrono::milliseconds> last_retry_after_hint() const;
 };
 
-// OpenAI-compatible endpoint over the two fixed M3 dialects. Each instance
+// OpenAI-compatible endpoint over the three fixed M3 dialects. Each instance
 // serves exactly one profile; dialect fallback inside one operation never
 // happens.
 class OpenAiCompatibleProvider final : public IModelProvider {
@@ -73,6 +73,7 @@ class OpenAiCompatibleProvider final : public IModelProvider {
     std::shared_ptr<IRemoteFileStore> remote_files_;
     ResponsesV1Mapper responses_;
     ChatCompletionsV1Mapper chat_;
+    AnthropicMessagesV1Mapper messages_;
     TransportTrace last_trace_;
     std::vector<std::pair<std::string, std::string>> last_headers_;
     SseStreamStats sse_stats_;

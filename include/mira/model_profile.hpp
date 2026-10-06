@@ -17,6 +17,7 @@ namespace mira {
 enum class ProtocolDialect : std::uint8_t {
     OpenAIResponsesV1,
     OpenAIChatCompletionsV1,
+    AnthropicMessagesV1,
 };
 
 [[nodiscard]] std::string protocol_dialect_name(ProtocolDialect dialect);

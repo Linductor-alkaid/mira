@@ -92,6 +92,20 @@ class ChatCompletionsV1Mapper final : public IDialectMapper {
                     const WireHttpResponse &wire) const override;
 };
 
+// Fixed Messages dialect: text, inline images and ordinary client tools.
+// Extended thinking and provider-hosted tools fail closed until canonical
+// echo contracts exist for their signed/provider-local blocks (DEC-050).
+class AnthropicMessagesV1Mapper final : public IDialectMapper {
+  public:
+    [[nodiscard]] ProtocolDialect dialect() const override {
+        return ProtocolDialect::AnthropicMessagesV1;
+    }
+    [[nodiscard]] Result<JsonValue> encode_request(const ModelRequest &, const ModelProfile &, bool,
+                                                   IArtifactSource &) const override;
+    [[nodiscard]] Result<ModelResponse> decode_response(const ModelRequest &, const ModelProfile &,
+                                                        const WireHttpResponse &) const override;
+};
+
 // Maps a non-2xx HTTP result to a stable model error. Shared by both dialects;
 // unknown statuses fail closed as ProtocolViolation rather than being guessed.
 [[nodiscard]] Error map_http_error_status(const WireHttpResponse &wire);
