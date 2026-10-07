@@ -110,11 +110,6 @@ constexpr const char *kSchemaDdl =
     " since INTEGER NOT NULL);"
     "COMMIT;";
 
-[[nodiscard]] std::int64_t wall_nanos(const std::chrono::system_clock::time_point &stamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
-}
-
 [[nodiscard]] std::string scope_key_of(const MemoryScope &scope) {
     std::string key = memory_scope_kind_name(scope.kind);
     key += '|';
@@ -136,20 +131,6 @@ constexpr const char *kSchemaDdl =
         return 3;
     }
     return 3;
-}
-
-[[nodiscard]] std::string sensitivity_text(Sensitivity sensitivity) {
-    switch (sensitivity) {
-    case Sensitivity::Public:
-        return "public";
-    case Sensitivity::Internal:
-        return "internal";
-    case Sensitivity::Sensitive:
-        return "sensitive";
-    case Sensitivity::Secret:
-        return "secret";
-    }
-    return "unknown";
 }
 
 [[nodiscard]] int verification_rank(MemoryVerification verification) {
@@ -335,7 +316,7 @@ class SqliteMemoryStore::Impl final {
         sqlite3_bind_text(insert.get(), 12, memory_verification_name(record.verification).c_str(),
                           -1, storage::transient_copy());
         sqlite3_bind_double(insert.get(), 13, static_cast<double>(record.confidence));
-        sqlite3_bind_text(insert.get(), 14, sensitivity_text(record.sensitivity).c_str(), -1,
+        sqlite3_bind_text(insert.get(), 14, sensitivity_name(record.sensitivity).c_str(), -1,
                           storage::transient_copy());
         sqlite3_bind_int(insert.get(), 15, sensitivity_rank(record.sensitivity));
         sqlite3_bind_text(insert.get(), 16, memory_status_name(record.status).c_str(), -1,

@@ -213,21 +213,8 @@ void AgentLoop::drain_user_messages(const AgentLoopSpec &spec,
 
 void AgentLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                      EventClass classification) const {
-    if (events_ == nullptr) {
-        return;
-    }
-    JsonValue::Object envelope;
-    envelope.emplace_back("task_id", spec.task_id.to_string());
-    envelope.emplace_back("task_epoch", static_cast<std::int64_t>(spec.task_epoch));
-    envelope.emplace_back("detail", std::move(summary));
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_;
-    append.session_id = session_;
-    append.task_id = spec.task_id;
-    append.payload = EventPayload{std::move(type), to_json_string(JsonValue(std::move(envelope))),
-                                  classification};
-    (void)events_->append(append);
+    loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
+                                  std::move(summary), classification);
 }
 
 Result<Observation> AgentLoop::observe_once(const AgentLoopSpec & /*spec*/,
@@ -357,19 +344,9 @@ AgentLoop::build_request(const AgentLoopSpec &spec, const Observation &observati
                          const std::vector<std::string> &user_instructions,
                          const std::vector<ToolExecutionRecord> &tool_results) {
     const auto schema = agent_decision_schema();
-    ModelRequest request;
-    request.contract_version = SchemaVersion{1, 0};
-    request.request_id = ModelRequestId::generate();
-    request.operation_id = OperationId::generate();
-    request.task_id = spec.task_id;
-    request.task_epoch = spec.task_epoch;
-    request.profile_id = spec.profile_id;
-
     // Tools are exposed as a deterministic registry snapshot so proposal
     // resolution can fail closed against exactly what the model saw (DEC-015).
-    if (tools_ != nullptr) {
-        request.tools = tools_->exposed_tools();
-    }
+    ModelRequest request = loop_support::begin_model_request(spec, tools_.get());
 
     ModelInputItem system_item;
     system_item.role = ModelRole::System;

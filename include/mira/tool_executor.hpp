@@ -19,6 +19,18 @@ struct OperationIdHash final {
     std::size_t operator()(const OperationId &id) const noexcept { return Id128Hash{}(id.value); }
 };
 
+// Bounded summary text shared by the tool surfaces (BuiltIn executor records,
+// MCP tool module records, reference projections): truncates to `limit` bytes
+// and marks the cut with an ellipsis. Tool records are model-facing, so they
+// never grow unbounded even when a tool result or error detail does.
+[[nodiscard]] inline std::string truncate_text(std::string text, std::size_t limit) {
+    if (text.size() > limit) {
+        text.resize(limit);
+        text += "...";
+    }
+    return text;
+}
+
 // ---------------------------------------------------------------------------
 // BuiltIn tool execution boundary (DEC-015)
 // ---------------------------------------------------------------------------

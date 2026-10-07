@@ -1,5 +1,7 @@
 #include <mira/context_curator.hpp>
 
+#include "context_support.hpp"
+
 #include <algorithm>
 #include <set>
 #include <sstream>
@@ -9,8 +11,13 @@
 namespace mira {
 namespace {
 
+using context_support::carries_marker;
+using context_support::make_text_part;
+using context_support::parse_statement;
+using context_support::RawStatement;
+
 // ---------------------------------------------------------------------------
-// Error factory and untrusted-text filters (M19 consolidation semantics)
+// Error factory
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] Error curator_error(ErrorCode code, std::string message) {
@@ -19,29 +26,6 @@ namespace {
     error.domain = "mira.context.curator";
     error.safe_message = std::move(message);
     return error;
-}
-
-[[nodiscard]] std::string to_lower_ascii(std::string_view text) {
-    std::string lowered(text);
-    for (char &character : lowered) {
-        if (character >= 'A' && character <= 'Z') {
-            character = static_cast<char>(character - 'A' + 'a');
-        }
-    }
-    return lowered;
-}
-
-// Case-insensitive marker scan with the same semantics as the Layer 1 index
-// and `MemoryConsolidator`: one shared secret-marker vocabulary across every
-// surface model output could reach.
-[[nodiscard]] bool carries_marker(std::string_view text, const std::vector<std::string> &markers) {
-    const std::string lowered = to_lower_ascii(text);
-    for (const auto &marker : markers) {
-        if (!marker.empty() && lowered.find(to_lower_ascii(marker)) != std::string::npos) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,66 +148,7 @@ build_transcript_entries(const WorkingContextSnapshot *previous,
 }
 
 [[nodiscard]] Result<std::string> response_text(const ModelResponse &response) {
-    std::string text;
-    for (const auto &item : response.output) {
-        const auto *message = std::get_if<MessageOutput>(&item);
-        if (message == nullptr) {
-            return curator_error(ErrorCode::InvalidModelOutput,
-                                 "curation response must carry message outputs only");
-        }
-        for (const auto &part : message->content) {
-            if (const auto *text_part = std::get_if<OutputTextPart>(&part)) {
-                text += text_part->text;
-            } else {
-                return curator_error(ErrorCode::InvalidModelOutput,
-                                     "curation response message carries a refusal");
-            }
-        }
-    }
-    if (text.empty()) {
-        return curator_error(ErrorCode::InvalidModelOutput, "curation response carried no text");
-    }
-    return text;
-}
-
-// Model statement as parsed: content plus transcript-number citations. The
-// provenance binding happens in bind_statement so fabricated citations can be
-// dropped before any provenance exists.
-struct RawStatement final {
-    std::string content;
-    std::vector<std::int64_t> citations;
-    double confidence = 0.0;
-};
-
-[[nodiscard]] std::optional<RawStatement> parse_statement(const JsonValue &value) {
-    if (!value.is_object()) {
-        return std::nullopt;
-    }
-    RawStatement raw;
-    const auto *content = value.find("content");
-    if (content == nullptr || !content->is_string()) {
-        return std::nullopt;
-    }
-    raw.content = *content->as_string();
-    const auto *sources = value.find("sources");
-    if (sources == nullptr || !sources->is_array() || sources->as_array()->empty()) {
-        return std::nullopt;
-    }
-    for (const auto &source : *sources->as_array()) {
-        const auto index = source.as_integer();
-        if (!index || *index < 0) {
-            return std::nullopt;
-        }
-        raw.citations.push_back(*index);
-    }
-    if (const auto *confidence = value.find("confidence"); confidence != nullptr) {
-        const auto number = confidence->as_number();
-        if (!number) {
-            return std::nullopt;
-        }
-        raw.confidence = *number;
-    }
-    return raw;
+    return context_support::message_response_text(response, curator_error, "curation");
 }
 
 // Binds one model statement to transcript provenance. Content bounds, marker
@@ -234,23 +159,15 @@ struct RawStatement final {
 [[nodiscard]] std::optional<WorkingContextItem>
 bind_statement(const RawStatement &raw, const std::vector<TranscriptEntry> &entries,
                const ContextCurationOptions &options, bool *cites_previous) {
-    if (raw.content.empty() || raw.content.size() > options.max_item_chars) {
-        return std::nullopt;
-    }
-    if (carries_marker(raw.content, options.forbidden_markers) ||
-        carries_marker(raw.content, options.injection_markers)) {
-        return std::nullopt;
-    }
-    if (!std::isfinite(raw.confidence)) {
-        return std::nullopt;
-    }
-    const double confidence = std::clamp(raw.confidence, 0.0, 1.0);
-    if (confidence < options.min_confidence) {
+    const auto gated =
+        context_support::gate_statement(raw, options.max_item_chars, options.min_confidence,
+                                        options.forbidden_markers, options.injection_markers);
+    if (!gated) {
         return std::nullopt;
     }
     WorkingContextItem bound;
     bound.content = raw.content;
-    bound.confidence = confidence;
+    bound.confidence = *gated;
     std::set<std::size_t> seen;
     SessionSequence smallest = 0;
     bool first = true;
@@ -299,34 +216,11 @@ bind_statement(const RawStatement &raw, const std::vector<TranscriptEntry> &entr
                                                  const std::vector<TranscriptEntry> &entries,
                                                  const ContextCurationOptions &options,
                                                  bool &cites_previous) {
-    SectionItems bound;
-    const auto *section = root.find(key);
-    if (section == nullptr || !section->is_array()) {
-        return curator_error(ErrorCode::InvalidModelOutput,
-                             "curation output section must be an array: " + std::string(key));
-    }
-    for (const auto &value : *section->as_array()) {
-        if (bound.size() >= options.max_items_per_section) {
-            break;
-        }
-        const auto raw = parse_statement(value);
-        if (!raw) {
-            continue;
-        }
-        auto statement = bind_statement(*raw, entries, options, &cites_previous);
-        if (!statement) {
-            continue;
-        }
-        bound.push_back(std::move(*statement));
-    }
-    return bound;
-}
-
-[[nodiscard]] TextPart make_text_part(std::string text) {
-    TextPart part;
-    part.text = std::move(text);
-    part.sensitivity = Sensitivity::Internal;
-    return part;
+    return context_support::parse_statement_section<WorkingContextItem>(
+        root, key, "curation", options.max_items_per_section, curator_error,
+        [&](const RawStatement &raw) {
+            return bind_statement(raw, entries, options, &cites_previous);
+        });
 }
 
 } // namespace
@@ -371,24 +265,7 @@ Result<void> ContextCurationOptions::validate() const {
 }
 
 JsonSchema working_context_curation_output_schema() {
-    const JsonValue statement = JsonValue::Object{
-        {"type", std::string("object")},
-        {"additionalProperties", false},
-        {"required", JsonValue::Array{std::string("content"), std::string("sources"),
-                                      std::string("confidence")}},
-        {"properties",
-         JsonValue::Object{
-             {"content", JsonValue::Object{{"type", std::string("string")}}},
-             {"sources",
-              JsonValue::Object{
-                  {"type", std::string("array")},
-                  {"items", JsonValue::Object{{"type", std::string("integer")},
-                                              {"minimum", static_cast<std::int64_t>(0)}}}}},
-             {"confidence", JsonValue::Object{{"type", std::string("number")}}},
-         }},
-    };
-    const JsonValue statement_array =
-        JsonValue::Object{{"type", std::string("array")}, {"items", statement}};
+    const JsonValue statement_array = context_support::statement_array_schema();
     JsonValue::Object root;
     root.emplace_back("type", std::string("object"));
     root.emplace_back("additionalProperties", false);
@@ -498,21 +375,9 @@ ProviderContextCurator::curate(const WorkingContextSnapshot *previous,
     user_item.content.emplace_back(make_text_part(build_transcript(checkpoint, entries)));
 
     request.input = {std::move(system_item), std::move(user_item)};
-    request.output_contract.mode = OutputMode::StrictJsonSchema;
-    request.output_contract.schema_id =
-        SchemaId::parse("6d6972612d6375726174696f6e2d7631").value_or(SchemaId{});
-    request.output_contract.schema_version = SemanticVersion{1, 0, 0};
-    request.output_contract.schema = schema;
-    request.output_contract.canonical_schema_digest = canonical_json_digest(schema.root);
-
-    request.generation.max_output_tokens = options.max_output_tokens;
-    request.budget.max_output_tokens = options.max_output_tokens;
-    request.budget.max_requests = 1;
-    request.data_policy.store = false;
-    request.prompt_provenance.system_template_digest =
-        digest_string("mira.context.curator.system.v1");
-    request.prompt_provenance.decision_schema_digest =
-        request.output_contract.canonical_schema_digest;
+    context_support::attach_output_contract(request, schema, "6d6972612d6375726174696f6e2d7631",
+                                            "mira.context.curator.system.v1");
+    context_support::apply_generation_budget(request, options.max_output_tokens);
 
     auto inferred = provider_.infer(request, context, ProviderInferOptions{});
     if (!inferred) {

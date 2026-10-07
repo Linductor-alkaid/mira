@@ -1,11 +1,13 @@
 #pragma once
 
 #include <mira/event_store.hpp>
+#include <mira/json.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,43 @@ namespace mira {
 
 enum class ArtifactEncoding : std::uint8_t { Raw, Utf8, Binary };
 enum class Sensitivity : std::uint8_t { Public, Internal, Sensitive, Secret };
+
+// Closed wire vocabulary for Sensitivity, single-sourced next to the enum so
+// the context, memory and model surfaces serialize identically. Readers must
+// treat unknown names as invalid input, never as a downgrade.
+[[nodiscard]] inline std::string sensitivity_name(Sensitivity sensitivity) {
+    switch (sensitivity) {
+    case Sensitivity::Public:
+        return "public";
+    case Sensitivity::Internal:
+        return "internal";
+    case Sensitivity::Sensitive:
+        return "sensitive";
+    case Sensitivity::Secret:
+        return "secret";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] inline std::optional<Sensitivity> sensitivity_from(const JsonValue &json) {
+    const auto *text = json.as_string();
+    if (text == nullptr) {
+        return std::nullopt;
+    }
+    if (*text == "public") {
+        return Sensitivity::Public;
+    }
+    if (*text == "internal") {
+        return Sensitivity::Internal;
+    }
+    if (*text == "sensitive") {
+        return Sensitivity::Sensitive;
+    }
+    if (*text == "secret") {
+        return Sensitivity::Secret;
+    }
+    return std::nullopt;
+}
 
 struct ArtifactDescriptor final {
     ArtifactId id;

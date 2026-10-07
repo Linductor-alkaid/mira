@@ -1,5 +1,7 @@
 #include <mira/context_retrieval.hpp>
 
+#include "context_support.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -11,6 +13,11 @@
 namespace mira {
 namespace {
 
+using context_support::carries_marker;
+using context_support::contains_case_insensitive;
+using context_support::to_lower_ascii;
+using context_support::tokenize;
+
 [[nodiscard]] Error retrieval_error(ContextDomainCode code, std::string message) {
     return make_context_error(code, std::move(message));
 }
@@ -19,36 +26,6 @@ namespace {
 constexpr std::string_view kConversationSegmentName = "ConversationSegment";
 constexpr std::string_view kWorkflowEpisodeName = "WorkflowEpisode";
 constexpr std::string_view kRecoveryLessonName = "RecoveryLesson";
-
-[[nodiscard]] std::string to_lower_ascii(std::string_view text) {
-    std::string lowered(text);
-    for (char &character : lowered) {
-        if (character >= 'A' && character <= 'Z') {
-            character = static_cast<char>(character - 'A' + 'a');
-        }
-    }
-    return lowered;
-}
-
-// Lexical tokenizer for the in-process leg: lowercase [a-z0-9_] runs.
-[[nodiscard]] std::vector<std::string> tokenize(std::string_view text) {
-    std::vector<std::string> tokens;
-    std::string current;
-    for (const char character : to_lower_ascii(text)) {
-        const bool word = (character >= 'a' && character <= 'z') ||
-                          (character >= '0' && character <= '9') || character == '_';
-        if (word) {
-            current += character;
-        } else if (!current.empty()) {
-            tokens.push_back(std::move(current));
-            current.clear();
-        }
-    }
-    if (!current.empty()) {
-        tokens.push_back(std::move(current));
-    }
-    return tokens;
-}
 
 [[nodiscard]] double cosine_similarity(const std::vector<float> &lhs,
                                        const std::vector<float> &rhs) {
@@ -66,28 +43,6 @@ constexpr std::string_view kRecoveryLessonName = "RecoveryLesson";
         return 0.0;
     }
     return dot / (std::sqrt(lhs_norm) * std::sqrt(rhs_norm));
-}
-
-[[nodiscard]] bool contains_case_insensitive(std::string_view haystack, std::string_view needle) {
-    if (needle.empty()) {
-        return true;
-    }
-    if (needle.size() > haystack.size()) {
-        return false;
-    }
-    const std::string lowered = to_lower_ascii(haystack);
-    const std::string lowered_needle = to_lower_ascii(needle);
-    return lowered.find(lowered_needle) != std::string::npos;
-}
-
-[[nodiscard]] bool text_carries_marker(std::string_view text,
-                                       const std::vector<std::string> &markers) {
-    for (const auto &marker : markers) {
-        if (!marker.empty() && contains_case_insensitive(text, marker)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 [[nodiscard]] bool embedding_usable(const ContextEmbedding &embedding,
@@ -186,7 +141,7 @@ Result<void> ContextIndexAsset::validate(const ContextIndexPolicy &policy) const
         return retrieval_error(ContextDomainCode::InvalidItem,
                                "learning assets own a scope and no session");
     }
-    if (text_carries_marker(text, policy.forbidden_markers)) {
+    if (carries_marker(text, policy.forbidden_markers)) {
         return retrieval_error(ContextDomainCode::ForbiddenContent,
                                "asset text carries a forbidden marker");
     }

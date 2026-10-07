@@ -13,40 +13,6 @@ namespace {
     return make_context_error(code, std::move(message));
 }
 
-[[nodiscard]] std::string sensitivity_name(Sensitivity sensitivity) {
-    switch (sensitivity) {
-    case Sensitivity::Public:
-        return "public";
-    case Sensitivity::Internal:
-        return "internal";
-    case Sensitivity::Sensitive:
-        return "sensitive";
-    case Sensitivity::Secret:
-        return "secret";
-    }
-    return "unknown";
-}
-
-[[nodiscard]] std::optional<Sensitivity> sensitivity_from(const JsonValue &json) {
-    const auto *text = json.as_string();
-    if (text == nullptr) {
-        return std::nullopt;
-    }
-    if (*text == "public") {
-        return Sensitivity::Public;
-    }
-    if (*text == "internal") {
-        return Sensitivity::Internal;
-    }
-    if (*text == "sensitive") {
-        return Sensitivity::Sensitive;
-    }
-    if (*text == "secret") {
-        return Sensitivity::Secret;
-    }
-    return std::nullopt;
-}
-
 [[nodiscard]] std::string authority_name(ContextAuthority authority) {
     switch (authority) {
     case ContextAuthority::SystemPolicy:

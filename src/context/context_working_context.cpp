@@ -20,29 +20,6 @@ namespace {
     return error;
 }
 
-[[nodiscard]] std::int64_t wall_nanos(const Timestamp &timestamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp.wall.time_since_epoch())
-            .count());
-}
-
-[[nodiscard]] std::int64_t monotonic_nanos(const Timestamp &timestamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp.monotonic.time_since_epoch())
-            .count());
-}
-
-[[nodiscard]] Timestamp timestamp_from_nanos(std::int64_t wall, std::int64_t monotonic) {
-    Timestamp timestamp;
-    // Wall recovers the stored ns integer exactly through WallTimePoint;
-    // monotonic converts through the clock's own duration explicitly.
-    timestamp.wall = WallTimePoint(std::chrono::nanoseconds(wall));
-    timestamp.monotonic = std::chrono::steady_clock::time_point(
-        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::nanoseconds(monotonic)));
-    return timestamp;
-}
-
 [[nodiscard]] JsonValue items_to_json(const std::vector<WorkingContextItem> &items) {
     JsonValue::Array array;
     for (const auto &item : items) {

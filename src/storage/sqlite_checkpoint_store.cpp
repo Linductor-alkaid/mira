@@ -73,12 +73,6 @@ constexpr const char *kSchemaDdl =
     return SchemaVersion{static_cast<std::uint16_t>(major), static_cast<std::uint16_t>(minor)};
 }
 
-[[nodiscard]] std::int64_t wall_nanos(const Timestamp &stamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.wall.time_since_epoch())
-            .count());
-}
-
 struct DecodeOutcome final {
     Result<std::optional<TaskCheckpoint>> value;
 };

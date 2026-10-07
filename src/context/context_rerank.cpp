@@ -1,5 +1,7 @@
 #include <mira/context_rerank.hpp>
 
+#include "context_support.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -11,50 +13,12 @@
 namespace mira {
 namespace {
 
+using context_support::contains_case_insensitive;
+using context_support::to_lower_ascii;
+using context_support::tokenize;
+
 [[nodiscard]] Error rerank_error(ContextDomainCode code, std::string message) {
     return make_context_error(code, std::move(message));
-}
-
-// Deterministic ASCII lowercasing + tokenizer mirroring the Layer 1 lexical
-// leg (src/context/context_retrieval.cpp): rerank and recall must agree on
-// what a token is, otherwise the fusion compares incomparable signals.
-[[nodiscard]] std::string to_lower_ascii(std::string_view text) {
-    std::string lowered(text);
-    for (char &character : lowered) {
-        if (character >= 'A' && character <= 'Z') {
-            character = static_cast<char>(character - 'A' + 'a');
-        }
-    }
-    return lowered;
-}
-
-[[nodiscard]] std::vector<std::string> tokenize(std::string_view text) {
-    std::vector<std::string> tokens;
-    std::string current;
-    for (const char character : to_lower_ascii(text)) {
-        const bool word = (character >= 'a' && character <= 'z') ||
-                          (character >= '0' && character <= '9') || character == '_';
-        if (word) {
-            current += character;
-        } else if (!current.empty()) {
-            tokens.push_back(std::move(current));
-            current.clear();
-        }
-    }
-    if (!current.empty()) {
-        tokens.push_back(std::move(current));
-    }
-    return tokens;
-}
-
-[[nodiscard]] bool contains_case_insensitive(std::string_view haystack, std::string_view needle) {
-    if (needle.empty()) {
-        return true;
-    }
-    if (needle.size() > haystack.size()) {
-        return false;
-    }
-    return to_lower_ascii(haystack).find(to_lower_ascii(needle)) != std::string::npos;
 }
 
 [[nodiscard]] bool is_finite(double value) noexcept { return std::isfinite(value); }

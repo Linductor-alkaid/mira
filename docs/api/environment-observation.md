@@ -69,6 +69,11 @@ class IEnvironment {
 
 大体积截图等载荷以 `ArtifactRef` 引用 + 摘要进入事件流，不在事件间复制。
 
+`apply_aggregate_span(Observation&, const Timestamp& fallback)` 是聚合时间窗的唯一
+实现（pipeline 与 simulator adapter 共用）：取现有组件捕获窗的最早开始/最晚结束，
+无组件携带窗口时回退到 `fallback`；`sync_quality` 由捕获方自证（pipeline 恒为
+`Unknown`，单时钟模拟器为 `SameClock`）。
+
 ## coordinates.hpp：坐标
 
 - `PointF`/`RectF`：规范坐标空间中的归一化值（`[0, 1]`），动作编译输出必须落在此域。

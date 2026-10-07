@@ -3,6 +3,7 @@
 #include <mira/model_schema.hpp>
 
 #include <array>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -57,63 +58,61 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
     return schema;
 }
 
-[[nodiscard]] JsonValue run_workflow_parameters_schema() {
-    JsonValue::Object properties;
-    properties.emplace_back("workflow_id", id_pattern());
-    properties.emplace_back("ir_digest", digest_pattern());
-    JsonValue::Object parameters;
-    parameters.emplace_back("type", "object");
-    parameters.emplace_back("description",
-                            "Caller arguments; binding against the workflow parameter schema "
-                            "is a runtime check, not a tool-layer check");
-    properties.emplace_back("parameters", JsonValue{std::move(parameters)});
-    JsonValue::Object policy;
-    policy.emplace_back("type", "string");
-    policy.emplace_back("enum", enum_members(kPolicyNames));
-    policy.emplace_back("description",
-                        "Requested policy; membership in the workflow allowed set is a "
-                        "runtime check");
-    properties.emplace_back("policy", JsonValue{std::move(policy)});
+// Generic schema root: an object with fixed properties, a required list and
+// no additional properties. Key order matches every hand-rolled root below.
+[[nodiscard]] JsonValue object_schema(JsonValue::Object properties, JsonValue::Array required) {
     JsonValue::Object root;
     root.emplace_back("type", "object");
     root.emplace_back("properties", JsonValue{std::move(properties)});
-    JsonValue::Array required;
-    required.emplace_back("workflow_id");
-    required.emplace_back("ir_digest");
     root.emplace_back("required", JsonValue{std::move(required)});
     root.emplace_back("additionalProperties", false);
     return JsonValue{std::move(root)};
 }
 
-[[nodiscard]] JsonValue control_parameters_schema() {
-    JsonValue::Object properties;
-    properties.emplace_back("workflow_id", id_pattern());
-    properties.emplace_back("run_id", id_pattern());
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
-    JsonValue::Array required;
-    required.emplace_back("workflow_id");
-    required.emplace_back("run_id");
-    root.emplace_back("required", JsonValue{std::move(required)});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+// "string" schema constrained to a closed vocabulary, with optional trailing
+// description.
+template <std::size_t N>
+[[nodiscard]] JsonValue enum_string_schema(const std::array<std::string_view, N> &names,
+                                           const char *description = nullptr) {
+    JsonValue::Object value;
+    value.emplace_back("type", "string");
+    value.emplace_back("enum", enum_members(names));
+    if (description != nullptr) {
+        value.emplace_back("description", description);
+    }
+    return JsonValue{std::move(value)};
 }
 
-[[nodiscard]] JsonValue patch_workflow_parameters_schema() {
+// "string" schema with an upper length bound.
+[[nodiscard]] JsonValue bounded_string_schema(std::int64_t max_length) {
+    JsonValue::Object value;
+    value.emplace_back("type", "string");
+    value.emplace_back("maxLength", max_length);
+    return JsonValue{std::move(value)};
+}
+
+// "array" schema over one item schema; min_items is omitted when absent
+// (empty arrays allowed, e.g. an absent proposal).
+[[nodiscard]] JsonValue bounded_array_schema(JsonValue items_schema,
+                                             std::optional<std::int64_t> min_items,
+                                             std::int64_t max_items) {
+    JsonValue::Object array;
+    array.emplace_back("type", "array");
+    if (min_items.has_value()) {
+        array.emplace_back("minItems", *min_items);
+    }
+    array.emplace_back("maxItems", max_items);
+    array.emplace_back("items", std::move(items_schema));
+    return JsonValue{std::move(array)};
+}
+
+// One patch entry on the wire: shared by patch_workflow's patch_entries and
+// the request_user_input proposal — both parse through
+// parse_workflow_patch_entries, so the schemas must not drift.
+[[nodiscard]] JsonValue patch_entry_schema() {
     JsonValue::Object entry_properties;
-    entry_properties.emplace_back("target", [&] {
-        JsonValue::Object target;
-        target.emplace_back("type", "string");
-        target.emplace_back("enum", enum_members(kPatchTargets));
-        return JsonValue{std::move(target)};
-    }());
-    entry_properties.emplace_back("op", [&] {
-        JsonValue::Object op;
-        op.emplace_back("type", "string");
-        op.emplace_back("enum", enum_members(kPatchOps));
-        return JsonValue{std::move(op)};
-    }());
+    entry_properties.emplace_back("target", enum_string_schema(kPatchTargets));
+    entry_properties.emplace_back("op", enum_string_schema(kPatchOps));
     JsonValue::Object path;
     path.emplace_back("type", "string");
     path.emplace_back("minLength", static_cast<std::int64_t>(1));
@@ -131,49 +130,62 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
     entry_required.emplace_back("path");
     entry.emplace_back("required", JsonValue{std::move(entry_required)});
     entry.emplace_back("additionalProperties", false);
-    JsonValue::Object items;
-    items.emplace_back("type", "array");
-    items.emplace_back("minItems", static_cast<std::int64_t>(1));
-    items.emplace_back("maxItems", static_cast<std::int64_t>(32));
-    items.emplace_back("items", JsonValue{std::move(entry)});
+    return JsonValue{std::move(entry)};
+}
+
+[[nodiscard]] JsonValue run_workflow_parameters_schema() {
+    JsonValue::Object properties;
+    properties.emplace_back("workflow_id", id_pattern());
+    properties.emplace_back("ir_digest", digest_pattern());
+    JsonValue::Object parameters;
+    parameters.emplace_back("type", "object");
+    parameters.emplace_back("description",
+                            "Caller arguments; binding against the workflow parameter schema "
+                            "is a runtime check, not a tool-layer check");
+    properties.emplace_back("parameters", JsonValue{std::move(parameters)});
+    properties.emplace_back(
+        "policy", enum_string_schema(
+                      kPolicyNames, "Requested policy; membership in the workflow allowed set is a "
+                                    "runtime check"));
+    JsonValue::Array required;
+    required.emplace_back("workflow_id");
+    required.emplace_back("ir_digest");
+    return object_schema(std::move(properties), std::move(required));
+}
+
+[[nodiscard]] JsonValue control_parameters_schema() {
+    JsonValue::Object properties;
+    properties.emplace_back("workflow_id", id_pattern());
+    properties.emplace_back("run_id", id_pattern());
+    JsonValue::Array required;
+    required.emplace_back("workflow_id");
+    required.emplace_back("run_id");
+    return object_schema(std::move(properties), std::move(required));
+}
+
+[[nodiscard]] JsonValue patch_workflow_parameters_schema() {
     JsonValue::Object properties;
     properties.emplace_back("workflow_id", id_pattern());
     properties.emplace_back("run_id", id_pattern());
     properties.emplace_back("patch_id", id_pattern());
-    properties.emplace_back("patch_entries", JsonValue{std::move(items)});
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
+    properties.emplace_back("patch_entries", bounded_array_schema(patch_entry_schema(), 1, 32));
     JsonValue::Array required;
     required.emplace_back("workflow_id");
     required.emplace_back("run_id");
     required.emplace_back("patch_id");
     required.emplace_back("patch_entries");
-    root.emplace_back("required", JsonValue{std::move(required)});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), std::move(required));
 }
 
 [[nodiscard]] JsonValue run_result_schema() {
     JsonValue::Object properties;
     properties.emplace_back("run_id", id_pattern());
-    JsonValue::Object state;
-    state.emplace_back("type", "string");
-    state.emplace_back("enum", enum_members(kRunStateNames));
-    properties.emplace_back("state", JsonValue{std::move(state)});
-    JsonValue::Object summary;
-    summary.emplace_back("type", "string");
-    summary.emplace_back("maxLength", static_cast<std::int64_t>(2048));
-    properties.emplace_back("safe_summary", JsonValue{std::move(summary)});
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
+    properties.emplace_back("state", enum_string_schema(kRunStateNames));
+    properties.emplace_back("safe_summary", bounded_string_schema(2048));
     JsonValue::Array required;
     required.emplace_back("run_id");
     required.emplace_back("state");
-    root.emplace_back("required", JsonValue{std::move(required)});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), std::move(required));
 }
 
 [[nodiscard]] JsonValue cancel_result_schema() {
@@ -198,40 +210,24 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
     epoch.emplace_back("type", "integer");
     epoch.emplace_back("minimum", static_cast<std::int64_t>(0));
     properties.emplace_back("run_patch_epoch", JsonValue{std::move(epoch)});
-    JsonValue::Object summary;
-    summary.emplace_back("type", "string");
-    summary.emplace_back("maxLength", static_cast<std::int64_t>(2048));
-    properties.emplace_back("safe_summary", JsonValue{std::move(summary)});
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
+    properties.emplace_back("safe_summary", bounded_string_schema(2048));
     JsonValue::Array required;
     required.emplace_back("run_id");
     required.emplace_back("applied");
-    root.emplace_back("required", JsonValue{std::move(required)});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), std::move(required));
 }
 
 // Host-facing details envelope shared by all five operations.
 [[nodiscard]] JsonValue details_schema() {
     JsonValue::Object properties;
-    JsonValue::Object summary;
-    summary.emplace_back("type", "string");
-    summary.emplace_back("maxLength", static_cast<std::int64_t>(2048));
-    properties.emplace_back("safe_summary", JsonValue{std::move(summary)});
+    properties.emplace_back("safe_summary", bounded_string_schema(2048));
     JsonValue::Object diagnostics;
     diagnostics.emplace_back("type", "array");
     JsonValue::Object items;
     items.emplace_back("type", "string");
     diagnostics.emplace_back("items", JsonValue{std::move(items)});
     properties.emplace_back("diagnostics", JsonValue{std::move(diagnostics)});
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
-    root.emplace_back("required", JsonValue::Array{JsonValue{"safe_summary"}});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), {JsonValue{"safe_summary"}});
 }
 
 // Unified error envelope (DEC-021 §2).
@@ -249,23 +245,15 @@ constexpr std::array<std::string_view, 3> kPatchOps = {"set", "unset", "skip"};
     JsonValue::Object retryable;
     retryable.emplace_back("type", "boolean");
     properties.emplace_back("retryable", JsonValue{std::move(retryable)});
-    JsonValue::Object message;
-    message.emplace_back("type", "string");
-    message.emplace_back("maxLength", static_cast<std::int64_t>(2048));
-    properties.emplace_back("safe_message", JsonValue{std::move(message)});
+    properties.emplace_back("safe_message", bounded_string_schema(2048));
     properties.emplace_back("operation_id", id_pattern());
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
     JsonValue::Array required;
     required.emplace_back("code");
     required.emplace_back("domain");
     required.emplace_back("domain_code");
     required.emplace_back("retryable");
     required.emplace_back("safe_message");
-    root.emplace_back("required", JsonValue{std::move(required)});
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), std::move(required));
 }
 
 [[nodiscard]] WorkflowOperationSpec make_spec(WorkflowOperation operation, std::string description,
@@ -490,40 +478,6 @@ JsonValue workflow_operation_error_envelope(const Error &error) {
 namespace {
 
 [[nodiscard]] JsonValue request_user_input_parameters_schema() {
-    JsonValue::Object entry_properties;
-    entry_properties.emplace_back("target", [&] {
-        JsonValue::Object target;
-        target.emplace_back("type", "string");
-        target.emplace_back("enum", enum_members(kPatchTargets));
-        return JsonValue{std::move(target)};
-    }());
-    entry_properties.emplace_back("op", [&] {
-        JsonValue::Object op;
-        op.emplace_back("type", "string");
-        op.emplace_back("enum", enum_members(kPatchOps));
-        return JsonValue{std::move(op)};
-    }());
-    JsonValue::Object path;
-    path.emplace_back("type", "string");
-    path.emplace_back("minLength", static_cast<std::int64_t>(1));
-    path.emplace_back("maxLength", static_cast<std::int64_t>(256));
-    entry_properties.emplace_back("path", JsonValue{std::move(path)});
-    JsonValue::Object value;
-    value.emplace_back("description", "Scalar or structured value; required for op=set");
-    entry_properties.emplace_back("value", JsonValue{std::move(value)});
-    JsonValue::Object entry;
-    entry.emplace_back("type", "object");
-    entry.emplace_back("properties", JsonValue{std::move(entry_properties)});
-    JsonValue::Array entry_required;
-    entry_required.emplace_back("target");
-    entry_required.emplace_back("op");
-    entry_required.emplace_back("path");
-    entry.emplace_back("required", JsonValue{std::move(entry_required)});
-    entry.emplace_back("additionalProperties", false);
-    JsonValue::Object proposal_items;
-    proposal_items.emplace_back("type", "array");
-    proposal_items.emplace_back("maxItems", static_cast<std::int64_t>(32));
-    proposal_items.emplace_back("items", JsonValue{std::move(entry)});
     JsonValue::Object prompt;
     prompt.emplace_back("type", "string");
     prompt.emplace_back("minLength", static_cast<std::int64_t>(1));
@@ -534,17 +488,13 @@ namespace {
     properties.emplace_back("workflow_id", id_pattern());
     properties.emplace_back("run_id", id_pattern());
     properties.emplace_back("prompt", JsonValue{std::move(prompt)});
-    properties.emplace_back("proposal", JsonValue{std::move(proposal_items)});
-    JsonValue::Object root;
-    root.emplace_back("type", "object");
-    root.emplace_back("properties", JsonValue{std::move(properties)});
+    properties.emplace_back("proposal",
+                            bounded_array_schema(patch_entry_schema(), std::nullopt, 32));
     JsonValue::Array required;
     required.emplace_back("workflow_id");
     required.emplace_back("run_id");
     required.emplace_back("prompt");
-    root.emplace_back("required", std::move(required));
-    root.emplace_back("additionalProperties", false);
-    return JsonValue{std::move(root)};
+    return object_schema(std::move(properties), std::move(required));
 }
 
 [[nodiscard]] JsonValue request_user_input_result_schema() {

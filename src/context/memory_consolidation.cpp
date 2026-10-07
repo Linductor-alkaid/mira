@@ -26,11 +26,6 @@ namespace {
     return false;
 }
 
-[[nodiscard]] std::int64_t wall_nanos(const WallTimePoint &stamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
-}
-
 [[nodiscard]] std::chrono::system_clock::time_point event_wall(const EventEnvelope &event) {
     return std::chrono::system_clock::time_point(
         std::chrono::duration_cast<std::chrono::system_clock::duration>(

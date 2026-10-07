@@ -27,6 +27,14 @@ using ObservationComponentSource = std::function<Result<ObservationComponent<T>>
 using TopologySource =
     std::function<Result<DisplayTopology>(const ObservationRequest &, const OperationContext &)>;
 
+// Aggregates the per-component capture spans into the observation's
+// aggregate span: earliest normalized begin to latest normalized end across
+// present components, falling back to `fallback` when no component carries a
+// span. Sync quality stays with the caller: only the capture source knows
+// whether its components share one clock. Shared by the observation pipeline
+// and platform adapters that publish fully-formed observations.
+void apply_aggregate_span(Observation &observation, const Timestamp &fallback);
+
 struct ObservationPipelineConfig final {
     // Grace period after the deadline during which straggler captures are
     // still consumed before they move to the pending-drain set.

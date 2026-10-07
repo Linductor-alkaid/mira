@@ -496,6 +496,13 @@ class WorkflowRuntime final {
                                                        WorkflowRunState terminal_state,
                                                        const std::string &safe_summary);
 
+    // Single append path for runtime events: stamps the runtime/session
+    // identity, binds the task when one owns the event, and counts store
+    // rejections without disturbing the control path. Callers gate on the
+    // event store being present. Returns the committed event id so callers
+    // that anchor provenance on the fact can reference it.
+    std::optional<EventId> append_event(TaskId task, EventPayload payload);
+
     void emit_run_started(const RunRecord &run);
     void emit_step_started(const RunRecord &run, const WorkflowStep &step, std::uint32_t attempt);
     void emit_step_settled(const RunRecord &run, const WorkflowStep &step,

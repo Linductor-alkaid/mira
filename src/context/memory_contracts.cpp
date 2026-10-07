@@ -11,47 +11,6 @@ namespace {
     return make_memory_error(code, std::move(message));
 }
 
-[[nodiscard]] std::string sensitivity_name(Sensitivity sensitivity) {
-    switch (sensitivity) {
-    case Sensitivity::Public:
-        return "public";
-    case Sensitivity::Internal:
-        return "internal";
-    case Sensitivity::Sensitive:
-        return "sensitive";
-    case Sensitivity::Secret:
-        return "secret";
-    }
-    return "unknown";
-}
-
-[[nodiscard]] std::optional<Sensitivity> sensitivity_from(const JsonValue &json) {
-    const auto *text = json.as_string();
-    if (text == nullptr) {
-        return std::nullopt;
-    }
-    if (*text == "public") {
-        return Sensitivity::Public;
-    }
-    if (*text == "internal") {
-        return Sensitivity::Internal;
-    }
-    if (*text == "sensitive") {
-        return Sensitivity::Sensitive;
-    }
-    if (*text == "secret") {
-        return Sensitivity::Secret;
-    }
-    return std::nullopt;
-}
-
-[[nodiscard]] std::int64_t wall_nanos(std::chrono::system_clock::time_point stamp) {
-    // nanoseconds::rep differs from int64_t on some libc++ targets; pin the
-    // return type explicitly so JsonValue construction stays unambiguous.
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
-}
-
 [[nodiscard]] std::chrono::system_clock::time_point wall_from_nanos(std::int64_t nanos) {
     // system_clock tick periods differ across platforms (msvc 100ns, libc++
     // micro on some Android builds); round-trip through an explicit cast.

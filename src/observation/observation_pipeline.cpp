@@ -13,6 +13,33 @@
 
 namespace mira {
 
+void apply_aggregate_span(Observation &observation, const Timestamp &fallback) {
+    std::optional<Timestamp> earliest;
+    std::optional<Timestamp> latest;
+    const auto consider = [&](const CaptureSpan &span) {
+        if (!earliest.has_value() || span.normalized_begin.monotonic < earliest->monotonic) {
+            earliest = span.normalized_begin;
+        }
+        if (!latest.has_value() || span.normalized_end.monotonic > latest->monotonic) {
+            latest = span.normalized_end;
+        }
+    };
+    if (observation.screen.has_value()) {
+        consider(observation.screen->capture);
+    }
+    if (observation.structure.has_value()) {
+        consider(observation.structure->capture);
+    }
+    if (observation.foreground.has_value()) {
+        consider(observation.foreground->capture);
+    }
+    if (observation.device.has_value()) {
+        consider(observation.device->capture);
+    }
+    observation.aggregate_span.normalized_begin = earliest.value_or(fallback);
+    observation.aggregate_span.normalized_end = latest.value_or(fallback);
+}
+
 namespace {
 
 Error pipeline_error(ErrorCode code, std::string message) {
@@ -410,31 +437,9 @@ Result<Observation> ObservationPipeline::observe(const ObservationRequest &reque
     }
 
     // Aggregate span: earliest begin to latest end across present components.
-    std::optional<Timestamp> earliest;
-    std::optional<Timestamp> latest;
-    const auto consider = [&](const CaptureSpan &span) {
-        if (!earliest.has_value() || span.normalized_begin.monotonic < earliest->monotonic) {
-            earliest = span.normalized_begin;
-        }
-        if (!latest.has_value() || span.normalized_end.monotonic > latest->monotonic) {
-            latest = span.normalized_end;
-        }
-    };
-    if (observation.screen.has_value()) {
-        consider(observation.screen->capture);
-    }
-    if (observation.structure.has_value()) {
-        consider(observation.structure->capture);
-    }
-    if (observation.foreground.has_value()) {
-        consider(observation.foreground->capture);
-    }
-    if (observation.device.has_value()) {
-        consider(observation.device->capture);
-    }
+    // publish_now is also the reference instant for the quality evaluation.
     const Timestamp publish_now = Timestamp::now();
-    observation.aggregate_span.normalized_begin = earliest.value_or(publish_now);
-    observation.aggregate_span.normalized_end = latest.value_or(publish_now);
+    apply_aggregate_span(observation, publish_now);
     observation.aggregate_span.sync_quality = ClockSyncQuality::Unknown;
 
     // The pipeline aggregates independent captures; it cannot prove a

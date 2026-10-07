@@ -36,14 +36,6 @@ namespace {
     return error;
 }
 
-[[nodiscard]] std::string truncate(std::string text, std::size_t limit) {
-    if (text.size() > limit) {
-        text.resize(limit);
-        text += "...";
-    }
-    return text;
-}
-
 [[nodiscard]] std::string_view action_risk_name(ActionRisk risk) {
     switch (risk) {
     case ActionRisk::R0ReadOnly:
@@ -556,7 +548,7 @@ Result<ToolExecutionRecord> McpToolDispatcher::execute(const ToolProposal &propo
         impl_->dispatched.erase(proposal.operation_id);
         impl_->drop_slot_locked(slot);
         ++impl_->stats.failed_records;
-        return failed_record(proposal, truncate(summary.str(), 512));
+        return failed_record(proposal, truncate_text(summary.str(), 512));
     }
 
     auto submission =
@@ -636,7 +628,7 @@ Result<ToolExecutionRecord> McpToolDispatcher::execute(const ToolProposal &propo
             return failed_record(proposal, "invocation exceeded its deadline");
         }
         ++impl_->stats.failed_records;
-        return failed_record(proposal, truncate(outcome.error().safe_message, 512));
+        return failed_record(proposal, truncate_text(outcome.error().safe_message, 512));
     }
 
     const auto serialized = to_json_string(outcome.value());

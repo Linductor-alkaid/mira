@@ -25,7 +25,8 @@ EventStore 是已提交事实的权威记录；Checkpoint、Memory 和索引都�
 `Sensitivity::Public/Internal/Sensitive/Secret` 分级与 `ArtifactEncoding`）、
 `ArtifactWriter`/`ArtifactReader` 写读、`IArtifactStore` 边界与
 `ArtifactErasureRequest`/`ErasureReceipt` 删除传播。Secret 级内容受脱敏与权限负向
-测试约束。
+测试约束。`sensitivity_name()`/`sensitivity_from()` 是 Sensitivity wire 词表的唯一
+序列化入口（定义在枚举旁；context/memory/model 契约与 SQLite 存储共用）。
 
 ## json.hpp
 

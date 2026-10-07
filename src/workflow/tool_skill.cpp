@@ -36,30 +36,6 @@ namespace {
 
 // Governed vocabulary charset shared with the module and reference layers
 // (capability ids, module ids, member names, reference wire names).
-[[nodiscard]] bool is_valid_vocabulary_id(std::string_view id) {
-    if (id.empty() || id.front() == '.' || id.back() == '.') {
-        return false;
-    }
-    bool segment_nonempty = false;
-    for (const char character : id) {
-        if (character == '.') {
-            if (!segment_nonempty) {
-                return false;
-            }
-            segment_nonempty = false;
-            continue;
-        }
-        const bool allowed = (character >= 'a' && character <= 'z') ||
-                             (character >= '0' && character <= '9') || character == '_' ||
-                             character == '-';
-        if (!allowed) {
-            return false;
-        }
-        segment_nonempty = true;
-    }
-    return segment_nonempty;
-}
-
 [[nodiscard]] JsonValue digest_to_json(const Hash &digest) { return JsonValue{digest.to_string()}; }
 
 [[nodiscard]] JsonValue version_to_json_value(const SemanticVersion &version) {
