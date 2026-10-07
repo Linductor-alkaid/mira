@@ -22,14 +22,6 @@ namespace {
     return error;
 }
 
-[[nodiscard]] std::string truncate(std::string text, std::size_t limit) {
-    if (text.size() > limit) {
-        text.resize(limit);
-        text += "...";
-    }
-    return text;
-}
-
 [[nodiscard]] JsonValue spec_to_json(const BuiltinToolSpec &spec) {
     JsonValue::Object version;
     version.emplace_back("major", static_cast<std::int64_t>(spec.version.major));
@@ -158,7 +150,7 @@ Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &pro
         std::ostringstream summary;
         summary << "arguments failed schema validation at " << violations.front().path << " ("
                 << violations.front().keyword << "): " << violations.front().message;
-        return failed_record(proposal, truncate(summary.str(), 512));
+        return failed_record(proposal, truncate_text(summary.str(), 512));
     }
 
     Result<JsonValue> outcome(Error{});
@@ -171,7 +163,7 @@ Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &pro
         if (outcome.error().code == ErrorCode::Cancelled) {
             return tool_error(ErrorCode::Cancelled, "tool execution was cancelled");
         }
-        return failed_record(proposal, truncate(outcome.error().safe_message, 512));
+        return failed_record(proposal, truncate_text(outcome.error().safe_message, 512));
     }
 
     ToolExecutionRecord record;

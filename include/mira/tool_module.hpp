@@ -49,6 +49,13 @@ struct CapabilityDescriptor final {
     std::string summary; // single line, redaction-safe.
 };
 
+// Governed vocabulary charset shared by capability ids, module ids, member
+// tool names and reference wire names: lowercase alphanumeric segments
+// separated by single dots, with '_' and '-' allowed inside segments. Fails
+// closed on everything else so an id can never smuggle whitespace, path text
+// or mixed-case aliases.
+[[nodiscard]] bool is_valid_vocabulary_id(std::string_view id);
+
 // Governed capability vocabulary. Manifests may only reference capabilities
 // present in a catalog; anything else fails closed at validation time. The
 // Core-shipped vocabulary is core_capability_catalog(); tests and hosts may

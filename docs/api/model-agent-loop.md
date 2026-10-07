@@ -139,7 +139,9 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
 ## tool_executor.hpp：BuiltIn 工具执行边界
 
 [DEC-015](../decisions/DEC-015-builtin-tool-execution-boundary.md) 定义的最小 BuiltIn 工具
-边界（模组体系仍属 M7/[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）：
+边界（模组体系仍属 M7/[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）。
+`truncate_text()` 是工具面有界摘要文本（记录/错误详情截断加省略号）的唯一实现，
+BuiltIn 执行记录、MCP 模组记录与 reference 投影共用：
 
 ```cpp
 auto registry = std::make_shared<mira::BuiltinToolRegistry>();

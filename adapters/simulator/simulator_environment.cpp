@@ -1,5 +1,7 @@
 #include <mira/adapters/simulator/simulator_environment.hpp>
 
+#include <mira/observation_pipeline.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -557,30 +559,7 @@ Result<Observation> SimulatorEnvironment::observe(const ObservationRequest &requ
     }
 
     // Aggregate span: earliest begin to latest end across present components.
-    std::optional<Timestamp> earliest;
-    std::optional<Timestamp> latest;
-    const auto consider = [&](const CaptureSpan &span) {
-        if (!earliest.has_value() || span.normalized_begin.monotonic < earliest->monotonic) {
-            earliest = span.normalized_begin;
-        }
-        if (!latest.has_value() || span.normalized_end.monotonic > latest->monotonic) {
-            latest = span.normalized_end;
-        }
-    };
-    if (observation.screen.has_value()) {
-        consider(observation.screen->capture);
-    }
-    if (observation.structure.has_value()) {
-        consider(observation.structure->capture);
-    }
-    if (observation.foreground.has_value()) {
-        consider(observation.foreground->capture);
-    }
-    if (observation.device.has_value()) {
-        consider(observation.device->capture);
-    }
-    observation.aggregate_span.normalized_begin = earliest.value_or(now);
-    observation.aggregate_span.normalized_end = latest.value_or(now);
+    apply_aggregate_span(observation, now);
     observation.aggregate_span.sync_quality = ClockSyncQuality::SameClock;
 
     const auto skew = observation_component_skew(observation);

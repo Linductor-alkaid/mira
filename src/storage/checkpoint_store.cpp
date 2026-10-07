@@ -17,23 +17,6 @@ namespace {
     return error;
 }
 
-[[nodiscard]] std::int64_t wall_nanos(const Timestamp &stamp) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.wall.time_since_epoch())
-        .count();
-}
-
-[[nodiscard]] Timestamp timestamp_from_nanos(std::int64_t nanos, std::int64_t monotonic_nanos) {
-    // Wall round-trips through WallTimePoint (nanosecond precision by
-    // contract), so the stored ns integer is recovered exactly on every
-    // platform; monotonic goes through the clock's own duration explicitly.
-    Timestamp stamp;
-    stamp.wall = WallTimePoint(std::chrono::nanoseconds(nanos));
-    stamp.monotonic = std::chrono::steady_clock::time_point(
-        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::nanoseconds(monotonic_nanos)));
-    return stamp;
-}
-
 [[nodiscard]] std::optional<TaskState> task_state_from_name(std::string_view name) {
     static const std::pair<std::string_view, TaskState> kStates[] = {
         {"Idle", TaskState::Idle},

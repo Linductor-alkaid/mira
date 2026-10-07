@@ -2,6 +2,8 @@
 
 #include <mira/json.hpp>
 #include <mira/model_schema.hpp>
+#include <mira/tool_executor.hpp>
+#include <mira/tool_module.hpp>
 
 #include <algorithm>
 #include <map>
@@ -31,42 +33,6 @@ namespace {
 }
 [[nodiscard]] Error projection_rejected(std::string message) {
     return make_reference_error(3, ErrorCode::InvalidArgument, std::move(message));
-}
-
-[[nodiscard]] std::string truncate(std::string text, std::size_t limit) {
-    if (text.size() > limit) {
-        text.resize(limit);
-        text += "...";
-    }
-    return text;
-}
-
-// Governed vocabulary charset shared with the module layer (capability ids,
-// module ids, member tool names): lowercase alphanumeric dot-separated
-// segments, '_' and '-' inside segments. Mirrors tool_module.cpp so a
-// reference wire name can never drift from the wire namespace rules.
-[[nodiscard]] bool is_valid_vocabulary_id(std::string_view id) {
-    if (id.empty() || id.front() == '.' || id.back() == '.') {
-        return false;
-    }
-    bool segment_nonempty = false;
-    for (const char character : id) {
-        if (character == '.') {
-            if (!segment_nonempty) {
-                return false;
-            }
-            segment_nonempty = false;
-            continue;
-        }
-        const bool allowed = (character >= 'a' && character <= 'z') ||
-                             (character >= '0' && character <= '9') || character == '_' ||
-                             character == '-';
-        if (!allowed) {
-            return false;
-        }
-        segment_nonempty = true;
-    }
-    return segment_nonempty;
 }
 
 [[nodiscard]] bool is_lowercase_hex(std::string_view text) {
@@ -417,7 +383,7 @@ struct Materializer {
     }
     const auto &first = violations.front();
     std::string detail = "path '" + first.path + "' keyword '" + first.keyword + "'";
-    return truncate(std::move(detail), max_detail_bytes);
+    return truncate_text(std::move(detail), max_detail_bytes);
 }
 
 } // namespace
@@ -823,9 +789,9 @@ admit_workflow_run_by_tool_compat(const WorkflowToolCompatProjection &projection
             if (entry.status == ToolReferenceCompat::Unresolved ||
                 entry.status == ToolReferenceCompat::EvolvedIncompatible) {
                 decision.reason =
-                    truncate("step '" + entry.step_id + "' " +
-                                 std::string(tool_reference_compat_name(entry.status)),
-                             kDefaultToolReferenceLimits.max_detail_bytes);
+                    truncate_text("step '" + entry.step_id + "' " +
+                                      std::string(tool_reference_compat_name(entry.status)),
+                                  kDefaultToolReferenceLimits.max_detail_bytes);
                 break;
             }
         }

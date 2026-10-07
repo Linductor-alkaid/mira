@@ -18,6 +18,10 @@
   精确往返、陈旧判定按 1 ns 粒度比较，MSVC 等 system_clock tick 粗于 1 ns 的
   标准库由此获得精确表示（纳秒 tick 标准库上与 `system_clock::time_point`
   同型）；跨时钟域时序问题见 Observation 的 `ClockSyncQuality`。
+- `wall_nanos()` / `monotonic_nanos()` / `timestamp_from_nanos()`：Timestamp 与
+  纳秒整数 wire 形式的唯一转换入口（`core_contracts.hpp`）。wall 侧接受任意
+  system_clock 精度的 `time_point`；所有上下文/模型/存储面共用这一组转换，
+  保证存储与回放解码一致。
 - `EnvironmentEpoch`：环境侧单调计数，坐标有效性的锚点。
 - `SchemaVersion{major, minor}` 与 `validate_schema_version()`：current/previous 读取
   语义，拒绝跨越两个 major 的旧数据与更新的未知 major。

@@ -813,8 +813,8 @@ mira_add_m7_reference_test(mira_m7_tool_runtime_skill_test m7/m7_tool_runtime_sk
 
 if(TARGET mira_openssl_transport)
     add_executable(mira_m3_messages_probe m3/m3_messages_probe.cpp)
-    target_link_libraries(mira_m3_messages_probe PRIVATE Mira::core Mira::net_transport Mira::openssl_transport executor::executor)
-    target_include_directories(mira_m3_messages_probe SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/executor/include")
+    target_link_libraries(mira_m3_messages_probe PRIVATE Mira::core Mira::net_transport Mira::openssl_transport kairo::kairo)
+    target_include_directories(mira_m3_messages_probe SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
     mira_enable_warnings(mira_m3_messages_probe)
     mira_enable_sanitizers(mira_m3_messages_probe)
 endif()

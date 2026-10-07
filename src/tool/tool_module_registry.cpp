@@ -38,30 +38,6 @@ constexpr std::size_t kMaxTrustDigests = 4096;
 constexpr std::size_t kMaxTrustEntries = 1024;
 constexpr std::size_t kMaxSignerBytes = 256;
 
-bool is_valid_vocabulary_id(std::string_view id) {
-    if (id.empty() || id.front() == '.' || id.back() == '.') {
-        return false;
-    }
-    bool segment_nonempty = false;
-    for (const char character : id) {
-        if (character == '.') {
-            if (!segment_nonempty) {
-                return false;
-            }
-            segment_nonempty = false;
-            continue;
-        }
-        const bool allowed = (character >= 'a' && character <= 'z') ||
-                             (character >= '0' && character <= '9') || character == '_' ||
-                             character == '-';
-        if (!allowed) {
-            return false;
-        }
-        segment_nonempty = true;
-    }
-    return segment_nonempty;
-}
-
 // Sink failures never propagate to the control plane: they are counted and
 // visible in stats (the same isolation the Context/Memory supervisor applies
 // to its diagnostic events).

@@ -165,6 +165,46 @@ struct Timestamp final {
     }
 };
 
+// ---------------------------------------------------------------------------
+// Timestamp <-> nanoseconds wire conversions. The stored/serialized form of a
+// Timestamp is exact nanoseconds (see WallTimePoint), so the conversions are
+// contract surface and live next to the type: context, model and state_store
+// surfaces must all decode identically.
+// ---------------------------------------------------------------------------
+
+// Wall-clock nanoseconds for any system_clock precision. One template so
+// system_clock::time_point and WallTimePoint stay a single candidate set even
+// where the two types coincide (libstdc++ uses nanosecond system ticks).
+// nanoseconds::rep differs from int64_t on some libc++ targets; pin the
+// return type explicitly so JsonValue construction stays unambiguous.
+template <typename Duration>
+[[nodiscard]] inline std::int64_t
+wall_nanos(std::chrono::time_point<std::chrono::system_clock, Duration> stamp) {
+    return static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
+}
+
+[[nodiscard]] inline std::int64_t wall_nanos(const Timestamp &timestamp) {
+    return wall_nanos(timestamp.wall);
+}
+
+[[nodiscard]] inline std::int64_t monotonic_nanos(const Timestamp &timestamp) {
+    return static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp.monotonic.time_since_epoch())
+            .count());
+}
+
+[[nodiscard]] inline Timestamp timestamp_from_nanos(std::int64_t wall, std::int64_t monotonic) {
+    Timestamp timestamp;
+    // Wall recovers the stored ns integer exactly through WallTimePoint;
+    // monotonic converts through the clock's own duration explicitly.
+    timestamp.wall = WallTimePoint(std::chrono::nanoseconds(wall));
+    timestamp.monotonic = std::chrono::steady_clock::time_point(
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::nanoseconds(monotonic)));
+    return timestamp;
+}
+
 // Monotonic counter owned by the environment side; any topology, permission or
 // host discontinuity increments it and invalidates stale coordinates.
 using EnvironmentEpoch = std::uint64_t;

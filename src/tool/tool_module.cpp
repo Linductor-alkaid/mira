@@ -19,34 +19,6 @@ Error make_module_error(ErrorCode code, std::string safe_message) {
     return error;
 }
 
-// Governed charset shared by capability ids, module ids and member tool
-// names: lowercase alphanumeric segments separated by single dots, with '_'
-// and '-' allowed inside segments. Fail closed on everything else so an id
-// can never smuggle whitespace, path text or mixed-case aliases.
-bool is_valid_vocabulary_id(std::string_view id) {
-    if (id.empty() || id.front() == '.' || id.back() == '.') {
-        return false;
-    }
-    bool segment_nonempty = false;
-    for (const char character : id) {
-        if (character == '.') {
-            if (!segment_nonempty) {
-                return false;
-            }
-            segment_nonempty = false;
-            continue;
-        }
-        const bool allowed = (character >= 'a' && character <= 'z') ||
-                             (character >= '0' && character <= '9') || character == '_' ||
-                             character == '-';
-        if (!allowed) {
-            return false;
-        }
-        segment_nonempty = true;
-    }
-    return segment_nonempty;
-}
-
 std::string id_charset_message(std::string_view what, std::string_view value) {
     return std::string(what) + " is not a valid lowercase dot-separated id: '" +
            std::string(value) + "'";
@@ -395,6 +367,30 @@ capability_catalog_to_json(const std::vector<CapabilityDescriptor> &entries) {
 }
 
 } // namespace
+
+bool is_valid_vocabulary_id(std::string_view id) {
+    if (id.empty() || id.front() == '.' || id.back() == '.') {
+        return false;
+    }
+    bool segment_nonempty = false;
+    for (const char character : id) {
+        if (character == '.') {
+            if (!segment_nonempty) {
+                return false;
+            }
+            segment_nonempty = false;
+            continue;
+        }
+        const bool allowed = (character >= 'a' && character <= 'z') ||
+                             (character >= '0' && character <= '9') || character == '_' ||
+                             character == '-';
+        if (!allowed) {
+            return false;
+        }
+        segment_nonempty = true;
+    }
+    return segment_nonempty;
+}
 
 // ---------------------------------------------------------------------------
 // CapabilityCatalog

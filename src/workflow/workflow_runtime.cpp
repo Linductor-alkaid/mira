@@ -499,15 +499,7 @@ void WorkflowRuntime::emit_episode_recorded(const RunRecord &run, const Sha256Di
     event.episode_digest = digest;
     event.outcome = outcome;
     event.reason_code = bounded_summary(reason_code);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_lesson_recorded(const RunRecord &run, const Sha256Digest &digest,
@@ -522,15 +514,7 @@ void WorkflowRuntime::emit_lesson_recorded(const RunRecord &run, const Sha256Dig
     event.lesson_digest = digest;
     event.outcome = outcome;
     event.reason_code = bounded_summary(reason_code);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 Result<WorkflowRecoveryLesson>
@@ -1135,6 +1119,20 @@ std::optional<Error> WorkflowRuntime::settle_terminal(RunRecord &run,
     return std::nullopt;
 }
 
+std::optional<EventId> WorkflowRuntime::append_event(TaskId task, EventPayload payload) {
+    AppendRequest append;
+    append.event_id = EventId::generate();
+    append.runtime_id = runtime_id_;
+    append.session_id = session_;
+    append.task_id = std::move(task);
+    append.payload = std::move(payload);
+    if (!events_->append(append).has_value()) {
+        ++event_emit_failures_;
+        return std::nullopt;
+    }
+    return append.event_id;
+}
+
 void WorkflowRuntime::emit_run_started(const RunRecord &run) {
     if (!events_) {
         return;
@@ -1145,15 +1143,7 @@ void WorkflowRuntime::emit_run_started(const RunRecord &run) {
     event.ir_digest = run.view.ir_digest;
     event.parameters_digest = run.bindings.digest;
     event.policy = run.view.policy;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_step_started(const RunRecord &run, const WorkflowStep &step,
@@ -1166,15 +1156,7 @@ void WorkflowRuntime::emit_step_started(const RunRecord &run, const WorkflowStep
     event.step_id = step.id;
     event.kind = step.kind;
     event.attempt = attempt;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_step_settled(const RunRecord &run, const WorkflowStep &step,
@@ -1188,15 +1170,7 @@ void WorkflowRuntime::emit_step_settled(const RunRecord &run, const WorkflowStep
     event.disposition = record.disposition;
     event.verification = record.verification;
     event.safe_summary = bounded_summary(record.safe_summary);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_run_settled(RunRecord &run, const std::string &safe_summary) {
@@ -1208,19 +1182,9 @@ void WorkflowRuntime::emit_run_settled(RunRecord &run, const std::string &safe_s
     event.terminal_state = run_state(run);
     event.run_epoch = run.view.run_epoch;
     event.safe_summary = bounded_summary(safe_summary);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (events_->append(append).has_value()) {
-        // Provenance anchor for stage-F memory writes (DEC-030 §2): the
-        // episode derives from this committed fact.
-        run.settled_event = append.event_id;
-    } else {
-        ++event_emit_failures_;
-    }
+    // Provenance anchor for stage-F memory writes (DEC-030 §2): the
+    // episode derives from this committed fact.
+    run.settled_event = append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_patch_proposed(const RunRecord &run, const WorkflowPatchId &patch_id,
@@ -1235,15 +1199,7 @@ void WorkflowRuntime::emit_patch_proposed(const RunRecord &run, const WorkflowPa
     event.patch_digest = digest;
     event.target = target;
     event.reason_code = bounded_summary(reason_code);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_patch_applied(const RunRecord &run, const WorkflowPatchId &patch_id) {
@@ -1257,15 +1213,7 @@ void WorkflowRuntime::emit_patch_applied(const RunRecord &run, const WorkflowPat
         std::lock_guard lock(mutex_);
         event.run_patch_epoch = run.view.run_patch_epoch;
     }
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_patch_rejected(const RunRecord &run, const WorkflowPatchId &patch_id,
@@ -1277,15 +1225,7 @@ void WorkflowRuntime::emit_patch_rejected(const RunRecord &run, const WorkflowPa
     event.patch_id = patch_id;
     event.run_id = run.view.run_id;
     event.reason_code = bounded_summary(reason_code);
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_policy_switched(const RunRecord &run, WorkflowPolicy from,
@@ -1297,15 +1237,7 @@ void WorkflowRuntime::emit_policy_switched(const RunRecord &run, WorkflowPolicy 
     event.run_id = run.view.run_id;
     event.from = from;
     event.to = to;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_decision_raised(const RunRecord &run,
@@ -1317,15 +1249,7 @@ void WorkflowRuntime::emit_decision_raised(const RunRecord &run,
     event.run_id = run.view.run_id;
     event.decision_id = decision.decision_id;
     event.payload_digest = decision.payload_digest;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_decision_resolved(const RunRecord &run,
@@ -1338,15 +1262,7 @@ void WorkflowRuntime::emit_decision_resolved(const RunRecord &run,
     event.run_id = run.view.run_id;
     event.decision_id = decision_id;
     event.resolution = resolution;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_publish_proposed(const WorkflowId &workflow_id,
@@ -1359,14 +1275,7 @@ void WorkflowRuntime::emit_publish_proposed(const WorkflowId &workflow_id,
     event.workflow_id = workflow_id;
     event.ir_digest = ir_digest;
     event.source_run_id = source_run_id;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(TaskId{}, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_publish_applied(const WorkflowId &workflow_id,
@@ -1381,14 +1290,7 @@ void WorkflowRuntime::emit_publish_applied(const WorkflowId &workflow_id,
     event.ir_digest = ir_digest;
     event.evidence = evidence;
     event.dry_run_id = dry_run_id;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(TaskId{}, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_publish_rejected(const WorkflowId &workflow_id,
@@ -1401,14 +1303,7 @@ void WorkflowRuntime::emit_publish_rejected(const WorkflowId &workflow_id,
     event.workflow_id = workflow_id;
     event.ir_digest = ir_digest;
     event.reason_code = reason_code;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(TaskId{}, to_event_payload(event));
 }
 
 JsonValue WorkflowRuntime::predicate_context_copy(const RunRecord &run) const {
@@ -2102,15 +1997,7 @@ void WorkflowRuntime::emit_navigation_planned(const RunRecord &run, const Workfl
     event.total_cost = plan.total_cost;
     event.guards_blocked = plan.guards_blocked;
     event.guards_unevaluable = plan.guards_unevaluable;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const WorkflowStep &step,
@@ -2126,15 +2013,7 @@ void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const Workf
     event.to_state = transition.to_state;
     event.success = success;
     event.confidence = transition.confidence.confidence;
-    AppendRequest append;
-    append.event_id = EventId::generate();
-    append.runtime_id = runtime_id_;
-    append.session_id = session_;
-    append.task_id = run.task;
-    append.payload = to_event_payload(event);
-    if (!events_->append(append).has_value()) {
-        ++event_emit_failures_;
-    }
+    append_event(run.task, to_event_payload(event));
 }
 
 void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
