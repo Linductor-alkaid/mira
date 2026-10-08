@@ -1124,7 +1124,9 @@ std::optional<EventId> WorkflowRuntime::append_event(TaskId task, EventPayload p
     append.event_id = EventId::generate();
     append.runtime_id = runtime_id_;
     append.session_id = session_;
-    append.task_id = std::move(task);
+    // TaskId is trivially copyable; moving it has no effect (clang-tidy
+    // performance-move-const-arg).
+    append.task_id = task;
     append.payload = std::move(payload);
     if (!events_->append(append).has_value()) {
         ++event_emit_failures_;

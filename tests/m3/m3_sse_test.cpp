@@ -359,6 +359,327 @@ int chat_stream_fragmentation_tools_and_limits() {
     MIRA_CHECK(!tool_overflow.feed(tool_stream));
     return 0;
 }
+int chat_reasoning_stream_maps_to_thinking() {
+    // Issue #83 / MIRA-20261008-001: streamed delta.reasoning_content
+    // accumulates out-of-band and surfaces as a ThinkingPart at the terminal
+    // decode, never as answer preview and never as a text delta.
+    auto request = base_request_alias();
+    auto profile = make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test");
+    const auto stream = chat_chunk(R"({"role":"assistant","reasoning_content":"think "})") +
+                        chat_chunk(R"({"reasoning_content":"more","content":"ans"})") +
+                        chat_chunk(R"({"content":"wer"})") + chat_chunk("{}", "\"stop\"") +
+                        "data: [DONE]\n\n";
+
+    // Every split point: accumulation and terminal decode must not depend on
+    // chunk boundaries (mirrors the Messages dialect thinking split loop).
+    for (std::size_t split = 0; split <= stream.size(); ++split) {
+        ChatCompletionsSseParser parser(request, profile);
+        MIRA_CHECK(parser.feed(std::string_view(stream).substr(0, split)));
+        MIRA_CHECK(parser.feed(std::string_view(stream).substr(split)));
+        auto result = parser.finish();
+        MIRA_CHECK(result);
+        MIRA_CHECK(result.value().status == ModelCompletionStatus::Completed);
+        MIRA_CHECK(result.value().output.size() == 2);
+        const auto *thinking = std::get_if<ThinkingPart>(&result.value().output[0]);
+        MIRA_CHECK(thinking != nullptr);
+        MIRA_CHECK(thinking->text == "think more");
+        MIRA_CHECK(thinking->signature.empty());
+        MIRA_CHECK(!thinking->redacted);
+        const auto *message = std::get_if<MessageOutput>(&result.value().output[1]);
+        MIRA_CHECK(message != nullptr);
+        MIRA_CHECK(std::get<OutputTextPart>(message->content[0]).text == "answer");
+        MIRA_CHECK(parser.take_preview().text == "answer");
+    }
+
+    // Pure reasoning increments are invisible to the live preview and the
+    // text-delta counter, yet still produce the terminal ThinkingPart.
+    {
+        const auto reasoning_only = chat_chunk(R"({"role":"assistant","reasoning_content":"a"})") +
+                                    chat_chunk(R"({"reasoning_content":"b"})") +
+                                    chat_chunk("{}", "\"stop\"") + "data: [DONE]\n\n";
+        ChatCompletionsSseParser parser(request, profile);
+        MIRA_CHECK(parser.feed(reasoning_only));
+        MIRA_CHECK(parser.stats().text_deltas == 0);
+        MIRA_CHECK(parser.take_preview().text.empty());
+        auto result = parser.finish();
+        MIRA_CHECK(result);
+        // finish() always serializes content:"" and the shared decode maps an
+        // empty-string content to an empty OutputTextPart, so a pure-reasoning
+        // stream yields the ThinkingPart plus an empty-text MessageOutput —
+        // the same shape a non-stream body with "content":"" produces.
+        MIRA_CHECK(result.value().output.size() == 2);
+        const auto *thinking = std::get_if<ThinkingPart>(&result.value().output[0]);
+        MIRA_CHECK(thinking != nullptr && thinking->text == "ab");
+        const auto *empty_message = std::get_if<MessageOutput>(&result.value().output[1]);
+        MIRA_CHECK(empty_message != nullptr && empty_message->content.size() == 1);
+        MIRA_CHECK(std::get<OutputTextPart>(empty_message->content[0]).text.empty());
+        MIRA_CHECK(std::get_if<UnknownOutput>(&result.value().output[0]) == nullptr);
+        MIRA_CHECK(std::get_if<UnknownOutput>(&result.value().output[1]) == nullptr);
+    }
+
+    // Reasoning bytes share the accumulated-text budget and fail closed when
+    // exceeded; non-string reasoning deltas are protocol violations.
+    {
+        SseStreamLimits limits;
+        limits.max_accumulated_text_bytes = 3;
+        ChatCompletionsSseParser reasoning_over(request, profile, limits);
+        MIRA_CHECK(!reasoning_over.feed(chat_chunk(R"({"reasoning_content":"abcd"})")));
+        // Answer text within the same small budget still streams.
+        ChatCompletionsSseParser content_within(request, profile, limits);
+        MIRA_CHECK(content_within.feed(chat_chunk(R"({"content":"ab"})")));
+        ChatCompletionsSseParser bad_type(request, profile);
+        MIRA_CHECK(!bad_type.feed(chat_chunk(R"({"reasoning_content":42})")));
+    }
+
+    // Reasoning + answer + tool calls in one stream: the terminal output is
+    // the full ordered set (thinking, message, tool call).
+    {
+        const auto mixed =
+            chat_chunk(R"({"role":"assistant","reasoning_content":"why"})") +
+            chat_chunk(R"({"content":"calling "})") +
+            chat_chunk(
+                R"({"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"wait","arguments":"{\"seconds\":"}}]})") +
+            chat_chunk(
+                R"({"tool_calls":[{"index":0,"type":null,"function":{"arguments":"1}"}}]})") +
+            chat_chunk("{}", "\"tool_calls\"") + "data: [DONE]\n\n";
+        ChatCompletionsSseParser parser(request, profile);
+        MIRA_CHECK(parser.feed(mixed));
+        MIRA_CHECK(parser.take_preview().text == "calling ");
+        auto result = parser.finish();
+        MIRA_CHECK(result);
+        MIRA_CHECK(result.value().status == ModelCompletionStatus::Completed);
+        MIRA_CHECK(result.value().output.size() == 3);
+        const auto *thinking = std::get_if<ThinkingPart>(&result.value().output[0]);
+        MIRA_CHECK(thinking != nullptr && thinking->text == "why" && !thinking->redacted);
+        const auto *message = std::get_if<MessageOutput>(&result.value().output[1]);
+        MIRA_CHECK(message != nullptr);
+        MIRA_CHECK(std::get<OutputTextPart>(message->content[0]).text == "calling ");
+        const auto *call = std::get_if<ToolCallOutput>(&result.value().output[2]);
+        MIRA_CHECK(call != nullptr && call->provider_name == "wait");
+    }
+    return 0;
+}
+
+int responses_reasoning_stream_events_and_terminal_reduction() {
+    // Reasoning stream events are identity/budget checks only; the canonical
+    // thinking output comes from the terminal body decode.
+    const auto request = base_request_alias();
+    const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
+
+    const auto reasoning_item_added = [](int sequence, const char *id) {
+        return sse_event("response.output_item.added",
+                         std::string(R"({"type":"output_item.added","sequence_number":)") +
+                             std::to_string(sequence) + R"(,"item":{"id":")" + id +
+                             R"(","type":"reasoning"}})");
+    };
+    const auto reasoning_item_done = [](int sequence, const char *id) {
+        return sse_event("response.output_item.done",
+                         std::string(R"({"type":"output_item.done","sequence_number":)") +
+                             std::to_string(sequence) + R"(,"item":{"id":")" + id +
+                             R"(","type":"reasoning"}})");
+    };
+
+    // Summary stream: reasoning summary events around an open reasoning item,
+    // then a plain message item, then a terminal body carrying both items.
+    {
+        std::string stream;
+        stream += sse_event(
+            "response.created",
+            R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_rs"}})");
+        stream += reasoning_item_added(1, "rs_1");
+        stream += sse_event(
+            "response.reasoning_summary_part.added",
+            R"({"type":"reasoning_summary_part.added","sequence_number":2,"item_id":"rs_1","summary_index":0})");
+        stream += sse_event(
+            "response.reasoning_summary_text.delta",
+            R"({"type":"reasoning_summary_text.delta","sequence_number":3,"item_id":"rs_1","delta":"sum"})");
+        stream += sse_event(
+            "response.reasoning_summary_text.delta",
+            R"({"type":"reasoning_summary_text.delta","sequence_number":4,"item_id":"rs_1","delta":"mary"})");
+        stream += sse_event(
+            "response.reasoning_summary_text.done",
+            R"({"type":"reasoning_summary_text.done","sequence_number":5,"item_id":"rs_1","text":"summary"})");
+        stream += sse_event(
+            "response.reasoning_summary_part.done",
+            R"({"type":"reasoning_summary_part.done","sequence_number":6,"item_id":"rs_1","summary_index":0})");
+        stream += reasoning_item_done(7, "rs_1");
+        stream += sse_event(
+            "response.output_item.added",
+            R"({"type":"output_item.added","sequence_number":8,"item":{"id":"msg_1","type":"message"}})");
+        stream += sse_event(
+            "response.output_text.delta",
+            R"({"type":"output_text.delta","sequence_number":9,"item_id":"msg_1","delta":"final"})");
+        stream += sse_event(
+            "response.output_text.done",
+            R"({"type":"output_text.done","sequence_number":10,"item_id":"msg_1","text":"final"})");
+        stream += sse_event(
+            "response.output_item.done",
+            R"({"type":"output_item.done","sequence_number":11,"item":{"id":"msg_1","type":"message"}})");
+        stream += sse_event(
+            "response.completed",
+            R"({"type":"response.completed","sequence_number":12,"response":{"id":"resp_rs","status":"completed","model":"m","output":[{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"summary"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"final"}]}],"usage":{"input_tokens":3,"output_tokens":2}}})");
+
+        // Per-byte split points across the whole reasoning stream.
+        for (std::size_t split = 0; split <= stream.size(); ++split) {
+            ResponsesSseParser parser(request, profile);
+            MIRA_CHECK(parser.feed(std::string_view(stream).substr(0, split)));
+            MIRA_CHECK(parser.feed(std::string_view(stream).substr(split)));
+            auto finished = parser.finish();
+            MIRA_CHECK(finished.has_value());
+            MIRA_CHECK(finished.value().status == ModelCompletionStatus::Completed);
+            MIRA_CHECK(finished.value().output.size() == 2);
+            const auto *thinking = std::get_if<ThinkingPart>(&finished.value().output[0]);
+            MIRA_CHECK(thinking != nullptr);
+            MIRA_CHECK(thinking->text == "summary");
+            MIRA_CHECK(thinking->redacted); // Summary text keeps redacted semantics.
+            MIRA_CHECK(thinking->signature.empty());
+            const auto *message = std::get_if<MessageOutput>(&finished.value().output[1]);
+            MIRA_CHECK(message != nullptr);
+            MIRA_CHECK(std::get<OutputTextPart>(message->content[0]).text == "final");
+        }
+
+        // Reasoning text never enters the answer preview.
+        ResponsesSseParser preview_parser(request, profile);
+        MIRA_CHECK(preview_parser.feed(stream));
+        MIRA_CHECK(preview_parser.take_preview().text == "final");
+    }
+
+    // Raw stream: reasoning_text deltas plus summary events; the terminal
+    // body carries both, and raw reasoning wins with redacted=false.
+    {
+        ResponsesSseParser parser(request, profile);
+        std::string stream;
+        stream += sse_event(
+            "response.created",
+            R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_raw"}})");
+        stream += reasoning_item_added(1, "rs_2");
+        stream += sse_event(
+            "response.reasoning_text.delta",
+            R"({"type":"reasoning_text.delta","sequence_number":2,"item_id":"rs_2","delta":"raw "})");
+        stream += sse_event(
+            "response.reasoning_text.delta",
+            R"({"type":"reasoning_text.delta","sequence_number":3,"item_id":"rs_2","delta":"thought"})");
+        stream += sse_event(
+            "response.reasoning_text.done",
+            R"({"type":"reasoning_text.done","sequence_number":4,"item_id":"rs_2","text":"raw thought"})");
+        stream += reasoning_item_done(5, "rs_2");
+        stream += sse_event(
+            "response.completed",
+            R"({"type":"response.completed","sequence_number":6,"response":{"id":"resp_raw","status":"completed","model":"m","output":[{"type":"reasoning","id":"rs_2","content":[{"type":"reasoning_text","text":"raw thought"}],"summary":[{"type":"summary_text","text":"sum"}]}],"usage":{}}})");
+        MIRA_CHECK(parser.feed(stream));
+        auto finished = parser.finish();
+        MIRA_CHECK(finished.has_value());
+        MIRA_CHECK(finished.value().output.size() == 1);
+        const auto *thinking = std::get_if<ThinkingPart>(&finished.value().output[0]);
+        MIRA_CHECK(thinking != nullptr);
+        MIRA_CHECK(thinking->text == "raw thought");
+        MIRA_CHECK(!thinking->redacted);
+        MIRA_CHECK(parser.take_preview().text.empty());
+    }
+
+    // Reasoning delta budget: the streamed reasoning byte counter is shared
+    // across summary and raw deltas and enforces the accumulated limit.
+    {
+        SseStreamLimits limits;
+        limits.max_accumulated_text_bytes = 3;
+        ResponsesSseParser over(request, profile, limits);
+        std::string stream;
+        stream += sse_event(
+            "response.created",
+            R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_b"}})");
+        stream += reasoning_item_added(1, "rs_b");
+        stream += sse_event(
+            "response.reasoning_summary_text.delta",
+            R"({"type":"reasoning_summary_text.delta","sequence_number":2,"item_id":"rs_b","delta":"ab"})");
+        MIRA_CHECK(over.feed(stream));
+        MIRA_CHECK(
+            !over
+                 .feed(sse_event(
+                     "response.reasoning_summary_text.delta",
+                     R"({"type":"reasoning_summary_text.delta","sequence_number":3,"item_id":"rs_b","delta":"cd"})"))
+                 .has_value());
+        MIRA_CHECK(
+            over
+                .feed(sse_event(
+                    "response.reasoning_summary_text.delta",
+                    R"({"type":"reasoning_summary_text.delta","sequence_number":3,"item_id":"rs_b","delta":"cd"})"))
+                .error()
+                .domain_code == static_cast<std::int32_t>(ModelDomainCode::ResponseTooLarge));
+
+        // A fresh parser: raw deltas draw from the same reasoning budget.
+        ResponsesSseParser raw_over(request, profile, limits);
+        std::string raw_stream;
+        raw_stream += sse_event(
+            "response.created",
+            R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_c"}})");
+        raw_stream += reasoning_item_added(1, "rs_c");
+        raw_stream += sse_event(
+            "response.reasoning_text.delta",
+            R"({"type":"reasoning_text.delta","sequence_number":2,"item_id":"rs_c","delta":"abcd"})");
+        MIRA_CHECK(!raw_over.feed(raw_stream).has_value());
+    }
+
+    // Identity enforcement: reasoning events need a string item_id bound to
+    // an open item; closed or unknown items are protocol violations.
+    {
+        const auto probe = [&](const std::string &event, const std::string &data,
+                               bool open_item_first) {
+            ResponsesSseParser parser(request, profile);
+            std::string stream;
+            stream += sse_event(
+                "response.created",
+                R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_x"}})");
+            if (open_item_first) {
+                stream += reasoning_item_added(1, "rs");
+            }
+            stream += sse_event(event, data);
+            auto status = parser.feed(stream);
+            if (status) {
+                auto finished = parser.finish();
+                return finished.has_value() ? std::string{} : finished.error().safe_message;
+            }
+            return status.error().safe_message;
+        };
+        // Unknown item.
+        MIRA_CHECK(
+            probe(
+                "response.reasoning_summary_text.delta",
+                R"({"type":"reasoning_summary_text.delta","sequence_number":1,"item_id":"ghost","delta":"x"})",
+                false) == "reasoning event references a closed item");
+        // Missing item id.
+        MIRA_CHECK(probe("response.reasoning_text.delta",
+                         R"({"type":"reasoning_text.delta","sequence_number":1,"delta":"x"})",
+                         false) == "reasoning event carries no item id");
+        // Delta without string payload.
+        MIRA_CHECK(
+            probe("response.reasoning_text.delta",
+                  R"({"type":"reasoning_text.delta","sequence_number":2,"item_id":"rs","delta":5})",
+                  true) == "reasoning delta carries no delta text");
+        // Part events also require the string item id.
+        MIRA_CHECK(probe("response.reasoning_summary_part.added",
+                         R"({"type":"reasoning_summary_part.added","sequence_number":1})",
+                         false) == "reasoning event carries no item id");
+
+        // An item that closed before the reasoning event is rejected too.
+        ResponsesSseParser parser(request, profile);
+        std::string stream;
+        stream += sse_event(
+            "response.created",
+            R"({"type":"response.created","sequence_number":0,"response":{"id":"resp_y"}})");
+        stream += reasoning_item_added(1, "rs_y");
+        stream += reasoning_item_done(2, "rs_y");
+        stream += sse_event(
+            "response.reasoning_text.delta",
+            R"({"type":"reasoning_text.delta","sequence_number":3,"item_id":"rs_y","delta":"late"})");
+        auto status = parser.feed(stream);
+        MIRA_CHECK(!status.has_value());
+        MIRA_CHECK(status.error().domain_code ==
+                   static_cast<std::int32_t>(ModelDomainCode::ProtocolViolation));
+        MIRA_CHECK(status.error().safe_message == "reasoning event references a closed item");
+    }
+    return 0;
+}
+
 int live_preview_delivery_and_failure_isolation() {
     auto request = base_request_alias();
     auto profile = std::make_shared<ModelProfile>(
@@ -403,6 +724,10 @@ int live_preview_delivery_and_failure_isolation() {
 
 int main() {
     if (auto status = chat_stream_fragmentation_tools_and_limits())
+        return status;
+    if (auto status = chat_reasoning_stream_maps_to_thinking())
+        return status;
+    if (auto status = responses_reasoning_stream_events_and_terminal_reduction())
         return status;
     if (auto status = live_preview_delivery_and_failure_isolation())
         return status;

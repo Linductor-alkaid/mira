@@ -1,5 +1,6 @@
 #include <mira/conversation_loop.hpp>
 
+#include <mira/model_dialect.hpp>
 #include <mira/model_digest.hpp>
 
 #include <algorithm>
@@ -255,9 +256,16 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.turns.push_back(std::move(record));
                 break;
             }
-            const bool thinking_replay = std::any_of(
+            const bool carries_thinking = std::any_of(
                 outcome.response.output.begin(), outcome.response.output.end(),
                 [](const auto &item) { return std::holds_alternative<ThinkingPart>(item); });
+            // Dialects whose encoder rejects thinking replay (DEC-051) keep
+            // their reasoning output observability-only (DEC-052): tool rounds
+            // replay the canonical call/result items without it.
+            bool thinking_replay = false;
+            if (carries_thinking)
+                if (const auto profile = gateway_.router().find(outcome.response.profile_id))
+                    thinking_replay = dialect_accepts_thinking_replay(profile->dialect);
             if (thinking_replay) {
                 ModelInputItem assistant;
                 assistant.role = ModelRole::Assistant;

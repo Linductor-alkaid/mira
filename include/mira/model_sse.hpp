@@ -155,6 +155,7 @@ class ResponsesSseParser final {
     SseFramingParser framer_;
     std::vector<OpenItem> items_;
     std::string accumulated_text_;
+    std::size_t reasoning_bytes_ = 0; // Streamed reasoning delta budget only.
     std::string preview_text_;
     std::size_t preview_drops_ = 0;
     bool terminal_seen_ = false;
@@ -184,7 +185,7 @@ class ChatCompletionsSseParser final {
     SseStreamLimits limits_;
     SseFramingParser framer_;
     SseStreamStats stats_;
-    std::string id_, model_, text_, refusal_, finish_reason_, preview_;
+    std::string id_, model_, text_, refusal_, reasoning_, finish_reason_, preview_;
     std::map<std::int64_t, ToolFragments> tools_;
     std::size_t argument_bytes_ = 0;
     std::size_t pending_preview_drops_ = 0;

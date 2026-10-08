@@ -461,3 +461,19 @@ compile 阶段 fail-closed 且无 repair 重试。修复采用可恢复语义—
 M3-21（Completed，Linux本地范围）：响应Mirage MIRA-20261006-001，新增显式anthropic.messages.v1，文本/图片/普通工具请求、同步与流式终态、SecretRef认证模式。复用受管transport；不修改Executor。初阶段不支持extended thinking、服务端工具和结构化输出模式，明确拒绝。实际测试和互操作证据完成后登记。
 
 M3-21验收：ASAN/UBSAN/TSAN Messages fixture与确定性变异种子通过（TSAN受控ASLR）；7/7协议/transport/Gateway/loop回归与质量门禁通过；MiniMax-M3图片2/2及真实工具往返通过。目标平台与CI结论分开登记，见[兼容性证据](../compatibility/anthropic-messages-20261006.md)。
+
+## 2026-10-08：方言思考输出增量
+
+M3-22（Completed，Linux本地范围）：响应Mirage MIRA-20261008-001（GitHub #83），Chat
+Completions 非流式 `reasoning_content` 与流式 `delta.reasoning_content`、Responses 终态
+`reasoning` item 与 SSE reasoning 事件族映射为与 Messages 同语义的有界 ThinkingPart
+（[DEC-052](../decisions/DEC-052-dialect-thinking-output.md)）。预算越界失败闭合，
+redacted 保留摘要；思考输出不做权威历史输入，工具循环回放经
+`dialect_accepts_thinking_replay` 门控，Messages 行为不回退。
+
+M3-22验收：两方言 fixture 覆盖增量/终态/逐字节切点/越界失败闭合/redacted 语义/畸形
+失败闭合/混排顺序与工具轮回放门控；目标 7/7 协议/SSE/Gateway/loop/anthropic 回归
+通过，更宽 17/18（唯一失败为干净 HEAD 可复现的 transport 环境问题）；format/docs/
+architecture 门禁通过。实现、证据与已知限制见
+[维护计划 maintenance-2026-10-dialect-thinking-output.md](maintenance-2026-10-dialect-thinking-output.md)。
+真实 reasoning 模型的在线增量可见性由 Mirage 升级 pin 后复验。

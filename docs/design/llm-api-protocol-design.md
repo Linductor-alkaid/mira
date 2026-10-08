@@ -193,11 +193,22 @@ struct UnknownOutput {
     std::optional<ArtifactRef> protected_payload;
 };
 
+// Provider-produced reasoning; opaque replay content, never user
+// instructions. Redacted content stores its provider data in text and has
+// no signature (DEC-051). Produced by all three dialects; only Messages
+// accepts it as replay input (DEC-052).
+struct ThinkingPart {
+    std::string text;
+    std::string signature;
+    bool redacted;
+};
+
 using ModelOutputItem = std::variant<
     MessageOutput,
     ToolCallOutput,
     RefusalOutput,
-    UnknownOutput>;
+    UnknownOutput,
+    ThinkingPart>;
 
 struct ModelUsage {
     std::optional<std::uint64_t> input_tokens;
@@ -234,6 +245,11 @@ struct ModelResponse {
 - `Completed` 只表示供应商完成响应，不表示输出已经成为有效 Decision。
 - 未知纯诊断 output item 可以保留摘要；未知 tool/action/authority-bearing item 必须使本次语义解析
   fail closed。
+- 方言思考输出按 DEC-052 映射为有界 `ThinkingPart`：Messages 的 `thinking` /
+  `redacted_thinking` block（DEC-051）、Chat Completions 的 `reasoning_content`
+  （同步与流式增量）、Responses 的 `reasoning` item（raw `reasoning_text` 优先，
+  否则 summary 按 redacted 保留，皆无时保留摘要回退）。预算越界失败闭合，不静默
+  截断；思考增量不进入正文预览；仅 Messages 方言接受 ThinkingPart 回填为历史。
 
 ### 4.3 三层成功条件
 

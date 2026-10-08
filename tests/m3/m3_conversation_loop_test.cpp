@@ -41,14 +41,13 @@ using namespace mira::testing;
 
 class ConversationFixture final {
   public:
-    ConversationFixture() {
+    explicit ConversationFixture(ProtocolDialect dialect = ProtocolDialect::OpenAIResponsesV1) {
         kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 2;
         executor_config.max_threads = 2;
         executor_config.queue_capacity = 32;
         executor_.initialize(executor_config);
-        profile_ = std::make_shared<ModelProfile>(
-            make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
+        profile_ = std::make_shared<ModelProfile>(make_profile(dialect, "https://api.test"));
         // The profile keeps its default output limit (16384): the loop's
         // whole-run envelope (per-turn tokens x allowed requests) is compared
         // against it by the router, and the shipped defaults (1024 x 15) must
@@ -249,7 +248,10 @@ int plain_text_answer_settles_immediately() {
 }
 
 int signed_thinking_replayed_before_tool_results() {
-    ConversationFixture fixture;
+    // DEC-051/DEC-052 contrast case: the Messages dialect is the only one
+    // whose encoder accepts thinking replay, so its tool rounds replay the
+    // signed thinking before the call/result round trip.
+    ConversationFixture fixture(ProtocolDialect::AnthropicMessagesV1);
     auto first = tool_call_response(fixture.echo_spec(), R"({"message":"ping"})");
     first.output.insert(first.output.begin(), ThinkingPart{"plan", "signed", false});
     first.output.insert(first.output.begin() + 1,
@@ -272,6 +274,50 @@ int signed_thinking_replayed_before_tool_results() {
     MIRA_CHECK(std::holds_alternative<ToolCallPart>(found->content[2]));
     MIRA_CHECK(std::next(found) != requests[1].input.end() &&
                std::holds_alternative<ToolResultPart>(std::next(found)->content[0]));
+    return 0;
+}
+
+int chat_reasoning_stays_observability_only_in_tool_rounds() {
+    // DEC-052: Chat Completions responses may carry ThinkingPart output, but
+    // their encoder rejects thinking replay, so tool rounds must replay only
+    // the canonical call/result items and still encode cleanly.
+    ConversationFixture fixture(ProtocolDialect::OpenAIChatCompletionsV1);
+    auto first = tool_call_response(fixture.echo_spec(), R"json({"message": "ping"})json");
+    first.output.insert(first.output.begin(), ThinkingPart{"chain of thought", "", false});
+    fixture.use_provider({first, text_response("final after tool")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result && result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().answer == "final after tool");
+    MIRA_CHECK(result.value().turns.size() == 2);
+    MIRA_CHECK(result.value().tool_executions == 1);
+    MIRA_CHECK(fixture.seen_arguments().size() == 1);
+
+    const auto requests = fixture.provider_->requests();
+    MIRA_CHECK(requests.size() == 2);
+    // No thinking may enter the tool-round history for this dialect.
+    std::size_t call_parts = 0;
+    std::size_t result_parts = 0;
+    for (const auto &item : requests[1].input) {
+        for (const auto &part : item.content) {
+            MIRA_CHECK(!std::holds_alternative<ThinkingPart>(part));
+            if (std::holds_alternative<ToolCallPart>(part)) {
+                ++call_parts;
+                MIRA_CHECK(item.role == ModelRole::Assistant);
+            } else if (std::holds_alternative<ToolResultPart>(part)) {
+                ++result_parts;
+                MIRA_CHECK(item.role == ModelRole::User);
+            }
+        }
+    }
+    MIRA_CHECK(call_parts == 1 && result_parts == 1);
+
+    // The replayed round trip encodes successfully on the chat dialect: the
+    // request is never rejected because of a ThinkingPart.
+    NullArtifactSource artifacts;
+    auto encoded =
+        ChatCompletionsV1Mapper{}.encode_request(requests[1], *fixture.profile_, false, artifacts);
+    MIRA_CHECK(encoded.has_value());
     return 0;
 }
 
@@ -911,6 +957,8 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
 
 int main() {
     if (signed_thinking_replayed_before_tool_results())
+        return 1;
+    if (chat_reasoning_stays_observability_only_in_tool_rounds())
         return 1;
     if (auto status = conversation_stream_options_are_forwarded())
         return status;
