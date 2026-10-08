@@ -110,6 +110,12 @@ class AnthropicMessagesV1Mapper final : public IDialectMapper {
 // unknown statuses fail closed as ProtocolViolation rather than being guessed.
 [[nodiscard]] Error map_http_error_status(const WireHttpResponse &wire);
 
+// True when the dialect's request encoder accepts ThinkingPart replay
+// content. Only the Messages mapper does (DEC-051); every other dialect's
+// encoder rejects it explicitly, so their thinking output is observability
+// only and tool rounds replay calls/results without it (DEC-052).
+[[nodiscard]] bool dialect_accepts_thinking_replay(ProtocolDialect dialect) noexcept;
+
 // Decodes one parsed Responses API response object (synchronous body or the
 // `response` member of a terminal SSE event). Shared by the sync mapper and
 // the SSE reducer so both paths produce identical canonical items.

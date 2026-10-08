@@ -102,7 +102,10 @@ Result<void> ChatCompletionsSseParser::reduce(const SseMessage &message) {
         return invalid("chat SSE delta role must be assistant");
     const auto old_size = text_.size();
     if (!append(text_, delta->find("content"), limits_.max_accumulated_text_bytes) ||
-        !append(refusal_, delta->find("refusal"), limits_.max_accumulated_text_bytes))
+        !append(refusal_, delta->find("refusal"), limits_.max_accumulated_text_bytes) ||
+        // Reasoning increments stay out of the answer preview (DEC-051/052)
+        // and never count as text deltas; they only feed the terminal decode.
+        !append(reasoning_, delta->find("reasoning_content"), limits_.max_accumulated_text_bytes))
         return invalid("chat SSE text exceeds budget or has invalid type");
     if (text_.size() > old_size) {
         ++stats_.text_deltas;
@@ -170,6 +173,8 @@ Result<ModelResponse> ChatCompletionsSseParser::finish() {
         return make_model_error(ModelDomainCode::AmbiguousCompletion,
                                 "chat SSE stream ended without [DONE]");
     JsonValue::Object message{{"role", "assistant"}, {"content", text_}};
+    if (!reasoning_.empty())
+        message.emplace_back("reasoning_content", reasoning_);
     if (!refusal_.empty())
         message.emplace_back("refusal", refusal_);
     JsonValue::Array calls;

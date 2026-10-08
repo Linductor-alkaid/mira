@@ -395,6 +395,242 @@ int image_transport_uses_artifact_bytes() {
     return 0;
 }
 
+int reasoning_maps_to_bounded_thinking() {
+    // Issue #83 / MIRA-20261008-001: Chat Completions and Responses dialects
+    // map provider reasoning output to the same bounded ThinkingPart
+    // semantics as the Messages dialect instead of dropping it or degrading
+    // it to a digest-only UnknownOutput.
+    const auto chat_profile =
+        make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test");
+    const auto responses_profile =
+        make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
+    const auto request = base_request();
+    constexpr std::size_t kThinkingBudget = 4ULL * 1024ULL * 1024ULL;
+
+    // (a) Chat non-stream: reasoning_content + content.
+    {
+        ChatCompletionsV1Mapper mapper;
+        WireHttpResponse wire;
+        wire.status = 200;
+        wire.body = R"({
+            "id": "chat_r1", "model": "m",
+            "choices": [{"message": {"role": "assistant", "content": "the answer",
+                                     "reasoning_content": "chain of thought"},
+                         "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+        })";
+        auto decoded = mapper.decode_response(request, chat_profile, wire);
+        MIRA_CHECK(decoded.has_value());
+        MIRA_CHECK(decoded.value().status == ModelCompletionStatus::Completed);
+        MIRA_CHECK(decoded.value().output.size() == 2);
+        const auto *thinking = std::get_if<ThinkingPart>(&decoded.value().output[0]);
+        MIRA_CHECK(thinking != nullptr);
+        MIRA_CHECK(thinking->text == "chain of thought");
+        MIRA_CHECK(thinking->signature.empty());
+        MIRA_CHECK(!thinking->redacted);
+        MIRA_CHECK(std::get_if<MessageOutput>(&decoded.value().output[1]) != nullptr);
+
+        // Reasoning ahead of tool calls keeps the thinking-first order.
+        auto tool_request = base_request();
+        tool_request.tools.push_back(
+            ExposedToolSpec{ToolId::generate(), SemanticVersion{1, 0, 0}, "lookup", "d",
+                            JsonSchema{parse_json(R"({"type":"object"})").value()}, Hash{}, false});
+        wire.body = R"({
+            "id": "chat_r2", "model": "m",
+            "choices": [{"message": {"role": "assistant", "content": null,
+                                     "reasoning_content": "why",
+                                     "tool_calls": [{"id": "call_1", "type": "function",
+                                                     "function": {"name": "lookup",
+                                                                  "arguments": "{\"q\":1}"}}]},
+                         "finish_reason": "tool_calls"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+        })";
+        auto with_calls = mapper.decode_response(tool_request, chat_profile, wire);
+        MIRA_CHECK(with_calls.has_value());
+        MIRA_CHECK(with_calls.value().output.size() == 2);
+        MIRA_CHECK(std::get_if<ThinkingPart>(&with_calls.value().output[0]) != nullptr);
+        const auto *call = std::get_if<ToolCallOutput>(&with_calls.value().output[1]);
+        MIRA_CHECK(call != nullptr && call->provider_call_id.value == "call_1");
+
+        // Only reasoning_content, no content: exactly one ThinkingPart and no
+        // UnknownOutput downgrade; the completion still finishes.
+        wire.body = R"({
+            "id": "chat_r3", "model": "m",
+            "choices": [{"message": {"role": "assistant", "content": null,
+                                     "reasoning_content": "only think"},
+                         "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+        })";
+        auto reasoning_only = mapper.decode_response(request, chat_profile, wire);
+        MIRA_CHECK(reasoning_only.has_value());
+        MIRA_CHECK(reasoning_only.value().status == ModelCompletionStatus::Completed);
+        MIRA_CHECK(reasoning_only.value().output.size() == 1);
+        MIRA_CHECK(std::get_if<ThinkingPart>(&reasoning_only.value().output[0]) != nullptr);
+        MIRA_CHECK(std::get_if<UnknownOutput>(&reasoning_only.value().output[0]) == nullptr);
+
+        // Empty or missing reasoning_content stays absent; non-string values
+        // are treated as absent too (pre-change behavior is preserved).
+        wire.body = R"({
+            "id": "chat_r4", "model": "m",
+            "choices": [{"message": {"role": "assistant", "content": "x",
+                                     "reasoning_content": ""},
+                         "finish_reason": "stop"}],
+            "usage": {}
+        })";
+        auto empty_reasoning = mapper.decode_response(request, chat_profile, wire);
+        MIRA_CHECK(empty_reasoning.has_value());
+        MIRA_CHECK(empty_reasoning.value().output.size() == 1);
+        MIRA_CHECK(std::get_if<MessageOutput>(&empty_reasoning.value().output[0]) != nullptr);
+        wire.body = R"({
+            "id": "chat_r5", "model": "m",
+            "choices": [{"message": {"role": "assistant", "content": "x",
+                                     "reasoning_content": 42},
+                         "finish_reason": "stop"}],
+            "usage": {}
+        })";
+        auto non_string_reasoning = mapper.decode_response(request, chat_profile, wire);
+        MIRA_CHECK(non_string_reasoning.has_value());
+        MIRA_CHECK(non_string_reasoning.value().output.size() == 1);
+
+        // Exactly-at-budget decoding cannot be observed through the wire:
+        // JsonLimits::max_string_bytes (1 MiB) already rejects any reasoning
+        // string above 1 MiB during body parsing, so the 4 MiB thinking
+        // budget check is shadowed on every public decode path. Oversized
+        // reasoning still fails closed with a ProtocolViolation either way.
+        wire.body = "{\"id\":\"chat_r7\",\"model\":\"m\",\"choices\":[{\"message\":{\"role\":"
+                    "\"assistant\",\"content\":\"a\",\"reasoning_content\":\"" +
+                    std::string(kThinkingBudget + 1, 'x') +
+                    "\"},\"finish_reason\":\"stop\"}],\"usage\":{}}";
+        auto over_budget = mapper.decode_response(request, chat_profile, wire);
+        MIRA_CHECK(!over_budget.has_value());
+        MIRA_CHECK(over_budget.error().domain == "mira.model");
+        MIRA_CHECK(over_budget.error().domain_code ==
+                   static_cast<std::int32_t>(ModelDomainCode::ProtocolViolation));
+    }
+
+    // (b) Responses terminal bodies: reasoning items surface as raw thinking
+    // when the provider exposes reasoning_text, as redacted summary thinking
+    // otherwise, and keep the digest fallback only for undisplayable items.
+    {
+        ResponsesV1Mapper mapper;
+        WireHttpResponse wire;
+        wire.status = 200;
+
+        const auto decode_output = [&](const std::string &output_json) {
+            wire.body = "{\"id\":\"resp_r\",\"status\":\"completed\",\"model\":\"m\",\"output\":" +
+                        output_json + ",\"usage\":{}}";
+            return mapper.decode_response(request, responses_profile, wire);
+        };
+
+        // Raw reasoning text under content[].
+        auto raw = decode_output(
+            R"([{"type":"reasoning","id":"rs_1","content":[{"type":"reasoning_text","text":"raw thought"}]}])");
+        MIRA_CHECK(raw.has_value());
+        MIRA_CHECK(raw.value().output.size() == 1);
+        const auto *raw_thinking = std::get_if<ThinkingPart>(&raw.value().output[0]);
+        MIRA_CHECK(raw_thinking != nullptr);
+        MIRA_CHECK(raw_thinking->text == "raw thought");
+        MIRA_CHECK(raw_thinking->signature.empty());
+        MIRA_CHECK(!raw_thinking->redacted);
+
+        // Summary-only items keep the redacted summary semantics.
+        auto summary = decode_output(
+            R"([{"type":"reasoning","id":"rs_2","summary":[{"type":"summary_text","text":"sum"}]}])");
+        MIRA_CHECK(summary.has_value());
+        MIRA_CHECK(summary.value().output.size() == 1);
+        const auto *summary_thinking = std::get_if<ThinkingPart>(&summary.value().output[0]);
+        MIRA_CHECK(summary_thinking != nullptr);
+        MIRA_CHECK(summary_thinking->text == "sum");
+        MIRA_CHECK(summary_thinking->redacted);
+
+        // Multiple displayable parts each become one ThinkingPart, in order.
+        auto two_parts = decode_output(
+            R"([{"type":"reasoning","id":"rs_3","content":[{"type":"reasoning_text","text":"p1"},{"type":"reasoning_text","text":"p2"}]}])");
+        MIRA_CHECK(two_parts.has_value());
+        MIRA_CHECK(two_parts.value().output.size() == 2);
+        const auto *first_part = std::get_if<ThinkingPart>(&two_parts.value().output[0]);
+        const auto *second_part = std::get_if<ThinkingPart>(&two_parts.value().output[1]);
+        MIRA_CHECK(first_part != nullptr && first_part->text == "p1" && !first_part->redacted);
+        MIRA_CHECK(second_part != nullptr && second_part->text == "p2" && !second_part->redacted);
+
+        // Raw content wins over the summary when both are present.
+        auto both = decode_output(
+            R"([{"type":"reasoning","id":"rs_4","content":[{"type":"reasoning_text","text":"raw"}],"summary":[{"type":"summary_text","text":"sum"}]}])");
+        MIRA_CHECK(both.has_value());
+        MIRA_CHECK(both.value().output.size() == 1);
+        const auto *both_thinking = std::get_if<ThinkingPart>(&both.value().output[0]);
+        MIRA_CHECK(both_thinking != nullptr && both_thinking->text == "raw" &&
+                   !both_thinking->redacted);
+
+        // Items carrying nothing displayable keep the UnknownOutput digest
+        // fallback (the pre-change contract for empty reasoning items).
+        auto empty_item = decode_output(R"([{"type":"reasoning","id":"rs_5"}])");
+        MIRA_CHECK(empty_item.has_value());
+        MIRA_CHECK(empty_item.value().output.size() == 1);
+        const auto *unknown = std::get_if<UnknownOutput>(&empty_item.value().output[0]);
+        MIRA_CHECK(unknown != nullptr);
+        MIRA_CHECK(unknown->provider_type == "responses.item.reasoning");
+        auto empty_arrays =
+            decode_output(R"([{"type":"reasoning","id":"rs_6","content":[],"summary":[]}])");
+        MIRA_CHECK(empty_arrays.has_value());
+        MIRA_CHECK(std::get_if<UnknownOutput>(&empty_arrays.value().output[0]) != nullptr);
+
+        // Malformed text parts fail closed.
+        for (
+            const auto *malformed :
+            {R"([{"type":"reasoning","id":"bad_1","summary":"nope"}])",
+             R"([{"type":"reasoning","id":"bad_2","content":[{"text":"no type"}]}])",
+             R"([{"type":"reasoning","id":"bad_3","content":[{"type":"reasoning_text"}]}])",
+             R"([{"type":"reasoning","id":"bad_4","content":[{"type":"reasoning_text","text":5}]}])",
+             R"([{"type":"reasoning","id":"bad_5","content":["not an object"]}])"}) {
+            auto bad = decode_output(malformed);
+            MIRA_CHECK(!bad.has_value());
+            MIRA_CHECK(bad.error().domain_code ==
+                       static_cast<std::int32_t>(ModelDomainCode::ProtocolViolation));
+            MIRA_CHECK(bad.error().safe_message.find("malformed text parts") != std::string::npos);
+        }
+
+        // Over-budget reasoning text fails closed (shadowed by the JSON
+        // string limit on public paths, exactly like the Chat side above).
+        wire.body = "{\"id\":\"resp_big\",\"status\":\"completed\",\"model\":\"m\",\"output\":"
+                    "[{\"type\":\"reasoning\",\"id\":\"rs_big\",\"content\":[{\"type\":"
+                    "\"reasoning_text\",\"text\":\"" +
+                    std::string(kThinkingBudget + 1, 'x') + "\"}]}],\"usage\":{}}";
+        auto big = mapper.decode_response(request, responses_profile, wire);
+        MIRA_CHECK(!big.has_value());
+        MIRA_CHECK(big.error().domain_code ==
+                   static_cast<std::int32_t>(ModelDomainCode::ProtocolViolation));
+
+        // Reasoning items keep their relative position among other output.
+        auto ordered = decode_output(
+            R"([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]},{"type":"reasoning","id":"rs_7","content":[{"type":"reasoning_text","text":"think"}]},{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{\"q\":1}"}])");
+        MIRA_CHECK(ordered.has_value());
+        MIRA_CHECK(ordered.value().output.size() == 3);
+        MIRA_CHECK(std::get_if<MessageOutput>(&ordered.value().output[0]) != nullptr);
+        MIRA_CHECK(std::get_if<ThinkingPart>(&ordered.value().output[1]) != nullptr);
+        MIRA_CHECK(std::get_if<ToolCallOutput>(&ordered.value().output[2]) != nullptr);
+    }
+
+    // (c) Chat/Responses encoders still reject ThinkingPart replay input;
+    // only the Messages mapper accepts it (DEC-051).
+    {
+        auto replay = base_request();
+        ModelInputItem assistant_item;
+        assistant_item.role = ModelRole::Assistant;
+        assistant_item.content.emplace_back(ThinkingPart{"thought", "sig", false});
+        replay.input.push_back(std::move(assistant_item));
+        NullArtifactSource artifacts;
+        MIRA_CHECK(
+            !ChatCompletionsV1Mapper{}.encode_request(replay, chat_profile, false, artifacts));
+        MIRA_CHECK(
+            !ResponsesV1Mapper{}.encode_request(replay, responses_profile, false, artifacts));
+        MIRA_CHECK(dialect_accepts_thinking_replay(ProtocolDialect::AnthropicMessagesV1));
+        MIRA_CHECK(!dialect_accepts_thinking_replay(ProtocolDialect::OpenAIChatCompletionsV1));
+        MIRA_CHECK(!dialect_accepts_thinking_replay(ProtocolDialect::OpenAIResponsesV1));
+    }
+    return 0;
+}
+
 int non_image_media_type_fails_closed() {
     // Raw unencoded payloads (e.g. application/octet-stream frames) must
     // fail with a diagnosable CapabilityMismatch before the wire instead of
@@ -448,6 +684,9 @@ int main() {
         return status;
     }
     if (const int status = chat_completions_request_and_response(); status != 0) {
+        return status;
+    }
+    if (const int status = reasoning_maps_to_bounded_thinking(); status != 0) {
         return status;
     }
     if (const int status = image_transport_uses_artifact_bytes(); status != 0) {

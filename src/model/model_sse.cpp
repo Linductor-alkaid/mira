@@ -472,6 +472,37 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
         open->args_done = true;
         return Result<void>{};
     }
+    // Reasoning stream events (DEC-052): only identity and the shared
+    // reasoning byte budget are enforced here. The canonical thinking output
+    // is decoded from the terminal body, which re-carries the reasoning item.
+    if (event == "reasoning_summary_part.added" || event == "reasoning_summary_part.done" ||
+        event == "reasoning_summary_text.delta" || event == "reasoning_summary_text.done" ||
+        event == "reasoning_text.delta" || event == "reasoning_text.done") {
+        const auto *item_id = data.find("item_id");
+        if (item_id == nullptr || !item_id->is_string()) {
+            return sse_error(ModelDomainCode::ProtocolViolation,
+                             "reasoning event carries no item id");
+        }
+        auto *open = find_open_item(*item_id->as_string());
+        if (open == nullptr || open->closed) {
+            return sse_error(ModelDomainCode::ProtocolViolation,
+                             "reasoning event references a closed item");
+        }
+        if (event == "reasoning_summary_text.delta" || event == "reasoning_text.delta") {
+            const auto *delta = data.find("delta");
+            if (delta == nullptr || !delta->is_string()) {
+                return sse_error(ModelDomainCode::ProtocolViolation,
+                                 "reasoning delta carries no delta text");
+            }
+            if (reasoning_bytes_ + delta->as_string()->size() >
+                limits_.max_accumulated_text_bytes) {
+                return sse_error(ModelDomainCode::ResponseTooLarge,
+                                 "accumulated reasoning text exceeded the limit");
+            }
+            reasoning_bytes_ += delta->as_string()->size();
+        }
+        return Result<void>{};
+    }
     if (event == "response.completed" || event == "response.failed" ||
         event == "response.incomplete") {
         auto status = note_terminal(message.event.c_str());

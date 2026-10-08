@@ -113,6 +113,7 @@ add_library(mira_core
     src/model/model_digest.cpp
     src/model/model_schema.cpp
     src/model/model_dialect.cpp
+    src/model/model_responses.cpp
     src/model/model_sse.cpp
     src/model/model_chat_sse.cpp
     src/model/model_anthropic.cpp

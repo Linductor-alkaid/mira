@@ -265,6 +265,8 @@ EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与
 稳定身份、有界文本/工具片段、有效finish_reason及[DONE]；断流失败。工具参数只在终态归约后
 执行，未验证的片段不向UI投递。`ConversationLoopConfig::inference`透传请求选项，
 `reasoning_effort`进入generation；结果新增`last_usage`（最后模型请求）和`tool_executions`。
+`delta.reasoning_content`按累积文本预算增量累积，不进入正文预览，终态经共享非流式解码
+产出ThinkingPart（DEC-052）。
 
 ## Anthropic Messages增量（DEC-050 / M3-21）
 
@@ -284,3 +286,25 @@ ThinkingPart 保留正文、签名或 redacted data，规范 JSON kind/type=thin
 SSE 思考不进入文本预览，仍受累积文本预算和终态验证；完整 assistant 回填发生在同一
 harness 内的工具循环，不会将思考作为答案或动作执行。legacy enabled/budget_tokens 与
 between_tools 暂不提供。其他方言显式拒绝 thinking；旧契约读取器遇到新内容应失败闭合。
+
+## 方言思考输出（DEC-052）
+
+Chat Completions 与 Responses 把模型思考输出映射为与 Messages 同语义的有界
+ThinkingPart，消除"开启思考无效果"的静默降级：
+
+- Chat Completions 非流式：`message.reasoning_content`（非空）→ `ThinkingPart`
+  （signature 恒为空、redacted=false），位于 MessageOutput 之前；越界思考文本按
+  ProtocolViolation 失败闭合、不静默截断（JSON 解析层 1 MiB 字符串上限先行失败，
+  方言层 4 MiB 预算为纵深防御）。原 UnknownOutput 摘要回退删除。
+- Chat Completions 流式：`delta.reasoning_content` 受累积文本预算约束，不进入
+  正文预览、不计入 text_deltas；终态归约复用非流式解码。
+- Responses 终态（同步与 SSE 共用）：`reasoning` item 的 `content[]` 中
+  `reasoning_text` → `ThinkingPart{redacted=false}`；无原始内容时 `summary[]` 中
+  `summary_text` 按 redacted 语义保留摘要（`redacted=true`）；两者皆无（如仅
+  encrypted_content）保留 UnknownOutput 摘要回退。malformed 数组/分片失败闭合。
+- Responses 流式：接受 `reasoning_summary_part.added/done`、
+  `reasoning_summary_text.delta/done`、`reasoning_text.delta/done`，只做 item 身份
+  校验与共享 reasoning 字节预算 enforcement；权威思考内容一律来自终态 body。
+- 回放门控：工具循环按 `dialect_accepts_thinking_replay(profile.dialect)`（仅
+  Messages 为 true）决定是否回填完整 assistant 内容；两方言思考输出仅作可观测
+  输出，不做权威历史输入，工具轮沿用 ToolCallPart + tool result 回放。
