@@ -135,6 +135,17 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
         blocks_.push_back(std::move(entry));
         return {};
     }
+    // A provider may close a block it never opened when the output budget
+    // ends between block scheduling and the first start event (observed on
+    // MiniMax max_tokens cutoffs): synthesize closed empty text blocks for
+    // the missing positions. They decode to no content. Deltas for
+    // never-started blocks and duplicate stops stay invalid.
+    if (*type == "content_block_stop" && position >= blocks_.size()) {
+        while (blocks_.size() <= position)
+            blocks_.push_back(
+                Block{JsonValue::Object{{"type", "text"}, {"text", ""}}, {}, {}, true});
+        return {};
+    }
     if (position >= blocks_.size() || blocks_[position].closed)
         return invalid();
     auto &block = blocks_[position];
@@ -185,10 +196,15 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
             set(block.value, "thinking", block.text);
             set(block.value, "signature", block.arguments);
         } else if (kind == "tool_use" && !block.arguments.empty()) {
-            auto arguments = parse_json(block.arguments);
+            const auto arguments = parse_json(block.arguments);
+            // The terminal stop reason decides whether an unparseable
+            // argument stream is a tolerated output-budget truncation, and
+            // that reason only arrives with message_delta — so the verdict
+            // moves to finish().
             if (!arguments || !arguments.value().is_object())
-                return invalid();
-            set(block.value, "input", std::move(arguments).value());
+                truncated_tool_arguments_ = true;
+            else
+                set(block.value, "input", arguments.value());
         }
         block.closed = true;
         return {};
@@ -207,6 +223,16 @@ Result<ModelResponse> AnthropicMessagesSseParser::finish() {
     if (!stats_.terminal_seen)
         return make_model_error(ModelDomainCode::AmbiguousCompletion,
                                 "Messages SSE ended without message_stop");
+    // An argument stream that never became JSON is only acceptable when the
+    // provider reports the output budget as the terminal reason; the block
+    // keeps its start-shape empty input, so the completion stays decodable
+    // and the caller sees a bounded length result instead of a lifecycle
+    // violation.
+    if (truncated_tool_arguments_) {
+        const auto *stop = string(message_, "stop_reason");
+        if (!stop || *stop != "max_tokens")
+            return invalid();
+    }
     JsonValue::Array content;
     for (const auto &block : blocks_)
         content.push_back(block.value);

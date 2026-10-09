@@ -216,6 +216,10 @@ class AnthropicMessagesSseParser final {
     std::vector<Block> blocks_;
     JsonValue message_;
     bool started_ = false, delta_seen_ = false;
+    /// A tool_use argument stream failed to parse at its block stop; whether
+    /// that is a tolerated output-budget truncation is decided in finish()
+    /// from the terminal stop reason (real providers cut mid-JSON).
+    bool truncated_tool_arguments_ = false;
     std::size_t text_bytes_ = 0, argument_bytes_ = 0, pending_drops_ = 0;
     std::string preview_;
 };
