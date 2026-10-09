@@ -322,10 +322,9 @@ int streams() {
         MIRA_CHECK(orphan_response);
         MIRA_CHECK(orphan_response.value().status == ModelCompletionStatus::Incomplete);
         MIRA_CHECK(orphan_response.value().incomplete_reason == IncompleteReason::MaxOutputTokens);
-        MIRA_CHECK(std::none_of(orphan_response.value().output.begin(),
-                                orphan_response.value().output.end(), [](const auto &item) {
-                                    return std::holds_alternative<ToolCallOutput>(item);
-                                }));
+        MIRA_CHECK(std::none_of(
+            orphan_response.value().output.begin(), orphan_response.value().output.end(),
+            [](const auto &item) { return std::holds_alternative<ToolCallOutput>(item); }));
         for (const auto &item : orphan_response.value().output)
             if (const auto *message = std::get_if<MessageOutput>(&item))
                 for (const auto &part : message->content)
@@ -356,11 +355,9 @@ int streams() {
     MIRA_CHECK(cut_response);
     MIRA_CHECK(cut_response.value().status == ModelCompletionStatus::Incomplete);
     MIRA_CHECK(cut_response.value().incomplete_reason == IncompleteReason::MaxOutputTokens);
-    const auto cut_call = std::find_if(cut_response.value().output.begin(),
-                                       cut_response.value().output.end(),
-                                       [](const auto &item) {
-                                           return std::holds_alternative<ToolCallOutput>(item);
-                                       });
+    const auto cut_call =
+        std::find_if(cut_response.value().output.begin(), cut_response.value().output.end(),
+                     [](const auto &item) { return std::holds_alternative<ToolCallOutput>(item); });
     MIRA_CHECK(cut_call != cut_response.value().output.end());
     MIRA_CHECK(std::get<ToolCallOutput>(*cut_call).arguments.is_object());
     MIRA_CHECK(std::get<ToolCallOutput>(*cut_call).arguments.as_object()->empty());
@@ -380,12 +377,14 @@ int streams() {
         R"({"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"x"}})")));
     const auto once =
         start +
-        event("content_block_start",
-              R"({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})") +
+        event(
+            "content_block_start",
+            R"({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})") +
         event("content_block_stop", R"({"type":"content_block_stop","index":0})");
     AnthropicMessagesSseParser duplicate(r, p);
     MIRA_CHECK(duplicate.feed(once));
-    MIRA_CHECK(!duplicate.feed(event("content_block_stop", R"({"type":"content_block_stop","index":0})")));
+    MIRA_CHECK(
+        !duplicate.feed(event("content_block_stop", R"({"type":"content_block_stop","index":0})")));
     return 0;
 }
 // A deterministic mutation corpus exercises the new parser without external
