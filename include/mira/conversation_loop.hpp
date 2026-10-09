@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -61,7 +63,38 @@ struct ConversationLoopResult final {
     std::string safe_summary;
     ModelUsage last_usage{};
     std::uint32_t tool_executions = 0;
+    // Supplied-input seam totals across the run (DEC-053): items accepted into
+    // requests, items dropped by validation or bounds, and supplier failures
+    // degraded to diagnostics. All zero without a supplier.
+    std::uint32_t supplied_input_items = 0;
+    std::uint32_t supplied_input_dropped = 0;
+    std::uint32_t supply_degradations = 0;
 };
+
+// Declared per-request bounds (RULE-08) for the supplied-input seam. Items
+// beyond a bound are dropped in supply order and counted on the event surface
+// and in ConversationLoopResult — never silently.
+struct ModelInputSupplyOptions final {
+    // Max supplied items folded into one request.
+    std::size_t max_items = 8;
+    // Max summed ImagePart artifact bytes folded into one request; an item
+    // whose images would push the total over the bound is dropped whole.
+    std::uint64_t max_image_bytes = 8ULL * 1024ULL * 1024ULL;
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
+// Host-controlled per-request structured input supply (DEC-053, issue #85 /
+// MIRA-20261009-001): lets a host tool hand images (e.g. a screenshot artifact)
+// to the next model turn as canonical ImageParts. Resolved exactly once per
+// assembled request, after tool rounds complete and before the model call; an
+// empty vector is the normal no-injection state. An Error return is a supply
+// failure that degrades to a visible diagnostic instead of blocking the loop.
+// Identity gating (task / session / epoch) closes inside the callback, which
+// receives the running spec. Called synchronously on the run() caller's worker:
+// keep it bounded and free of blocking work, like WorkingContextSupplier.
+using ModelInputSupplier =
+    std::function<Result<std::vector<ModelInputItem>>(const AgentLoopSpec &)>;
 
 // The no-observation conversational loop (DEC-047): model -> tool proposal ->
 // execute -> result -> model, driven over the same ModelGateway, admission and
@@ -83,13 +116,45 @@ class ConversationLoop final {
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
 
+    // Attaches the optional supplied-input seam (DEC-053) and its per-request
+    // bounds. Without a supplier, request assembly stays unchanged byte for
+    // byte. With one, each assembled request resolves the callback exactly
+    // once and folds the surviving content parts into that request's primary
+    // user item under the loop's own envelope (User role, request.v1
+    // provenance, Internal authority — host input is never elevated);
+    // supply attribution rides the ModelInputSupplied event and the result
+    // counters. The run's tool-history replay never copies supplied content,
+    // so nothing accumulates across turns (hosts re-offer per turn if
+    // wanted). Only TextPart/ImagePart/FilePart are accepted; items that fail
+    // validation or bounds are dropped with a visible count. Supply failures
+    // (Error or exception) degrade to one diagnostic and never block the
+    // loop. Wire once before run(), like the other setters.
+    void set_model_input_supplier(ModelInputSupplier supplier,
+                                  ModelInputSupplyOptions options = ModelInputSupplyOptions{});
+
     [[nodiscard]] Result<ConversationLoopResult> run(const AgentLoopSpec &spec,
                                                      const OperationContext &context);
 
   private:
+    struct SuppliedInput final {
+        std::vector<ModelContentPart> parts;
+        std::size_t offered = 0;
+        std::size_t accepted = 0;
+        std::size_t dropped = 0;
+        std::map<std::string, std::int64_t> drop_reasons;
+        std::uint64_t image_bytes = 0;
+        bool degraded = false;
+    };
+
     [[nodiscard]] Result<ModelRequest> build_request(const AgentLoopSpec &spec,
                                                      const std::vector<ModelInputItem> &history,
-                                                     const std::string &feedback);
+                                                     const std::string &feedback,
+                                                     const std::vector<ModelContentPart> &supplied);
+    // Resolves the seam once for the request being assembled (DEC-053):
+    // validates and bounds the offered items, forces the untrusted envelope and
+    // flattens the surviving parts. Never fails — supply errors and exceptions
+    // degrade to a visible diagnostic and an empty part list.
+    [[nodiscard]] SuppliedInput resolve_supplied_input(const AgentLoopSpec &spec);
     void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
               EventClass classification) const;
 
@@ -99,6 +164,8 @@ class ConversationLoop final {
     RuntimeId runtime_;
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
+    ModelInputSupplier input_supplier_;
+    ModelInputSupplyOptions supply_options_{};
 };
 
 } // namespace mira

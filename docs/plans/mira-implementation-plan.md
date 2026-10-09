@@ -1275,3 +1275,5 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 2026-10-05：新增[会话流式维护](maintenance-2026-10-conversation-streaming.md)，Linux范围Completed；其他平台验收见该记录。
 
 2026-10-06：DEC-050/M3-21新增显式Messages方言；Linux本地协议与MiniMax图片/工具验收完成，其他厂商/平台范围见[兼容性证据](../compatibility/anthropic-messages-20261006.md)。
+
+2026-10-09：新增[会话图片供给维护](maintenance-2026-10-conversation-image-supply.md)（DEC-053，mira#85 / MIRA-20261009-001）：ConversationLoop 逐轮多模态输入供给缝；Linux fixture 级验证完成，真实识图模型端到端与下游复验见该记录。
