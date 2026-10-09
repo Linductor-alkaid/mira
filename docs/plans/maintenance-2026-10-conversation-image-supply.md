@@ -80,10 +80,10 @@
 - [x] `MNT-202610-07`：三方言线格式 fixture + 两类显式拒绝路径。
 - [x] `MNT-202610-08`：边界矩阵全部有断言（丢弃/降级均可在事件面或结果计数
   观察，无静默路径）。
-- [ ] 全量 ctest 通过（Linux x86_64 GCC Debug）与 `architecture-check`、
-  `docs-check` 通过。（`architecture-check`/`docs-check` 已通过；全量 ctest
-  104/105，唯一失败 `mira_m3_transport_test` 为预存环境性失败，见 §7；补跑
-  条件：PR CI Linux/Windows/Android matrix。）
+- [x] 全量 ctest 通过（Linux x86_64 GCC Debug）与 `architecture-check`、
+  `docs-check` 通过。（本机 104/105，唯一失败 `mira_m3_transport_test` 为预存
+  环境性失败，已由 PR #86 CI Linux matrix 覆盖为全绿；`architecture-check`/
+  `docs-check`/quality 全部通过，见 §7 第二条记录。）
 - [ ] 真实识图模型端到端（**不勾选**，见 §7 限制与补跑条件）。
 
 ## 7. 验证记录
@@ -129,3 +129,23 @@ Linux x86_64，GCC 13.3.0，CMake debug 预设。
   升级与供应链同步后按 issue #85 端到端复验，届时台账项方可记为 Resolved。
   Windows/Android 编译路径未在本机执行（补跑条件：PR CI matrix）。issue #85
   的上游结论回复未发布（见 `MNT-202610-09`）。
+
+2026-10-09：PR [#86](https://github.com/Linductor-alkaid/mira/pull/86)（分支
+`mnt/conversation-image-supply`，commit `f631254` + `25253f5`）CI 验证与合并。
+
+- 第 1 轮（runs [`37874958569`](https://github.com/Linductor-alkaid/mira/actions/runs/37874958569)
+  / `37874922126`）：Android arm64/x86_64 通过；Linux GCC/Clang Debug+Release、
+  Windows Debug+Release、ASAN/UBSAN/TSAN、quality 全部失败——唯一失败测试为
+  `mira_docs_test`：`tools/check_docs.py` 的链接正则不跳过代码围栏，API 手册
+  示例中 C++ lambda 的捕获组紧跟参数列表（`[&state]` 后直接 `(const ...)`）
+  被误判为 Markdown 链接（全仓库首个围栏内 lambda）。修复 `25253f5` 将示例
+  改写为自由函数形式（检查器行为本身未改，避免扩大本轮范围；围栏误报的
+  工具缺陷留待后续工具轮处理）。
+- 第 2 轮（run [`37876824953`](https://github.com/Linductor-alkaid/mira/actions/runs/37876824953)）：
+  **24/24 检查全部通过**——Linux GCC/Clang Debug+Release（105/105 含
+  `mira_m3_transport_test`，确证本机该失败为环境性）、Windows Debug+Release、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、clang-format、
+  docs、SBOM、平台边界）。
+- 合并：merge commit `d5e6673`（2026-10-09），工作分支远端与本地均已删除。
+  本轮维护计划保持 In Progress：仅余真实识图模型端到端（§7 第一条记录的
+  补跑条件）与 issue #85 回复发布（`MNT-202610-09`）两项下游/对外动作。
