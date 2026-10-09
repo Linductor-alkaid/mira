@@ -240,18 +240,21 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 以规范 `ImagePart` 随主 User 条目发送（[DEC-053](../decisions/DEC-053-conversation-image-supply-seam.md)）：
 
 ```cpp
-mira::ModelInputSupplier supplier = [&state](const mira::AgentLoopSpec &spec) {
-    // 身份/纪元门控在回调内闭合；空向量是正常空态。
+// 宿主侧实现：身份/纪元门控在回调内闭合；空向量是正常空态。
+// 是否跨轮重放同一 ArtifactRef 由宿主在回调内决定。
+mira::Result<std::vector<mira::ModelInputItem>>
+supply_latest_screenshot(const mira::AgentLoopSpec &spec) {
     if (state.artifact.has_value()) {
         mira::ModelInputItem item;
         item.role = mira::ModelRole::User;
-        item.content.emplace_back(*state.artifact);   // ImagePart{ArtifactRef, detail, media_type}
-        state.artifact.reset();                       // 是否跨轮重放由宿主决定
-        return mira::Result<std::vector<mira::ModelInputItem>>(std::vector{std::move(item)});
+        item.content.emplace_back(*state.artifact);  // ImagePart{ArtifactRef, detail, media_type}
+        state.artifact.reset();
+        return std::vector<mira::ModelInputItem>{std::move(item)};
     }
-    return mira::Result<std::vector<mira::ModelInputItem>>(std::vector<mira::ModelInputItem>{});
-};
-loop.set_model_input_supplier(std::move(supplier));   // run() 前接线一次
+    return {};
+}
+
+loop.set_model_input_supplier(supply_latest_screenshot);  // run() 前接线一次
 ```
 
 - **解析时机**：每轮 `build_request` 前恰一次（工具往返完成之后、模型调用之前，
