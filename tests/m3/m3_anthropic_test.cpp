@@ -304,6 +304,87 @@ int streams() {
                                  }))
                    .arguments.find("ms")
                    ->as_integer() == 1);
+    // A max_tokens cutoff between block scheduling and the first block start
+    // leaves an orphan content_block_stop (observed on MiniMax). The parser
+    // synthesizes the never opened block, so the stream still decodes as an
+    // incomplete length run without tool calls or text.
+    const auto orphan_stop =
+        start + event("content_block_stop", R"({"type":"content_block_stop","index":0})") +
+        event(
+            "message_delta",
+            R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":1}})") +
+        event("message_stop", R"({"type":"message_stop"})");
+    for (std::size_t split = 0; split <= orphan_stop.size(); ++split) {
+        AnthropicMessagesSseParser orphan(r, p);
+        MIRA_CHECK(orphan.feed(std::string_view(orphan_stop).substr(0, split)));
+        MIRA_CHECK(orphan.feed(std::string_view(orphan_stop).substr(split)));
+        auto orphan_response = orphan.finish();
+        MIRA_CHECK(orphan_response);
+        MIRA_CHECK(orphan_response.value().status == ModelCompletionStatus::Incomplete);
+        MIRA_CHECK(orphan_response.value().incomplete_reason == IncompleteReason::MaxOutputTokens);
+        MIRA_CHECK(std::none_of(
+            orphan_response.value().output.begin(), orphan_response.value().output.end(),
+            [](const auto &item) { return std::holds_alternative<ToolCallOutput>(item); }));
+        for (const auto &item : orphan_response.value().output)
+            if (const auto *message = std::get_if<MessageOutput>(&item))
+                for (const auto &part : message->content)
+                    MIRA_CHECK(std::get<OutputTextPart>(part).text.empty());
+    }
+    // An output budget cutoff inside an input_json_delta leaves arguments that
+    // never became JSON. The truncated call stays decodable with empty input
+    // arguments when, and only when, the terminal stop reason is max_tokens.
+    const auto cut_tool_block =
+        start +
+        event(
+            "content_block_start",
+            R"({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_x","name":"wait","input":{}}})") +
+        event(
+            "content_block_delta",
+            R"({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"/tmp"}})") +
+        event("content_block_stop", R"({"type":"content_block_stop","index":0})");
+    const std::string cut_tool_call =
+        cut_tool_block +
+        event(
+            "message_delta",
+            R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4}})") +
+        event("message_stop", R"({"type":"message_stop"})");
+    AnthropicMessagesSseParser cut(r, p);
+    for (const char byte : cut_tool_call)
+        MIRA_CHECK(cut.feed(std::string_view{&byte, 1}));
+    auto cut_response = cut.finish();
+    MIRA_CHECK(cut_response);
+    MIRA_CHECK(cut_response.value().status == ModelCompletionStatus::Incomplete);
+    MIRA_CHECK(cut_response.value().incomplete_reason == IncompleteReason::MaxOutputTokens);
+    const auto cut_call =
+        std::find_if(cut_response.value().output.begin(), cut_response.value().output.end(),
+                     [](const auto &item) { return std::holds_alternative<ToolCallOutput>(item); });
+    MIRA_CHECK(cut_call != cut_response.value().output.end());
+    MIRA_CHECK(std::get<ToolCallOutput>(*cut_call).arguments.is_object());
+    MIRA_CHECK(std::get<ToolCallOutput>(*cut_call).arguments.as_object()->empty());
+    const std::string cut_tool_call_end_turn =
+        cut_tool_block +
+        event(
+            "message_delta",
+            R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}})") +
+        event("message_stop", R"({"type":"message_stop"})");
+    AnthropicMessagesSseParser strict(r, p);
+    MIRA_CHECK(strict.feed(cut_tool_call_end_turn));
+    MIRA_CHECK(!strict.finish()); // Truncated arguments stay invalid without max_tokens.
+    AnthropicMessagesSseParser unstarted(r, p);
+    MIRA_CHECK(unstarted.feed(start));
+    MIRA_CHECK(!unstarted.feed(event(
+        "content_block_delta",
+        R"({"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"x"}})")));
+    const auto once =
+        start +
+        event(
+            "content_block_start",
+            R"({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})") +
+        event("content_block_stop", R"({"type":"content_block_stop","index":0})");
+    AnthropicMessagesSseParser duplicate(r, p);
+    MIRA_CHECK(duplicate.feed(once));
+    MIRA_CHECK(
+        !duplicate.feed(event("content_block_stop", R"({"type":"content_block_stop","index":0})")));
     return 0;
 }
 // A deterministic mutation corpus exercises the new parser without external
