@@ -234,6 +234,51 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 - `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
   设备任务仍由 `AgentLoop` 承载。
 
+### 逐轮多模态输入供给缝（DEC-053，mira#85）
+
+宿主工具产出的图片（截图等）经 `set_model_input_supplier` 进入下一次模型请求，
+以规范 `ImagePart` 随主 User 条目发送（[DEC-053](../decisions/DEC-053-conversation-image-supply-seam.md)）：
+
+```cpp
+// 宿主侧实现：身份/纪元门控在回调内闭合；空向量是正常空态。
+// 是否跨轮重放同一 ArtifactRef 由宿主在回调内决定。
+mira::Result<std::vector<mira::ModelInputItem>>
+supply_latest_screenshot(const mira::AgentLoopSpec &spec) {
+    if (state.artifact.has_value()) {
+        mira::ModelInputItem item;
+        item.role = mira::ModelRole::User;
+        item.content.emplace_back(*state.artifact);  // ImagePart{ArtifactRef, detail, media_type}
+        state.artifact.reset();
+        return std::vector<mira::ModelInputItem>{std::move(item)};
+    }
+    return {};
+}
+
+loop.set_model_input_supplier(supply_latest_screenshot);  // run() 前接线一次
+```
+
+- **解析时机**：每轮 `build_request` 前恰一次（工具往返完成之后、模型调用之前，
+  恢复重试轮同样重新解析）；回调在 run() 调用者 worker 上同步执行，须有界、
+  不阻塞，纪律与 WorkingContext 供给缝一致。
+- **非可信纪律**：条目 role 必须为 `User`；内容词表限 `TextPart`/`ImagePart`/
+  `FilePart`（携带工具往返/思考 part 的条目整条丢弃）；`ImagePart` 校验
+  artifact 引用、`image/*` media type 与非 `Secret`。存活内容并入循环自有
+  User 条目信封（Internal authority），宿主输入永不获得 System/Developer 权限。
+- **有界与淘汰**（RULE-08）：`ModelInputSupplyOptions{max_items=8,
+  max_image_bytes=8MiB}` 为每请求上界，超界条目按供给顺序整条丢弃并计数；
+  供给内容只进入当轮请求、不进入 tool-history 回放，旧截图不跨轮累积。
+- **可观察结果**：接线后每轮发 `ModelInputSupplied` 状态事件（offered/accepted/
+  dropped/image_bytes/drop_reasons）；回调 Error 或异常降级为一次
+  `ModelInputSupplyDegraded` 诊断（`supplier-error`/`supplier-exception`/
+  `invalid-supply-options`），本轮请求不含供给内容、循环继续不阻塞。
+  `ConversationLoopResult` 以 `supplied_input_items` / `supplied_input_dropped` /
+  `supply_degradations` 累计全程。
+- **方言**：图片字节按既有契约留在 artifact store，请求只携带 ArtifactRef；
+  Chat/Responses/Messages 三方言图片线格式为既有能力，路由按
+  `capabilities.image_input` 门禁（无识图能力显式失败）；Messages 方言只接受
+  `ImageDetail::Auto`（默认值），其他 detail 显式 `CapabilityMismatch`。
+  未接线时请求装配与既有行为逐字节一致。
+
 ## conversation_log.hpp：会话对话投影
 
 [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) 的投影 API：

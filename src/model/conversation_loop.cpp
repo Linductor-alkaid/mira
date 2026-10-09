@@ -78,15 +78,145 @@ void ConversationLoop::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> to
     tools_ = std::move(tools);
 }
 
+Result<void> ModelInputSupplyOptions::validate() const {
+    if (max_items == 0 || max_image_bytes == 0) {
+        return conversation_error(ErrorCode::InvalidArgument, "supply bounds must be positive");
+    }
+    return Result<void>{};
+}
+
+void ConversationLoop::set_model_input_supplier(ModelInputSupplier supplier,
+                                                ModelInputSupplyOptions options) {
+    input_supplier_ = std::move(supplier);
+    supply_options_ = options;
+}
+
 void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                             EventClass classification) const {
     loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
                                   std::move(summary), classification);
 }
 
-Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
-                                                     const std::vector<ModelInputItem> &history,
-                                                     const std::string &feedback) {
+ConversationLoop::SuppliedInput
+ConversationLoop::resolve_supplied_input(const AgentLoopSpec &spec) {
+    SuppliedInput supplied;
+    if (input_supplier_ == nullptr) {
+        return supplied;
+    }
+    if (!supply_options_.validate().has_value()) {
+        // Misconfigured bounds are a wiring error: degrade visibly instead of
+        // folding unbounded content into requests (RULE-08).
+        supplied.degraded = true;
+        emit(spec, "ModelInputSupplyDegraded",
+             JsonValue::Object{{"reason", std::string("invalid-supply-options")}},
+             EventClass::State);
+        return supplied;
+    }
+    // Exactly one supply call per assembled request; the loop never caches
+    // offered content across turns — each request re-resolves the seam, so
+    // retries re-ask and nothing accumulates in the tool-history replay.
+    Result<std::vector<ModelInputItem>> offered{std::vector<ModelInputItem>{}};
+    try {
+        offered = input_supplier_(spec);
+    } catch (...) {
+        // Host callback discipline (DEC-045): an exception is isolated into a
+        // diagnostic and never escapes into request assembly; exception text
+        // stays off the event surface.
+        supplied.degraded = true;
+        emit(spec, "ModelInputSupplyDegraded",
+             JsonValue::Object{{"reason", std::string("supplier-exception")}}, EventClass::State);
+        return supplied;
+    }
+    if (!offered.has_value()) {
+        supplied.degraded = true;
+        emit(spec, "ModelInputSupplyDegraded",
+             JsonValue::Object{{"reason", std::string("supplier-error")},
+                               {"code", static_cast<std::int64_t>(offered.error().code)}},
+             EventClass::State);
+        return supplied;
+    }
+
+    // Untrusted-data discipline (DEC-053): offered items are user-side content.
+    // The loop enforces the envelope at assembly, accepts only the host
+    // content vocabulary and drops everything else with a counted reason —
+    // no silent path. ToolCallPart/ToolResultPart/ThinkingPart belong to the
+    // loop's canonical round trip and provider reasoning, never to host input.
+    std::uint64_t image_bytes = 0;
+    for (auto &item : offered.value()) {
+        ++supplied.offered;
+        std::string drop_reason;
+        if (item.role != ModelRole::User) {
+            drop_reason = "role";
+        } else if (item.content.empty()) {
+            drop_reason = "empty";
+        } else {
+            for (const auto &part : item.content) {
+                if (std::holds_alternative<ToolCallPart>(part) ||
+                    std::holds_alternative<ToolResultPart>(part) ||
+                    std::holds_alternative<ThinkingPart>(part)) {
+                    drop_reason = "vocabulary";
+                    break;
+                }
+                if (const auto *image = std::get_if<ImagePart>(&part)) {
+                    if (image->source.id.is_nil()) {
+                        drop_reason = "artifact";
+                        break;
+                    }
+                    if (image->media_type.empty() || image->media_type.rfind("image/", 0) != 0) {
+                        drop_reason = "media-type";
+                        break;
+                    }
+                    if (image->source.sensitivity == Sensitivity::Secret) {
+                        drop_reason = "sensitivity";
+                        break;
+                    }
+                }
+            }
+        }
+        if (drop_reason.empty() && supplied.accepted >= supply_options_.max_items) {
+            drop_reason = "item-budget";
+        }
+        std::uint64_t item_image_bytes = 0;
+        if (drop_reason.empty()) {
+            for (const auto &part : item.content) {
+                if (const auto *image = std::get_if<ImagePart>(&part)) {
+                    item_image_bytes += image->source.byte_size;
+                }
+            }
+            if (image_bytes + item_image_bytes > supply_options_.max_image_bytes) {
+                drop_reason = "image-budget";
+            }
+        }
+        if (!drop_reason.empty()) {
+            ++supplied.dropped;
+            ++supplied.drop_reasons[drop_reason];
+            continue;
+        }
+        image_bytes += item_image_bytes;
+        supplied.image_bytes = image_bytes;
+        ++supplied.accepted;
+        supplied.parts.insert(supplied.parts.end(), item.content.begin(), item.content.end());
+    }
+
+    JsonValue::Object reasons;
+    for (const auto &[reason, count] : supplied.drop_reasons) {
+        reasons.emplace_back(reason, JsonValue{count});
+    }
+    emit(spec, "ModelInputSupplied",
+         JsonValue::Object{
+             {"offered_items", static_cast<std::int64_t>(supplied.offered)},
+             {"accepted_items", static_cast<std::int64_t>(supplied.accepted)},
+             {"dropped_items", static_cast<std::int64_t>(supplied.dropped)},
+             {"image_bytes", JsonValue{static_cast<std::int64_t>(supplied.image_bytes)}},
+             {"drop_reasons", JsonValue{std::move(reasons)}},
+         },
+         EventClass::State);
+    return supplied;
+}
+
+Result<ModelRequest> ConversationLoop::build_request(
+    const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
+    const std::string &feedback, const std::vector<ModelContentPart> &supplied) {
     ModelRequest request = loop_support::begin_model_request(spec, tools_.get());
 
     ModelInputItem system_item;
@@ -104,6 +234,10 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
     system_text.sensitivity = Sensitivity::Internal;
     system_item.content.emplace_back(std::move(system_text));
 
+    // One user item carries the goal, any recovery feedback and the supplied
+    // content (DEC-053): the request shape stays identical to an ordinary
+    // image-bearing user message in every dialect, and the loop-controlled
+    // envelope (role/provenance/authority) is never overridden by host input.
     ModelInputItem user_item;
     user_item.role = ModelRole::User;
     user_item.provenance.source = "mira.conversation-loop.request.v1";
@@ -118,6 +252,7 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
         feedback_text.sensitivity = Sensitivity::Internal;
         user_item.content.emplace_back(std::move(feedback_text));
     }
+    user_item.content.insert(user_item.content.end(), supplied.begin(), supplied.end());
 
     request.input.push_back(std::move(system_item));
     request.input.push_back(std::move(user_item));
@@ -169,7 +304,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         ConversationTurnRecord record;
         record.turn = turn;
 
-        auto request = build_request(spec, history, feedback);
+        // Supplied-input seam (DEC-053): resolved exactly once per assembled
+        // request, after tool rounds complete and before the model call.
+        const SuppliedInput supplied = resolve_supplied_input(spec);
+        result.supplied_input_items += static_cast<std::uint32_t>(supplied.accepted);
+        result.supplied_input_dropped += static_cast<std::uint32_t>(supplied.dropped);
+        result.supply_degradations += supplied.degraded ? 1U : 0U;
+
+        auto request = build_request(spec, history, feedback, supplied.parts);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "request assembly failed";
