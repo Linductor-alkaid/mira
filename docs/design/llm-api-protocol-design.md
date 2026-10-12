@@ -449,6 +449,12 @@ profile 声明，不复用 Responses 状态机的 wire 事件假设。
 Profile 分别配置 DNS/connect、TLS、write、first-byte、idle-read 和 total deadline。最终 deadline 是
 Task、operation、预算和 profile 上限的最小值。Executor queued timeout 不是网络 deadline。
 
+网络阶段超时（DNS、connect、TLS、write、first-byte、idle-read）是传输失败的常态形态之一，
+与同阶段的 `TransportFailed` 一样携带 `retryable=true` 机制提示；operation/total 期限耗尽
+（含 response header 等待 total deadline）保持 `retryable=false`，因为同一 context 内重发
+不可能成功。当阶段预算被 total 收紧到相等时，实际触发的就是 total 期限，同样按不可重试处理。
+提示不授权重试：最终动作仍由 10.2 的阶段、预算、幂等证据和 circuit 判定。
+
 ### 10.2 重试决策表
 
 | 失败点 | 远端可能接收/计费 | 默认动作 |
@@ -496,7 +502,7 @@ circuit probe 和 retry wakeup 使用 Executor timer，取消必须解除等待�
 | `AmbiguousModelOutput` | `InvalidModelOutput` | Decision/Tool 混合或互斥输出 | 否 |
 | `AmbiguousCompletion` | `ExecutionUncertain` | write 后断线/stream 无 terminal | 默认否 |
 | `ModelCancelled` | `Cancelled` | 本地取消 | 否 |
-| `ModelDeadlineExceeded` | `DeadlineExceeded` | operation期限 | 否 |
+| `ModelDeadlineExceeded` | `DeadlineExceeded` | 网络阶段超时（dns/connect/TLS/write/read），或 operation/total 期限 | 阶段超时为是（提示；最终按阶段判定）；operation/total 期限为否 |
 | `ModelResourceExhausted` | `ResourceExhausted` | queue、bytes、预算、内存 | 解除压力后新 operation |
 
 `retryable` 只是一项机制提示，不能直接触发重试。最终决策还必须检查 request stage、幂等证据、费用、

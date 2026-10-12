@@ -76,16 +76,23 @@ class SocketHttpTransport final : public IHttpTransport {
         Exchange &operator=(const Exchange &) = delete;
         ~Exchange();
 
+        // `deadline_retryable` decides the retryable hint when the wait runs
+        // out of time: true when the caller's stage budget (not the total
+        // exchange budget) is the binding constraint of `until`.
         [[nodiscard]] Result<void> wait(bool readable, std::chrono::steady_clock::time_point until,
-                                        const std::function<bool()> &cancelled) const;
+                                        const std::function<bool()> &cancelled,
+                                        bool deadline_retryable) const;
         [[nodiscard]] Result<void> handshake(std::chrono::steady_clock::time_point until,
-                                             const std::function<bool()> &cancelled) const;
+                                             const std::function<bool()> &cancelled,
+                                             bool deadline_retryable) const;
         [[nodiscard]] Result<std::size_t> write_all(const std::string &data,
                                                     std::chrono::steady_clock::time_point until,
-                                                    const std::function<bool()> &cancelled) const;
+                                                    const std::function<bool()> &cancelled,
+                                                    bool deadline_retryable) const;
         [[nodiscard]] Result<std::size_t> read_some(std::byte *data, std::size_t capacity,
                                                     std::chrono::steady_clock::time_point until,
-                                                    const std::function<bool()> &cancelled) const;
+                                                    const std::function<bool()> &cancelled,
+                                                    bool deadline_retryable) const;
         void close() noexcept;
     };
 

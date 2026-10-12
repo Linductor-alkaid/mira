@@ -41,7 +41,8 @@ using namespace mira::testing;
 
 class ConversationFixture final {
   public:
-    explicit ConversationFixture(ProtocolDialect dialect = ProtocolDialect::OpenAIResponsesV1) {
+    explicit ConversationFixture(ProtocolDialect dialect = ProtocolDialect::OpenAIResponsesV1,
+                                 ModelGatewayConfig gateway_config = ModelGatewayConfig{}) {
         kairo::ExecutorConfig executor_config;
         executor_config.min_threads = 2;
         executor_config.max_threads = 2;
@@ -55,7 +56,7 @@ class ConversationFixture final {
         // that contract explicitly.
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                  ModelGatewayConfig{});
+                                                  gateway_config);
         admission_ = std::make_shared<SimpleAdmissionGate>();
         gateway_->set_admission_gate(admission_);
 
@@ -129,6 +130,12 @@ class ConversationFixture final {
 
     [[nodiscard]] const BuiltinToolSpec &echo_spec() const { return echo_spec_; }
 
+    // Total infer invocations of the active flaky provider, i.e. requests
+    // the provider received, including every gateway-level retry attempt.
+    [[nodiscard]] std::size_t flaky_infer_calls() const {
+        return flaky_ == nullptr ? 0 : flaky_->calls();
+    }
+
   private:
     class FlakyProvider final : public IModelProvider {
       public:
@@ -141,6 +148,7 @@ class ConversationFixture final {
         [[nodiscard]] Result<ModelResponse> infer(const ModelRequest &request,
                                                   const OperationContext &context,
                                                   const ProviderInferOptions &) override {
+            ++calls_;
             if (context.cancelled()) {
                 return make_model_error(ModelDomainCode::ModelCancelled, "flaky provider cancelled",
                                         false, request.operation_id);
@@ -160,6 +168,10 @@ class ConversationFixture final {
             return response;
         }
 
+        // Total infer invocations, i.e. requests the provider received,
+        // including every gateway-level retry attempt.
+        [[nodiscard]] std::size_t calls() const { return calls_.load(); }
+
       private:
         std::shared_ptr<const ModelProfile> profile_;
         mutable std::mutex mutex_;
@@ -167,6 +179,7 @@ class ConversationFixture final {
         std::vector<ModelResponse> script_;
         std::size_t failure_cursor_ = 0;
         std::size_t script_cursor_ = 0;
+        std::atomic<std::size_t> calls_{0};
     };
 
     std::shared_ptr<FlakyProvider> flaky_;
@@ -588,6 +601,46 @@ int recoverable_model_failures_settle_after_retry() {
     return 0;
 }
 
+int retryable_deadline_failure_recovers_in_the_loop() {
+    // A retryable network-stage deadline hint is admitted to the loop's
+    // bounded recovery: with the gateway retry budget capped at one attempt
+    // the first call fails through to the loop, the loop spends one
+    // recovery, and the second request answers.
+    ModelGatewayConfig gateway_config;
+    gateway_config.retry_budget.max_attempts = 1;
+    ConversationFixture fixture(ProtocolDialect::OpenAIResponsesV1, gateway_config);
+    fixture.use_flaky_provider({make_model_error(ModelDomainCode::ModelDeadlineExceeded,
+                                                 "network stage deadline", true, std::nullopt)},
+                               {text_response("deadline recovered answer")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().answer == "deadline recovered answer");
+    MIRA_CHECK(result.value().recoveries == 1);
+    // Exactly the failed attempt plus the recovery request reached the
+    // provider: no hidden extra attempts inside the gateway.
+    MIRA_CHECK(fixture.flaky_infer_calls() == 2);
+    return 0;
+}
+
+int non_retryable_deadline_failure_fails_closed() {
+    // Without the retryable hint the same deadline code stays terminal: no
+    // recovery is spent and exactly one request leaves.
+    ConversationFixture fixture;
+    fixture.use_flaky_provider({make_model_error(ModelDomainCode::ModelDeadlineExceeded,
+                                                 "total deadline", false, std::nullopt)},
+                               {text_response("never reached")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Failed);
+    MIRA_CHECK(result.value().recoveries == 0);
+    MIRA_CHECK(fixture.flaky_infer_calls() == 1);
+    MIRA_CHECK(result.value().safe_summary.find("model call failed") != std::string::npos);
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // parse_decision Text-mode semantics (DEC-047)
 // ---------------------------------------------------------------------------
@@ -999,6 +1052,12 @@ int main() {
         return code;
     }
     if (const int code = recoverable_model_failures_settle_after_retry(); code != 0) {
+        return code;
+    }
+    if (const int code = retryable_deadline_failure_recovers_in_the_loop(); code != 0) {
+        return code;
+    }
+    if (const int code = non_retryable_deadline_failure_fails_closed(); code != 0) {
         return code;
     }
     if (const int code = text_mode_tool_calls_parse_as_proposals(); code != 0) {

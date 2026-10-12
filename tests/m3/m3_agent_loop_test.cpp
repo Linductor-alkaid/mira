@@ -616,6 +616,33 @@ int rate_limit_recovery_inside_the_loop() {
     return 0;
 }
 
+int retryable_deadline_recovery_inside_the_loop() {
+    LoopFixture fixture;
+    fixture.activate();
+    fixture.spec().profile_id = fixture.profile_->id;
+
+    // A pre-write network-stage deadline stall carries the retryable hint;
+    // no request bytes left, so the gateway resends immediately and the
+    // loop still completes on the second request.
+    MockStep stalled;
+    stalled.pre_write = true;
+    stalled.failure =
+        make_model_error(ModelDomainCode::ModelDeadlineExceeded, "connect deadline", true);
+    fixture.transport_->enqueue(std::move(stalled));
+    fixture.transport_->enqueue_json(
+        200,
+        R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"after retry\"}"}]}],"usage":{"input_tokens":3,"output_tokens":2}})");
+
+    AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 2});
+    InputCountVerifier verifier(*fixture.environment_, 0);
+    auto result = loop.run(fixture.spec(), loop_context(), verifier);
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == LoopOutcome::Completed);
+    // The stalled attempt plus the resend: exactly two requests left.
+    MIRA_CHECK(fixture.transport_->recorded().size() == 2);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -647,6 +674,9 @@ int main() {
         return status;
     }
     if (const int status = rate_limit_recovery_inside_the_loop(); status != 0) {
+        return status;
+    }
+    if (const int status = retryable_deadline_recovery_inside_the_loop(); status != 0) {
         return status;
     }
     return 0;

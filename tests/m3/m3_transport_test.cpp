@@ -503,8 +503,104 @@ int connect_deadline_enforced() {
     MIRA_CHECK(!response.has_value());
     MIRA_CHECK(response.error().domain_code ==
                static_cast<std::int32_t>(ModelDomainCode::ModelDeadlineExceeded));
+    // A connect stall is a pre-write transient failure: the retryable hint
+    // admits it to the supervisor, which resends because no bytes left.
+    MIRA_CHECK(response.error().retryable);
+    MIRA_CHECK(response.error().safe_message.find("connect exceeded its deadline") !=
+               std::string::npos);
     MIRA_CHECK(elapsed < std::chrono::seconds{2});
     MIRA_CHECK(!trace.write_started);
+    transport.shutdown();
+    return 0;
+}
+
+int first_byte_stage_deadline_is_retryable() {
+    ExecutorFixture fixture;
+    auto secrets = std::make_shared<MapSecretResolver>();
+    SocketHttpTransport transport(fixture.executor(), secrets);
+    MIRA_CHECK(transport.start());
+
+    testing::ScriptedHttpServer server;
+    MIRA_CHECK(server.valid());
+
+    HttpRequest request;
+    request.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/stall";
+    TransportLimits limits = loopback_limits();
+    // The first-byte stage expires long before the total budget, so the
+    // staged network deadline (not the whole-operation budget) fires.
+    limits.deadlines.first_byte = std::chrono::milliseconds{400};
+    auto server_task = fixture.executor().submit_auto([&server] {
+        if (!server.accept_client(std::chrono::milliseconds{5'000})) {
+            return;
+        }
+        (void)server.read_request(std::chrono::milliseconds{2'000});
+        // Hold the connection silently: the client must exit through its
+        // first-byte deadline, not through an EOF.
+        std::this_thread::sleep_for(std::chrono::milliseconds{1'500});
+        server.close_client();
+    });
+    TransportTrace trace;
+    const auto started = std::chrono::steady_clock::now();
+    auto response = transport.execute(request, limits, make_context(), nullptr, trace);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    server_task.get();
+    MIRA_CHECK(!response.has_value());
+    MIRA_CHECK(response.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::ModelDeadlineExceeded));
+    // A staged post-write stall is a transient transport failure hint; the
+    // supervisor still decides by request stage.
+    MIRA_CHECK(response.error().retryable);
+    MIRA_CHECK(response.error().safe_message.find("exchange stage deadline exceeded") !=
+               std::string::npos);
+    MIRA_CHECK(trace.write_completed); // Request bytes left; the server stalled.
+    MIRA_CHECK(!trace.headers_received);
+    MIRA_CHECK(elapsed < std::chrono::seconds{3}); // Stage bound, not the total budget.
+    transport.shutdown();
+    return 0;
+}
+
+int response_header_total_deadline_stays_non_retryable() {
+    ExecutorFixture fixture;
+    auto secrets = std::make_shared<MapSecretResolver>();
+    SocketHttpTransport transport(fixture.executor(), secrets);
+    MIRA_CHECK(transport.start());
+
+    testing::ScriptedHttpServer server;
+    MIRA_CHECK(server.valid());
+
+    HttpRequest request;
+    request.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/hang";
+    TransportLimits limits;
+    limits.deadlines.connect = std::chrono::milliseconds{2'000};
+    // first_byte >= total: the whole-operation budget is the binding
+    // deadline, and resending inside the same context cannot succeed.
+    limits.deadlines.first_byte = std::chrono::milliseconds{30'000};
+    limits.deadlines.total = std::chrono::milliseconds{600};
+    limits.allow_private_endpoints = true;
+    auto server_task = fixture.executor().submit_auto([&server] {
+        if (!server.accept_client(std::chrono::milliseconds{5'000})) {
+            return;
+        }
+        (void)server.read_request(std::chrono::milliseconds{2'000});
+        // Never answer; the total deadline must settle the caller.
+        std::this_thread::sleep_for(std::chrono::milliseconds{1'500});
+        server.close_client();
+    });
+    TransportTrace trace;
+    const auto started = std::chrono::steady_clock::now();
+    auto response = transport.execute(request, limits, make_context(), nullptr, trace);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    server_task.get();
+    MIRA_CHECK(!response.has_value());
+    MIRA_CHECK(response.error().domain_code ==
+               static_cast<std::int32_t>(ModelDomainCode::ModelDeadlineExceeded));
+    // Total-budget exhaustion is not retryable: same context, same outcome.
+    MIRA_CHECK(!response.error().retryable);
+    MIRA_CHECK(response.error().safe_message.find(
+                   "response header wait exceeded the total deadline") != std::string::npos);
+    MIRA_CHECK(trace.write_completed);
+    MIRA_CHECK(!trace.headers_received);
+    MIRA_CHECK(elapsed < std::chrono::seconds{3});
     transport.shutdown();
     return 0;
 }
@@ -557,6 +653,12 @@ int main() {
         return status;
     }
     if (const int status = connect_deadline_enforced(); status != 0) {
+        return status;
+    }
+    if (const int status = first_byte_stage_deadline_is_retryable(); status != 0) {
+        return status;
+    }
+    if (const int status = response_header_total_deadline_stays_non_retryable(); status != 0) {
         return status;
     }
     if (const int status = https_without_tls_fails_closed(); status != 0) {
