@@ -749,6 +749,25 @@ RuntimeState MiraRuntime::state() const noexcept {
     return impl_->runtime_state.load(std::memory_order_acquire);
 }
 
+SchedulingMetricsSnapshot MiraRuntime::scheduling_metrics() const {
+    const auto metrics = impl_->executor.get_scheduling_metrics();
+    return SchedulingMetricsSnapshot{
+        .accepted = metrics.accepted_count,
+        .accepted_degraded = metrics.accepted_degraded_count,
+        .rejected = metrics.rejected_count,
+        .deadline_rejected = metrics.deadline_rejected_count,
+        .backend_unavailable_rejected = metrics.backend_unavailable_rejected_count,
+        .capacity_rejected = metrics.capacity_rejected_count,
+        .resource_rejected = metrics.resource_rejected_count,
+        .affinity_mismatch = metrics.affinity_mismatch_count,
+        .deadline_missed = metrics.deadline_missed_count,
+        .feedback_reported = metrics.feedback_reported_count,
+        .adaptive_history = metrics.adaptive_history_count,
+        .load_shedding_rejected = metrics.load_shedding_rejected_count,
+        .priority_promoted = metrics.priority_promoted_count,
+    };
+}
+
 ShutdownReport MiraRuntime::finish_shutdown() {
     auto current = impl_->runtime_state.load(std::memory_order_acquire);
     if (current == RuntimeState::Constructed) {

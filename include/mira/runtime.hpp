@@ -32,6 +32,28 @@ struct ShutdownReport final {
     std::string diagnostic;
 };
 
+// Mirror of the Executor's cumulative scheduling counters (kairo 0.7.0
+// `get_scheduling_metrics()`): routing decisions by status/reason, execution
+// deadline misses and scheduler feedback counts. Counters are monotonic from
+// Executor construction; the read is lock-free and safe before initialize()
+// and after shutdown (zeros when nothing was routed). Surfaces queue
+// rejections that must not stay silent (project completion criteria).
+struct SchedulingMetricsSnapshot final {
+    std::uint64_t accepted = 0;
+    std::uint64_t accepted_degraded = 0;
+    std::uint64_t rejected = 0;
+    std::uint64_t deadline_rejected = 0;
+    std::uint64_t backend_unavailable_rejected = 0;
+    std::uint64_t capacity_rejected = 0;
+    std::uint64_t resource_rejected = 0;
+    std::uint64_t affinity_mismatch = 0;
+    std::uint64_t deadline_missed = 0;
+    std::uint64_t feedback_reported = 0;
+    std::uint64_t adaptive_history = 0;
+    std::uint64_t load_shedding_rejected = 0;
+    std::uint64_t priority_promoted = 0;
+};
+
 class CommandHandle final {
   public:
     CommandHandle() = default;
@@ -99,6 +121,7 @@ class MiraRuntime final {
     [[nodiscard]] Result<TaskSnapshot> task_snapshot(TaskId task_id) const;
     [[nodiscard]] Result<SessionSnapshot> session_snapshot(SessionId session_id) const;
     [[nodiscard]] RuntimeState state() const noexcept;
+    [[nodiscard]] SchedulingMetricsSnapshot scheduling_metrics() const;
     ShutdownReport finish_shutdown();
 
   private:
