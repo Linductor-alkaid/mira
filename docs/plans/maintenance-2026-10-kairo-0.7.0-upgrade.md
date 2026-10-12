@@ -23,12 +23,21 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
 - 适用性评估：梳理 Mira 的 Executor 使用面（约 10 个 `submit_auto` 提交点、
   单一默认池、无 QoS 定制、无 GPU 注册），对照上游适用指南形成 DEC-054
   的分级采纳决策（即刻/暂缓附触发条件/不适用）。
+- 后续轮（同分支追加，2026-10-12 用户确认）：
+  - `MNT-202610-14` 修复存量问题：`WorkflowRuntime::drive()` 的撤回监视从
+    池线程忙等（`submit_auto` + `sleep_for(5ms)` 循环，整个 drive 期间占死
+    一个 worker）改为 kairo timer 驱动的 `submit_delayed` tick 链（5ms 节奏
+    不变，互斥锁交接 + 栈帧退出守卫 join，覆盖异常路径）。
+  - `MNT-202610-15` DEC-054"即刻采纳"落地：`MiraRuntime::scheduling_metrics()`
+    返回 mira 自有 `SchedulingMetricsSnapshot`（kairo `get_scheduling_metrics()`
+    的逐字段映射，不暴露 kairo 类型），初始化前/关闭后调用安全返回零值。
 
 ### 2.2 非目标
 
 - 不注入 `AdaptiveScheduler`、不改任何 `submit_auto` 调用点的 `TaskOptions`
   （DEC-054：暂缓，触发条件见决策）。
-- 不在本轮把 `get_scheduling_metrics()` 接入 Runtime 诊断出口（后续维护项）。
+- 不改控制面命令（pause/resume/cancel）在调用方线程上的有界收敛等待
+  （受 `command_timeout` 约束，非池线程忙等，不属本次存量问题）。
 - 不修改 `third_party/kairo` 源码；台账无 Open 条目，无跟进行。
 
 ## 3. 设计与决策依据
@@ -47,6 +56,9 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
 - [x] `MNT-202610-12` 全量回归（Independent-Verification-Agent 执行）与
   `architecture-check`/`docs-check`/SBOM 目标。
 - [ ] `MNT-202610-13` CI 全矩阵绿（PR 验证）后回填证据。
+- [x] `MNT-202610-14` 撤回监视改 kairo timer tick 链（含 IV-Agent 全量回归、
+  定向复跑与 TSAN 定向验证）。
+- [x] `MNT-202610-15` `MiraRuntime::scheduling_metrics()` 诊断出口接入。
 
 ## 5. 风险与阻塞
 
@@ -88,3 +100,31 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
   （Mira 仅以库方式集成），AdaptiveScheduler/反馈聚合的上游完整测试未随本次
   ctest 覆盖；`wants_feedback()` 注入路径未在本仓库环境实测。Windows/Android/
   sanitizer 由 PR CI matrix 覆盖（`MNT-202610-13`）。
+
+2026-10-12：`MNT-202610-14`/`MNT-202610-15` 实现轮（同分支追加提交）。
+
+- 构建：GCC 13.3.0 全目标零警告零错误；`architecture-check`（policy clean）、
+  `docs-check` 通过。
+
+2026-10-12：`MNT-202610-14`/`MNT-202610-15` 回归轮（Independent-Verification-Agent 执行）。
+
+- 全量 ctest：**105/105 通过**（`ctest --output-on-failure -j14`，37.70s）。
+- 监视器定向复跑：drive/暂停/取消/撤回覆盖集（`m9_control`、
+  `agent_harness`、`m14_recovery`、`m24_fork_merge` 共 5 测试）×5 轮
+  **25/25 全绿**。
+- TSAN 定向：`tsan` 预设构建成功；本机内核高熵 ASLR 触发
+  `unexpected memory mapping`（环境项，`setarch -R` 规避）后，5 个定向
+  测试 4 轮 + 全量复跑 3 轮**零 data race 报告**（tick 链 5ms 续期 +
+  exit guard 抢占路径干净）。
+- 新接口冒烟（最小程序链 `libmira_core.a`，仓库零改动）：
+  (a) 未初始化调用 `scheduling_metrics()` 全零且安全；(c) `finish_shutdown`
+  后调用安全、单调。**结构性观察**：(b) 经 MiraRuntime 公开 API 计数恒为
+  零——runtime 自身 executor 仅用于控制面 `submit_on_with_handle`
+  （`src/runtime/runtime.cpp` 唯一提交点），不产生路由决策；13 字段映射
+  经编译期指定初始化器与 kairo `types.hpp` 逐项核对一致，同一 kairo 构建
+  直接 `submit_auto` 对照组计数正常。该出口反映 MiraRuntime 自有 executor
+  的调度健康度；workflow/模型层的路由计数归其注入 executor 的所有方。
+- 静态契约核对：`TimerHandle::cancel()` noexcept、析构不取消、
+  `TimerSubmission` 形态与 exit guard 用法匹配；guard 声明晚于栈上
+  `DriveFlags`（逆序析构保证 join 先于 flags 销毁）；`monitor_failures_`
+  两处失败递增均落入既有诊断出口。

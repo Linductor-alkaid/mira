@@ -83,3 +83,10 @@ Mira 侧现状：全树 60 处 `<kairo/executor.hpp>` + 1 处 `<kairo/blocking_i
 - 上游：[kairo v0.7.0 release](https://github.com/Linductor-alkaid/kairo/releases/tag/v0.7.0)、
   `third_party/kairo/docs/MIGRATION.md` §0.7.0、
   `third_party/kairo/website/zh/guides/adaptive-scheduling.md`
+
+> 2026-10-12 更新：决策 2（即刻采纳）落地为 `MiraRuntime::scheduling_metrics()`
+> 返回 mira 自有 `SchedulingMetricsSnapshot`（`get_scheduling_metrics()` 逐字段
+> 映射，不暴露 kairo 类型）；同轮修复 `WorkflowRuntime::drive()` 撤回监视的
+> 池线程忙等存量问题（改 kairo timer 驱动的 `submit_delayed` tick 链，属
+> AGENTS.md"后台周期任务使用 timer 能力"的合规化，非 0.7.0 新能力消费）。
+> 证据见维护计划 `MNT-202610-14`/`MNT-202610-15`。
