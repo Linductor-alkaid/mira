@@ -103,19 +103,22 @@ class RuntimeBaseline::Impl final {
         return false;
     }
 
-    BaselineRuntimeConfig config;
+    // Field order follows clang-tidy's optimal-padding layout: kairo 0.7.0
+    // grew `kairo::Executor` (alignas(64) scheduling counters), so holding it
+    // after smaller members wasted 87 padding bytes in this Impl.
     kairo::Executor executor;
+    std::atomic<std::size_t> admission_rejections{0};
+    std::atomic<std::size_t> unobserved_results{0};
+    std::atomic<std::uint64_t> control_sequence{0};
     kairo::SerialExecutionContext control_context;
+    std::shared_future<BaselineResult> shutdown_future;
+    BaselineRuntimeConfig config;
 
     mutable std::mutex entries_mutex;
     std::unordered_map<std::uint64_t, CommandEntry> entries;
     std::unordered_map<std::uint64_t, TaskState> tasks;
-    std::shared_future<BaselineResult> shutdown_future;
 
     std::atomic<BaselineRuntimeState> state{BaselineRuntimeState::Constructed};
-    std::atomic<std::size_t> admission_rejections{0};
-    std::atomic<std::size_t> unobserved_results{0};
-    std::atomic<std::uint64_t> control_sequence{0};
 };
 
 RuntimeBaseline::RuntimeBaseline(BaselineRuntimeConfig config)

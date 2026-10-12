@@ -215,9 +215,9 @@ struct WorkflowRuntime::DriveFlags final {
 // tick survives past the drive frame whose flags pointer ticks dereference.
 struct WorkflowRuntime::WithdrawalMonitor final {
     std::mutex mutex;
-    kairo::TimerHandle armed;     // not-yet-expired tick handle
-    std::future<void> in_flight;  // future of the latest tick submission
-    bool stopping = false;        // set by the exit guard; forbids re-arming
+    kairo::TimerHandle armed;    // not-yet-expired tick handle
+    std::future<void> in_flight; // future of the latest tick submission
+    bool stopping = false;       // set by the exit guard; forbids re-arming
     TaskId carrier;
     DriveFlags *flags = nullptr;
 };
