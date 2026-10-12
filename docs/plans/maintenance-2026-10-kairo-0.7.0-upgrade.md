@@ -55,7 +55,7 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
 - [x] `MNT-202610-11` 新调度系统适用性评估与 DEC-054。
 - [x] `MNT-202610-12` 全量回归（Independent-Verification-Agent 执行）与
   `architecture-check`/`docs-check`/SBOM 目标。
-- [ ] `MNT-202610-13` CI 全矩阵绿（PR 验证）后回填证据。
+- [x] `MNT-202610-13` CI 全矩阵绿（PR 验证）后回填证据。
 - [x] `MNT-202610-14` 撤回监视改 kairo timer tick 链（含 IV-Agent 全量回归、
   定向复跑与 TSAN 定向验证）。
 - [x] `MNT-202610-15` `MiraRuntime::scheduling_metrics()` 诊断出口接入。
@@ -70,7 +70,7 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
 ## 6. 测试与退出条件
 
 - [x] 本地全量 ctest 通过；`architecture-check`、`docs-check`、`check_sbom.py` 通过。
-- [ ] CI 全矩阵绿（含 Windows/Android/sanitizers/quality）。
+- [x] CI 全矩阵绿（含 Windows/Android/sanitizers/quality）。
 - [x] 锁定信息与实际依赖形态一致（`check_sbom.py` 比对通过）。
 
 ## 7. 验证记录
@@ -128,3 +128,23 @@ AdaptiveScheduler），零代码迁移；同时完成新调度系统对本项目
   `TimerSubmission` 形态与 exit guard 用法匹配；guard 声明晚于栈上
   `DriveFlags`（逆序析构保证 join 先于 flags 销毁）；`monitor_failures_`
   两处失败递增均落入既有诊断出口。
+
+2026-10-12：PR #89（分支 `mnt/kairo-070-scheduling`）CI 验证。
+
+- 第 1 轮（commit `6a834d1`）：quality job 失败——clang-tidy 18.1.8
+  （warnings-as-errors）报 `RuntimeBaseline::Impl` 填充 87 字节（23 最优）：
+  kairo 0.7.0 的 `kairo::Executor` 新增 alignas(64) 调度计数器后按值持有面
+  填充 profile 恶化，触发 `optin.performance.Padding`。属升级连带影响而非
+  本轮代码缺陷。修复（`8fa9f39`）：按 clang-tidy 建议最优序重排该 Impl 成员
+  （无初始化顺序依赖，零行为变化），并对分支触碰文件执行 clang-format。
+- 本地预防性复验（与 CI 同版本工具）：clang-format 18.1.8 format-check
+  260 文件通过；clang-tidy 18.1.8 静态分析全树构建 exit 0、Mira 侧 TU 零
+  告警（36 条告警全部来自 third_party 上游源，构成同 0.6.0 轮）；baseline
+  ctest 通过。
+- 第 2 轮（commit `8fa9f39`，runs
+  [`38229572399`](https://github.com/Linductor-alkaid/mira/actions/runs/38229572399) /
+  [`38229577564`](https://github.com/Linductor-alkaid/mira/actions/runs/38229577564)）：
+  **24/24 检查全部通过**——Linux GCC/Clang Debug+Release、Windows Debug+Release、
+  Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、clang-format、
+  docs、SBOM、平台边界）。
+- 合并：master `99461b3`（merge commit）；工作分支远端/本地均已删除。
