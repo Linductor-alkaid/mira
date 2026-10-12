@@ -91,6 +91,44 @@ int retry_table_covers_request_stages() {
     return 0;
 }
 
+int deadline_failures_follow_the_stage_table() {
+    ProviderSupervisor supervisor;
+    ProviderCircuit circuit;
+    RetryBudget budget;
+    budget.max_attempts = 3;
+
+    const auto deadline_failure = [](bool retryable) {
+        Error error = make_model_error(ModelDomainCode::ModelDeadlineExceeded,
+                                       "network stage deadline", retryable);
+        return error;
+    };
+
+    // Pre-write deadline stalls (DNS/connect/TLS) are transient: the
+    // retryable hint admits an immediate resend because no bytes left.
+    auto prewrite = supervisor.evaluate(deadline_failure(true), RequestStage::PreWriteFailure,
+                                        std::nullopt, budget, circuit);
+    MIRA_CHECK(prewrite.action == RetryAction::RetryNow);
+
+    // Post-write stages stay conservative: request bytes already left the
+    // process, so the retryable deadline hint alone must not trigger a
+    // resend that could double-bill the request.
+    for (const auto stage :
+         {RequestStage::PartialWrite, RequestStage::AwaitingResponse, RequestStage::StreamBroken}) {
+        const auto decision =
+            supervisor.evaluate(deadline_failure(true), stage, std::nullopt, budget, circuit);
+        MIRA_CHECK(decision.action == RetryAction::GiveUp);
+        MIRA_CHECK(decision.reason.find("request bytes left") != std::string::npos);
+    }
+
+    // Whole-operation and total-budget deadlines are not marked retryable
+    // and are never admitted, not even before the write.
+    const auto fatal = supervisor.evaluate(deadline_failure(false), RequestStage::PreWriteFailure,
+                                           std::nullopt, budget, circuit);
+    MIRA_CHECK(fatal.action == RetryAction::GiveUp);
+    MIRA_CHECK(fatal.reason.find("not marked retryable") != std::string::npos);
+    return 0;
+}
+
 int circuit_state_machine() {
     CircuitConfig config;
     config.consecutive_failures_to_open = 2;
@@ -237,6 +275,9 @@ int token_estimates_are_conservative() {
 
 int main() {
     if (const int status = retry_table_covers_request_stages(); status != 0) {
+        return status;
+    }
+    if (const int status = deadline_failures_follow_the_stage_table(); status != 0) {
         return status;
     }
     if (const int status = circuit_state_machine(); status != 0) {

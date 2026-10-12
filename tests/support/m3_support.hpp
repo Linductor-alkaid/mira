@@ -107,6 +107,10 @@ struct MockStep final {
     std::vector<std::string> chunk_pieces;
     // Optional transport-level failure instead of a response.
     std::optional<Error> failure;
+    // When set together with `failure`, the failure happens before any
+    // request bytes leave the process (the trace stays write-less), like a
+    // DNS/connect/TLS stall. By default failures look post-write.
+    bool pre_write = false;
     // Marks the chunk boundary after which the "connection" drops without a
     // terminal response.
     bool drop_after_chunks = false;
@@ -140,13 +144,17 @@ class MockHttpTransport final : public IHttpTransport {
         steps_.pop_front();
         lock.unlock();
 
-        trace.write_started = true;
-        trace.write_completed = true;
         if (step.failure.has_value()) {
             // Pre-write failures leave nothing on the wire; post-write ones
             // are ambiguous. The script controls which via retryable hints.
+            if (!step.pre_write) {
+                trace.write_started = true;
+                trace.write_completed = true;
+            }
             return step.failure.value();
         }
+        trace.write_started = true;
+        trace.write_completed = true;
         std::string body = step.body;
         if (!step.chunk_pieces.empty()) {
             body.clear();

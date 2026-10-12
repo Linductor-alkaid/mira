@@ -163,9 +163,15 @@ void close_socket(SocketHandle socket) noexcept {
 
 // Poll-sliced wait shared by connect, handshake and I/O stages. The slice
 // bounds cancellation and deadline latency without cross-thread closes.
+// `deadline_retryable` is the retryable hint carried by a deadline error:
+// true when the caller's stage budget is the binding constraint of `until`
+// (a transient stall, admissible to the retry supervisor), false when the
+// wait was clamped by the total exchange budget (a retry within the same
+// exchange cannot succeed).
 [[nodiscard]] Result<void> poll_wait(std::intptr_t handle, bool readable,
                                      std::chrono::steady_clock::time_point until,
-                                     const std::function<bool()> &cancelled) {
+                                     const std::function<bool()> &cancelled,
+                                     bool deadline_retryable) {
     const auto socket = native(handle);
     for (;;) {
         if (cancelled != nullptr && cancelled()) {
@@ -175,7 +181,7 @@ void close_socket(SocketHandle socket) noexcept {
         const auto now = std::chrono::steady_clock::now();
         if (now >= until) {
             return transport_error(ModelDomainCode::ModelDeadlineExceeded,
-                                   "exchange stage deadline exceeded", false);
+                                   "exchange stage deadline exceeded", deadline_retryable);
         }
 #ifdef _WIN32
         WSAPOLLFD descriptor{};
@@ -252,13 +258,14 @@ void SocketHttpTransport::Exchange::close() noexcept {
 
 Result<void> SocketHttpTransport::Exchange::wait(bool readable,
                                                  std::chrono::steady_clock::time_point until,
-                                                 const std::function<bool()> &cancelled) const {
-    return poll_wait(socket, readable, until, cancelled);
+                                                 const std::function<bool()> &cancelled,
+                                                 bool deadline_retryable) const {
+    return poll_wait(socket, readable, until, cancelled, deadline_retryable);
 }
 
-Result<void>
-SocketHttpTransport::Exchange::handshake(std::chrono::steady_clock::time_point until,
-                                         const std::function<bool()> &cancelled) const {
+Result<void> SocketHttpTransport::Exchange::handshake(std::chrono::steady_clock::time_point until,
+                                                      const std::function<bool()> &cancelled,
+                                                      bool deadline_retryable) const {
     for (;;) {
         bool want_read = false;
         bool want_write = false;
@@ -269,17 +276,16 @@ SocketHttpTransport::Exchange::handshake(std::chrono::steady_clock::time_point u
         if (done.value()) {
             return Result<void>{};
         }
-        auto ready = wait(want_read, until, cancelled);
+        auto ready = wait(want_read, until, cancelled, deadline_retryable);
         if (!ready) {
             return ready;
         }
     }
 }
 
-Result<std::size_t>
-SocketHttpTransport::Exchange::write_all(const std::string &data,
-                                         std::chrono::steady_clock::time_point until,
-                                         const std::function<bool()> &cancelled) const {
+Result<std::size_t> SocketHttpTransport::Exchange::write_all(
+    const std::string &data, std::chrono::steady_clock::time_point until,
+    const std::function<bool()> &cancelled, bool deadline_retryable) const {
     std::size_t written = 0;
     const auto *bytes = reinterpret_cast<const std::byte *>(data.data());
     while (written < data.size()) {
@@ -292,7 +298,7 @@ SocketHttpTransport::Exchange::write_all(const std::string &data,
                 return sent.error();
             }
             if (sent.value() == 0 && (want_read || want_write)) {
-                auto ready = wait(want_read, until, cancelled);
+                auto ready = wait(want_read, until, cancelled, deadline_retryable);
                 if (!ready) {
                     return ready.error();
                 }
@@ -301,7 +307,7 @@ SocketHttpTransport::Exchange::write_all(const std::string &data,
             written += sent.value();
             continue;
         }
-        auto ready = wait(false, until, cancelled);
+        auto ready = wait(false, until, cancelled, deadline_retryable);
         if (!ready) {
             return ready.error();
         }
@@ -325,10 +331,9 @@ SocketHttpTransport::Exchange::write_all(const std::string &data,
     return written;
 }
 
-Result<std::size_t>
-SocketHttpTransport::Exchange::read_some(std::byte *data, std::size_t capacity,
-                                         std::chrono::steady_clock::time_point until,
-                                         const std::function<bool()> &cancelled) const {
+Result<std::size_t> SocketHttpTransport::Exchange::read_some(
+    std::byte *data, std::size_t capacity, std::chrono::steady_clock::time_point until,
+    const std::function<bool()> &cancelled, bool deadline_retryable) const {
     for (;;) {
         if (tls != nullptr) {
             bool want_read = false;
@@ -338,7 +343,7 @@ SocketHttpTransport::Exchange::read_some(std::byte *data, std::size_t capacity,
                 return received.error();
             }
             if (received.value() == 0 && (want_read || want_write)) {
-                auto ready = wait(want_read, until, cancelled);
+                auto ready = wait(want_read, until, cancelled, deadline_retryable);
                 if (!ready) {
                     return ready.error();
                 }
@@ -346,7 +351,7 @@ SocketHttpTransport::Exchange::read_some(std::byte *data, std::size_t capacity,
             }
             return received;
         }
-        auto ready = wait(true, until, cancelled);
+        auto ready = wait(true, until, cancelled, deadline_retryable);
         if (!ready) {
             return ready.error();
         }
@@ -725,7 +730,7 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
         if (std::chrono::steady_clock::now() - dns_began > job.limits.deadlines.dns) {
             return transport_error(ModelDomainCode::ModelDeadlineExceeded,
                                    std::string(label) + " dns resolution exceeded its deadline",
-                                   false);
+                                   true);
         }
         std::vector<sockaddr_storage> resolved;
         for (auto *entry = addresses.get(); entry != nullptr; entry = entry->ai_next) {
@@ -811,14 +816,16 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
             auto connect_deadline =
                 std::min(started_at + job.limits.deadlines.connect, total_deadline);
             // A bare wait (no Exchange): the socket is only owned once the
-            // connection attempt succeeds.
+            // connection attempt succeeds. When the total budget clamps the
+            // connect budget, the deadline that fires is the total one.
+            const bool connect_stage_binding = connect_deadline < total_deadline;
             auto writable = poll_wait(static_cast<std::intptr_t>(socket), false, connect_deadline,
-                                      job.cancelled);
+                                      job.cancelled, connect_stage_binding);
             if (!writable) {
                 close_socket(socket);
                 if (writable.error().code == ErrorCode::DeadlineExceeded) {
                     return transport_error(ModelDomainCode::ModelDeadlineExceeded,
-                                           "connect exceeded its deadline", false);
+                                           "connect exceeded its deadline", connect_stage_binding);
                 }
                 return writable.error();
             }
@@ -854,7 +861,9 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
         connect_request += "\r\n";
         const auto connect_deadline =
             std::min(started_at + job.limits.deadlines.connect, total_deadline);
-        if (auto sent = exchange.write_all(connect_request, connect_deadline, job.cancelled);
+        const bool connect_stage_binding = connect_deadline < total_deadline;
+        if (auto sent = exchange.write_all(connect_request, connect_deadline, job.cancelled,
+                                           connect_stage_binding);
             !sent) {
             return sent.error();
         }
@@ -865,8 +874,8 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
                                        "proxy CONNECT response headers exceeded the limit", false);
             }
             std::array<std::byte, 1024> chunk{};
-            auto received =
-                exchange.read_some(chunk.data(), chunk.size(), connect_deadline, job.cancelled);
+            auto received = exchange.read_some(chunk.data(), chunk.size(), connect_deadline,
+                                               job.cancelled, connect_stage_binding);
             if (!received) {
                 return received.error();
             }
@@ -905,7 +914,8 @@ Result<HttpResponseInfo> SocketHttpTransport::perform_exchange(Job &job, Transpo
 
     if (parts.value().tls) {
         auto tls_deadline = std::min(started_at + job.limits.deadlines.tls, total_deadline);
-        auto status = exchange.handshake(tls_deadline, job.cancelled);
+        auto status =
+            exchange.handshake(tls_deadline, job.cancelled, tls_deadline < total_deadline);
         if (!status) {
             return status.error();
         }
@@ -948,7 +958,9 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
 
     const auto write_deadline = std::min(started_at + job.limits.deadlines.write, total_deadline);
     trace.write_started = true;
-    if (auto written = exchange.write_all(request_text, write_deadline, job.cancelled); !written) {
+    if (auto written = exchange.write_all(request_text, write_deadline, job.cancelled,
+                                          write_deadline < total_deadline);
+        !written) {
         return written.error();
     }
     trace.write_completed = true;
@@ -966,9 +978,16 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
         const auto stage_deadline =
             first_byte ? std::min(started_at + job.limits.deadlines.first_byte, total_deadline)
                        : std::min(now + job.limits.deadlines.idle_read, total_deadline);
-        auto received =
-            exchange.read_some(chunk.data(), chunk.size(), stage_deadline, job.cancelled);
+        const bool stage_binding = stage_deadline < total_deadline;
+        auto received = exchange.read_some(chunk.data(), chunk.size(), stage_deadline,
+                                           job.cancelled, stage_binding);
         if (!received) {
+            if (received.error().code == ErrorCode::DeadlineExceeded && !stage_binding) {
+                // The stage budget was clamped by the total budget, so the
+                // fired deadline is the total one, not a transient stall.
+                return transport_error(ModelDomainCode::ModelDeadlineExceeded,
+                                       "response header wait exceeded the total deadline", false);
+            }
             return received.error();
         }
         if (received.value() == 0) {
@@ -1085,9 +1104,9 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
     const auto read_more = [&](std::string &sink) -> Result<bool> {
         const auto now = std::chrono::steady_clock::now();
         std::array<std::byte, 8192> chunk{};
-        auto received = exchange.read_some(
-            chunk.data(), chunk.size(),
-            std::min(now + job.limits.deadlines.idle_read, total_deadline), job.cancelled);
+        const auto read_deadline = std::min(now + job.limits.deadlines.idle_read, total_deadline);
+        auto received = exchange.read_some(chunk.data(), chunk.size(), read_deadline, job.cancelled,
+                                           read_deadline < total_deadline);
         if (!received) {
             return received.error();
         }
