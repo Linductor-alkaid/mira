@@ -428,6 +428,7 @@ class WorkflowRuntime final {
   private:
     struct RunRecord;
     struct DriveFlags;
+    struct WithdrawalMonitor;
     struct AppliedPatch;
     struct PendingPatch;
     // TR2 (DEC-040 §18.3): the dispatching run's Skill depth published onto
@@ -571,6 +572,9 @@ class WorkflowRuntime final {
     void emit_lesson_recorded(const RunRecord &run, const Sha256Digest &digest,
                               const std::string &outcome, const std::string &reason_code);
 
+    // One carrier-withdrawal poll of the timer-driven monitor tick chain;
+    // re-arms itself under the monitor mutex unless the drive is stopping.
+    void withdrawal_tick(const std::shared_ptr<WithdrawalMonitor> &monitor);
     [[nodiscard]] WorkflowRunResult drive(RunRecord &run, const OperationContext &context);
     void assemble_result(const RunRecord &run, WorkflowRunResult &result) const;
     void settle_step(RunRecord &run, const WorkflowStep &step, const WorkflowStepRecord &record);

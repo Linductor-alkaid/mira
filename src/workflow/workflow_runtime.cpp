@@ -126,6 +126,10 @@ Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
                                           .count());
 }
 
+// Carrier withdrawal poll cadence for the timer-driven monitor tick chain.
+// Withdrawal is consumed at step boundaries, so the cadence tolerates jitter.
+constexpr std::int64_t kWithdrawalPollIntervalMs = 5;
+
 [[nodiscard]] bool task_withdrawn(TaskState state) noexcept {
     switch (state) {
     case TaskState::Pausing:
@@ -195,13 +199,27 @@ decision_payload_digest(const std::string &prompt,
 
 } // namespace
 
-// Shared withdrawal flag for one drive. The monitor task publishes the
-// carrier task's withdrawal; the drive and its step contexts only read the
-// atomic, so probing stays safe while environment locks are held (the monitor
-// polls on its own worker and never calls back from inside such regions).
+// Shared withdrawal flag for one drive. The timer-driven monitor ticks
+// publish the carrier task's withdrawal; the drive and its step contexts
+// only read the atomic, so probing stays safe while environment locks are
+// held (ticks run on pool workers and never call back from inside such
+// regions).
 struct WorkflowRuntime::DriveFlags final {
     std::atomic<bool> withdrawn{false};
-    std::atomic<bool> done{false};
+};
+
+// Withdrawal monitor state for one drive. Ticks chain through
+// submit_delayed: each tick checks the carrier task once and re-arms under
+// the mutex, so no worker parks between polls. The drive's exit guard takes
+// the chain (stopping + move out) before cancelling, which guarantees no
+// tick survives past the drive frame whose flags pointer ticks dereference.
+struct WorkflowRuntime::WithdrawalMonitor final {
+    std::mutex mutex;
+    kairo::TimerHandle armed;     // not-yet-expired tick handle
+    std::future<void> in_flight;  // future of the latest tick submission
+    bool stopping = false;        // set by the exit guard; forbids re-arming
+    TaskId carrier;
+    DriveFlags *flags = nullptr;
 };
 
 // One patch accepted but not yet applied; a running run drains its queue at
@@ -1313,6 +1331,31 @@ JsonValue WorkflowRuntime::predicate_context_copy(const RunRecord &run) const {
     return run.predicate_context;
 }
 
+// One withdrawal poll: publish withdrawal and re-arm, or stop the chain.
+// Re-arming happens under the monitor mutex so the drive's exit guard can
+// take the chain (stopping + move out) atomically against the reschedule.
+void WorkflowRuntime::withdrawal_tick(const std::shared_ptr<WithdrawalMonitor> &monitor) {
+    const auto snapshot = runtime_.task_snapshot(monitor->carrier);
+    if (!snapshot.has_value() || task_withdrawn(snapshot.value().state)) {
+        monitor->flags->withdrawn.store(true, std::memory_order_relaxed);
+        return;
+    }
+    std::lock_guard lock(monitor->mutex);
+    if (monitor->stopping) {
+        return;
+    }
+    try {
+        auto next = executor_.submit_delayed(kWithdrawalPollIntervalMs,
+                                             [this, monitor] { withdrawal_tick(monitor); });
+        monitor->armed = std::move(next.handle);
+        monitor->in_flight = std::move(next.future);
+    } catch (const std::exception &) {
+        // The chain ends; the drive still checks control state at step
+        // boundaries, losing only intra-step cancellation responsiveness.
+        ++monitor_failures_;
+    }
+}
+
 WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext &context) {
     WorkflowRunResult result;
     result.run_id = run.view.run_id;
@@ -1344,23 +1387,50 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
     }
 
     DriveFlags flags;
-    std::future<void> monitor;
+    // Withdrawal monitor: a timer-driven tick chain instead of a parked
+    // worker (background periodic work belongs to the Executor timer
+    // capability). Submission failure degrades the same way the old pooled
+    // monitor did: the drive keeps checking control state at step
+    // boundaries, losing only intra-step cancellation responsiveness.
+    auto monitor = std::make_shared<WithdrawalMonitor>();
+    monitor->carrier = run.task;
+    monitor->flags = &flags;
     try {
-        monitor = executor_.submit_auto([this, &run, &flags] {
-            while (!flags.done.load(std::memory_order_relaxed)) {
-                const auto snapshot = runtime_.task_snapshot(run.task);
-                if (!snapshot.has_value() || task_withdrawn(snapshot.value().state)) {
-                    flags.withdrawn.store(true, std::memory_order_relaxed);
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            }
-        });
+        auto first = executor_.submit_delayed(kWithdrawalPollIntervalMs,
+                                              [this, monitor] { withdrawal_tick(monitor); });
+        monitor->armed = std::move(first.handle);
+        monitor->in_flight = std::move(first.future);
     } catch (const std::exception &) {
-        // Without a monitor the drive still checks the control state between
-        // steps; only intra-step cancellation responsiveness is lost.
         ++monitor_failures_;
     }
+    // Joins the tick chain on every exit path before the stack flags die:
+    // `stopping` forbids re-arming, cancel() retires the armed tick, and the
+    // in-flight future always completes (TaskCancelled on pre-dispatch
+    // cancellation, the tick body otherwise — both bounded).
+    struct MonitorExitGuard {
+        std::shared_ptr<WithdrawalMonitor> monitor;
+
+        ~MonitorExitGuard() {
+            kairo::TimerHandle armed;
+            std::future<void> in_flight;
+            {
+                std::lock_guard lock(monitor->mutex);
+                monitor->stopping = true;
+                armed = std::move(monitor->armed);
+                in_flight = std::move(monitor->in_flight);
+            }
+            if (armed.valid()) {
+                static_cast<void>(armed.cancel());
+            }
+            if (in_flight.valid()) {
+                try {
+                    static_cast<void>(in_flight.get());
+                } catch (...) {
+                    // Pre-dispatch cancellation surfaces as TaskCancelled.
+                }
+            }
+        }
+    } monitor_exit_guard{monitor};
 
     // Checkpoint arrival bookkeeping (DEC-023 §2): an arrival is a cursor
     // entry onto the step - the fresh start of the run or a movement within
@@ -1603,14 +1673,8 @@ WorkflowRunResult WorkflowRuntime::drive(RunRecord &run, const OperationContext 
         ++run.cursor;
     }
 
-    flags.done.store(true, std::memory_order_relaxed);
-    flags.withdrawn.store(true, std::memory_order_relaxed);
-    if (monitor.valid()) {
-        try {
-            static_cast<void>(monitor.get());
-        } catch (...) {
-        }
-    }
+    // The monitor exit guard joins the tick chain when this frame leaves,
+    // covering exceptional exits too; nothing reads the flags afterwards.
     assemble_result(run, result);
     return result;
 }
