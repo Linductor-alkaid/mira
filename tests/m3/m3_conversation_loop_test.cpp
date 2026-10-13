@@ -1035,6 +1035,100 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
 
 } // namespace
 
+[[nodiscard]] ModelResponse
+incomplete_response(IncompleteReason reason, const std::string &text,
+                    std::optional<ToolCallOutput> cut_call = std::nullopt) {
+    ModelResponse response;
+    response.contract_version = SchemaVersion{1, 0};
+    response.status = ModelCompletionStatus::Incomplete;
+    response.incomplete_reason = reason;
+    if (!text.empty() || !cut_call.has_value()) {
+        MessageOutput message;
+        message.role = ModelRole::Assistant;
+        if (!text.empty()) {
+            OutputTextPart part;
+            part.text = text;
+            message.content.emplace_back(std::move(part));
+        }
+        response.output.emplace_back(std::move(message));
+    }
+    if (cut_call.has_value())
+        response.output.emplace_back(std::move(*cut_call));
+    response.usage.input_tokens = 10;
+    response.usage.output_tokens = 5;
+    response.usage.quality = UsageQuality::ProviderReported;
+    return response;
+}
+
+int truncated_text_continues_from_the_cut() {
+    ConversationFixture fixture;
+    fixture.use_provider(
+        {incomplete_response(IncompleteReason::MaxOutputTokens, "partial answer so far"),
+         text_response("and now the remainder.")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().recoveries == 0);
+    MIRA_CHECK(result.value().output_continuations == 1);
+    const auto second_text = fixture.provider_->request_text(1);
+    MIRA_CHECK(second_text.find("partial answer so far") != std::string::npos);
+    MIRA_CHECK(second_text.find("Continue it exactly where it stopped") != std::string::npos);
+    return 0;
+}
+
+int tool_call_cutoff_discarded_without_execution() {
+    ConversationFixture fixture;
+    ToolCallOutput cut;
+    cut.provider_call_id = ProviderToolCallId{"cut-call"};
+    cut.tool_id = fixture.echo_spec().tool_id;
+    cut.provider_name = fixture.echo_spec().wire_name;
+    cut.arguments = parse_json(R"json({"message": "tru"})json").value();
+    fixture.use_provider(
+        {incomplete_response(IncompleteReason::MaxOutputTokens, "", std::move(cut)),
+         text_response("answered directly instead.")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().tool_executions == 0);
+    MIRA_CHECK(fixture.seen_arguments().empty());
+    MIRA_CHECK(result.value().output_continuations == 1);
+    const auto second_text = fixture.provider_->request_text(1);
+    MIRA_CHECK(second_text.find("discarded and NOT executed") != std::string::npos);
+    return 0;
+}
+
+int deliberation_only_truncation_asks_for_short_text() {
+    ConversationFixture fixture;
+    fixture.use_provider({incomplete_response(IncompleteReason::MaxOutputTokens, ""),
+                          text_response("blocked: screen sharing not authorized.")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().recoveries == 0);
+    MIRA_CHECK(result.value().output_continuations == 1);
+    const auto second_text = fixture.provider_->request_text(1);
+    MIRA_CHECK(second_text.find("Skip lengthy deliberation") != std::string::npos);
+    return 0;
+}
+
+int continuation_budget_exhaustion_settles_output_limit() {
+    ConversationFixture fixture;
+    fixture.use_provider({incomplete_response(IncompleteReason::MaxOutputTokens, ""),
+                          incomplete_response(IncompleteReason::MaxOutputTokens, ""),
+                          incomplete_response(IncompleteReason::MaxOutputTokens, "")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Failed);
+    MIRA_CHECK(result.value().output_continuations == 2);
+    MIRA_CHECK(result.value().safe_summary.find("output-limit continuation budget exhausted") !=
+               std::string::npos);
+    return 0;
+}
+
 int main() {
     if (signed_thinking_replayed_before_tool_results())
         return 1;
@@ -1067,6 +1161,18 @@ int main() {
         return code;
     }
     if (const int code = empty_answer_recovers_then_fails_closed(); code != 0) {
+        return code;
+    }
+    if (const int code = truncated_text_continues_from_the_cut(); code != 0) {
+        return code;
+    }
+    if (const int code = tool_call_cutoff_discarded_without_execution(); code != 0) {
+        return code;
+    }
+    if (const int code = deliberation_only_truncation_asks_for_short_text(); code != 0) {
+        return code;
+    }
+    if (const int code = continuation_budget_exhaustion_settles_output_limit(); code != 0) {
         return code;
     }
     if (const int code = truncated_reply_recovers_with_short_answer_guidance(); code != 0) {

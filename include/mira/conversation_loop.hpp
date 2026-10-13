@@ -18,11 +18,15 @@ namespace mira {
 
 // MIRA-20261004-001 (issue #73): bounds for the no-observation conversational
 // loop. Same RULE-08 shape as AgentLoopConfig — every quantity is a declared
-// bound, never an implicit one. The derived whole-run envelope
-// `max_output_tokens_per_turn * (max_turns + max_recoveries + 1)` must not
-// exceed the target profile's `capabilities.limits.max_output_tokens` (the
-// router rejects larger task budgets); the defaults below fit the default
-// profile limit (16384).
+// bound, never an implicit one. Two budget faces apply:
+// - Per call, the router admits `max_output_tokens_per_turn` against the
+//   target profile's `capabilities.limits.max_output_tokens`; a host may set
+//   the per-turn bound up to that limit (defaults fit 16384).
+// - Whole run, `max_output_tokens_per_turn * (max_turns + max_recoveries +
+//   max_output_continuations + 1)` is the declared output-spend estimate a
+//   host signs up for; it no longer caps the per-turn bound, because a
+//   tolerated max_tokens cutoff is settled by bounded continuation (see
+//   max_output_continuations) instead of a tighter per-turn clamp.
 struct ConversationLoopConfig final {
     // Whole-run bound on model turns; exhausting it settles as MaxTurns.
     std::uint32_t max_turns = 12;
@@ -31,6 +35,13 @@ struct ConversationLoopConfig final {
     std::chrono::milliseconds model_call_deadline{30'000};
     // Whole-run budget for tool executions.
     std::uint32_t max_tool_executions = 32;
+    // Bounded continuations for a tolerated max_tokens cutoff (status
+    // Incomplete, reason MaxOutputTokens), independent of max_recoveries:
+    // the partial protocol-allowed text is kept in the history and the model
+    // is asked to continue from the cut; a reply cut off mid tool call is
+    // discarded unexecuted. After the budget is spent the run settles Failed
+    // with an explicit output-limit summary instead of regenerating.
+    std::uint32_t max_output_continuations = 2;
     // Per-turn generation bound.
     std::uint64_t max_output_tokens_per_turn = 1024;
     std::optional<ReasoningEffort> reasoning_effort{};
@@ -69,6 +80,9 @@ struct ConversationLoopResult final {
     std::uint32_t supplied_input_items = 0;
     std::uint32_t supplied_input_dropped = 0;
     std::uint32_t supply_degradations = 0;
+    // Bounded max_tokens continuations spent by this run (DEC follow-up to
+    // MIRA-20261009-002); zero without a tolerated cutoff.
+    std::uint32_t output_continuations = 0;
 };
 
 // Declared per-request bounds (RULE-08) for the supplied-input seam. Items
