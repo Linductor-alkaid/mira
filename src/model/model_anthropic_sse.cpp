@@ -1,6 +1,7 @@
 #include <mira/model_sse.hpp>
 
 #include <algorithm>
+#include <string_view>
 #include <utility>
 
 namespace mira {
@@ -12,6 +13,50 @@ Error invalid() {
 const std::string *string(const JsonValue &object, const char *key) {
     const auto *value = object.find(key);
     return value ? value->as_string() : nullptr;
+}
+/// A provider-reported stream `error` event is a provider-side failure, never
+/// a host-facing protocol violation: the stream shape is exactly what the
+/// provider documented for out-of-band failures. Classify the documented
+/// Anthropic error types into the domain codes the loop recovery whitelist
+/// admits (retryable) or their matching fatal codes (client mistakes), so a
+/// transient provider outage recovers in place under the loop's bounded
+/// recovery budget instead of failing the whole conversation turn.
+Error provider_error(const JsonValue &body) {
+    const auto *payload = body.find("error");
+    const auto *type_name = payload ? string(*payload, "type") : nullptr;
+    const auto *message = payload ? string(*payload, "message") : nullptr;
+    std::string detail = "provider stream error";
+    if (type_name) {
+        detail += " (";
+        detail += *type_name;
+        detail += ")";
+    }
+    if (message && !message->empty()) {
+        detail += ": ";
+        detail += message->substr(0, 200);
+    }
+    if (!type_name)
+        return make_model_error(ModelDomainCode::TransportFailed, detail, /*retryable=*/true);
+    const std::string &name = *type_name;
+    if (name == "overloaded_error")
+        return make_model_error(ModelDomainCode::ProviderOverloaded, detail, true);
+    if (name == "rate_limit_error")
+        return make_model_error(ModelDomainCode::RateLimited, detail, true);
+    if (name == "timeout_error")
+        return make_model_error(ModelDomainCode::ModelDeadlineExceeded, detail, true);
+    if (name == "api_error" || name == "internal_error")
+        return make_model_error(ModelDomainCode::TransportFailed, detail, true);
+    if (name == "authentication_error")
+        return make_model_error(ModelDomainCode::AuthenticationFailed, detail);
+    if (name == "permission_error")
+        return make_model_error(ModelDomainCode::ProviderPermissionDenied, detail);
+    if (name == "request_too_large")
+        return make_model_error(ModelDomainCode::ResponseTooLarge, detail);
+    if (name == "invalid_request_error" || name == "not_found_error" || name == "billing_error")
+        return make_model_error(ModelDomainCode::InvalidModelRequest, detail);
+    // Unrecognized provider error types stay provider-side failures without a
+    // documented retry contract: fail closed, non-retryable.
+    return make_model_error(ModelDomainCode::TransportFailed, detail);
 }
 void set(JsonValue &object, const char *key, JsonValue value) { object.set(key, std::move(value)); }
 } // namespace
@@ -34,8 +79,6 @@ Result<void> AnthropicMessagesSseParser::feed(std::string_view chunk) {
 Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
     ++stats_.events;
     ++stats_.stream_sequence;
-    if (stats_.terminal_seen)
-        return invalid();
     auto parsed = parse_json(event.data);
     if (!parsed || !parsed.value().is_object())
         return invalid();
@@ -45,8 +88,16 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
         return invalid();
     if (*type == "ping")
         return {};
-    if (*type == "error")
+    if (stats_.terminal_seen) {
+        // Real providers and proxies trail keep-alive pings (handled above)
+        // and occasionally repeat the terminal after message_stop; trailing
+        // benign events must not fail an already complete stream.
+        if (*type == "message_stop")
+            return {};
         return invalid();
+    }
+    if (*type == "error")
+        return provider_error(body);
     if (*type == "message_start") {
         const auto *message = body.find("message");
         if (started_ || !message || !message->is_object())
