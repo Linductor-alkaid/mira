@@ -329,7 +329,6 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                            std::chrono::steady_clock::now() + config_.model_call_deadline)
                 : std::chrono::steady_clock::now() + config_.model_call_deadline;
 
-        std::fprintf(stderr, "[loop] turn %u infer\n", turn);
         auto call = gateway_.infer(request.value(), model_context, config_.inference);
         if (!call) {
             if (call.error().code == ErrorCode::Cancelled) {
@@ -349,11 +348,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
         auto outcome = std::move(call).value();
-        std::fprintf(stderr, "[loop] infer returned status=%d reason=%d\n",
-                     static_cast<int>(outcome.response.status),
-                     outcome.response.incomplete_reason
-                         ? static_cast<int>(*outcome.response.incomplete_reason)
-                         : -1);
+
         result.last_usage = outcome.response.usage;
         if (!outcome.admitted) {
             result.outcome = ConversationOutcome::Cancelled;
@@ -361,7 +356,6 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
 
-        std::fprintf(stderr, "[loop] parse=%d\n", static_cast<int>(outcome.parse.outcome));
         const auto parse_outcome = outcome.parse.outcome;
         if (parse_outcome == DecisionParseOutcome::Refused ||
             parse_outcome == DecisionParseOutcome::ContentFiltered) {
@@ -396,9 +390,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             outcome.response.incomplete_reason == IncompleteReason::MaxOutputTokens) {
             const auto partial_text = assistant_text(outcome.response);
             if (output_continuations < config_.max_output_continuations) {
-                std::fprintf(stderr, "[loop] continuation %u shape_text=%d tool=%d\n",
-                             output_continuations, !partial_text.empty(),
-                             carries_tool_calls(outcome.response));
+
                 ++output_continuations;
                 result.output_continuations = output_continuations;
                 if (!partial_text.empty()) {
@@ -587,8 +579,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                            {"turns", static_cast<std::int64_t>(result.turns.size())},
                            {"recoveries", static_cast<std::int64_t>(result.recoveries)}},
          EventClass::State);
-    std::fprintf(stderr, "[loop] run returning outcome=%d cont=%u\n",
-                 static_cast<int>(result.outcome), result.output_continuations);
+
     return result;
 }
 
