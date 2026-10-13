@@ -514,6 +514,33 @@ int empty_answer_recovers_then_fails_closed() {
     return 0;
 }
 
+int truncated_reply_recovers_with_short_answer_guidance() {
+    // A tolerated max_tokens cutoff (status Incomplete, no text) must not be
+    // recovered with the generic "answer with text" feedback: the model would
+    // produce the same long output and truncate again. The retry asks for
+    // concise plain text instead, and a short answer settles the loop.
+    ConversationFixture fixture;
+    ModelResponse truncated;
+    truncated.contract_version = SchemaVersion{1, 0};
+    truncated.status = ModelCompletionStatus::Incomplete;
+    truncated.usage.input_tokens = 10;
+    truncated.usage.output_tokens = 5;
+    truncated.usage.quality = UsageQuality::ProviderReported;
+    fixture.use_provider({truncated, text_response("已打开最推荐的美食视频。")});
+    ConversationLoopConfig config;
+    config.max_recoveries = 1;
+    auto loop = fixture.make_loop(config);
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().recoveries == 1);
+    MIRA_CHECK(result.value().turns.size() == 2);
+    const auto second_text = fixture.provider_->request_text(1);
+    MIRA_CHECK(second_text.find("cut off by the output-token limit") != std::string::npos);
+    MIRA_CHECK(second_text.find("concise plain text") != std::string::npos);
+    return 0;
+}
+
 int turn_budget_exhaustion_settles_max_turns() {
     ConversationFixture fixture;
     fixture.use_provider({
@@ -1040,6 +1067,9 @@ int main() {
         return code;
     }
     if (const int code = empty_answer_recovers_then_fails_closed(); code != 0) {
+        return code;
+    }
+    if (const int code = truncated_reply_recovers_with_short_answer_guidance(); code != 0) {
         return code;
     }
     if (const int code = text_only_turn_budget_exhaustion_settles_max_turns(); code != 0) {
