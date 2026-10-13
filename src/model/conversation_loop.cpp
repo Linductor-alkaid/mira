@@ -488,10 +488,24 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         // recover once with explicit feedback, then fail closed.
         if (result.recoveries < config_.max_recoveries) {
             ++result.recoveries;
-            record.note = "no usable answer text; recovering";
-            result.turns.push_back(std::move(record));
-            feedback = "The previous reply carried no answer text. Answer the request "
-                       "directly with text.";
+            // A tolerated max_tokens cutoff needs different guidance than an
+            // empty reply: "answer with text" alone reproduces the same long
+            // output and truncates again, burning the whole recovery budget.
+            // A truncated reply must be answered short — plain text, no tool
+            // calls, no long deliberation.
+            if (parse_outcome == DecisionParseOutcome::Incomplete) {
+                record.note = "output truncated by the token budget; recovering";
+                result.turns.push_back(std::move(record));
+                feedback = "Your previous reply was cut off by the output-token limit before it "
+                           "completed. Reply again with concise plain text only: no tool calls and "
+                           "no long deliberation — state the current result or the blocking "
+                           "limitation in a few sentences.";
+            } else {
+                record.note = "no usable answer text; recovering";
+                result.turns.push_back(std::move(record));
+                feedback = "The previous reply carried no answer text. Answer the request "
+                           "directly with text.";
+            }
             continue;
         }
         result.outcome = ConversationOutcome::Failed;
