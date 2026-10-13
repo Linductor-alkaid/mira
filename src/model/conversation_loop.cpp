@@ -290,6 +290,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     std::vector<ModelInputItem> history;
     std::string feedback;
     std::uint32_t tool_executions = 0;
+    std::uint32_t output_continuations = 0;
 
     for (std::uint32_t turn = 1; turn <= config_.max_turns; ++turn) {
         if (context.cancelled()) {
@@ -347,6 +348,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
         auto outcome = std::move(call).value();
+
         result.last_usage = outcome.response.usage;
         if (!outcome.admitted) {
             result.outcome = ConversationOutcome::Cancelled;
@@ -374,6 +376,58 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.outcome = ConversationOutcome::Failed;
                 result.safe_summary = "model output was rejected: " + outcome.parse.safe_summary;
             }
+            result.turns.push_back(std::move(record));
+            break;
+        }
+        // DEC follow-up to MIRA-20261009-002: a tolerated max_tokens cutoff
+        // is settled by bounded continuation, not regeneration. The partial
+        // protocol-allowed text is kept in the history so the model continues
+        // from the cut; a reply cut off mid tool call is discarded unexecuted
+        // (an Incomplete response never yields proposals, so nothing can
+        // execute from it). Independent of the recovery budget; after it is
+        // spent the run settles with an explicit output-limit summary.
+        if (parse_outcome == DecisionParseOutcome::Incomplete &&
+            outcome.response.incomplete_reason == IncompleteReason::MaxOutputTokens) {
+            const auto partial_text = assistant_text(outcome.response);
+            if (output_continuations < config_.max_output_continuations) {
+
+                ++output_continuations;
+                result.output_continuations = output_continuations;
+                if (!partial_text.empty()) {
+                    ModelInputItem assistant;
+                    assistant.role = ModelRole::Assistant;
+                    TextPart kept;
+                    kept.text = partial_text;
+                    assistant.content.emplace_back(std::move(kept));
+                    history.push_back(std::move(assistant));
+                    record.note = "output truncated by the token budget; continuing";
+                    result.turns.push_back(std::move(record));
+                    feedback =
+                        "Your previous reply was cut off by the output-token limit. Continue "
+                        "it exactly where it stopped: do not repeat what you already wrote, "
+                        "just continue and finish.";
+                } else if (carries_tool_calls(outcome.response)) {
+                    record.note = "tool call cut off by the token budget; discarded unexecuted";
+                    result.turns.push_back(std::move(record));
+                    feedback = "Your previous reply was cut off by the output-token limit while "
+                               "writing a tool call. The incomplete call was discarded and NOT "
+                               "executed. Either re-issue that tool call with compact arguments, "
+                               "or reply with concise plain text stating the current result or "
+                               "the blocking limitation.";
+                } else {
+                    record.note = "deliberation-only output truncated; asking for short text";
+                    result.turns.push_back(std::move(record));
+                    feedback = "Your previous reply was cut off by the output-token limit during "
+                               "internal deliberation before any visible content. Skip lengthy "
+                               "deliberation and reply with concise plain text: the current "
+                               "result or the blocking limitation.";
+                }
+                continue;
+            }
+            result.outcome = ConversationOutcome::Failed;
+            result.safe_summary =
+                "output-limit continuation budget exhausted; the reply was truncated at the "
+                "per-call output limit";
             result.turns.push_back(std::move(record));
             break;
         }
@@ -488,18 +542,19 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         // recover once with explicit feedback, then fail closed.
         if (result.recoveries < config_.max_recoveries) {
             ++result.recoveries;
-            // A tolerated max_tokens cutoff needs different guidance than an
-            // empty reply: "answer with text" alone reproduces the same long
-            // output and truncates again, burning the whole recovery budget.
-            // A truncated reply must be answered short — plain text, no tool
-            // calls, no long deliberation.
+            // MaxOutputTokens cutoffs never reach this block: they settle by
+            // bounded continuation above. What is left here is an empty or
+            // otherwise unusable reply (or a ContextWindow/Other cutoff).
+            // An Incomplete here lacks the MaxOutputTokens reason (provider
+            // did not report one): keep truncation-aware guidance so the
+            // retry does not regenerate the same long output.
             if (parse_outcome == DecisionParseOutcome::Incomplete) {
-                record.note = "output truncated by the token budget; recovering";
+                record.note = "output cut off; recovering";
                 result.turns.push_back(std::move(record));
-                feedback = "Your previous reply was cut off by the output-token limit before it "
-                           "completed. Reply again with concise plain text only: no tool calls and "
-                           "no long deliberation — state the current result or the blocking "
-                           "limitation in a few sentences.";
+                feedback = "Your previous reply was cut off by the output-token limit before "
+                           "it completed. Reply again with concise plain text only: no tool "
+                           "calls and no long deliberation — state the current result or the "
+                           "blocking limitation in a few sentences.";
             } else {
                 record.note = "no usable answer text; recovering";
                 result.turns.push_back(std::move(record));
@@ -524,6 +579,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                            {"turns", static_cast<std::int64_t>(result.turns.size())},
                            {"recoveries", static_cast<std::int64_t>(result.recoveries)}},
          EventClass::State);
+
     return result;
 }
 
