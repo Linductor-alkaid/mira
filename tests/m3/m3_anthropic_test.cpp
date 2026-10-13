@@ -253,7 +253,9 @@ int streams() {
         MIRA_CHECK(response.value().usage.input_tokens == 5);
         MIRA_CHECK(response.value().usage.output_tokens == 2);
         MIRA_CHECK(parser.take_preview().text == "你好");
-        MIRA_CHECK(!parser.feed(event("message_stop", R"({"type":"message_stop"})")));
+        // A repeated terminal after message_stop is trailing provider/proxy
+        // noise, not a protocol violation (post-terminal tolerance).
+        MIRA_CHECK(parser.feed(event("message_stop", R"({"type":"message_stop"})")));
     }
     AnthropicMessagesSseParser eof(r, p);
     MIRA_CHECK(eof.feed(start));
@@ -454,9 +456,91 @@ int authentication() {
     (void)executor.shutdown(true);
     return 0;
 }
+int provider_error_events_and_post_terminal_tolerance() {
+    auto r = request();
+    auto p = make_profile(ProtocolDialect::AnthropicMessagesV1, "https://example.com");
+    // Documented transient provider error types classify into the retryable
+    // domain codes the loop recovery whitelist admits.
+    const std::pair<const char *, ModelDomainCode> retryable[] = {
+        {"overloaded_error", ModelDomainCode::ProviderOverloaded},
+        {"rate_limit_error", ModelDomainCode::RateLimited},
+        {"timeout_error", ModelDomainCode::ModelDeadlineExceeded},
+        {"api_error", ModelDomainCode::TransportFailed},
+        {"internal_error", ModelDomainCode::TransportFailed},
+    };
+    for (const auto &[name, code] : retryable) {
+        AnthropicMessagesSseParser parser(r, p);
+        const auto failed =
+            parser.feed(event("error", std::string(R"({"type":"error","error":{"type":")") + name +
+                                           R"(","message":"provider is unhappy"}})"));
+        MIRA_CHECK(!failed);
+        MIRA_CHECK(failed.error().retryable);
+        MIRA_CHECK(failed.error().domain_code == static_cast<std::int32_t>(code));
+        MIRA_CHECK(failed.error().safe_message.find(name) != std::string::npos);
+        MIRA_CHECK(failed.error().safe_message.find("provider is unhappy") != std::string::npos);
+    }
+    // Client mistakes stay fatal and non-retryable under their own codes.
+    const std::pair<const char *, ModelDomainCode> fatal[] = {
+        {"authentication_error", ModelDomainCode::AuthenticationFailed},
+        {"permission_error", ModelDomainCode::ProviderPermissionDenied},
+        {"request_too_large", ModelDomainCode::ResponseTooLarge},
+        {"invalid_request_error", ModelDomainCode::InvalidModelRequest},
+    };
+    for (const auto &[name, code] : fatal) {
+        AnthropicMessagesSseParser parser(r, p);
+        const auto failed = parser.feed(
+            event("error", std::string(R"({"type":"error","error":{"type":")") + name + R"("}})"));
+        MIRA_CHECK(!failed);
+        MIRA_CHECK(!failed.error().retryable);
+        MIRA_CHECK(failed.error().domain_code == static_cast<std::int32_t>(code));
+    }
+    // An unrecognized provider error type stays a provider-side failure
+    // (never a protocol violation) but fails closed, non-retryable.
+    {
+        AnthropicMessagesSseParser parser(r, p);
+        const auto failed =
+            parser.feed(event("error", R"({"type":"error","error":{"type":"mystery_error"}})"));
+        MIRA_CHECK(!failed);
+        MIRA_CHECK(!failed.error().retryable);
+        MIRA_CHECK(failed.error().domain_code ==
+                   static_cast<std::int32_t>(ModelDomainCode::TransportFailed));
+    }
+    // Keep-alive pings and a repeated terminal after message_stop are
+    // tolerated: an already complete stream must not fail on trailing noise.
+    {
+        AnthropicMessagesSseParser parser(r, p);
+        MIRA_CHECK(parser.feed(text_stream));
+        MIRA_CHECK(parser.feed(event("ping", R"({"type":"ping"})")));
+        MIRA_CHECK(parser.feed(event("message_stop", R"({"type":"message_stop"})")));
+        MIRA_CHECK(parser.feed(event("ping", R"({"type":"ping"})")));
+        auto response = parser.finish();
+        MIRA_CHECK(response && response.value().status == ModelCompletionStatus::Completed);
+    }
+    // Post-terminal garbage remains a protocol violation.
+    {
+        AnthropicMessagesSseParser parser(r, p);
+        MIRA_CHECK(parser.feed(text_stream));
+        MIRA_CHECK(!parser.feed(event(
+            "content_block_start",
+            R"({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})")));
+    }
+    // Provider error events mid-stream carry the same classification.
+    {
+        AnthropicMessagesSseParser parser(r, p);
+        MIRA_CHECK(parser.feed(start));
+        const auto failed =
+            parser.feed(event("error", R"({"type":"error","error":{"type":"overloaded_error"}})"));
+        MIRA_CHECK(!failed);
+        MIRA_CHECK(failed.error().retryable);
+        MIRA_CHECK(failed.error().domain_code ==
+                   static_cast<std::int32_t>(ModelDomainCode::ProviderOverloaded));
+    }
+    return 0;
+}
 } // namespace
 int main() {
-    if (mappings() || thinking() || streams() || mutation_corpus() || authentication())
+    if (mappings() || thinking() || streams() || mutation_corpus() || authentication() ||
+        provider_error_events_and_post_terminal_tolerance())
         return 1;
     return 0;
 }
