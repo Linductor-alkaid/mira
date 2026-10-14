@@ -80,6 +80,10 @@ struct ConversationLoopResult final {
     std::uint32_t supplied_input_items = 0;
     std::uint32_t supplied_input_dropped = 0;
     std::uint32_t supply_degradations = 0;
+    // Requests that carried the DEC-088 input-reuse annotation: a host
+    // identity with reuse_count >= 2 on an image-bearing supply. Zero without
+    // an identity provider or without qualifying supplies.
+    std::uint32_t supplied_input_reuse_annotations = 0;
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
     std::uint32_t output_continuations = 0;
@@ -109,6 +113,28 @@ struct ModelInputSupplyOptions final {
 // keep it bounded and free of blocking work, like WorkingContextSupplier.
 using ModelInputSupplier =
     std::function<Result<std::vector<ModelInputItem>>(const AgentLoopSpec &)>;
+
+// Host-asserted cross-turn identity of the supplied input (DEC-088, follow-up
+// to the DEC-053 seam). The loop is constructed per run and never sees prior
+// runs, so only the host can count how often identical content has been
+// re-offered across its dialog turns; the loop only renders the annotation.
+// content_digest documents the identity the count refers to (truncated on the
+// event surface), reuse_count is the number of consecutive identical
+// re-offers before this request (0 = first supply) and semantic_label is
+// rendered verbatim in the note (a generic fallback applies when empty).
+struct InputReuseMeta final {
+    std::string content_digest;
+    std::uint32_t reuse_count = 0;
+    std::string semantic_label;
+};
+
+// Optional per-request identity resolution with the same call discipline as
+// ModelInputSupplier: resolved exactly once per assembled request, on the
+// run() caller's worker, bounded and free of blocking work. An empty optional
+// supplies no identity; an exception skips the annotation for that request
+// with a visible degradation event.
+using ModelInputIdentityProvider =
+    std::function<std::optional<InputReuseMeta>(const AgentLoopSpec &)>;
 
 // The no-observation conversational loop (DEC-047): model -> tool proposal ->
 // execute -> result -> model, driven over the same ModelGateway, admission and
@@ -146,6 +172,15 @@ class ConversationLoop final {
     void set_model_input_supplier(ModelInputSupplier supplier,
                                   ModelInputSupplyOptions options = ModelInputSupplyOptions{});
 
+    // Attaches the optional DEC-088 input-reuse identity seam. Without one,
+    // request assembly stays unchanged byte for byte. With one, an identity
+    // whose reuse_count reaches 2 (the third consecutive identical supply) and
+    // whose supply carries an image appends one Internal-authority system note
+    // as the last part of the primary user envelope — never the system role,
+    // never host-elevated. The count is trusted host state: the loop cannot
+    // observe prior runs. Wire once before run(), like the other setters.
+    void set_model_input_identity(ModelInputIdentityProvider identity);
+
     [[nodiscard]] Result<ConversationLoopResult> run(const AgentLoopSpec &spec,
                                                      const OperationContext &context);
 
@@ -158,12 +193,17 @@ class ConversationLoop final {
         std::map<std::string, std::int64_t> drop_reasons;
         std::uint64_t image_bytes = 0;
         bool degraded = false;
+        // DEC-088: host identity resolved for this request (nullopt without a
+        // provider, on an exception or with nothing accepted) and whether the
+        // reuse note qualifies to render on it.
+        std::optional<InputReuseMeta> reuse;
+        bool annotate_reuse = false;
     };
 
     [[nodiscard]] Result<ModelRequest> build_request(const AgentLoopSpec &spec,
                                                      const std::vector<ModelInputItem> &history,
                                                      const std::string &feedback,
-                                                     const std::vector<ModelContentPart> &supplied);
+                                                     const SuppliedInput &supplied);
     // Resolves the seam once for the request being assembled (DEC-053):
     // validates and bounds the offered items, forces the untrusted envelope and
     // flattens the surviving parts. Never fails — supply errors and exceptions
@@ -179,6 +219,7 @@ class ConversationLoop final {
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
     ModelInputSupplier input_supplier_;
+    ModelInputIdentityProvider identity_provider_;
     ModelInputSupplyOptions supply_options_{};
 };
 

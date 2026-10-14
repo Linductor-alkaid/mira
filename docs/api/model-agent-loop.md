@@ -279,6 +279,39 @@ loop.set_model_input_supplier(supply_latest_screenshot);  // run() 前接线一�
   `ImageDetail::Auto`（默认值），其他 detail 显式 `CapabilityMismatch`。
   未接线时请求装配与既有行为逐字节一致。
 
+### 输入复用身份标注（DEC-088）
+
+DEC-053 契约下宿主逐轮重发同一截图是正常行为，但循环逐 run 重建，无法得知"第 N 次
+看到同一内容"。`set_model_input_identity` 补一条可选的宿主身份缝：宿主自持跨轮
+连续复用计数（digest / `reuse_count` / `semantic_label`），循环只负责在受控信封内
+渲染标注。
+
+```cpp
+// 宿主侧实现：跨轮计数与摘要由宿主自持，返回 nullopt 表示本轮无身份。
+std::optional<mira::InputReuseMeta> supply_input_identity(const mira::AgentLoopSpec &) {
+    if (!state.artifact.has_value()) {
+        return std::nullopt;
+    }
+    mira::InputReuseMeta meta;
+    meta.content_digest = state.artifact_digest;   // 本轮供给内容的宿主摘要
+    meta.reuse_count = state.consecutive_reuses;   // 连续相同重发次数（0=首次）
+    meta.semantic_label = "screenshot";            // 原样进入提示文本
+    return meta;
+}
+
+loop.set_model_input_identity(supply_input_identity);  // run() 前接线一次
+```
+
+- **解析时机与纪律**：与供给缝同拍——每轮恰一次、有界、不阻塞；异常降级为一次
+  `ModelInputSupplyDegraded`（`identity-exception`），本轮不渲染标注、循环继续。
+- **渲染条件**：`reuse_count >= 2`（第三次连续相同供给）且本轮存活供给含
+  `ImagePart`；文本类重发不标注。满足时在循环自有 User 信封末尾追加一条
+  Internal 权限的 System note 文本（永不进入 System role，宿主计数按宿主状态
+  信任，循环不跨 run 观测）。
+- **可观察结果**：`ModelInputSupplied` 事件附加 `content_digest`（截断至 128 字节）、
+  `reuse_count`、`reuse_annotated`；`ConversationLoopResult` 以
+  `supplied_input_reuse_annotations` 累计全程。未接线时请求装配逐字节不变。
+
 ## conversation_log.hpp：会话对话投影
 
 [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) 的投影 API：

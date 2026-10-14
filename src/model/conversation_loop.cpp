@@ -91,6 +91,10 @@ void ConversationLoop::set_model_input_supplier(ModelInputSupplier supplier,
     supply_options_ = options;
 }
 
+void ConversationLoop::set_model_input_identity(ModelInputIdentityProvider identity) {
+    identity_provider_ = std::move(identity);
+}
+
 void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                             EventClass classification) const {
     loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
@@ -202,21 +206,58 @@ ConversationLoop::resolve_supplied_input(const AgentLoopSpec &spec) {
     for (const auto &[reason, count] : supplied.drop_reasons) {
         reasons.emplace_back(reason, JsonValue{count});
     }
-    emit(spec, "ModelInputSupplied",
-         JsonValue::Object{
-             {"offered_items", static_cast<std::int64_t>(supplied.offered)},
-             {"accepted_items", static_cast<std::int64_t>(supplied.accepted)},
-             {"dropped_items", static_cast<std::int64_t>(supplied.dropped)},
-             {"image_bytes", JsonValue{static_cast<std::int64_t>(supplied.image_bytes)}},
-             {"drop_reasons", JsonValue{std::move(reasons)}},
-         },
-         EventClass::State);
+
+    // DEC-088 input-reuse identity: resolved exactly once per assembled
+    // request after the supply closed, with the same exception discipline.
+    // An empty offer carries no identity, because the note annotates content
+    // that is actually present. The annotation qualifies from the third
+    // consecutive identical supply (reuse_count >= 2) on an image-bearing
+    // supply: text re-offers are cheap and stay unannotated.
+    if (identity_provider_ != nullptr && !supplied.parts.empty()) {
+        try {
+            supplied.reuse = identity_provider_(spec);
+        } catch (...) {
+            supplied.reuse.reset();
+            supplied.degraded = true;
+            emit(spec, "ModelInputSupplyDegraded",
+                 JsonValue::Object{{"reason", std::string("identity-exception")}},
+                 EventClass::State);
+        }
+        if (supplied.reuse.has_value()) {
+            supplied.annotate_reuse =
+                supplied.reuse->reuse_count >= 2 &&
+                std::any_of(supplied.parts.begin(), supplied.parts.end(),
+                            [](const ModelContentPart &part) {
+                                return std::holds_alternative<ImagePart>(part);
+                            });
+        }
+    }
+
+    JsonValue::Object event{
+        {"offered_items", static_cast<std::int64_t>(supplied.offered)},
+        {"accepted_items", static_cast<std::int64_t>(supplied.accepted)},
+        {"dropped_items", static_cast<std::int64_t>(supplied.dropped)},
+        {"image_bytes", JsonValue{static_cast<std::int64_t>(supplied.image_bytes)}},
+        {"drop_reasons", JsonValue{std::move(reasons)}}};
+    if (supplied.reuse.has_value()) {
+        constexpr std::size_t kMaxDigestChars = 128;
+        auto digest = supplied.reuse->content_digest;
+        if (digest.size() > kMaxDigestChars) {
+            digest.resize(kMaxDigestChars);
+        }
+        event.emplace_back("content_digest", JsonValue{std::move(digest)});
+        event.emplace_back("reuse_count",
+                           JsonValue{static_cast<std::int64_t>(supplied.reuse->reuse_count)});
+        event.emplace_back("reuse_annotated", JsonValue{supplied.annotate_reuse});
+    }
+    emit(spec, "ModelInputSupplied", JsonValue{std::move(event)}, EventClass::State);
     return supplied;
 }
 
-Result<ModelRequest> ConversationLoop::build_request(
-    const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
-    const std::string &feedback, const std::vector<ModelContentPart> &supplied) {
+Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
+                                                     const std::vector<ModelInputItem> &history,
+                                                     const std::string &feedback,
+                                                     const SuppliedInput &supplied) {
     ModelRequest request = loop_support::begin_model_request(spec, tools_.get());
 
     ModelInputItem system_item;
@@ -252,7 +293,22 @@ Result<ModelRequest> ConversationLoop::build_request(
         feedback_text.sensitivity = Sensitivity::Internal;
         user_item.content.emplace_back(std::move(feedback_text));
     }
-    user_item.content.insert(user_item.content.end(), supplied.begin(), supplied.end());
+    user_item.content.insert(user_item.content.end(), supplied.parts.begin(), supplied.parts.end());
+    // DEC-088 input-reuse note: the last part of the user envelope, under the
+    // loop's own Internal envelope (never the system role, never elevated).
+    // It renders from the third consecutive identical image supply so the
+    // model can skip re-analysis instead of re-reading the same pixels.
+    if (supplied.annotate_reuse) {
+        TextPart note;
+        note.text = "[System note: The " +
+                    (supplied.reuse->semantic_label.empty() ? std::string("supplied content")
+                                                            : supplied.reuse->semantic_label) +
+                    " above is the same as in the previous " +
+                    std::to_string(supplied.reuse->reuse_count) +
+                    " turns. No need to re-analyze it unless the task explicitly requires it.]";
+        note.sensitivity = Sensitivity::Internal;
+        user_item.content.emplace_back(std::move(note));
+    }
 
     request.input.push_back(std::move(system_item));
     request.input.push_back(std::move(user_item));
@@ -311,8 +367,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         result.supplied_input_items += static_cast<std::uint32_t>(supplied.accepted);
         result.supplied_input_dropped += static_cast<std::uint32_t>(supplied.dropped);
         result.supply_degradations += supplied.degraded ? 1U : 0U;
+        result.supplied_input_reuse_annotations += supplied.annotate_reuse ? 1U : 0U;
 
-        auto request = build_request(spec, history, feedback, supplied.parts);
+        auto request = build_request(spec, history, feedback, supplied);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "request assembly failed";
@@ -402,10 +459,18 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     history.push_back(std::move(assistant));
                     record.note = "output truncated by the token budget; continuing";
                     result.turns.push_back(std::move(record));
+                    // DEC-088: anchor the continuation at the cut so the model
+                    // resumes the exact tail instead of re-deriving it.
+                    constexpr std::size_t kAnchorChars = 50;
+                    const std::string anchor =
+                        partial_text.size() > kAnchorChars
+                            ? partial_text.substr(partial_text.size() - kAnchorChars)
+                            : partial_text;
                     feedback =
                         "Your previous reply was cut off by the output-token limit. Continue "
-                        "it exactly where it stopped: do not repeat what you already wrote, "
-                        "just continue and finish.";
+                        "from: \"" +
+                        anchor +
+                        "\" — do not repeat what you already wrote, just continue and finish.";
                 } else if (carries_tool_calls(outcome.response)) {
                     record.note = "tool call cut off by the token budget; discarded unexecuted";
                     result.turns.push_back(std::move(record));
@@ -419,8 +484,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     result.turns.push_back(std::move(record));
                     feedback = "Your previous reply was cut off by the output-token limit during "
                                "internal deliberation before any visible content. Skip lengthy "
-                               "deliberation and reply with concise plain text: the current "
-                               "result or the blocking limitation.";
+                               "deliberation and reply with a concise plain-text response "
+                               "stating the current result or the blocking limitation.";
                 }
                 continue;
             }
@@ -552,9 +617,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 record.note = "output cut off; recovering";
                 result.turns.push_back(std::move(record));
                 feedback = "Your previous reply was cut off by the output-token limit before "
-                           "it completed. Reply again with concise plain text only: no tool "
-                           "calls and no long deliberation — state the current result or the "
-                           "blocking limitation in a few sentences.";
+                           "it completed. Reply again with a concise plain-text response "
+                           "only: no tool calls and no long deliberation — state the current "
+                           "result or the blocking limitation in a few sentences.";
             } else {
                 record.note = "no usable answer text; recovering";
                 result.turns.push_back(std::move(record));
