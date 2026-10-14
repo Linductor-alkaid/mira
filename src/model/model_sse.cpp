@@ -1,3 +1,5 @@
+#include "model_thinking_preview.hpp"
+
 #include <mira/model_sse.hpp>
 
 #include <algorithm>
@@ -500,6 +502,12 @@ Result<void> ResponsesSseParser::reduce(const SseMessage &message) {
                                  "accumulated reasoning text exceeded the limit");
             }
             reasoning_bytes_ += delta->as_string()->size();
+            // Summary-only terminal ThinkingPart is redacted by the mapper;
+            // do not export those summary events as raw thinking. Only public
+            // reasoning_text deltas on a reasoning item enter this channel.
+            if (event == "reasoning_text.delta" && open->type == "reasoning")
+                thinking_preview_drops_ += detail::append_thinking_preview(
+                    thinking_preview_, *delta->as_string(), limits_.max_preview_bytes);
         }
         return Result<void>{};
     }
@@ -569,4 +577,9 @@ UnvalidatedModelPreview ResponsesSseParser::take_preview() {
     return preview;
 }
 
+UnvalidatedModelThinkingPreview ResponsesSseParser::take_thinking_preview() {
+    auto preview = detail::take_thinking_preview(thinking_preview_, thinking_preview_drops_);
+    stats_.thinking_preview_drops += preview.dropped_updates;
+    return preview;
+}
 } // namespace mira

@@ -353,3 +353,22 @@ ThinkingPart，消除"开启思考无效果"的静默降级：
 - 回放门控：工具循环按 `dialect_accepts_thinking_replay(profile.dialect)`（仅
   Messages 为 true）决定是否回填完整 assistant 内容；两方言思考输出仅作可观测
   输出，不做权威历史输入，工具轮沿用 ToolCallPart + tool result 回放。
+
+## 可选实时思考预览（DEC-055）
+
+设置 `InferOptions::thinking_preview_sink` 或
+`ProviderInferOptions::thinking_preview_sink`，同时开启 `stream=true`。回调接收
+`ModelRequestId` 与 `UnvalidatedModelThinkingPreview{text, dropped_updates, truncated}`。
+它是供应商公开思考文本的完整最新快照，最多 16KiB，UTF-8 字符边界裁掉旧内容。
+每次请求/尝试空快照清除旧内容，取消后不再调用；消费方只做有界校验与 Executor
+通信投递。异常计入 `last_sse_stats().thinking_preview_drops`，不改变规范推理结果。
+
+与上文仅正文的 `preview_sink` 独立：旧调用方不接收思考或新的正文回调。Chat
+`reasoning_content`、Messages `thinking_delta`、Responses reasoning item 的
+`reasoning_text.delta` 可预览；signature/redacted/encrypted 数据与 Responses
+summary-only redacted 内容不提供。没有公开思考时只有清空，不制造内容。
+
+解析器 `take_thinking_preview()` 返回待消费片段（消费后清空），由 Provider 归并为
+完整快照；该片段 API 与 sink 快照语义不同。丢弃旧内容是呈现预算，不改变规范
+ThinkingPart、usage、终态验证或工具执行。ConversationLoop 通过现有
+`config.inference` 透传此回调。预览不持久化，不进入 Memory，不具备决策权威。

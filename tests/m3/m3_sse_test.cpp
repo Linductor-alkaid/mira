@@ -389,6 +389,7 @@ int chat_reasoning_stream_maps_to_thinking() {
         MIRA_CHECK(message != nullptr);
         MIRA_CHECK(std::get<OutputTextPart>(message->content[0]).text == "answer");
         MIRA_CHECK(parser.take_preview().text == "answer");
+        MIRA_CHECK(parser.take_thinking_preview().text == "think more");
     }
 
     // Pure reasoning increments are invisible to the live preview and the
@@ -401,6 +402,7 @@ int chat_reasoning_stream_maps_to_thinking() {
         MIRA_CHECK(parser.feed(reasoning_only));
         MIRA_CHECK(parser.stats().text_deltas == 0);
         MIRA_CHECK(parser.take_preview().text.empty());
+        MIRA_CHECK(parser.take_thinking_preview().text == "ab");
         auto result = parser.finish();
         MIRA_CHECK(result);
         // finish() always serializes content:"" and the shared decode maps an
@@ -542,6 +544,7 @@ int responses_reasoning_stream_events_and_terminal_reduction() {
         ResponsesSseParser preview_parser(request, profile);
         MIRA_CHECK(preview_parser.feed(stream));
         MIRA_CHECK(preview_parser.take_preview().text == "final");
+        MIRA_CHECK(preview_parser.take_thinking_preview().text.empty());
     }
 
     // Raw stream: reasoning_text deltas plus summary events; the terminal
@@ -575,6 +578,7 @@ int responses_reasoning_stream_events_and_terminal_reduction() {
         MIRA_CHECK(thinking->text == "raw thought");
         MIRA_CHECK(!thinking->redacted);
         MIRA_CHECK(parser.take_preview().text.empty());
+        MIRA_CHECK(parser.take_thinking_preview().text == "raw thought");
     }
 
     // Reasoning delta budget: the streamed reasoning byte counter is shared

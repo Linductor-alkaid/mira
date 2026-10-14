@@ -28,6 +28,7 @@ struct InferOptions final {
     bool stream = false;
     bool capture_raw_response = false;
     ModelPreviewSink preview_sink{};
+    ModelThinkingPreviewSink thinking_preview_sink{};
 };
 
 // The aggregate outcome of one gateway call: three success layers stay
