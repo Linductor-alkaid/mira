@@ -213,6 +213,7 @@ Result<TokenEstimate> ConservativeTokenCounter::estimate_item(const ContextItem 
                                                               const ModelProfileId &profile) const {
     std::uint64_t text_bytes = 0;
     std::uint64_t file_bytes = 0;
+    std::uint64_t tool_bytes = 0;
     std::uint64_t parts = 0;
     std::uint64_t image_tokens = 0;
     for (const auto &part : item.content) {
@@ -224,14 +225,41 @@ Result<TokenEstimate> ConservativeTokenCounter::estimate_item(const ContextItem 
                             divide_up(image->source.byte_size, config_.image_bytes_per_token);
         } else if (const auto *file = std::get_if<FilePart>(&part)) {
             file_bytes += file->source.byte_size;
+        } else if (const auto *call = std::get_if<ToolCallPart>(&part)) {
+            // The call echo renders its arguments inline on every dialect
+            // (DEC-047); their serialized bytes must enter the bound.
+            tool_bytes += call->provider_call_id.value.size();
+            tool_bytes += call->wire_name.size();
+            tool_bytes += to_json_string(call->arguments).size();
+        } else if (const auto *tool_result = std::get_if<ToolResultPart>(&part)) {
+            // Mirror the tool bridge: inline results travel as serialized JSON,
+            // failures as the safe summary, oversized payloads as an artifact
+            // reference. Whatever the wire carries is what the bound counts.
+            tool_bytes += tool_result->provider_call_id.value.size();
+            tool_bytes += tool_result->tool_id.to_string().size();
+            if (tool_result->failed) {
+                tool_bytes += tool_result->safe_error_summary.size();
+            } else if (tool_result->large_payload.has_value()) {
+                const auto &payload = *tool_result->large_payload;
+                tool_bytes += payload.id.to_string().size();
+                tool_bytes += payload.media_type.size();
+                tool_bytes += 20; // bounded decimal rendering of byte_size
+            } else {
+                tool_bytes += to_json_string(tool_result->result).size();
+            }
+        } else if (const auto *thinking = std::get_if<ThinkingPart>(&part)) {
+            // Thinking replay travels inline as text plus signature.
+            tool_bytes += thinking->text.size();
+            tool_bytes += thinking->signature.size();
         }
     }
     const std::uint64_t text_tokens = divide_up(text_bytes, config_.bytes_per_token);
     const std::uint64_t file_tokens =
         file_bytes > 0 ? 32 + divide_up(file_bytes, config_.bytes_per_token) : 0;
+    const std::uint64_t tool_tokens = divide_up(tool_bytes, config_.bytes_per_token);
     const std::uint64_t overhead =
         parts * config_.per_part_overhead_tokens + config_.per_item_overhead_tokens;
-    const std::uint64_t upper = text_tokens + image_tokens + file_tokens + overhead;
+    const std::uint64_t upper = text_tokens + image_tokens + file_tokens + tool_tokens + overhead;
     const std::uint64_t lower = upper / 4 + 1;
 
     std::shared_ptr<const IExactTokenCounter> exact;

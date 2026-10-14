@@ -23,7 +23,12 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   相同请求产生相同 selection digest，逐项输出选入/排除/替换/压缩理由（稳定 reason
   code）；item epoch 与请求边界不一致时按 `StaleBuild` 拒绝。`StandardContextManager`
   是纯函数实现；`ITokenCounter`/`IExactTokenCounter` 是计数边界
-  （`ConservativeTokenConfig` 配置保守上界）。
+  （`ConservativeTokenConfig` 配置保守上界）。`ConservativeTokenCounter::estimate_item`
+  把每个 content part 的 wire 载荷字节按 `bytes_per_token` 密度计入上界：Text/Image/
+  File 之外，`ToolCallPart` 计入 `arguments` 序列化字节，`ToolResultPart` 按
+  tool bridge 的 wire 形态计入（inline result 计序列化字节、failed 计
+  `safe_error_summary`、`large_payload` 计工件引用），`ThinkingPart` 计入 text 与
+  signature——回放载荷不上 wire 的替代形态不计入，避免系统性低估工具密集请求的水位。
 - 多模态与 Tool 配对：历史大载荷转 `ArtifactRef`，Tool call/result 配对原子决策，
   未消费 result 进入最低集合。
 

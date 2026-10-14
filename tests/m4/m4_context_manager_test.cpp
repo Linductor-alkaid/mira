@@ -457,6 +457,121 @@ int audit_reasons_are_stable_codes() {
     return 0;
 }
 
+[[nodiscard]] ContextItem part_item(ContextItemKind kind, ModelContentPart part) {
+    ContextItem item;
+    item.id = ContextItemId::generate();
+    item.kind = kind;
+    item.authority = ContextAuthority::VerifiedState;
+    item.content.emplace_back(std::move(part));
+    return item;
+}
+
+// Serialized tool payload bytes enter the conservative upper bound linearly:
+// a large call argument set must dominate the flat per-part overhead instead
+// of estimating at the same 20-token floor as an empty call (MIRA feedback
+// class: replayed content that travels on the wire must be counted).
+int tool_call_payload_bytes_enter_the_bound() {
+    const auto profile = ModelProfileId::generate();
+    ConservativeTokenCounter counter;
+
+    ToolCallPart small_call;
+    small_call.provider_call_id = ProviderToolCallId{"call-1"};
+    small_call.wire_name = "read";
+    small_call.arguments = JsonValue::Object{};
+
+    ToolCallPart large_call;
+    large_call.provider_call_id = ProviderToolCallId{"call-2"};
+    large_call.wire_name = "read";
+    large_call.arguments = JsonValue::Object{{"data", JsonValue{std::string(400, 'a')}}};
+
+    const std::uint64_t small_bytes = small_call.provider_call_id.value.size() +
+                                      small_call.wire_name.size() +
+                                      to_json_string(small_call.arguments).size();
+    const std::uint64_t large_bytes = large_call.provider_call_id.value.size() +
+                                      large_call.wire_name.size() +
+                                      to_json_string(large_call.arguments).size();
+
+    const auto small =
+        counter.estimate_item(part_item(ContextItemKind::ToolCall, small_call), profile);
+    MIRA_CHECK(small.has_value());
+    const auto large =
+        counter.estimate_item(part_item(ContextItemKind::ToolCall, large_call), profile);
+    MIRA_CHECK(large.has_value());
+
+    // Same overhead terms on both sides, so the delta is exactly the payload
+    // growth at 4 bytes per token.
+    MIRA_CHECK(large.value().upper_bound - small.value().upper_bound ==
+               (large_bytes - small_bytes + 3) / 4);
+    // The large payload dominates the flat overhead instead of vanishing.
+    MIRA_CHECK(large.value().upper_bound > 100);
+    return 0;
+}
+
+// The result estimate mirrors what the tool bridge actually puts on the wire:
+// inline results count their serialized JSON, failures count the safe summary,
+// and artifact-referenced payloads count the reference, never the stored bytes.
+int tool_result_estimates_mirror_the_wire_shape() {
+    const auto profile = ModelProfileId::generate();
+    ConservativeTokenCounter counter;
+
+    ToolResultPart inline_result;
+    inline_result.provider_call_id = ProviderToolCallId{"call-3"};
+    inline_result.tool_id = ToolId::generate();
+    inline_result.result = JsonValue::Object{{"receipt", JsonValue{std::string(4'000, 'b')}}};
+
+    ToolResultPart referenced_result = inline_result;
+    ArtifactRef reference;
+    reference.id = ArtifactId::generate();
+    reference.byte_size = 5'000;
+    reference.media_type = "image/png";
+    referenced_result.large_payload = reference;
+
+    ToolResultPart failed_result = inline_result;
+    failed_result.failed = true;
+    failed_result.safe_error_summary = "denied";
+
+    const auto inline_estimate =
+        counter.estimate_item(part_item(ContextItemKind::ToolResult, inline_result), profile);
+    MIRA_CHECK(inline_estimate.has_value());
+    // A 4'000-byte receipt estimates in the thousands of tokens, not at the
+    // 20-token flat floor.
+    MIRA_CHECK(inline_estimate.value().upper_bound > 1'000);
+
+    const auto referenced_estimate =
+        counter.estimate_item(part_item(ContextItemKind::ToolResult, referenced_result), profile);
+    MIRA_CHECK(referenced_estimate.has_value());
+    // The stored bytes never travel back; the reference does.
+    MIRA_CHECK(referenced_estimate.value().upper_bound < inline_estimate.value().upper_bound);
+    MIRA_CHECK(referenced_estimate.value().upper_bound < 100);
+
+    const auto failed_estimate =
+        counter.estimate_item(part_item(ContextItemKind::ToolResult, failed_result), profile);
+    MIRA_CHECK(failed_estimate.has_value());
+    // Failed results render only the safe summary; the raw result stays local.
+    MIRA_CHECK(failed_estimate.value().upper_bound < 100);
+    return 0;
+}
+
+int thinking_replay_bytes_enter_the_bound() {
+    const auto profile = ModelProfileId::generate();
+    ConservativeTokenCounter counter;
+
+    ThinkingPart small_thinking;
+
+    ThinkingPart large_thinking;
+    large_thinking.text = std::string(400, 'c');
+    large_thinking.signature = std::string(100, 'd');
+
+    const auto small =
+        counter.estimate_item(part_item(ContextItemKind::RecentAction, small_thinking), profile);
+    MIRA_CHECK(small.has_value());
+    const auto large =
+        counter.estimate_item(part_item(ContextItemKind::RecentAction, large_thinking), profile);
+    MIRA_CHECK(large.has_value());
+    MIRA_CHECK(large.value().upper_bound - small.value().upper_bound == (500 + 3) / 4);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -494,6 +609,15 @@ int main() {
         return 1;
     }
     if (audit_reasons_are_stable_codes() != 0) {
+        return 1;
+    }
+    if (tool_call_payload_bytes_enter_the_bound() != 0) {
+        return 1;
+    }
+    if (tool_result_estimates_mirror_the_wire_shape() != 0) {
+        return 1;
+    }
+    if (thinking_replay_bytes_enter_the_bound() != 0) {
         return 1;
     }
     return 0;
