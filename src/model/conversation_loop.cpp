@@ -95,10 +95,69 @@ void ConversationLoop::set_model_input_identity(ModelInputIdentityProvider ident
     identity_provider_ = std::move(identity);
 }
 
+void ConversationLoop::set_history_transformer(HistoryTransformer transformer) {
+    history_transformer_ = std::move(transformer);
+}
+
 void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                             EventClass classification) const {
     loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
                                   std::move(summary), classification);
+}
+
+std::optional<std::vector<ModelInputItem>>
+ConversationLoop::apply_history_transform(const AgentLoopSpec &spec,
+                                          const std::vector<ModelInputItem> &history,
+                                          ConversationLoopResult &result) {
+    if (history_transformer_ == nullptr || history.empty()) {
+        // The first model turn carries no executed work to compact; the seam
+        // contract resolves only over a non-empty history.
+        return std::nullopt;
+    }
+    Result<std::vector<ModelInputItem>> transformed{std::vector<ModelInputItem>{}};
+    bool exception = false;
+    try {
+        transformed = history_transformer_(history);
+    } catch (...) {
+        // Host callback discipline (DEC-045): an exception is isolated into a
+        // diagnostic and never escapes into request assembly; exception text
+        // stays off the event surface.
+        exception = true;
+    }
+    std::string reason;
+    if (exception) {
+        reason = "transformer-exception";
+    } else if (!transformed.has_value()) {
+        reason = "transformer-error";
+    } else if (transformed.value().empty()) {
+        // The canonical round trip is the model's only memory of executed
+        // work: an empty replay would strip it silently, so it degrades.
+        reason = "empty-result";
+    } else {
+        for (const auto &item : transformed.value()) {
+            if (item.role == ModelRole::System || item.content.empty()) {
+                reason = "invalid-item";
+                break;
+            }
+        }
+    }
+    if (!reason.empty()) {
+        ++result.history_transform_degradations;
+        JsonValue::Object detail{{"reason", JsonValue{reason}}};
+        if (!exception && !transformed.has_value()) {
+            detail.emplace_back("code",
+                                JsonValue{static_cast<std::int64_t>(transformed.error().code)});
+        }
+        emit(spec, "HistoryTransformDegraded", JsonValue{std::move(detail)}, EventClass::State);
+        return std::nullopt;
+    }
+    ++result.history_transforms;
+    emit(spec, "HistoryTransformApplied",
+         JsonValue::Object{
+             {"items_in", JsonValue{static_cast<std::int64_t>(history.size())}},
+             {"items_out", JsonValue{static_cast<std::int64_t>(transformed.value().size())}}},
+         EventClass::State);
+    return std::move(transformed).value();
 }
 
 ConversationLoop::SuppliedInput
@@ -369,7 +428,15 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         result.supply_degradations += supplied.degraded ? 1U : 0U;
         result.supplied_input_reuse_annotations += supplied.annotate_reuse ? 1U : 0U;
 
-        auto request = build_request(spec, history, feedback, supplied);
+        // History compaction seam (DEC-088 follow-up): the replay the host
+        // returns replaces the canonical history for this request only; the
+        // loop-owned history itself is never mutated, so later turns and
+        // continuations rebuild from the full record.
+        std::vector<ModelInputItem> replay = history;
+        if (auto transformed = apply_history_transform(spec, history, result)) {
+            replay = std::move(*transformed);
+        }
+        auto request = build_request(spec, replay, feedback, supplied);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "request assembly failed";

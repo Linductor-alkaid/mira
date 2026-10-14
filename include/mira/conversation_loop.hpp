@@ -87,6 +87,12 @@ struct ConversationLoopResult final {
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
     std::uint32_t output_continuations = 0;
+    // Requests whose tool-history replay came from the host compaction seam
+    // (DEC-088 follow-up), and requests where the seam degraded to the raw
+    // replay (Error, exception, empty or invalid result). Both zero without
+    // a transformer or an empty history.
+    std::uint32_t history_transforms = 0;
+    std::uint32_t history_transform_degradations = 0;
 };
 
 // Declared per-request bounds (RULE-08) for the supplied-input seam. Items
@@ -136,6 +142,25 @@ struct InputReuseMeta final {
 using ModelInputIdentityProvider =
     std::function<std::optional<InputReuseMeta>(const AgentLoopSpec &)>;
 
+// Optional host compaction seam over the canonical tool-history replay
+// (DEC-088 history-compaction follow-up to the DEC-053 seam; downstream
+// ledger MIRA-20261014-006). The loop owns the round-trip history and
+// replays it verbatim into every request, so a host that wants watermark
+// compaction, reference replacement or summarization can never see it
+// today. With a transformer wired, the loop hands the full canonical
+// history to the callback once per assembled request (after tool rounds
+// complete, before build_request, on the run() caller's worker — bounded
+// and free of blocking work, like ModelInputSupplier) and replays the
+// returned list instead. The callback receives the loop's own items and
+// must return provider-valid conversation items: User/Assistant roles
+// only, tool calls still paired with their results in execution order.
+// Any failure shape degrades to the raw replay with a visible event —
+// an Error return, an empty result, a structurally invalid list (System
+// role or empty content) or an exception never block the loop. Without
+// the transformer, request assembly stays unchanged byte for byte.
+using HistoryTransformer =
+    std::function<Result<std::vector<ModelInputItem>>(const std::vector<ModelInputItem> &history)>;
+
 // The no-observation conversational loop (DEC-047): model -> tool proposal ->
 // execute -> result -> model, driven over the same ModelGateway, admission and
 // budget contracts as the device agent loop. There is no environment, no
@@ -181,6 +206,18 @@ class ConversationLoop final {
     // observe prior runs. Wire once before run(), like the other setters.
     void set_model_input_identity(ModelInputIdentityProvider identity);
 
+    // Attaches the optional history compaction seam (DEC-088 follow-up).
+    // Without one, the canonical tool-history replay stays unchanged byte
+    // for byte. With one, each assembled request whose history is non-empty
+    // hands that history to the callback once and replays the returned list
+    // instead; the run result counts applied transforms and degradations,
+    // and both surface as loop events. Degradation shapes (Error, exception,
+    // empty or structurally invalid result) fall back to the raw replay —
+    // the seam can rewrite or shrink the replay, never block the loop or
+    // strip its history silently. Wire once before run(), like the other
+    // setters.
+    void set_history_transformer(HistoryTransformer transformer);
+
     [[nodiscard]] Result<ConversationLoopResult> run(const AgentLoopSpec &spec,
                                                      const OperationContext &context);
 
@@ -209,6 +246,13 @@ class ConversationLoop final {
     // flattens the surviving parts. Never fails — supply errors and exceptions
     // degrade to a visible diagnostic and an empty part list.
     [[nodiscard]] SuppliedInput resolve_supplied_input(const AgentLoopSpec &spec);
+    // Resolves the history compaction seam once for the request being
+    // assembled (DEC-088 follow-up). Nullopt keeps the raw replay; every
+    // failure shape — exception, Error, empty or structurally invalid
+    // result — degrades to the raw replay with a visible event.
+    [[nodiscard]] std::optional<std::vector<ModelInputItem>>
+    apply_history_transform(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
+                            ConversationLoopResult &result);
     void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
               EventClass classification) const;
 
@@ -220,6 +264,7 @@ class ConversationLoop final {
     std::shared_ptr<BuiltinToolRegistry> tools_;
     ModelInputSupplier input_supplier_;
     ModelInputIdentityProvider identity_provider_;
+    HistoryTransformer history_transformer_;
     ModelInputSupplyOptions supply_options_{};
 };
 
