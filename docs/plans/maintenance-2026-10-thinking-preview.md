@@ -43,3 +43,5 @@ Executor 头与缺 system prompt 已修正，最终命令通过。ASAN 关闭 le
 完整 Debug 回归另行执行，其结果不由上述选择集代替；Windows/Android/供应商在线
 未在本机执行，负责人维护者，补跑条件为目标 CI/凭据环境到位。无新跨上下文任务路径，
 TSAN 由后续宿主接线验证。
+
+2026-10-14：完整 Debug 构建与回归 106/106 通过（`cmake --build --preset debug -j8`、`ctest --test-dir build/debug --output-on-failure -j4`）。PR#94 首轮 Linux/Windows/Android 与 ASAN/UBSAN/TSAN job 已通过；quality 的 clang-format 检查发现 Provider 新增语句四处换行，修正后本地 format-check、architecture-check 通过，补推后以当前 CI 为准。

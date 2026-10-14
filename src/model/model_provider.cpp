@@ -241,11 +241,11 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
                     auto thinking = parser.take_thinking_preview();
                     if (!thinking.text.empty() || thinking.truncated) {
                         thinking_snapshot.dropped_updates += thinking.dropped_updates;
-                        const auto loss = detail::append_thinking_preview(
-                            thinking_snapshot.text, thinking.text, 16 * 1024);
+                        const auto loss = detail::append_thinking_preview(thinking_snapshot.text,
+                                                                          thinking.text, 16 * 1024);
                         thinking_snapshot.dropped_updates += loss;
-                        thinking_snapshot.truncated = thinking_snapshot.truncated ||
-                                                       thinking.truncated || loss != 0;
+                        thinking_snapshot.truncated =
+                            thinking_snapshot.truncated || thinking.truncated || loss != 0;
                         publish_thinking();
                     }
                     auto update = parser.take_preview();
