@@ -357,7 +357,7 @@ int truncated_reply_recovers_with_short_answer_guidance() {
     MIRA_CHECK(result.value().turns.size() == 2);
     const auto second_text = fixture.provider_->request_text(1);
     MIRA_CHECK(second_text.find("cut off by the output-token limit") != std::string::npos);
-    MIRA_CHECK(second_text.find("concise plain text") != std::string::npos);
+    MIRA_CHECK(second_text.find("concise plain-text") != std::string::npos);
     return 0;
 }
 
@@ -893,7 +893,9 @@ int truncated_text_continues_from_the_cut() {
     MIRA_CHECK(result.value().output_continuations == 1);
     const auto second_text = fixture.provider_->request_text(1);
     MIRA_CHECK(second_text.find("partial answer so far") != std::string::npos);
-    MIRA_CHECK(second_text.find("Continue it exactly where it stopped") != std::string::npos);
+    // DEC-088: the continuation feedback anchors at the cut so the model
+    // resumes the exact tail. The whole partial text fits the anchor window.
+    MIRA_CHECK(second_text.find("Continue from: \"partial answer so far\"") != std::string::npos);
     return 0;
 }
 
