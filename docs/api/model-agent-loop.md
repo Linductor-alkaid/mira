@@ -312,6 +312,40 @@ loop.set_model_input_identity(supply_input_identity);  // run() 前接线一次
   `reuse_count`、`reuse_annotated`；`ConversationLoopResult` 以
   `supplied_input_reuse_annotations` 累计全程。未接线时请求装配逐字节不变。
 
+### 工具历史压缩缝（DEC-088 后续）
+
+ConversationLoop 持有规范化工具往返历史（ToolCallPart/ToolResultPart 条目）并逐轮
+原样回放；上下文管理是宿主职责（`StandardContextManager` 只对"持有全部候选内容的
+一方"可用），而宿主读不到该回放。`set_history_transformer` 补一条可选的宿主压缩缝：
+每轮装配时把完整 history 交给宿主变换，以返回列表替代本轮回放。
+
+```cpp
+// 宿主侧实现示例：只压缩工具往返段，assistant 文本原样保留（角色保真）。
+mira::Result<std::vector<mira::ModelInputItem>>
+compact_history(const std::vector<mira::ModelInputItem> &history) {
+    // 工具条目映射为 ContextItem（P5、consumed、配对键）提交
+    // IContextManager::prepare，取其 item_audit 决策后按原顺序重组；
+    // 配对被拆散时整对收缩。assistant 文本条目逐字透传。
+}
+
+loop.set_history_transformer(compact_history);  // run() 前接线一次
+```
+
+- **解析时机与纪律**：与供给缝同拍——每轮 `build_request` 前恰一次（history 非空
+  才调用）、有界、不阻塞、run() 调用者 worker 上同步执行；返回值只替代本轮请求的
+  回放，循环自有的 history 永不被改写，后续轮次与续写仍从完整记录重建。
+- **协议契约**：返回条目 role 仅限 `User`/`Assistant`，且工具调用仍须与其结果按
+  执行顺序配对——供应商侧多轮工具语义依赖它。宿主须自行保证：被压缩决策拆散的
+  调用/结果对要整对收缩（Layer 0 的 checkpoint 水位按单条丢弃 P5 条目，不保配对）。
+- **降级与可观察结果**：Error（`transformer-error`，附 code）、异常
+  （`transformer-exception`）、空结果（`empty-result`——往返历史是模型对已执行工作
+  的唯一记忆，清空属静默剥离，降级处理）或结构非法条目（`invalid-item`：System
+  role 或空内容）一律降级为一次 `HistoryTransformDegraded` 状态事件并回退原始
+  回放，循环继续不阻塞。应用成功发 `HistoryTransformApplied`（items_in/items_out）；
+  `ConversationLoopResult` 以 `history_transforms` /
+  `history_transform_degradations` 累计全程。未接线或 history 为空（首个模型轮）
+  时请求装配逐字节不变。
+
 ## conversation_log.hpp：会话对话投影
 
 [DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md) 的投影 API：
