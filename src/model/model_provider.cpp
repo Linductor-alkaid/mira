@@ -1,6 +1,8 @@
 #include <mira/model_digest.hpp>
 #include <mira/model_provider.hpp>
 
+#include "model_thinking_preview.hpp"
+
 #include <chrono>
 #include <map>
 #include <memory>
@@ -213,7 +215,18 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
                     ++snapshot.dropped_updates;
                 }
             };
+            UnvalidatedModelThinkingPreview thinking_snapshot;
+            auto publish_thinking = [&] {
+                if (!options.thinking_preview_sink || context.cancelled())
+                    return;
+                try {
+                    options.thinking_preview_sink(request.request_id, thinking_snapshot);
+                } catch (...) {
+                    ++thinking_snapshot.dropped_updates;
+                }
+            };
             publish(); // New attempt: clear any earlier provisional response.
+            publish_thinking();
             auto info = transport_->execute(
                 http, limits_from_profile(*profile_, request), context,
                 [&](std::string_view chunk) {
@@ -224,6 +237,16 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
                     if (!status) {
                         parse_failure = status.error();
                         return;
+                    }
+                    auto thinking = parser.take_thinking_preview();
+                    if (!thinking.text.empty() || thinking.truncated) {
+                        thinking_snapshot.dropped_updates += thinking.dropped_updates;
+                        const auto loss = detail::append_thinking_preview(
+                            thinking_snapshot.text, thinking.text, 16 * 1024);
+                        thinking_snapshot.dropped_updates += loss;
+                        thinking_snapshot.truncated = thinking_snapshot.truncated ||
+                                                       thinking.truncated || loss != 0;
+                        publish_thinking();
                     }
                     auto update = parser.take_preview();
                     if (update.text.empty() && !update.truncated)
@@ -244,6 +267,7 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
                 last_headers_ = info.value().headers;
             sse_stats_ = parser.stats();
             sse_stats_.preview_drops = snapshot.dropped_updates;
+            sse_stats_.thinking_preview_drops = thinking_snapshot.dropped_updates;
             last_preview_ = snapshot;
             if (!info)
                 return info.error();
@@ -255,6 +279,7 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
             auto finished = parser.finish();
             sse_stats_ = parser.stats();
             sse_stats_.preview_drops = snapshot.dropped_updates;
+            sse_stats_.thinking_preview_drops = thinking_snapshot.dropped_updates;
             sse_stats_.cancel_seen = context.cancelled();
             if (!finished)
                 return finished.error();

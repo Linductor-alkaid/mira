@@ -1,3 +1,5 @@
+#include "model_thinking_preview.hpp"
+
 #include <mira/model_sse.hpp>
 
 #include <algorithm>
@@ -225,9 +227,11 @@ Result<void> AnthropicMessagesSseParser::reduce(const SseMessage &event) {
                 string(*delta, *delta_type == "thinking_delta" ? "thinking" : "signature");
             if (!part || part->size() > limits_.max_accumulated_text_bytes - text_bytes_)
                 return invalid();
-            if (*delta_type == "thinking_delta")
+            if (*delta_type == "thinking_delta") {
                 block.text += *part;
-            else
+                thinking_preview_drops_ += detail::append_thinking_preview(
+                    thinking_preview_, *part, limits_.max_preview_bytes);
+            } else
                 block.arguments += *part;
             text_bytes_ += part->size();
         } else if (kind == "tool_use" && *delta_type == "input_json_delta") {
@@ -294,5 +298,11 @@ Result<ModelResponse> AnthropicMessagesSseParser::finish() {
 UnvalidatedModelPreview AnthropicMessagesSseParser::take_preview() {
     const auto drops = std::exchange(pending_drops_, 0);
     return {std::exchange(preview_, {}), drops, drops != 0};
+}
+
+UnvalidatedModelThinkingPreview AnthropicMessagesSseParser::take_thinking_preview() {
+    auto preview = detail::take_thinking_preview(thinking_preview_, thinking_preview_drops_);
+    stats_.thinking_preview_drops += preview.dropped_updates;
+    return preview;
 }
 } // namespace mira

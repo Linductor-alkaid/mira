@@ -94,6 +94,18 @@ struct UnvalidatedModelPreview final {
 using ModelPreviewSink =
     std::function<void(const ModelRequestId &, const UnvalidatedModelPreview &)>;
 
+// Optional, UI-only thinking channel. Contains only provider-exposed plain
+// reasoning text; never signatures, encrypted content or redacted payloads.
+// Parser accessors return pending fragments; the provider sink receives a
+// complete rolling UTF-8 snapshot, at most 16KiB. Empty clears a new attempt.
+struct UnvalidatedModelThinkingPreview final {
+    std::string text;
+    std::size_t dropped_updates = 0;
+    bool truncated = false;
+};
+using ModelThinkingPreviewSink =
+    std::function<void(const ModelRequestId &, const UnvalidatedModelThinkingPreview &)>;
+
 // Counts and terminal classification for EventStore summaries.
 struct SseStreamStats final {
     std::uint64_t stream_sequence = 0; // Local monotonic sequence.
@@ -105,6 +117,7 @@ struct SseStreamStats final {
     std::size_t duplicate_events_collapsed = 0;
     bool terminal_seen = false;
     bool cancel_seen = false;
+    std::size_t thinking_preview_drops = 0;
 };
 
 // Typed reducer over `openai.responses.v1` SSE streams. Enforces event
@@ -127,6 +140,7 @@ class ResponsesSseParser final {
 
     [[nodiscard]] const SseStreamStats &stats() const noexcept { return stats_; }
     [[nodiscard]] UnvalidatedModelPreview take_preview();
+    [[nodiscard]] UnvalidatedModelThinkingPreview take_thinking_preview();
     [[nodiscard]] bool terminal_seen() const noexcept { return stats_.terminal_seen; }
 
   private:
@@ -162,6 +176,8 @@ class ResponsesSseParser final {
     bool cancel_seen_ = false;
     std::optional<ModelResponse> terminal_response_;
     SseStreamStats stats_;
+    std::string thinking_preview_;
+    std::size_t thinking_preview_drops_ = 0;
 };
 
 // One-choice Chat Completions SSE reducer. Text and tool argument fragments
@@ -173,6 +189,7 @@ class ChatCompletionsSseParser final {
     [[nodiscard]] Result<void> feed(std::string_view chunk);
     [[nodiscard]] Result<ModelResponse> finish();
     [[nodiscard]] UnvalidatedModelPreview take_preview();
+    [[nodiscard]] UnvalidatedModelThinkingPreview take_thinking_preview();
     [[nodiscard]] const SseStreamStats &stats() const noexcept { return stats_; }
 
   private:
@@ -185,6 +202,8 @@ class ChatCompletionsSseParser final {
     SseStreamLimits limits_;
     SseFramingParser framer_;
     SseStreamStats stats_;
+    std::string thinking_preview_;
+    std::size_t thinking_preview_drops_ = 0;
     std::string id_, model_, text_, refusal_, reasoning_, finish_reason_, preview_;
     std::map<std::int64_t, ToolFragments> tools_;
     std::size_t argument_bytes_ = 0;
@@ -199,6 +218,7 @@ class AnthropicMessagesSseParser final {
     [[nodiscard]] Result<void> feed(std::string_view);
     [[nodiscard]] Result<ModelResponse> finish();
     [[nodiscard]] UnvalidatedModelPreview take_preview();
+    [[nodiscard]] UnvalidatedModelThinkingPreview take_thinking_preview();
     [[nodiscard]] const SseStreamStats &stats() const noexcept { return stats_; }
 
   private:
@@ -213,6 +233,8 @@ class AnthropicMessagesSseParser final {
     SseStreamLimits limits_;
     SseFramingParser framer_;
     SseStreamStats stats_;
+    std::string thinking_preview_;
+    std::size_t thinking_preview_drops_ = 0;
     std::vector<Block> blocks_;
     JsonValue message_;
     bool started_ = false, delta_seen_ = false;

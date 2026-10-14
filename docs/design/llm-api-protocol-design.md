@@ -730,3 +730,11 @@ OpenAI 官方协议参考（访问并核对日期：2026-08-30）：
 公开有界、非权威完整预览快照，Chat SSE由Mira归约后复用规范mapper。
 PreviewSink在现有传输上下文运行，只允许有界投递；终态admission、取消、历史和工具边界保持不变。
 校验矩阵和平台限制见[维护计划](../plans/maintenance-2026-10-conversation-streaming.md)。
+
+### 可选实时思考预览（DEC-055）
+
+正文 ModelPreviewSink 仍只提供回答文字。新 ModelThinkingPreviewSink 显式 opt-in，
+接收供应商公开思考的有界最新完整快照；解析器片段由 Provider 归并，UTF-8 边界裁旧，
+取消抑制、尝试空快照清除及独立 drop 统计均不改变规范终态。签名、redacted/加密内容与
+Responses summary-only redacted 内容不导出，不进入历史、Memory 或工具执行。
+入口、支持事件与回调纪律见 [API 手册](../api/model-agent-loop.md#可选实时思考预览dec-055)。

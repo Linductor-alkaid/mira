@@ -1,3 +1,5 @@
+#include "model_thinking_preview.hpp"
+
 #include <mira/model_sse.hpp>
 
 #include <utility>
@@ -101,12 +103,16 @@ Result<void> ChatCompletionsSseParser::reduce(const SseMessage &message) {
         role && (!role->is_string() || *role->as_string() != "assistant"))
         return invalid("chat SSE delta role must be assistant");
     const auto old_size = text_.size();
+    const auto old_reasoning_size = reasoning_.size();
     if (!append(text_, delta->find("content"), limits_.max_accumulated_text_bytes) ||
         !append(refusal_, delta->find("refusal"), limits_.max_accumulated_text_bytes) ||
         // Reasoning increments stay out of the answer preview (DEC-051/052)
-        // and never count as text deltas; they only feed the terminal decode.
+        // and never count as text deltas. The opt-in channel is separate.
         !append(reasoning_, delta->find("reasoning_content"), limits_.max_accumulated_text_bytes))
         return invalid("chat SSE text exceeds budget or has invalid type");
+    thinking_preview_drops_ += detail::append_thinking_preview(
+        thinking_preview_, std::string_view(reasoning_).substr(old_reasoning_size),
+        limits_.max_preview_bytes);
     if (text_.size() > old_size) {
         ++stats_.text_deltas;
         const auto part = text_.substr(old_size);
@@ -204,5 +210,11 @@ Result<ModelResponse> ChatCompletionsSseParser::finish() {
 UnvalidatedModelPreview ChatCompletionsSseParser::take_preview() {
     const auto drops = std::exchange(pending_preview_drops_, 0);
     return {std::exchange(preview_, {}), drops, drops != 0};
+}
+
+UnvalidatedModelThinkingPreview ChatCompletionsSseParser::take_thinking_preview() {
+    auto preview = detail::take_thinking_preview(thinking_preview_, thinking_preview_drops_);
+    stats_.thinking_preview_drops += preview.dropped_updates;
+    return preview;
 }
 } // namespace mira

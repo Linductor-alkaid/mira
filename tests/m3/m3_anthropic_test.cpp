@@ -234,6 +234,7 @@ int thinking() {
         MIRA_CHECK(result);
         MIRA_CHECK(std::get<ThinkingPart>(result.value().output[0]).signature == "signed");
         MIRA_CHECK(parser.take_preview().text.empty()); // Reasoning never becomes answer preview.
+        MIRA_CHECK(parser.take_thinking_preview().text == "plan"); // No signature leaks.
     }
     SseStreamLimits limits;
     limits.max_accumulated_text_bytes = 3;
