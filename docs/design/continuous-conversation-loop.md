@@ -40,7 +40,9 @@ BudgetLedger 仍只有稳定 TaskId 的一个账户，不为每轮创建伪任�
 
 每次收到工具提案，先校验批次容量，按既有身份/schema/取消纪律逐个执行；
 然后追加规范 call/result。签名 thinking 与同轮 calls 保持同一个 Assistant 条目。
-一轮工具组或本次截断文本被标记为受保护后缀。
+一轮工具组或本次截断文本被标记为受保护后缀。连续恢复/截断段分别受原配置
+限制；完整工具轮结算后清零段内计数，累计 recoveries/output_continuations 仍以
+饱和 uint64 统计。Finite 保留整任务额度，不将独立小故障次数作为持续任务上限。
 
 下一轮调用 HistoryTransformer。Continuous 模式额外验证角色、call/result 配对
 完整以及最近原始轮逐字段保留；有效返回值替换私有 history，后续从已提交历史
@@ -79,7 +81,8 @@ canonical 度量的临时副本；响应与工具桥接本身有单次容量。�
 
 结果的 total_turns/tool/supply/history 累计数与逐轮窗口独立，采用饱和 uint64；
 事件中的计数在 int64 上限饱和。ConversationTurnRecorded 在窗口淘汰前发布，
-ConversationSettled 保留终态和累计数，retained_history_items/bytes 报告最近一次
+ConversationSettled 保留终态和累计数（原 turns 仍为保留记录数，新增 total_turns
+为推进尝试数），retained_history_items/bytes 报告最近一次
 请求前存量。事件写入延续既有 best-effort 契约，不能单凭发出事件宣称归档成功。
 
 ## 验证与后续

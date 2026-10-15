@@ -326,7 +326,9 @@ loop.set_history_transformer(compact_history);
 ```
 
 持续模式忽略累计 max_turns/max_tool_executions，仍保留单次模型 deadline、每批
-工具容量、恢复与输出续写上限。没有 compactor 时可运行短任务，历史满后明确
+工具容量、恢复与输出续写上限。Continuous 的恢复/续写额度按连续失败/截断段
+计算，完整工具轮后重置；累计 recoveries/output_continuations 仅作饱和 uint64
+统计，Finite 仍按整任务额度。没有 compactor 时可运行短任务，历史满后明确
 Failed（`history capacity exhausted after compaction`）；不静默删除事实或重启任务。
 
 每请求 budget scope=Request、max_requests=1、max_output_tokens=每轮输出上限，

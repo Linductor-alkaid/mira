@@ -24,7 +24,8 @@ enum class ConversationLimitMode : std::uint8_t { Finite, Continuous };
 struct ConversationLoopConfig final {
     // Whole-run bound on model turns; exhausting it settles as MaxTurns.
     std::uint32_t max_turns = 12;
-    // Bounded retries for recoverable model failures per run.
+    // Bounded retries per run (Finite) or consecutive failure episode
+    // (Continuous). A valid tool round starts a fresh episode.
     std::uint32_t max_recoveries = 2;
     std::chrono::milliseconds model_call_deadline{30'000};
     // Whole-run budget for tool executions.
@@ -33,7 +34,8 @@ struct ConversationLoopConfig final {
     // Incomplete, reason MaxOutputTokens), independent of max_recoveries:
     // the partial protocol-allowed text is kept in the history and the model
     // is asked to continue from the cut; a reply cut off mid tool call is
-    // discarded unexecuted. After the budget is spent the run settles Failed
+    // discarded unexecuted. In Continuous, a valid tool round resets this
+    // episode budget. After the budget is spent the run settles Failed
     // with an explicit output-limit summary instead of regenerating.
     std::uint32_t max_output_continuations = 2;
     // Per-turn generation bound.
@@ -77,7 +79,7 @@ struct ConversationLoopResult final {
     std::size_t retained_history_bytes = 0;
     // Terminal assistant text; empty unless the outcome is Answered.
     std::string answer;
-    std::uint32_t recoveries = 0;
+    std::uint64_t recoveries = 0;
     std::string safe_summary;
     ModelUsage last_usage{};
     std::uint64_t tool_executions = 0;
@@ -93,7 +95,7 @@ struct ConversationLoopResult final {
     std::uint64_t supplied_input_reuse_annotations = 0;
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
-    std::uint32_t output_continuations = 0;
+    std::uint64_t output_continuations = 0;
     // Requests whose tool-history replay came from the host compaction seam
     // (DEC-088 follow-up), and requests where the seam degraded to the raw
     // replay (Error, exception, empty or invalid result). Both zero without

@@ -16,7 +16,9 @@ Mirage 反馈 `MIRA-20261015-002`：正常长任务在累计 16 轮/32 工具处
 
 新增显式 `ConversationLimitMode::Continuous`，忽略累计 `max_turns` 与
 `max_tool_executions`，默认仍为 Finite，零值保持原语义。每次模型调用、工具批次、
-恢复及输出续写仍有界；取消、deadline、准入拒绝和终态阻止新工具派发。
+恢复及输出续写仍有界；Continuous 按连续失败/截断段限额，完整工具轮之后
+重置该段，累计次数仅用于统计；Finite 仍按整任务限额。取消、deadline、准入
+拒绝和终态阻止新工具派发。
 调用者继续由外部 kairo owner 管理，不新增线程、队列或调度器。
 
 持续模式生成有限的请求级预算（`ModelBudgetScope::Request`），与默认 Task 预算

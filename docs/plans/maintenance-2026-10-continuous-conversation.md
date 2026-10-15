@@ -101,3 +101,11 @@ vector<variant>::insert(begin, ThinkingPart) 在 GCC 13 `-O3` 下触发
 追加 calls 后同命令 exit=0。未降低告警门禁，生产实现未变。
 修正 fixture 与补充头文件注释后的 Debug/ASAN+UBSAN/TSAN 复验正在执行；
 旧提交的 CI 被取消以释放额度，最终矩阵以 PR 当前 head 为准。
+
+
+2026-10-15：补充持续模式退出条件审查。Continuous 的恢复/输出续写额度改为
+连续失败/截断段上限，完整工具轮结算后重置；累计数改为饱和 uint64。避免
+任务持续有进展却因多个独立小故障耗尽整任务额度，Finite 原行为保留。
+新增四段独立恢复/截断均能完成、同配置 Finite 仍按整任务额度停止的对照测试。
+同时保留旧 ConversationSettled.turns 的记录数含义，用新增 total_turns 报推进
+尝试数，避免改变旧观察者语义。该增量须重跑 Debug、sanitizer 与 PR CI。

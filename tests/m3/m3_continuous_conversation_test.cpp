@@ -364,6 +364,49 @@ int recovery_output_limit_and_tool_errors_remain_bounded() {
     return 0;
 }
 
+int successful_tool_round_resets_failure_and_continuation_episodes() {
+    for (const bool cutoff : {false, true}) {
+        ConversationFixture fixture;
+        std::vector<ModelResponse> responses;
+        for (int episode = 0; episode < 4; ++episode) {
+            auto response = text_response(cutoff ? "partial" : "");
+            if (cutoff) {
+                response.status = ModelCompletionStatus::Incomplete;
+                response.incomplete_reason = IncompleteReason::MaxOutputTokens;
+            }
+            responses.push_back(response);
+            responses.push_back(tool_call_response(fixture.echo_spec(), R"({"message":"progress"})",
+                                                   "call-" + std::to_string(episode)));
+        }
+        responses.push_back(text_response("done"));
+        fixture.use_provider(responses);
+        auto config = continuous_config();
+        config.max_recoveries = 1;
+        config.max_output_continuations = 1;
+        config.max_history_items = 32;
+        auto loop = fixture.make_loop(config);
+        const auto result = loop.run(fixture.spec_, conversation_context());
+        MIRA_CHECK(result && result.value().outcome == ConversationOutcome::Answered);
+        MIRA_CHECK(result.value().total_turns == 9 && result.value().tool_executions == 4);
+        MIRA_CHECK((cutoff ? result.value().output_continuations : result.value().recoveries) == 4);
+
+        ConversationFixture finite;
+        // Rebind the tool IDs to the finite fixture's registry.
+        for (std::size_t index = 1; index < responses.size(); index += 2)
+            responses[index] = tool_call_response(finite.echo_spec(), R"({"message":"progress"})",
+                                                  "call-" + std::to_string(index));
+        finite.use_provider(responses);
+        config.limit_mode = ConversationLimitMode::Finite;
+        config.max_turns = 12;
+        config.max_tool_executions = 32;
+        auto finite_loop = finite.make_loop(config);
+        const auto stopped = finite_loop.run(finite.spec_, conversation_context());
+        MIRA_CHECK(stopped && stopped.value().outcome == ConversationOutcome::Failed);
+        MIRA_CHECK(stopped.value().tool_executions == 1);
+    }
+    return 0;
+}
+
 int invalid_config_and_finite_envelope_overflow_fail_before_dispatch() {
     for (const int path : {0, 1, 2, 3}) {
         ConversationFixture fixture;
@@ -401,6 +444,7 @@ int main() {
                             cancellation_deadline_and_late_admission_never_dispatch,
                             cancellation_between_tools_and_executor_shutdown,
                             recovery_output_limit_and_tool_errors_remain_bounded,
+                            successful_tool_round_resets_failure_and_continuation_episodes,
                             invalid_config_and_finite_envelope_overflow_fail_before_dispatch}) {
         if (const int code = test(); code != 0)
             return code;

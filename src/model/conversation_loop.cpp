@@ -437,6 +437,16 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     std::uint64_t tool_executions = 0;
     std::size_t protected_items = 0;
     std::uint32_t output_continuations = 0;
+    std::uint32_t recovery_streak = 0;
+    const auto can_recover = [&] {
+        return continuous ? recovery_streak < config_.max_recoveries
+                          : result.recoveries < config_.max_recoveries;
+    };
+    const auto record_recovery = [&] {
+        continuous_support::add_counter(result.recoveries);
+        if (continuous)
+            ++recovery_streak;
+    };
 
     const auto retain_turn = [&](ConversationTurnRecord record) {
         if (continuous) {
@@ -533,9 +543,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.safe_summary = "model call was cancelled";
                 break;
             }
-            if (loop_support::recoverable_model_failure(call.error()) &&
-                result.recoveries < config_.max_recoveries) {
-                ++result.recoveries;
+            if (loop_support::recoverable_model_failure(call.error()) && can_recover()) {
+                record_recovery();
                 record.note = "model failure; recovering: " + call.error().safe_message;
                 retain_turn(std::move(record));
                 continue;
@@ -597,7 +606,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             if (output_continuations < config_.max_output_continuations) {
 
                 ++output_continuations;
-                result.output_continuations = output_continuations;
+                continuous_support::add_counter(result.output_continuations);
                 if (!partial_text.empty()) {
                     ModelInputItem assistant;
                     assistant.role = ModelRole::Assistant;
@@ -762,6 +771,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 retain_turn(std::move(record));
                 break;
             }
+            if (continuous) {
+                recovery_streak = 0;
+                output_continuations = 0;
+            }
             protected_items = history.size() - history_start;
             record.note = "executed tool round; awaiting model continuation";
             retain_turn(std::move(record));
@@ -781,8 +794,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         }
         // No usable output (empty text, incomplete or unusable shapes):
         // recover once with explicit feedback, then fail closed.
-        if (result.recoveries < config_.max_recoveries) {
-            ++result.recoveries;
+        if (can_recover()) {
+            record_recovery();
             // MaxOutputTokens cutoffs never reach this block: they settle by
             // bounded continuation above. What is left here is an empty or
             // otherwise unusable reply (or a ContextWindow/Other cutoff).
@@ -818,8 +831,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     emit(spec, "ConversationSettled",
          JsonValue::Object{
              {"outcome", conversation_outcome_name(result.outcome)},
-             {"turns", continuous_support::event_counter(result.total_turns)},
-             {"recoveries", static_cast<std::int64_t>(result.recoveries)},
+             {"turns", static_cast<std::int64_t>(result.turns.size())},
+             {"total_turns", continuous_support::event_counter(result.total_turns)},
+             {"recoveries", continuous_support::event_counter(result.recoveries)},
              {"tool_executions", continuous_support::event_counter(result.tool_executions)},
              {"turn_records_dropped",
               continuous_support::event_counter(result.turn_records_dropped)}},
