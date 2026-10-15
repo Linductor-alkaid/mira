@@ -61,7 +61,33 @@
 - 初轮新增测试编译因 fixture 缺少 kairo 完整头、错误聚合初始化及误用提交/关闭
   返回类型失败，已按 pinned API 修正；一次增量验证链接到修改前的 ConversationLoop
   对象，错误暴露为 operation 集合仍增长，强制重编译后消失。最终全量构建/109 项
-  已覆盖最新源码，不把初轮失败删除。首次 docs 脚本遗漏根目录参数，补 `. ` 后通过。
+  已覆盖最新源码，不把初轮失败删除。首次 docs 脚本遗漏根目录参数，补 `.` 后通过。
 - 限制：Windows/Android 与远端 quality/sanitizer 待本 PR CI；真实 provider 长任务
   待 Mirage 升级消费后验收，负责人为 Mira/Mirage 维护者。当前不升级 Mirage pin，
   不把上游 fixture 通过当作下游问题已修复。
+
+
+2026-10-15：上游提交 `7e2b73e`，创建
+[PR #99](https://github.com/Linductor-alkaid/mira/pull/99)，尚未合并。
+
+- 最终源码的四个变更实现单元独立 clang-tidy 通过（`clang-tidy -p build/debug
+  src/model/conversation_loop.cpp src/model/model_budget.cpp src/model/tool_executor.cpp
+  src/model/model_contracts.cpp`）；无自研代码诊断。
+- ASAN+UBSAN 联合构建：`cmake -S . -B build/asan-ubsan-continuous
+  -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_ENABLE_UBSAN=ON
+  -DMIRA_WITH_MBEDTLS=OFF -DMIRA_WITH_OPENSSL=OFF`。
+- TSAN 构建：相同配置目录换为 `build/tsan-continuous`，sanitizer 开关换为
+  `-DMIRA_ENABLE_TSAN=ON`；两个配置均用 `cmake --build <目录> --target
+  mira_m3_continuous_conversation_test mira_m3_conversation_loop_test
+  mira_m3_conversation_history_transform_test mira_m3_supervisor_budget_test
+  mira_m3_canonical_test mira_m3_tool_executor_test -j3`。
+- 测试正则：`^mira_m3_(continuous_conversation|conversation_loop|conversation_history_transform|supervisor_budget|canonical|tool_executor)_test$`。
+  ASAN_OPTIONS=`detect_leaks=1:halt_on_error=1`、UBSAN_OPTIONS=
+  `halt_on_error=1:print_stacktrace=1`，ASAN+UBSAN **6/6 通过**；TSAN 使用
+  `setarch x86_64 -R env TSAN_OPTIONS=halt_on_error=1 ctest --test-dir
+  build/tsan-continuous -R <上述正则> --output-on-failure`，**6/6 通过**。
+  本轮 sanitizer 不构建 TLS adapter，不据此声明 TLS 的 sanitizer 验收；默认
+  TLS 的完整 Debug 已由 109/109 验证，PR CI 另跑默认 sanitizer 全量组合。
+- PR CI 为 push 与 pull_request 两套矩阵，当前结果在 PR checks 中跟踪；
+  MNT-202610-18 和最后退出条件保持未勾选，待目标平台与完整 quality 结果。
+- Mirage 已关联 PR 并保持反馈 Open；本 PR 不自动合并、不升级下游 pin。

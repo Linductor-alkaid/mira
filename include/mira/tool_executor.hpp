@@ -59,8 +59,9 @@ using BuiltinToolHandler =
 
 // The minimal BuiltIn execution boundary ahead of the DEC-009 module system:
 // a name -> handler table with fail-closed dispatch. Unknown tools, identity
-// mismatches against the exposed snapshot and re-dispatched operation ids are
-// rejected; at-most-once dispatch per OperationId is enforced here (W-02).
+// mismatches against the exposed snapshot are rejected. The public execute
+// path enforces at-most-once dispatch per OperationId (W-02); the private
+// continuous-loop path relies on its forward-only request ownership below.
 // Model-attributable failures (invalid arguments, handler error) come back as
 // failed ToolExecutionRecords so the loop can feed them to the model; only
 // cancellation propagates as a Result error.
