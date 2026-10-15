@@ -17,7 +17,7 @@
 
 - [x] `MNT-202610-16` 请求 scope 与 ledger 准入、算术边界、序列化兼容。
 - [x] `MNT-202610-17` 持续循环、提交式压缩、容量与统计、取消/期限控制。
-- [ ] `MNT-202610-18` 长脚本、协议/故障回归、sanitizer、文档与 PR 证据。
+- [ ] `MNT-202610-18` **In Progress**：长脚本、协议/故障回归、sanitizer、文档与 PR 交付证据。本机验收完成，PR 评审与目标平台 CI 交付中。
 
 ## 风险与阻塞
 
@@ -109,3 +109,20 @@ vector<variant>::insert(begin, ThinkingPart) 在 GCC 13 `-O3` 下触发
 新增四段独立恢复/截断均能完成、同配置 Finite 仍按整任务额度停止的对照测试。
 同时保留旧 ConversationSettled.turns 的记录数含义，用新增 total_turns 报推进
 尝试数，避免改变旧观察者语义。该增量须重跑 Debug、sanitizer 与 PR CI。
+
+
+2026-10-15：最终实现 `23e3ff0` 复验完成，生产源码此后保持不变。
+
+- `cmake --build build/debug -j4` 与全量 `ctest --test-dir build/debug
+  --output-on-failure -j4`：**109/109 通过**（37.65 s）。
+- 前述六个目标在 ASAN+UBSAN / TSAN 目录重编译后，以同一正则和 sanitizer
+  选项重跑：分别 **6/6 通过**（5.91 s / 10.05 s）。
+- 新增对照：四段独立恢复或截断、段额度=1，Continuous 最终 Answered、9 次
+  推进/4 个工具、累计恢复/续写=4；同配置 Finite 在第二段停止，工具计数=1。
+- `-O3 -DNDEBUG` 的最终测试 TU 编译 exit=0；变更 loop 的独立 clang-tidy
+  再次通过。format/docs/SBOM/platform-boundary/architecture 门禁全部通过。
+- [PR #99](https://github.com/Linductor-alkaid/mira/pull/99) 的当前 head checks
+  是远端矩阵结果入口；此前中间提交的运行已取消，不能把 cancelled 计为通过。
+  MNT-202610-18 保持 In Progress，等待 PR 评审及目标平台交付；不以本机验收
+  关闭整体维护计划。最终 CI 结论同时记录在该 PR 描述中，不为追记 CI 状态
+  反复触发没有代码变化的整套矩阵。
