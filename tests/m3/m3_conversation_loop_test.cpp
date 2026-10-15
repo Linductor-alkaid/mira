@@ -899,6 +899,36 @@ int truncated_text_continues_from_the_cut() {
     return 0;
 }
 
+// The anchor is cut from raw bytes; on multi-byte scripts the slice can land
+// inside a code point. The feedback must carry valid UTF-8 only - dangling
+// continuation bytes are dropped, never shipped to the provider.
+int multibyte_anchor_stays_valid_utf8() {
+    // 20 three-byte code points push the anchor window deep into a valid CJK
+    // run, so the raw byte slice starts mid code point.
+    std::string head;
+    for (int i = 0; i < 20; ++i) {
+        head += "甲";
+    }
+    head += "桌面自动化说明文档";
+    ConversationFixture fixture;
+    fixture.use_provider(
+        {incomplete_response(IncompleteReason::MaxOutputTokens, head), text_response("remainder")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    const auto second_text = fixture.provider_->request_text(1);
+    const auto anchor_at = second_text.find("Continue from: \"");
+    MIRA_CHECK(anchor_at != std::string::npos);
+    const std::string anchor = second_text.substr(anchor_at + strlen("Continue from: \""));
+    MIRA_CHECK(!anchor.empty());
+    // No dangling continuation byte may lead the anchor (0x80..0xBF).
+    MIRA_CHECK((static_cast<unsigned char>(anchor.front()) & 0xC0) != 0x80);
+    // The final code points of the tail survive the cut unharmed.
+    MIRA_CHECK(second_text.find("文档") != std::string::npos);
+    return 0;
+}
+
 int tool_call_cutoff_discarded_without_execution() {
     ConversationFixture fixture;
     ToolCallOutput cut;
@@ -986,6 +1016,9 @@ int main() {
         return code;
     }
     if (const int code = truncated_text_continues_from_the_cut(); code != 0) {
+        return code;
+    }
+    if (const int code = multibyte_anchor_stays_valid_utf8(); code != 0) {
         return code;
     }
     if (const int code = tool_call_cutoff_discarded_without_execution(); code != 0) {
