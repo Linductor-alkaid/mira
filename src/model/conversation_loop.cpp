@@ -4,10 +4,13 @@
 #include <mira/model_digest.hpp>
 
 #include <algorithm>
+#include <limits>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "continuous_conversation_support.hpp"
 #include "loop_support.hpp"
 
 namespace mira {
@@ -105,10 +108,9 @@ void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonVal
                                   std::move(summary), classification);
 }
 
-std::optional<std::vector<ModelInputItem>>
-ConversationLoop::apply_history_transform(const AgentLoopSpec &spec,
-                                          const std::vector<ModelInputItem> &history,
-                                          ConversationLoopResult &result) {
+std::optional<std::vector<ModelInputItem>> ConversationLoop::apply_history_transform(
+    const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
+    ConversationLoopResult &result, std::size_t protected_items) {
     if (history_transformer_ == nullptr || history.empty()) {
         // The first model turn carries no executed work to compact; the seam
         // contract resolves only over a non-empty history.
@@ -141,8 +143,14 @@ ConversationLoop::apply_history_transform(const AgentLoopSpec &spec,
             }
         }
     }
+    if (reason.empty() && config_.limit_mode == ConversationLimitMode::Continuous &&
+        (!continuous_support::complete_protocol(transformed.value()) ||
+         !continuous_support::protected_tail_matches(history, transformed.value(),
+                                                     protected_items))) {
+        reason = "invalid-continuous-history";
+    }
     if (!reason.empty()) {
-        ++result.history_transform_degradations;
+        continuous_support::add_counter(result.history_transform_degradations);
         JsonValue::Object detail{{"reason", JsonValue{reason}}};
         if (!exception && !transformed.has_value()) {
             detail.emplace_back("code",
@@ -151,7 +159,7 @@ ConversationLoop::apply_history_transform(const AgentLoopSpec &spec,
         emit(spec, "HistoryTransformDegraded", JsonValue{std::move(detail)}, EventClass::State);
         return std::nullopt;
     }
-    ++result.history_transforms;
+    continuous_support::add_counter(result.history_transforms);
     emit(spec, "HistoryTransformApplied",
          JsonValue::Object{
              {"items_in", JsonValue{static_cast<std::int64_t>(history.size())}},
@@ -379,10 +387,24 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
     request.generation.max_output_tokens = config_.max_output_tokens_per_turn;
     request.generation.reasoning_effort = config_.reasoning_effort;
     request.generation.thinking = config_.thinking;
-    request.budget.max_output_tokens =
-        config_.max_output_tokens_per_turn *
-        (static_cast<std::uint64_t>(config_.max_turns) + config_.max_recoveries + 1);
-    request.budget.max_requests = config_.max_turns + config_.max_recoveries + 1;
+    if (config_.limit_mode == ConversationLimitMode::Continuous) {
+        // v1 readers must reject rather than silently reinterpret scope.
+        request.contract_version = SchemaVersion{2, 0};
+        request.budget.scope = ModelBudgetScope::Request;
+        request.budget.max_output_tokens = config_.max_output_tokens_per_turn;
+        request.budget.max_requests = 1;
+    } else {
+        const std::uint64_t requests =
+            static_cast<std::uint64_t>(config_.max_turns) + config_.max_recoveries + 1;
+        if (requests > std::numeric_limits<std::uint32_t>::max() ||
+            config_.max_output_tokens_per_turn >
+                std::numeric_limits<std::uint64_t>::max() / requests) {
+            return conversation_error(ErrorCode::InvalidArgument,
+                                      "finite budget envelope would overflow");
+        }
+        request.budget.max_output_tokens = config_.max_output_tokens_per_turn * requests;
+        request.budget.max_requests = static_cast<std::uint32_t>(requests);
+    }
     request.data_policy.store = false;
     request.prompt_provenance.system_template_digest =
         digest_string("mira.conversation-loop.system.v1");
@@ -396,6 +418,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         return conversation_error(ErrorCode::InvalidArgument,
                                   "conversation goal must not be empty");
     }
+    const bool continuous = config_.limit_mode == ConversationLimitMode::Continuous;
+    if ((config_.limit_mode != ConversationLimitMode::Finite && !continuous) ||
+        config_.max_output_tokens_per_turn == 0 || config_.model_call_deadline.count() <= 0 ||
+        (continuous && (config_.max_history_items == 0 || config_.max_history_items > 254 ||
+                        config_.max_history_bytes == 0 || config_.max_retained_turns == 0 ||
+                        config_.max_tools_per_turn == 0 || config_.max_tools_per_turn > 32))) {
+        return conversation_error(ErrorCode::InvalidArgument, "invalid conversation active bounds");
+    }
     // Exhausting the turn budget is the default terminal; every early exit
     // assigns a specific outcome before leaving the loop.
     result.outcome = ConversationOutcome::MaxTurns;
@@ -404,42 +434,87 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     // request so providers see native multi-turn tool semantics.
     std::vector<ModelInputItem> history;
     std::string feedback;
-    std::uint32_t tool_executions = 0;
+    std::uint64_t tool_executions = 0;
+    std::size_t protected_items = 0;
     std::uint32_t output_continuations = 0;
+    std::uint32_t recovery_streak = 0;
+    const auto can_recover = [&] {
+        return continuous ? recovery_streak < config_.max_recoveries
+                          : result.recoveries < config_.max_recoveries;
+    };
+    const auto record_recovery = [&] {
+        continuous_support::add_counter(result.recoveries);
+        if (continuous)
+            ++recovery_streak;
+    };
 
-    for (std::uint32_t turn = 1; turn <= config_.max_turns; ++turn) {
+    const auto retain_turn = [&](ConversationTurnRecord record) {
+        if (continuous) {
+            emit(spec, "ConversationTurnRecorded",
+                 JsonValue::Object{{"turn", continuous_support::event_counter(record.turn)},
+                                   {"model_request", record.model_request.to_string()},
+                                   {"summary", record.summary}},
+                 EventClass::State);
+            record.summary = continuous_support::bounded_text(std::move(record.summary), 4096);
+            record.note = continuous_support::bounded_text(std::move(record.note), 1024);
+            if (result.turns.size() == config_.max_retained_turns) {
+                result.turns.erase(result.turns.begin());
+                continuous_support::add_counter(result.turn_records_dropped);
+            }
+        }
+        result.turns.push_back(std::move(record));
+    };
+    while (continuous || result.total_turns < config_.max_turns) {
         if (context.cancelled()) {
             result.outcome = ConversationOutcome::Cancelled;
             result.safe_summary = "cancellation requested";
-            emit(spec, "ConversationSettled",
-                 JsonValue::Object{{"outcome", conversation_outcome_name(result.outcome)}},
-                 EventClass::State);
-            return result;
+            break;
         }
 
+        if (context.expired(Timestamp::now())) {
+            result.outcome = ConversationOutcome::Failed;
+            result.safe_summary = "conversation deadline expired";
+            break;
+        }
+        continuous_support::add_counter(result.total_turns);
         ConversationTurnRecord record;
-        record.turn = turn;
+        record.turn = result.total_turns;
 
         // Supplied-input seam (DEC-053): resolved exactly once per assembled
         // request, after tool rounds complete and before the model call.
         const SuppliedInput supplied = resolve_supplied_input(spec);
-        result.supplied_input_items += static_cast<std::uint32_t>(supplied.accepted);
-        result.supplied_input_dropped += static_cast<std::uint32_t>(supplied.dropped);
-        result.supply_degradations += supplied.degraded ? 1U : 0U;
-        result.supplied_input_reuse_annotations += supplied.annotate_reuse ? 1U : 0U;
+        continuous_support::add_counter(result.supplied_input_items, supplied.accepted);
+        continuous_support::add_counter(result.supplied_input_dropped, supplied.dropped);
+        continuous_support::add_counter(result.supply_degradations, supplied.degraded ? 1U : 0U);
+        continuous_support::add_counter(result.supplied_input_reuse_annotations,
+                                        supplied.annotate_reuse ? 1U : 0U);
 
-        // History compaction seam (DEC-088 follow-up): the replay the host
-        // returns replaces the canonical history for this request only; the
-        // loop-owned history itself is never mutated, so later turns and
-        // continuations rebuild from the full record.
-        std::vector<ModelInputItem> replay = history;
-        if (auto transformed = apply_history_transform(spec, history, result)) {
-            replay = std::move(*transformed);
+        // Finite keeps legacy request-only transforms. Continuous commits a
+        // validated compacted replay so raw settled history cannot accumulate.
+        auto transformed = apply_history_transform(spec, history, result, protected_items);
+        const auto *replay = &history;
+        if (transformed) {
+            if (continuous) {
+                history = std::move(*transformed);
+            } else {
+                replay = &*transformed;
+            }
         }
-        auto request = build_request(spec, replay, feedback, supplied);
+        if (continuous) {
+            result.retained_history_items = history.size();
+            result.retained_history_bytes =
+                to_json_string(continuous_support::input_json(history)).size();
+            if (history.size() > config_.max_history_items ||
+                result.retained_history_bytes > config_.max_history_bytes) {
+                result.outcome = ConversationOutcome::Failed;
+                result.safe_summary = "history capacity exhausted after compaction";
+                break;
+            }
+        }
+        auto request = build_request(spec, *replay, feedback, supplied);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
-            result.safe_summary = "request assembly failed";
+            result.safe_summary = "request assembly failed: " + request.error().safe_message;
             break;
         }
         feedback.clear();
@@ -453,6 +528,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                            std::chrono::steady_clock::now() + config_.model_call_deadline)
                 : std::chrono::steady_clock::now() + config_.model_call_deadline;
 
+        if (context.cancelled_or_expired(Timestamp::now())) {
+            result.outcome =
+                context.cancelled() ? ConversationOutcome::Cancelled : ConversationOutcome::Failed;
+            result.safe_summary = context.cancelled()
+                                      ? "cancellation requested before model dispatch"
+                                      : "conversation deadline expired";
+            break;
+        }
         auto call = gateway_.infer(request.value(), model_context, config_.inference);
         if (!call) {
             if (call.error().code == ErrorCode::Cancelled) {
@@ -460,11 +543,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.safe_summary = "model call was cancelled";
                 break;
             }
-            if (loop_support::recoverable_model_failure(call.error()) &&
-                result.recoveries < config_.max_recoveries) {
-                ++result.recoveries;
+            if (loop_support::recoverable_model_failure(call.error()) && can_recover()) {
+                record_recovery();
                 record.note = "model failure; recovering: " + call.error().safe_message;
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 continue;
             }
             result.outcome = ConversationOutcome::Failed;
@@ -480,12 +562,20 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
 
+        if (context.cancelled_or_expired(Timestamp::now())) {
+            result.outcome =
+                context.cancelled() ? ConversationOutcome::Cancelled : ConversationOutcome::Failed;
+            result.safe_summary = context.cancelled()
+                                      ? "model completion arrived after cancellation"
+                                      : "conversation deadline expired";
+            break;
+        }
         const auto parse_outcome = outcome.parse.outcome;
         if (parse_outcome == DecisionParseOutcome::Refused ||
             parse_outcome == DecisionParseOutcome::ContentFiltered) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "model refused or was filtered; no policy bypass";
-            result.turns.push_back(std::move(record));
+            retain_turn(std::move(record));
             break;
         }
         if (parse_outcome == DecisionParseOutcome::Ambiguous) {
@@ -500,7 +590,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 result.outcome = ConversationOutcome::Failed;
                 result.safe_summary = "model output was rejected: " + outcome.parse.safe_summary;
             }
-            result.turns.push_back(std::move(record));
+            retain_turn(std::move(record));
             break;
         }
         // DEC follow-up to MIRA-20261009-002: a tolerated max_tokens cutoff
@@ -516,7 +606,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             if (output_continuations < config_.max_output_continuations) {
 
                 ++output_continuations;
-                result.output_continuations = output_continuations;
+                continuous_support::add_counter(result.output_continuations);
                 if (!partial_text.empty()) {
                     ModelInputItem assistant;
                     assistant.role = ModelRole::Assistant;
@@ -524,8 +614,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     kept.text = partial_text;
                     assistant.content.emplace_back(std::move(kept));
                     history.push_back(std::move(assistant));
+                    protected_items = 1;
                     record.note = "output truncated by the token budget; continuing";
-                    result.turns.push_back(std::move(record));
+                    retain_turn(std::move(record));
                     // DEC-088: anchor the continuation at the cut so the model
                     // resumes the exact tail instead of re-deriving it. The
                     // cut lands on raw bytes, so drop any dangling UTF-8
@@ -550,7 +641,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                         "\" — do not repeat what you already wrote, just continue and finish.";
                 } else if (carries_tool_calls(outcome.response)) {
                     record.note = "tool call cut off by the token budget; discarded unexecuted";
-                    result.turns.push_back(std::move(record));
+                    retain_turn(std::move(record));
                     feedback = "Your previous reply was cut off by the output-token limit while "
                                "writing a tool call. The incomplete call was discarded and NOT "
                                "executed. Either re-issue that tool call with compact arguments, "
@@ -558,7 +649,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                                "the blocking limitation.";
                 } else {
                     record.note = "deliberation-only output truncated; asking for short text";
-                    result.turns.push_back(std::move(record));
+                    retain_turn(std::move(record));
                     feedback = "Your previous reply was cut off by the output-token limit during "
                                "internal deliberation before any visible content. Skip lengthy "
                                "deliberation and reply with a concise plain-text response "
@@ -570,30 +661,33 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             result.safe_summary =
                 "output-limit continuation budget exhausted; the reply was truncated at the "
                 "per-call output limit";
-            result.turns.push_back(std::move(record));
+            retain_turn(std::move(record));
             break;
         }
         if (parse_outcome == DecisionParseOutcome::ToolProposals) {
             if (tools_ == nullptr) {
                 result.outcome = ConversationOutcome::Failed;
                 result.safe_summary = "tool proposals require a tool registry; none is attached";
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 break;
             }
             if (!outcome.tool_proposals.has_value() || outcome.tool_proposals->proposals.empty()) {
                 result.outcome = ConversationOutcome::Failed;
                 result.safe_summary = "tool proposal batch carried no executable proposal";
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 break;
             }
-            if (tool_executions +
-                    static_cast<std::uint32_t>(outcome.tool_proposals->proposals.size()) >
-                config_.max_tool_executions) {
+            const auto batch_size = outcome.tool_proposals->proposals.size();
+            if ((continuous && batch_size > config_.max_tools_per_turn) ||
+                (!continuous && (tool_executions > config_.max_tool_executions ||
+                                 batch_size > config_.max_tool_executions - tool_executions))) {
                 result.outcome = ConversationOutcome::Failed;
-                result.safe_summary = "tool execution budget exhausted";
-                result.turns.push_back(std::move(record));
+                result.safe_summary = continuous ? "per-turn tool capacity exhausted"
+                                                 : "tool execution budget exhausted";
+                retain_turn(std::move(record));
                 break;
             }
+            const auto history_start = history.size();
             const bool carries_thinking = std::any_of(
                 outcome.response.output.begin(), outcome.response.output.end(),
                 [](const auto &item) { return std::holds_alternative<ThinkingPart>(item); });
@@ -607,6 +701,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             if (thinking_replay) {
                 ModelInputItem assistant;
                 assistant.role = ModelRole::Assistant;
+                std::set<std::string> echoed_calls;
                 for (const auto &item : outcome.response.output) {
                     if (const auto *thinking = std::get_if<ThinkingPart>(&item))
                         assistant.content.emplace_back(*thinking);
@@ -614,22 +709,34 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                         for (const auto &part : message->content)
                             if (const auto *text = std::get_if<OutputTextPart>(&part))
                                 assistant.content.emplace_back(TextPart{text->text});
-                    } else if (const auto *tool_call = std::get_if<ToolCallOutput>(&item))
-                        assistant.content.emplace_back(
-                            ToolCallPart{tool_call->provider_call_id, tool_call->provider_name,
-                                         tool_call->arguments, tool_call->arguments_digest});
+                    } else if (const auto *tool_call = std::get_if<ToolCallOutput>(&item)) {
+                        // Mirror the bridge's identical-call collapse in the
+                        // signed assistant group so every call has one result.
+                        if (!continuous ||
+                            echoed_calls.insert(tool_call->provider_call_id.value).second)
+                            assistant.content.emplace_back(
+                                ToolCallPart{tool_call->provider_call_id, tool_call->provider_name,
+                                             tool_call->arguments, tool_call->arguments_digest});
+                    }
                 }
                 history.push_back(std::move(assistant));
             }
             std::optional<ConversationOutcome> abort;
             std::string abort_summary;
             for (const auto &proposal : outcome.tool_proposals->proposals) {
-                if (context.cancelled()) {
-                    abort = ConversationOutcome::Cancelled;
-                    abort_summary = "cancellation requested during tool execution";
+                if (context.cancelled_or_expired(Timestamp::now())) {
+                    abort = context.cancelled() ? ConversationOutcome::Cancelled
+                                                : ConversationOutcome::Failed;
+                    abort_summary = context.cancelled()
+                                        ? "cancellation requested during tool execution"
+                                        : "conversation deadline expired during tool execution";
                     break;
                 }
-                auto executed = tools_->execute(proposal, context);
+                // A fresh gateway request derives fresh operation IDs. This
+                // synchronous forward-only traversal owns each proposal once;
+                // historical IDs need no registry tombstones or replay path.
+                auto executed = continuous ? tools_->execute_loop_proposal(proposal, context)
+                                           : tools_->execute(proposal, context);
                 if (!executed) {
                     abort = executed.error().code == ErrorCode::Cancelled
                                 ? ConversationOutcome::Cancelled
@@ -640,7 +747,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                             : "tool execution rejected: " + executed.error().safe_message;
                     break;
                 }
-                ++tool_executions;
+                continuous_support::add_counter(tool_executions);
                 result.tool_executions = tool_executions;
                 emit(spec, "ToolExecuted",
                      JsonValue::Object{{"wire_name", proposal.wire_name},
@@ -661,11 +768,16 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             if (abort.has_value()) {
                 result.outcome = *abort;
                 result.safe_summary = std::move(abort_summary);
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 break;
             }
+            if (continuous) {
+                recovery_streak = 0;
+                output_continuations = 0;
+            }
+            protected_items = history.size() - history_start;
             record.note = "executed tool round; awaiting model continuation";
-            result.turns.push_back(std::move(record));
+            retain_turn(std::move(record));
             continue;
         }
 
@@ -674,7 +786,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         auto answer = assistant_text(outcome.response);
         if (!answer.empty()) {
             record.summary = "answer";
-            result.turns.push_back(std::move(record));
+            retain_turn(std::move(record));
             result.outcome = ConversationOutcome::Answered;
             result.answer = std::move(answer);
             result.safe_summary = "model returned a terminal text answer";
@@ -682,8 +794,8 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         }
         // No usable output (empty text, incomplete or unusable shapes):
         // recover once with explicit feedback, then fail closed.
-        if (result.recoveries < config_.max_recoveries) {
-            ++result.recoveries;
+        if (can_recover()) {
+            record_recovery();
             // MaxOutputTokens cutoffs never reach this block: they settle by
             // bounded continuation above. What is left here is an empty or
             // otherwise unusable reply (or a ContextWindow/Other cutoff).
@@ -692,14 +804,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             // retry does not regenerate the same long output.
             if (parse_outcome == DecisionParseOutcome::Incomplete) {
                 record.note = "output cut off; recovering";
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 feedback = "Your previous reply was cut off by the output-token limit before "
                            "it completed. Reply again with a concise plain-text response "
                            "only: no tool calls and no long deliberation — state the current "
                            "result or the blocking limitation in a few sentences.";
             } else {
                 record.note = "no usable answer text; recovering";
-                result.turns.push_back(std::move(record));
+                retain_turn(std::move(record));
                 feedback = "The previous reply carried no answer text. Answer the request "
                            "directly with text.";
             }
@@ -709,7 +821,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         result.safe_summary = parse_outcome == DecisionParseOutcome::Incomplete
                                   ? "model output remained incomplete after recovery budget"
                                   : "model output carried no answer text";
-        result.turns.push_back(std::move(record));
+        retain_turn(std::move(record));
         break;
     }
 
@@ -717,9 +829,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         result.safe_summary = "turn budget exhausted before a final answer";
     }
     emit(spec, "ConversationSettled",
-         JsonValue::Object{{"outcome", conversation_outcome_name(result.outcome)},
-                           {"turns", static_cast<std::int64_t>(result.turns.size())},
-                           {"recoveries", static_cast<std::int64_t>(result.recoveries)}},
+         JsonValue::Object{
+             {"outcome", conversation_outcome_name(result.outcome)},
+             {"turns", static_cast<std::int64_t>(result.turns.size())},
+             {"total_turns", continuous_support::event_counter(result.total_turns)},
+             {"recoveries", continuous_support::event_counter(result.recoveries)},
+             {"tool_executions", continuous_support::event_counter(result.tool_executions)},
+             {"turn_records_dropped",
+              continuous_support::event_counter(result.turn_records_dropped)}},
          EventClass::State);
 
     return result;

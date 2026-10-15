@@ -16,21 +16,16 @@
 
 namespace mira {
 
-// MIRA-20261004-001 (issue #73): bounds for the no-observation conversational
-// loop. Same RULE-08 shape as AgentLoopConfig — every quantity is a declared
-// bound, never an implicit one. Two budget faces apply:
-// - Per call, the router admits `max_output_tokens_per_turn` against the
-//   target profile's `capabilities.limits.max_output_tokens`; a host may set
-//   the per-turn bound up to that limit (defaults fit 16384).
-// - Whole run, `max_output_tokens_per_turn * (max_turns + max_recoveries +
-//   max_output_continuations + 1)` is the declared output-spend estimate a
-//   host signs up for; it no longer caps the per-turn bound, because a
-//   tolerated max_tokens cutoff is settled by bounded continuation (see
-//   max_output_continuations) instead of a tighter per-turn clamp.
+// DEC-056: Finite preserves the original whole-run limits; Continuous opts
+// into request-level budgets and bounded retained state, without an accumulated
+// turn/tool cutoff. Zero finite limits keep their original meaning.
+enum class ConversationLimitMode : std::uint8_t { Finite, Continuous };
+
 struct ConversationLoopConfig final {
     // Whole-run bound on model turns; exhausting it settles as MaxTurns.
     std::uint32_t max_turns = 12;
-    // Bounded retries for recoverable model failures per run.
+    // Bounded retries per run (Finite) or consecutive failure episode
+    // (Continuous). A valid tool round starts a fresh episode.
     std::uint32_t max_recoveries = 2;
     std::chrono::milliseconds model_call_deadline{30'000};
     // Whole-run budget for tool executions.
@@ -39,7 +34,8 @@ struct ConversationLoopConfig final {
     // Incomplete, reason MaxOutputTokens), independent of max_recoveries:
     // the partial protocol-allowed text is kept in the history and the model
     // is asked to continue from the cut; a reply cut off mid tool call is
-    // discarded unexecuted. After the budget is spent the run settles Failed
+    // discarded unexecuted. In Continuous, a valid tool round resets this
+    // episode budget. After the budget is spent the run settles Failed
     // with an explicit output-limit summary instead of regenerating.
     std::uint32_t max_output_continuations = 2;
     // Per-turn generation bound.
@@ -47,6 +43,14 @@ struct ConversationLoopConfig final {
     std::optional<ReasoningEffort> reasoning_effort{};
     std::optional<ThinkingMode> thinking{};
     InferOptions inference{};
+    ConversationLimitMode limit_mode = ConversationLimitMode::Finite;
+    // Continuous-only active bounds, never accumulated task limits. History
+    // is checked after compaction, before the next model dispatch. Bytes mean
+    // the serialized canonical input array, not RSS or artifact payloads.
+    std::size_t max_history_items = 128;
+    std::size_t max_history_bytes = 2 * 1024 * 1024;
+    std::size_t max_retained_turns = 64;
+    std::uint32_t max_tools_per_turn = 32;
 };
 
 enum class ConversationOutcome : std::uint8_t {
@@ -59,7 +63,7 @@ enum class ConversationOutcome : std::uint8_t {
 [[nodiscard]] std::string conversation_outcome_name(ConversationOutcome outcome);
 
 struct ConversationTurnRecord final {
-    std::uint32_t turn = 0;
+    std::uint64_t turn = 0;
     ModelRequestId model_request;
     std::string summary; // "tool:<wire_name>[;...]" or "answer".
     std::string note;
@@ -67,32 +71,37 @@ struct ConversationTurnRecord final {
 
 struct ConversationLoopResult final {
     ConversationOutcome outcome = ConversationOutcome::Failed;
+    // Complete in Finite mode; recent bounded window in Continuous mode.
     std::vector<ConversationTurnRecord> turns;
+    std::uint64_t total_turns = 0;
+    std::uint64_t turn_records_dropped = 0;
+    std::size_t retained_history_items = 0;
+    std::size_t retained_history_bytes = 0;
     // Terminal assistant text; empty unless the outcome is Answered.
     std::string answer;
-    std::uint32_t recoveries = 0;
+    std::uint64_t recoveries = 0;
     std::string safe_summary;
     ModelUsage last_usage{};
-    std::uint32_t tool_executions = 0;
+    std::uint64_t tool_executions = 0;
     // Supplied-input seam totals across the run (DEC-053): items accepted into
     // requests, items dropped by validation or bounds, and supplier failures
     // degraded to diagnostics. All zero without a supplier.
-    std::uint32_t supplied_input_items = 0;
-    std::uint32_t supplied_input_dropped = 0;
-    std::uint32_t supply_degradations = 0;
+    std::uint64_t supplied_input_items = 0;
+    std::uint64_t supplied_input_dropped = 0;
+    std::uint64_t supply_degradations = 0;
     // Requests that carried the DEC-088 input-reuse annotation: a host
     // identity with reuse_count >= 2 on an image-bearing supply. Zero without
     // an identity provider or without qualifying supplies.
-    std::uint32_t supplied_input_reuse_annotations = 0;
+    std::uint64_t supplied_input_reuse_annotations = 0;
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
-    std::uint32_t output_continuations = 0;
+    std::uint64_t output_continuations = 0;
     // Requests whose tool-history replay came from the host compaction seam
     // (DEC-088 follow-up), and requests where the seam degraded to the raw
     // replay (Error, exception, empty or invalid result). Both zero without
     // a transformer or an empty history.
-    std::uint32_t history_transforms = 0;
-    std::uint32_t history_transform_degradations = 0;
+    std::uint64_t history_transforms = 0;
+    std::uint64_t history_transform_degradations = 0;
 };
 
 // Declared per-request bounds (RULE-08) for the supplied-input seam. Items
@@ -216,6 +225,10 @@ class ConversationLoop final {
     // the seam can rewrite or shrink the replay, never block the loop or
     // strip its history silently. Wire once before run(), like the other
     // setters.
+    // Continuous mode commits valid transformed history for subsequent turns.
+    // It additionally validates complete call/result groups and an unchanged
+    // latest-round suffix, including signed thinking. On degradation the raw
+    // history remains; exceeding its active capacity fails visibly.
     void set_history_transformer(HistoryTransformer transformer);
 
     [[nodiscard]] Result<ConversationLoopResult> run(const AgentLoopSpec &spec,
@@ -252,7 +265,7 @@ class ConversationLoop final {
     // result — degrades to the raw replay with a visible event.
     [[nodiscard]] std::optional<std::vector<ModelInputItem>>
     apply_history_transform(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
-                            ConversationLoopResult &result);
+                            ConversationLoopResult &result, std::size_t protected_items);
     void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
               EventClass classification) const;
 

@@ -532,12 +532,25 @@ Error make_model_error(ModelDomainCode code, std::string safe_message, bool retr
 }
 
 Result<void> validate_model_request(const ModelRequest &request) {
-    if (const auto version = validate_schema_version(request.contract_version); !version) {
+    if (const auto version = validate_schema_version(request.contract_version, SchemaVersion{2, 0});
+        !version) {
         return contract_error("model request contract version is not supported");
     }
     if (is_nil_id(request.request_id.value) || is_nil_id(request.operation_id.value) ||
         is_nil_id(request.task_id.value) || is_nil_id(request.profile_id.value)) {
         return contract_error("model request identifiers must be set");
+    }
+    if (request.budget.scope != ModelBudgetScope::Task &&
+        request.budget.scope != ModelBudgetScope::Request) {
+        return contract_error("model budget scope is invalid");
+    }
+    if (request.budget.scope == ModelBudgetScope::Request &&
+        (request.contract_version.major < 2 || request.budget.max_requests != 1 ||
+         request.budget.max_output_tokens == 0 ||
+         !request.generation.max_output_tokens.has_value() ||
+         *request.generation.max_output_tokens == 0 ||
+         *request.generation.max_output_tokens > request.budget.max_output_tokens)) {
+        return contract_error("request budget requires one infer and finite output tokens");
     }
     if (request.input.empty()) {
         return contract_error("model request requires input items");
@@ -679,7 +692,9 @@ Result<void> validate_model_request(const ModelRequest &request) {
 }
 
 Result<void> validate_model_response(const ModelResponse &response) {
-    if (const auto version = validate_schema_version(response.contract_version); !version) {
+    if (const auto version =
+            validate_schema_version(response.contract_version, SchemaVersion{2, 0});
+        !version) {
         return contract_error("model response contract version is not supported");
     }
     if (is_nil_id(response.request_id.value) || is_nil_id(response.operation_id.value) ||
@@ -914,6 +929,11 @@ JsonValue model_request_to_json(const ModelRequest &request) {
     budget.emplace_back("max_requests", static_cast<std::int64_t>(request.budget.max_requests));
     budget.emplace_back("max_image_bytes",
                         static_cast<std::int64_t>(request.budget.max_image_bytes));
+    // Omit the default to preserve legacy canonical digests.
+    if (request.budget.scope != ModelBudgetScope::Task) {
+        budget.emplace_back("scope", request.budget.scope == ModelBudgetScope::Request ? "request"
+                                                                                       : "unknown");
+    }
     root.emplace_back("budget", std::move(budget));
 
     JsonValue::Object data_policy;
@@ -1433,6 +1453,14 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
                 out = static_cast<Target>(field->as_integer().value());
             }
         };
+        if (const auto *scope = budget->find("scope")) {
+            if (!scope->is_string() ||
+                (*scope->as_string() != "task" && *scope->as_string() != "request")) {
+                return contract_error("model budget scope is invalid");
+            }
+            request.budget.scope = *scope->as_string() == "request" ? ModelBudgetScope::Request
+                                                                    : ModelBudgetScope::Task;
+        }
         read_u64_field("max_input_tokens", request.budget.max_input_tokens);
         read_u64_field("max_output_tokens", request.budget.max_output_tokens);
         read_u64_field("max_total_cost_micros", request.budget.max_total_cost_micros);

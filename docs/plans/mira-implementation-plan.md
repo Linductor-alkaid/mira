@@ -1281,3 +1281,7 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 2026-10-14：新增 [实时思考预览维护](maintenance-2026-10-thinking-preview.md)
 （DEC-055 / Mirage MIRA-20261014-004），独立 opt-in 通道保持既有正文预览语义；
 离线 fixture 与取消/预算/异常门禁由维护计划记录，供应商和其他平台另验。
+
+2026-10-15：新增 [持续会话循环维护](maintenance-2026-10-continuous-conversation.md)
+（DEC-056 / Mirage MIRA-20261015-002），显式持续模式、请求预算、提交式压缩与
+有界结果窗口；实现与 PR 证据由维护计划记录，Mirage 消费另验。

@@ -224,11 +224,10 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
   （`ToolExecuted`、终态 `ConversationSettled`）。
 - 工具往返以规范 `ToolCallPart`/`ToolResultPart` 进入后续每轮请求（call 回显 + 结果
   成对追加），供应商侧保持原生 function_call/function_call_output 语义。
-- 预算形状沿用 RULE-08：`max_turns`（耗尽终态 `MaxTurns`）、`max_recoveries`、
-  `max_tool_executions`、每轮 `max_output_tokens_per_turn` 与整环 request/output 预算。
-  整环输出信封（`per_turn × (max_turns + max_recoveries + 1)`）不得超过目标 profile 的
-  `capabilities.limits.max_output_tokens`（路由门禁）；默认值组合满足默认 profile 限额。
-  取消、准入拒绝和终态回答在任何新工具派发前停止循环。
+- 默认 `ConversationLimitMode::Finite` 保留 `max_turns`（耗尽为 `MaxTurns`）、
+  `max_tool_executions`、恢复/续写次数和原整环预算包络；有限配置的 0 不表示不限。
+  每轮生成限额与实际 profile 输出限额匹配，整环预算算术溢出在请求派发前拒绝。
+  显式持续模式见下节；取消、准入拒绝和终态回答阻止新工具派发。
 - 无注册表时工具提案 fail closed（`Failed`："tool proposals require a tool registry"）；
   桥接拒绝（调用未暴露的工具、重复 call id 冲突）同样 fail closed 并透传桥接诊断。
 - `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
@@ -312,6 +311,54 @@ loop.set_model_input_identity(supply_input_identity);  // run() 前接线一次
   `reuse_count`、`reuse_annotated`；`ConversationLoopResult` 以
   `supplied_input_reuse_annotations` 累计全程。未接线时请求装配逐字节不变。
 
+### 持续模式（DEC-056，MIRA-20261015-002）
+
+```cpp
+mira::ConversationLoopConfig config;
+config.limit_mode = mira::ConversationLimitMode::Continuous;
+config.max_history_items = 128;
+config.max_history_bytes = 2 * 1024 * 1024;
+config.max_retained_turns = 64;
+config.max_tools_per_turn = 32;
+mira::ConversationLoop loop(gateway, config);
+// 在 run 前接入宿主 compactor；必须保留最近完整轮与任务进度。
+loop.set_history_transformer(compact_history);
+```
+
+持续模式忽略累计 max_turns/max_tool_executions，仍保留单次模型 deadline、每批
+工具容量、恢复与输出续写上限。Continuous 的恢复/续写额度按连续失败/截断段
+计算，完整工具轮后重置；累计 recoveries/output_continuations 仅作饱和 uint64
+统计，Finite 仍按整任务额度。没有 compactor 时可运行短任务，历史满后明确
+Failed（`history capacity exhausted after compaction`）；不静默删除事实或重启任务。
+
+每请求 budget scope=Request、max_requests=1、max_output_tokens=每轮输出上限，
+不再乘累计轮次。Request scope 属 **model contract 2.0**，旧 reader 拒绝该 major，
+新 reader 接受 1.x/2.x；有限模式仍发 1.0 且默认 scope 不序列化，canonical digest
+保持兼容。显式 Request 准入比较本次估计，Task（默认）比较任务未结算预约。
+未知 usage/价格保留账面残余与既有诊断；请求模式不提供整任务花费上限，宿主须
+明确选择并管理产品策略。关闭账本仍拒绝请求；累计账目饱和而不回绕。
+
+成功压缩提交到 loop-owned history，下一轮不会重建旧历史。连续模式额外校验
+User/Assistant、call/result 完整配对和最近原始轮逐字段不变（包括签名 thinking）；
+失败仍发 HistoryTransformDegraded 并回退，之后检查容量。宿主负责摘要质量、
+目标/约束和已执行事实归档。`max_history_items` 为 1～254（保留两个请求条目），
+`max_history_bytes` 为 canonical input 数组的序列化字节，不含像素，不等于 RSS。
+检查点是压缩之后、下一次派发之前；一轮新增最多 max_tools_per_turn（1～32）
+个工具，临时响应/回调分配继续由其输入边界管理。
+
+`total_turns` 与 tool/supply/history 累计计数为饱和 uint64；`turns` 仅存最近
+max_retained_turns 个记录，旧记录计入 turn_records_dropped，每轮先发
+ConversationTurnRecorded。宿主仍须为事件存储制定保留策略；事件写入保持既有
+best-effort 契约。retained_history_items/bytes 是最近一次请求前的 retained
+history 状态，便于检测存量；终态 answer 和失败原因单独返回。
+
+持续路径不向工具注册表永久登记 operation 墓碑：其私有入口仅允许同步向前的
+ConversationLoop 消费新 gateway 请求的桥接结果，没有外部/恢复提案入口，桥接
+去重和每轮一次遍历共同保证不重复派发。公开 execute 保留原 operation 去重，
+retained_dispatch_count 可核对其存量。未来持久恢复或异步续派不能复用私有入口。
+loop 不拥有 worker；宿主通过 kairo 启动/取消并消费 future，最终由外部 owner
+shutdown。取消/期限在回调之后、响应之后和每个工具前复核。
+
 ### 工具历史压缩缝（DEC-088 后续）
 
 ConversationLoop 持有规范化工具往返历史（ToolCallPart/ToolResultPart 条目）并逐轮
@@ -333,7 +380,8 @@ loop.set_history_transformer(compact_history);  // run() 前接线一次
 
 - **解析时机与纪律**：与供给缝同拍——每轮 `build_request` 前恰一次（history 非空
   才调用）、有界、不阻塞、run() 调用者 worker 上同步执行；返回值只替代本轮请求的
-  回放，循环自有的 history 永不被改写，后续轮次与续写仍从完整记录重建。
+  回放。Finite 模式不改写 loop 自有 history；Continuous 按上节提交有效结果，
+  并保护最近完整轮。
 - **协议契约**：返回条目 role 仅限 `User`/`Assistant`，且工具调用仍须与其结果按
   执行顺序配对——供应商侧多轮工具语义依赖它。宿主须自行保证：被压缩决策拆散的
   调用/结果对要整对收缩（Layer 0 的 checkpoint 水位按单条丢弃 P5 条目，不保配对）。

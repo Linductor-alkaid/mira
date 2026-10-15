@@ -55,7 +55,7 @@ struct BudgetEstimate final {
 struct BudgetReservation final {
     std::uint64_t input_tokens = 0;
     std::uint64_t output_tokens = 0;
-    std::uint32_t requests = 0;
+    std::uint64_t requests = 0;
     std::uint64_t cost_micros = 0;
 };
 
@@ -84,7 +84,8 @@ class BudgetLedger final {
     explicit BudgetLedger(PriceTable prices);
 
     // Reserves against the task budget; fails with ResourceExhausted when the
-    // estimate exceeds what remains.
+    // estimate exceeds what remains. Request scope checks this estimate only;
+    // cumulative unresolved reservations remain tracked with saturating totals.
     [[nodiscard]] Result<BudgetReservation> reserve(const TaskId &task, const ModelBudget &budget,
                                                     const BudgetEstimate &estimate);
     [[nodiscard]] Result<BudgetSettlement> reconcile(const TaskId &task, const ModelBudget &budget,
