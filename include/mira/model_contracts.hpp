@@ -198,6 +198,11 @@ struct ToolChoice final {
 // Budget, data policy and provenance
 // ---------------------------------------------------------------------------
 
+// Task is the legacy cumulative reservation limit. Request explicitly opts
+// into per-infer admission; unresolved older reservations remain auditable.
+// Request scope requires model contract v2; v1 canonical requests stay unchanged.
+enum class ModelBudgetScope : std::uint8_t { Task, Request };
+
 struct ModelBudget final {
     // Upper bounds reserved before dispatch; zero means "no separate limit".
     std::uint64_t max_input_tokens = 0;
@@ -206,6 +211,7 @@ struct ModelBudget final {
     std::string currency = "USD";
     std::uint32_t max_requests = 0;
     std::uint64_t max_image_bytes = 0;
+    ModelBudgetScope scope = ModelBudgetScope::Task;
 };
 
 struct ModelDataPolicy final {

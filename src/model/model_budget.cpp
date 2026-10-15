@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -80,26 +81,55 @@ Result<BudgetReservation> BudgetLedger::reserve(const TaskId &task, const ModelB
     if (account.closed) {
         return budget_error("task budget is closed");
     }
-    BudgetReservation next = account.reserved;
-    next.input_tokens += estimate.input_tokens;
-    next.output_tokens += estimate.output_tokens;
-    next.requests += estimate.requests;
-    next.cost_micros += estimate.cost_micros;
-
-    if (budget.max_input_tokens != 0 && next.input_tokens > budget.max_input_tokens) {
+    if (budget.scope != ModelBudgetScope::Task && budget.scope != ModelBudgetScope::Request) {
+        return budget_error("invalid budget scope");
+    }
+    if (budget.scope == ModelBudgetScope::Request &&
+        (budget.max_requests != 1 || budget.max_output_tokens == 0 || estimate.requests != 1)) {
+        return budget_error("request budget requires one infer and finite output tokens");
+    }
+    const auto add = [](std::uint64_t left, std::uint64_t right) {
+        return right > std::numeric_limits<std::uint64_t>::max() - left
+                   ? std::numeric_limits<std::uint64_t>::max()
+                   : left + right;
+    };
+    BudgetReservation next;
+    next.input_tokens = add(account.reserved.input_tokens, estimate.input_tokens);
+    next.output_tokens = add(account.reserved.output_tokens, estimate.output_tokens);
+    next.requests = add(account.reserved.requests, estimate.requests);
+    next.cost_micros = add(account.reserved.cost_micros, estimate.cost_micros);
+    if (budget.scope == ModelBudgetScope::Task &&
+        (estimate.input_tokens >
+             std::numeric_limits<std::uint64_t>::max() - account.reserved.input_tokens ||
+         estimate.output_tokens >
+             std::numeric_limits<std::uint64_t>::max() - account.reserved.output_tokens ||
+         estimate.requests >
+             std::numeric_limits<std::uint64_t>::max() - account.reserved.requests ||
+         estimate.cost_micros >
+             std::numeric_limits<std::uint64_t>::max() - account.reserved.cost_micros)) {
+        return budget_error("task reservation counters would overflow");
+    }
+    const bool per_request = budget.scope == ModelBudgetScope::Request;
+    const auto checked_input = per_request ? estimate.input_tokens : next.input_tokens;
+    const auto checked_output = per_request ? estimate.output_tokens : next.output_tokens;
+    const auto checked_requests = per_request ? estimate.requests : next.requests;
+    const auto checked_cost = per_request ? estimate.cost_micros : next.cost_micros;
+    if (budget.max_input_tokens != 0 && checked_input > budget.max_input_tokens) {
         return budget_error("input token reservation exceeds the task budget");
     }
-    if (budget.max_output_tokens != 0 && next.output_tokens > budget.max_output_tokens) {
+    if (budget.max_output_tokens != 0 && checked_output > budget.max_output_tokens) {
         return budget_error("output token reservation exceeds the task budget");
     }
-    if (budget.max_requests != 0 && next.requests > budget.max_requests) {
+    if (budget.max_requests != 0 && checked_requests > budget.max_requests) {
         return budget_error("request reservation exceeds the task budget");
     }
-    if (budget.max_total_cost_micros != 0 && next.cost_micros > budget.max_total_cost_micros) {
+    if (budget.max_total_cost_micros != 0 && checked_cost > budget.max_total_cost_micros) {
         return budget_error("cost reservation exceeds the task budget");
     }
     account.reserved = next;
-    return next;
+    return per_request ? BudgetReservation{estimate.input_tokens, estimate.output_tokens,
+                                           estimate.requests, estimate.cost_micros}
+                       : next;
 }
 
 Result<BudgetSettlement> BudgetLedger::reconcile(const TaskId &task, const ModelBudget &budget,
@@ -161,7 +191,9 @@ Result<BudgetSettlement> BudgetLedger::reconcile(const TaskId &task, const Model
         settlement.note = "usage was reported partially; remainder stays reserved";
     }
     settlement.reconciled_cost_micros = cost;
-    account.spent_micros += cost;
+    account.spent_micros = cost > std::numeric_limits<std::uint64_t>::max() - account.spent_micros
+                               ? std::numeric_limits<std::uint64_t>::max()
+                               : account.spent_micros + cost;
 
     // Release the reservation for this request proportional to the counters
     // that were actually reported.

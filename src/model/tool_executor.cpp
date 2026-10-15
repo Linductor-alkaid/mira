@@ -114,8 +114,25 @@ std::size_t BuiltinToolRegistry::size() const {
     return tools_.size();
 }
 
+std::size_t BuiltinToolRegistry::retained_dispatch_count() const {
+    const std::lock_guard lock(mutex_);
+    return dispatched_.size();
+}
+
 Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &proposal,
                                                          const OperationContext &context) {
+    return execute_impl(proposal, context, true);
+}
+
+Result<ToolExecutionRecord>
+BuiltinToolRegistry::execute_loop_proposal(const ToolProposal &proposal,
+                                           const OperationContext &context) {
+    return execute_impl(proposal, context, false);
+}
+
+Result<ToolExecutionRecord> BuiltinToolRegistry::execute_impl(const ToolProposal &proposal,
+                                                              const OperationContext &context,
+                                                              bool retain_dispatch) {
     BuiltinToolSpec spec;
     BuiltinToolHandler handler;
     {
@@ -136,7 +153,7 @@ Result<ToolExecutionRecord> BuiltinToolRegistry::execute(const ToolProposal &pro
             return tool_error(ErrorCode::InvalidState,
                               "tool identity no longer matches the exposed snapshot");
         }
-        if (!dispatched_.insert(proposal.operation_id).second) {
+        if (retain_dispatch && !dispatched_.insert(proposal.operation_id).second) {
             return tool_error(ErrorCode::AlreadyExists,
                               "operation was already dispatched; at most once per operation");
         }

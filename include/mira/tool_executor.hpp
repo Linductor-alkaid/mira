@@ -79,6 +79,9 @@ class BuiltinToolRegistry final {
     [[nodiscard]] std::vector<ExposedToolSpec> exposed_tools() const;
 
     [[nodiscard]] std::size_t size() const;
+    // Legacy direct-dispatch tombstones; continuous-loop dispatch uses its
+    // private, forward-only request ownership instead of retaining old IDs.
+    [[nodiscard]] std::size_t retained_dispatch_count() const;
 
     // Executes one resolved proposal. The proposal must reference the same
     // tool identity that was exposed to the producing request; a registry
@@ -87,6 +90,15 @@ class BuiltinToolRegistry final {
                                                       const OperationContext &context);
 
   private:
+    friend class ConversationLoop;
+    // Only the synchronous forward-only loop may use this path: proposals
+    // must come from one fresh gateway request and are visited exactly once.
+    // No proposal is accepted from a caller, persisted or replayed by run().
+    [[nodiscard]] Result<ToolExecutionRecord>
+    execute_loop_proposal(const ToolProposal &proposal, const OperationContext &context);
+    [[nodiscard]] Result<ToolExecutionRecord> execute_impl(const ToolProposal &proposal,
+                                                           const OperationContext &context,
+                                                           bool retain_dispatch);
     struct Entry final {
         BuiltinToolSpec spec;
         BuiltinToolHandler handler;

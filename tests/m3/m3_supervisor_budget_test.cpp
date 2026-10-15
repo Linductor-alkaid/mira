@@ -4,6 +4,7 @@
 #include <mira/model_budget.hpp>
 #include <mira/model_supervisor.hpp>
 
+#include <limits>
 #include <string>
 
 namespace {
@@ -271,9 +272,68 @@ int token_estimates_are_conservative() {
     return 0;
 }
 
+int request_scoped_budget_and_overflow() {
+    BudgetLedger ledger(PriceTable{});
+    const auto task = TaskId::generate();
+    ModelBudget budget;
+    budget.scope = ModelBudgetScope::Request;
+    budget.max_requests = 1;
+    budget.max_input_tokens = 100;
+    budget.max_output_tokens = 20;
+    budget.max_total_cost_micros = 100;
+    BudgetEstimate estimate;
+    estimate.input_tokens = 100;
+    estimate.output_tokens = 20;
+    estimate.cost_micros = 100;
+    for (int count = 0; count < 300; ++count) {
+        const auto reserved = ledger.reserve(task, budget, estimate);
+        MIRA_CHECK(reserved && reserved.value().requests == 1);
+        MIRA_CHECK(reserved.value().output_tokens == 20);
+    }
+    MIRA_CHECK(ledger.reserved(task).requests == 300);
+    const auto before = ledger.reserved(task);
+    for (const int field : {0, 1, 2, 3}) {
+        auto invalid = estimate;
+        if (field == 0)
+            ++invalid.input_tokens;
+        if (field == 1)
+            ++invalid.output_tokens;
+        if (field == 2)
+            ++invalid.requests;
+        if (field == 3)
+            ++invalid.cost_micros;
+        MIRA_CHECK(!ledger.reserve(task, budget, invalid));
+    }
+    MIRA_CHECK(ledger.reserved(task).requests == before.requests);
+    // A failed request releases only its own reservation, not old unknown holds.
+    MIRA_CHECK(ledger.release(task, BudgetReservation{100, 20, 1, 100}));
+    MIRA_CHECK(ledger.reserved(task).requests == 299);
+    budget.scope = ModelBudgetScope::Task;
+    MIRA_CHECK(!ledger.reserve(task, budget, estimate));
+    ledger.close(task);
+    budget.scope = ModelBudgetScope::Request;
+    MIRA_CHECK(!ledger.reserve(task, budget, estimate));
+
+    BudgetLedger huge(PriceTable{});
+    ModelBudget unlimited;
+    BudgetEstimate large;
+    large.input_tokens = std::numeric_limits<std::uint64_t>::max();
+    const auto huge_task = TaskId::generate();
+    MIRA_CHECK(huge.reserve(huge_task, unlimited, large));
+    MIRA_CHECK(!huge.reserve(huge_task, unlimited, large));
+    unlimited.scope = ModelBudgetScope::Request;
+    unlimited.max_requests = 1;
+    unlimited.max_output_tokens = 1;
+    MIRA_CHECK(huge.reserve(huge_task, unlimited, large));
+    MIRA_CHECK(huge.reserved(huge_task).input_tokens == std::numeric_limits<std::uint64_t>::max());
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (const int status = request_scoped_budget_and_overflow(); status != 0)
+        return status;
     if (const int status = retry_table_covers_request_stages(); status != 0) {
         return status;
     }
