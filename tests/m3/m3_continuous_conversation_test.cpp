@@ -188,11 +188,16 @@ int history_capacity_and_transform_degradation_are_visible() {
 
 int batched_signed_thinking_and_recent_round_are_preserved() {
     ConversationFixture fixture(ProtocolDialect::AnthropicMessagesV1);
-    auto round = tool_call_response(fixture.echo_spec(), R"({"message":"a"})", "call-a");
+    const auto first = tool_call_response(fixture.echo_spec(), R"({"message":"a"})", "call-a");
     const auto second = tool_call_response(fixture.echo_spec(), R"({"message":"b"})", "call-b");
+    auto round = first;
+    round.output.clear();
+    // Build in order: vector<variant>::insert at begin triggers a GCC 13
+    // -O3 maybe-uninitialized diagnostic in the variant move machinery.
+    round.output.emplace_back(ThinkingPart{"signed plan", "signature", false});
+    round.output.push_back(first.output.front());
     round.output.push_back(second.output.front());
     round.output.push_back(second.output.front()); // bridge collapses identical duplicate
-    round.output.insert(round.output.begin(), ThinkingPart{"signed plan", "signature", false});
     fixture.use_provider({round, round, text_response("done")});
     auto loop = fixture.make_loop(continuous_config());
     loop.set_history_transformer([](const auto &history) -> Result<std::vector<ModelInputItem>> {

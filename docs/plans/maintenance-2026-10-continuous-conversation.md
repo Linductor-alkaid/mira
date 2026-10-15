@@ -91,3 +91,13 @@
 - PR CI 为 push 与 pull_request 两套矩阵，当前结果在 PR checks 中跟踪；
   MNT-202610-18 和最后退出条件保持未勾选，待目标平台与完整 quality 结果。
 - Mirage 已关联 PR 并保持反馈 Open；本 PR 不自动合并、不升级下游 pin。
+
+
+2026-10-15：首轮远端 GCC Release 构建发现新增签名 thinking fixture 的
+vector<variant>::insert(begin, ThinkingPart) 在 GCC 13 `-O3` 下触发
+`-Werror=maybe-uninitialized`（[失败 job](https://github.com/Linductor-alkaid/mira/actions/runs/38694641466/job/116288246288)）。
+本机从 debug compile_commands 提取该测试 TU 的原命令，另写 `/tmp` 对象并追加
+`-O3 -DNDEBUG`，修改前 exit=1 可复现；将 fixture 改为依次 emplace thinking、
+追加 calls 后同命令 exit=0。未降低告警门禁，生产实现未变。
+修正 fixture 与补充头文件注释后的 Debug/ASAN+UBSAN/TSAN 复验正在执行；
+旧提交的 CI 被取消以释放额度，最终矩阵以 PR 当前 head 为准。
