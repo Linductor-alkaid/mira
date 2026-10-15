@@ -527,12 +527,22 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     record.note = "output truncated by the token budget; continuing";
                     result.turns.push_back(std::move(record));
                     // DEC-088: anchor the continuation at the cut so the model
-                    // resumes the exact tail instead of re-deriving it.
+                    // resumes the exact tail instead of re-deriving it. The
+                    // cut lands on raw bytes, so drop any dangling UTF-8
+                    // continuation bytes before the anchor travels in
+                    // feedback - a sliced code point would corrupt the next
+                    // request on multi-byte scripts.
                     constexpr std::size_t kAnchorChars = 50;
-                    const std::string anchor =
+                    std::string anchor =
                         partial_text.size() > kAnchorChars
                             ? partial_text.substr(partial_text.size() - kAnchorChars)
                             : partial_text;
+                    std::size_t begin = 0;
+                    while (begin < anchor.size() &&
+                           (static_cast<unsigned char>(anchor[begin]) & 0xC0) == 0x80) {
+                        ++begin;
+                    }
+                    anchor.erase(0, begin);
                     feedback =
                         "Your previous reply was cut off by the output-token limit. Continue "
                         "from: \"" +
