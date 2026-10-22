@@ -5,6 +5,8 @@
 #include <mira/memory_contracts.hpp>
 #include <mira/task_checkpoint.hpp>
 
+#include <algorithm>
+#include <array>
 #include <string>
 
 namespace {
@@ -379,6 +381,120 @@ int memory_mutation_validation_and_json_round_trip() {
     return 0;
 }
 
+int memory_kind_policy_table_and_gate() {
+    // One entry per kind, and no kind left without a policy.
+    const std::array<MemoryKind, 7> kinds = {
+        MemoryKind::Preference,    MemoryKind::EnvironmentFact, MemoryKind::ApplicationFact,
+        MemoryKind::Episode,       MemoryKind::Procedure,       MemoryKind::SkillHint,
+        MemoryKind::RecoveryLesson};
+    for (const auto kind : kinds) {
+        const auto &policy = memory_kind_policy(kind);
+        MIRA_CHECK(policy.kind == kind);
+        MIRA_CHECK(policy.default_ttl.count() > 0);
+        MIRA_CHECK(!policy.allowed_scope_kinds.empty());
+        MIRA_CHECK(!policy.retrieval_legs.empty());
+        // The exact leg backs the conflict-detection pipeline and the
+        // failure-signature retrieval: no kind may withhold it.
+        MIRA_CHECK(std::find(policy.retrieval_legs.begin(), policy.retrieval_legs.end(),
+                             MemoryRetrievalLeg::Exact) != policy.retrieval_legs.end());
+    }
+    // A canonical structured record is not reachable by embedding similarity.
+    MIRA_CHECK(std::find(memory_kind_policy(MemoryKind::Episode).retrieval_legs.begin(),
+                         memory_kind_policy(MemoryKind::Episode).retrieval_legs.end(),
+                         MemoryRetrievalLeg::Semantic) ==
+               memory_kind_policy(MemoryKind::Episode).retrieval_legs.end());
+    MIRA_CHECK(std::find(memory_kind_policy(MemoryKind::Preference).retrieval_legs.begin(),
+                         memory_kind_policy(MemoryKind::Preference).retrieval_legs.end(),
+                         MemoryRetrievalLeg::Semantic) !=
+               memory_kind_policy(MemoryKind::Preference).retrieval_legs.end());
+
+    // Verification levels are ordered, and the policy floor uses that order.
+    MIRA_CHECK(memory_verification_rank(MemoryVerification::Unverified) <
+               memory_verification_rank(MemoryVerification::Observed));
+    MIRA_CHECK(memory_verification_rank(MemoryVerification::Observed) <
+               memory_verification_rank(MemoryVerification::Verified));
+    MIRA_CHECK(memory_verification_rank(MemoryVerification::Verified) <
+               memory_verification_rank(MemoryVerification::HumanConfirmed));
+
+    // A compliant claim passes the gate.
+    MemoryRecord preference;
+    preference.id = MemoryId::generate();
+    preference.scope = MemoryScope{MemoryScopeKind::User, "user-1", std::nullopt};
+    preference.kind = MemoryKind::Preference;
+    preference.statement = "prefers dark mode";
+    preference.provenance = {EventId::generate()};
+    preference.verification = MemoryVerification::Unverified;
+    preference.confidence = 0.8F;
+    MIRA_CHECK(check_memory_kind_policy(preference).has_value());
+
+    // Below the kind's verification floor: an environment fact must be
+    // observed before it is filed as one.
+    MemoryRecord unobserved = preference;
+    unobserved.kind = MemoryKind::EnvironmentFact;
+    unobserved.scope = MemoryScope{MemoryScopeKind::Environment, "device-1", std::nullopt};
+    unobserved.verification = MemoryVerification::Unverified;
+    const auto too_weak = check_memory_kind_policy(unobserved);
+    MIRA_CHECK(!too_weak.has_value());
+    MIRA_CHECK(too_weak.error().domain_code ==
+               static_cast<std::int32_t>(MemoryDomainCode::InvalidRecord));
+    unobserved.verification = MemoryVerification::Observed;
+    MIRA_CHECK(check_memory_kind_policy(unobserved).has_value());
+
+    // Outside the kind's scope allowlist: a procedure is agent-owned
+    // operating knowledge and does not belong to a user profile.
+    MemoryRecord misplaced = preference;
+    misplaced.kind = MemoryKind::Procedure;
+    misplaced.scope = MemoryScope{MemoryScopeKind::User, "user-1", std::nullopt};
+    const auto wrong_scope = check_memory_kind_policy(misplaced);
+    MIRA_CHECK(!wrong_scope.has_value());
+    MIRA_CHECK(wrong_scope.error().domain_code ==
+               static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+    misplaced.scope = MemoryScope{MemoryScopeKind::Agent, "mira.workflow.learning", std::nullopt};
+    MIRA_CHECK(check_memory_kind_policy(misplaced).has_value());
+
+    // Namespaced content is governed by the import contract instead of the
+    // per-kind gate.
+    MemoryRecord namespaced = unobserved;
+    namespaced.verification = MemoryVerification::Unverified;
+    namespaced.source_namespace = "working-context";
+    MIRA_CHECK(check_memory_kind_policy(namespaced).has_value());
+
+    // The default expiry follows the kind's lifetime.
+    const auto recorded_at =
+        std::chrono::system_clock::time_point{std::chrono::seconds{1'700'000'000}};
+    const auto expiry = memory_default_expiry(MemoryKind::EnvironmentFact, recorded_at);
+    MIRA_CHECK(expiry.has_value());
+    MIRA_CHECK(*expiry ==
+               recorded_at + memory_kind_policy(MemoryKind::EnvironmentFact).default_ttl);
+
+    // The mutation gate refuses a claim the policy rejects, but a tombstone
+    // stays applicable to a record that predates the policy.
+    unobserved.verification = MemoryVerification::Unverified;
+    MemoryMutation add;
+    add.id = MutationId::generate();
+    add.type = MemoryMutationType::Add;
+    add.scope = unobserved.scope;
+    add.proposed = unobserved;
+    add.evidence = unobserved.provenance;
+    add.reason = MutationReasonCode::VerifiedEvent;
+    const auto refused = add.validate();
+    MIRA_CHECK(!refused.has_value());
+    MIRA_CHECK(refused.error().domain_code ==
+               static_cast<std::int32_t>(MemoryDomainCode::InvalidRecord));
+
+    MemoryMutation tombstone;
+    tombstone.id = MutationId::generate();
+    tombstone.type = MemoryMutationType::Tombstone;
+    tombstone.scope = unobserved.scope;
+    tombstone.target = MemoryId::generate();
+    tombstone.expected_version = 1;
+    tombstone.proposed = unobserved;
+    tombstone.evidence = unobserved.provenance;
+    tombstone.reason = MutationReasonCode::HumanCorrection;
+    MIRA_CHECK(tombstone.validate().has_value());
+    return 0;
+}
+
 int memory_record_json_round_trip_and_names() {
     auto record = valid_record();
     record.validity.valid_until = record.validity.valid_from + std::chrono::hours(24);
@@ -447,6 +563,9 @@ int main() {
         return 1;
     }
     if (memory_mutation_validation_and_json_round_trip() != 0) {
+        return 1;
+    }
+    if (memory_kind_policy_table_and_gate() != 0) {
         return 1;
     }
     if (memory_record_json_round_trip_and_names() != 0) {

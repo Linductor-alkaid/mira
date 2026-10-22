@@ -1,5 +1,7 @@
 #include <mira/memory_contracts.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 
@@ -193,6 +195,149 @@ std::optional<MemoryVerification> memory_verification_from(std::string_view name
         }
     }
     return std::nullopt;
+}
+
+int memory_verification_rank(MemoryVerification verification) noexcept {
+    switch (verification) {
+    case MemoryVerification::Unverified:
+        return 0;
+    case MemoryVerification::Observed:
+        return 1;
+    case MemoryVerification::Verified:
+        return 2;
+    case MemoryVerification::HumanConfirmed:
+        return 3;
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Per-kind policy (design Context/Memory §6.2)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr std::chrono::seconds kDay{86'400};
+
+// The per-kind policy table. One entry per MemoryKind, in declaration order.
+//
+// The values follow the memory layers of design §5 and the reference
+// implementation's actual scope use:
+//
+// - Preference is the semantic layer of a user profile (§5): it outlives a
+//   session, so it may live in a user scope and carries the longest default
+//   lifetime. A stated preference is its own evidence, so its verification
+//   floor is Unverified.
+// - EnvironmentFact and ApplicationFact are the semantic facts of an
+//   environment and an application. An environment fact is short-lived (a
+//   screen layout outlives neither a day nor a rebuild) and must be observed
+//   before it may be filed; an application fact is stable but still needs an
+//   observation behind it.
+// - Episode is the episodic layer (§5): a verified run outcome. It is a
+//   canonical structured record, so it is recalled by identifier and keyword,
+//   not by embedding similarity.
+// - Procedure, RecoveryLesson and SkillHint are the procedural layer (§5):
+//   versioned operating knowledge owned by the agent or a task skill. A
+//   published procedure is registry-derived rather than run-verified, so its
+//   floor is Unverified; a recovery lesson is distilled from a verified
+//   failure and requires that verification.
+//
+// The Exact and Lexical legs are eligible for every kind: the
+// conflict-detection pipeline (exact terms inside the proposed kind) and the
+// failure-signature retrieval both depend on them, and withholding them
+// would silently degrade conflict detection rather than retrieval quality.
+// The Semantic leg is the one a kind withholds: a canonical structured
+// record is not reachable by embedding similarity.
+const std::array<MemoryKindPolicy, 7> &kind_policy_table() {
+    static const std::array<MemoryKindPolicy, 7> table = {{
+        MemoryKindPolicy{
+            MemoryKind::Preference,
+            180 * kDay,
+            MemoryVerification::Unverified,
+            {MemoryScopeKind::User, MemoryScopeKind::Session, MemoryScopeKind::Environment,
+             MemoryScopeKind::Application},
+            {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical, MemoryRetrievalLeg::Semantic}},
+        MemoryKindPolicy{
+            MemoryKind::EnvironmentFact,
+            7 * kDay,
+            MemoryVerification::Observed,
+            {MemoryScopeKind::Environment, MemoryScopeKind::Task, MemoryScopeKind::Session,
+             MemoryScopeKind::Agent, MemoryScopeKind::TaskSkill},
+            {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical, MemoryRetrievalLeg::Semantic}},
+        MemoryKindPolicy{
+            MemoryKind::ApplicationFact,
+            30 * kDay,
+            MemoryVerification::Observed,
+            {MemoryScopeKind::Application, MemoryScopeKind::Task, MemoryScopeKind::Session,
+             MemoryScopeKind::Agent},
+            {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical, MemoryRetrievalLeg::Semantic}},
+        MemoryKindPolicy{MemoryKind::Episode,
+                         30 * kDay,
+                         MemoryVerification::Observed,
+                         {MemoryScopeKind::Task, MemoryScopeKind::Session,
+                          MemoryScopeKind::Environment, MemoryScopeKind::Agent},
+                         {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical}},
+        MemoryKindPolicy{
+            MemoryKind::Procedure,
+            180 * kDay,
+            MemoryVerification::Unverified,
+            {MemoryScopeKind::Agent, MemoryScopeKind::TaskSkill, MemoryScopeKind::Application},
+            {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical}},
+        MemoryKindPolicy{MemoryKind::RecoveryLesson,
+                         90 * kDay,
+                         MemoryVerification::Verified,
+                         {MemoryScopeKind::Agent, MemoryScopeKind::Task, MemoryScopeKind::Session},
+                         {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical}},
+        MemoryKindPolicy{
+            MemoryKind::SkillHint,
+            30 * kDay,
+            MemoryVerification::Observed,
+            {MemoryScopeKind::TaskSkill, MemoryScopeKind::Task, MemoryScopeKind::Session},
+            {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical}},
+    }};
+    return table;
+}
+
+} // namespace
+
+const MemoryKindPolicy &memory_kind_policy(MemoryKind kind) {
+    const auto index = static_cast<std::size_t>(kind);
+    const auto &table = kind_policy_table();
+    if (index >= table.size()) {
+        return table[static_cast<std::size_t>(MemoryKind::EnvironmentFact)];
+    }
+    return table[index];
+}
+
+Result<void> check_memory_kind_policy(const MemoryRecord &record) {
+    const auto &policy = memory_kind_policy(record.kind);
+    // Namespaced content carries its own authority contract: the import
+    // path caps it below HumanConfirmed and its provenance is the namespace
+    // itself (design Context/Memory §19). The per-kind gate binds Mira's
+    // own claims, so it does not apply to namespaced records.
+    if (record.source_namespace.has_value()) {
+        return Result<void>{};
+    }
+    if (memory_verification_rank(record.verification) <
+        memory_verification_rank(policy.min_verification)) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "memory kind requires a higher verification level");
+    }
+    const auto &allowed = policy.allowed_scope_kinds;
+    if (std::find(allowed.begin(), allowed.end(), record.scope.kind) == allowed.end()) {
+        return memory_error(MemoryDomainCode::ScopeDenied,
+                            "memory kind is not allowed in this scope");
+    }
+    return Result<void>{};
+}
+
+std::optional<std::chrono::system_clock::time_point>
+memory_default_expiry(MemoryKind kind, std::chrono::system_clock::time_point recorded_at) {
+    const auto &policy = memory_kind_policy(kind);
+    if (policy.default_ttl.count() <= 0) {
+        return std::nullopt;
+    }
+    return recorded_at + policy.default_ttl;
 }
 
 std::string memory_status_name(MemoryStatus status) {
@@ -413,6 +558,15 @@ Result<void> MemoryMutation::validate() const {
     if (type == MemoryMutationType::Supersede && !proposed.supersedes.has_value()) {
         return memory_error(MemoryDomainCode::InvalidMutation,
                             "supersede proposals must name the replaced record");
+    }
+    // The per-kind policy gates claims, not retirements: a Tombstone states
+    // the record as it is, so it must stay applicable to a record written
+    // before the policy existed (design Context/Memory §6.2, §13.4).
+    if (type != MemoryMutationType::Tombstone) {
+        const auto policy = check_memory_kind_policy(proposed);
+        if (!policy) {
+            return policy.error();
+        }
     }
     if (evidence.empty() && reason != MutationReasonCode::RetentionExpiry) {
         return memory_error(MemoryDomainCode::InvalidMutation, "mutations require event evidence");

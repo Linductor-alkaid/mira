@@ -51,6 +51,12 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   tombstoned / superseded / expired 的记录行在其自身 scope 内仍可按 id 读取，供
   审计与保留期工作。宿主需要「这条记忆被忘记」时必须调用 `erase()`，不能用
   Tombstone 替代（见 [DEC-057](../decisions/DEC-057-scoped-memory-read-and-apply-check-order.md)）。
+- per-kind 策略表（设计 §6.3）：`MemoryKindPolicy` / `memory_kind_policy()` 给出每个
+  `MemoryKind` 的默认 TTL、最低验证等级、允许的 scope 与检索腿。
+  `check_memory_kind_policy()` 是写入门：验证不足返回 `InvalidRecord`，kind 与 scope
+  不匹配返回 `ScopeDenied`；带 `source_namespace` 的记录由导入契约管辖，不受该门约束。
+  `memory_default_expiry()` 给出按 kind 折算的默认到期时间。见
+  [DEC-059](../decisions/DEC-059-memory-kind-policy.md)。
 
 ## sqlite_memory_store.hpp：SqliteMemoryStore（`Mira::state_store`）
 
@@ -71,6 +77,12 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   版本。1.0 → 1.1 的显式迁移在 `open()` 时完成：加列后从存活记录与擦除审计轨迹回填归属；
   归属无法确定的历史行保持拒绝。见
   [DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md)。
+- per-kind 策略的存储侧落地：写入时按 kind 补齐默认 TTL（记录未声明 `expires_at` 时），
+  Supersede / Tombstone 关闭 claim 时清空到期时间——退役行改由 `purge_horizon` 与版本
+  保留窗口处置，双时态 as-of 链条不被 TTL 截断。查询声明 kind 时只运行这些 kind 都
+  声明可用的检索腿：结构化 kind（Episode / Procedure / RecoveryLesson / SkillHint）不
+  参与嵌入相似度召回，`MemoryQueryQuality::semantic_leg_withheld` 报告该事实（不是
+  降级）。
 
 ## memory_consolidation.hpp
 

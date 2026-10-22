@@ -64,6 +64,42 @@ enum class MemoryVerification : std::uint8_t {
 [[nodiscard]] std::string memory_verification_name(MemoryVerification verification);
 [[nodiscard]] std::optional<MemoryVerification> memory_verification_from(std::string_view name);
 
+// Verification levels are ordered: the rank drives the per-kind verification
+// floor and the ranking input of the retrieval legs.
+[[nodiscard]] int memory_verification_rank(MemoryVerification verification) noexcept;
+
+// ---------------------------------------------------------------------------
+// Per-kind policy (design Context/Memory §6.2)
+// ---------------------------------------------------------------------------
+
+// The retrieval legs a MemoryKind answers to. The store runs a leg only when
+// the queried kinds declare it eligible.
+enum class MemoryRetrievalLeg : std::uint8_t {
+    Exact,    // verbatim identifier / substring matching
+    Lexical,  // FTS5 keyword recall
+    Semantic, // embedding cosine recall
+};
+
+// The policy a MemoryKind carries: how long a claim of that kind lives, the
+// lowest verification level it may claim, the scope kinds it may be stored
+// in, and the retrieval legs it answers to (design Context/Memory §6.2).
+struct MemoryKindPolicy final {
+    MemoryKind kind = MemoryKind::EnvironmentFact;
+    // Default lifetime when the writer states no expiry of its own. Zero
+    // means the kind never expires on its own.
+    std::chrono::seconds default_ttl{0};
+    // Lowest verification level a record of this kind may claim.
+    MemoryVerification min_verification = MemoryVerification::Unverified;
+    // Scope kinds this kind may be stored in.
+    std::vector<MemoryScopeKind> allowed_scope_kinds;
+    // Retrieval legs appropriate for this kind.
+    std::vector<MemoryRetrievalLeg> retrieval_legs;
+};
+
+// The single per-kind policy table: one entry per MemoryKind. The returned
+// reference stays valid for the lifetime of the program.
+[[nodiscard]] const MemoryKindPolicy &memory_kind_policy(MemoryKind kind);
+
 enum class MemoryStatus : std::uint8_t {
     Active,
     Superseded,
@@ -108,6 +144,17 @@ struct MemoryRecord final {
 
     [[nodiscard]] Result<void> validate() const;
 };
+
+// Write-time gate for the per-kind policy: the verification floor and the
+// scope allowlist (design Context/Memory §6.2). A record that carries a
+// source namespace is governed by the import contract instead (design
+// Context/Memory §19), so the gate does not apply to it.
+[[nodiscard]] Result<void> check_memory_kind_policy(const MemoryRecord &record);
+
+// Default expiry of a claim of this kind recorded at `recorded_at`.
+// Nullopt when the kind carries no default lifetime.
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point>
+memory_default_expiry(MemoryKind kind, std::chrono::system_clock::time_point recorded_at);
 
 enum class MemoryMutationType : std::uint8_t {
     Add,
@@ -161,6 +208,10 @@ struct MemoryQueryQuality final {
     bool exact_leg_ran = false;
     bool fts_leg_ran = false;
     bool vector_leg_ran = false;
+    // The per-kind retrieval policy withheld the semantic leg: the queried
+    // kinds do not declare embedding similarity eligible (design
+    // Context/Memory §6.2). Not a degradation — the leg was never eligible.
+    bool semantic_leg_withheld = false;
     // Active records without a usable embedding; the vector index may lag the
     // authoritative records (it is a rebuildable projection).
     std::size_t index_lag = 0;
