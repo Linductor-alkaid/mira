@@ -603,6 +603,151 @@ int migration_adds_ledger_scope() {
     return 0;
 }
 
+int kind_policy_bounds_the_store() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-kind-policy.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+        const auto scope = env_scope("device-42");
+
+        // The kind's default lifetime is a store default: a claim that
+        // states no expiry of its own expires with its kind's TTL
+        // (design Context/Memory §6.2).
+        auto fact = record(scope, "the oven indicator is amber");
+        fact.kind = MemoryKind::EnvironmentFact;
+        MIRA_CHECK(store.value()->apply(add_mutation(fact)).has_value());
+        auto stored = store.value()->get(fact.id, scope);
+        MIRA_CHECK(stored.has_value() && stored.value().has_value());
+        MIRA_CHECK(stored.value()->expires_at.has_value());
+        MIRA_CHECK(*stored.value()->expires_at ==
+                   fact.recorded_at + memory_kind_policy(MemoryKind::EnvironmentFact).default_ttl);
+
+        // A record below the kind's verification floor never lands.
+        auto unobserved = record(scope, "the oven indicator is amber");
+        unobserved.kind = MemoryKind::EnvironmentFact;
+        unobserved.verification = MemoryVerification::Unverified;
+        auto refused = store.value()->apply(add_mutation(unobserved));
+        MIRA_CHECK(!refused.has_value());
+        MIRA_CHECK(refused.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::InvalidRecord));
+
+        // A kind outside its scope allowlist never lands either: a procedure
+        // is agent-owned operating knowledge, not user-profile content.
+        MemoryScope user_scope;
+        user_scope.kind = MemoryScopeKind::User;
+        user_scope.subject_id = "user-7";
+        auto misplaced = record(user_scope, "deploy only on tuesdays");
+        misplaced.kind = MemoryKind::Procedure;
+        auto denied = store.value()->apply(add_mutation(misplaced));
+        MIRA_CHECK(!denied.has_value());
+        MIRA_CHECK(denied.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // Namespaced content is governed by the import contract instead.
+        auto namespaced = misplaced;
+        namespaced.source_namespace = "import/graphiti";
+        MIRA_CHECK(store.value()->apply(add_mutation(namespaced)).has_value());
+
+        // A tombstone retires the claim before its lifetime ends; the
+        // retired row stays readable and is retained by the purge horizon
+        // (design §13.4), so the claim's expiry no longer applies.
+        MemoryMutation tombstone;
+        tombstone.id = MutationId::generate();
+        tombstone.type = MemoryMutationType::Tombstone;
+        tombstone.scope = scope;
+        tombstone.target = fact.id;
+        tombstone.expected_version = 1;
+        tombstone.reason = MutationReasonCode::HumanCorrection;
+        tombstone.evidence = {EventId::generate()};
+        tombstone.proposed = fact;
+        MIRA_CHECK(store.value()->apply(tombstone).has_value());
+        auto retired = store.value()->get(fact.id, scope);
+        MIRA_CHECK(retired.has_value() && retired.value().has_value());
+        MIRA_CHECK(retired.value()->status == MemoryStatus::Tombstoned);
+        MIRA_CHECK(!retired.value()->expires_at.has_value());
+
+        // A supersession closes the predecessor's claim: the predecessor
+        // keeps its bitemporal era but loses its live lifetime, and the
+        // successor carries the kind's own default.
+        auto first = record(scope, "the oven indicator is amber");
+        first.kind = MemoryKind::EnvironmentFact;
+        MIRA_CHECK(store.value()->apply(add_mutation(first)).has_value());
+        auto second = record(scope, "the oven indicator is green");
+        second.kind = MemoryKind::EnvironmentFact;
+        MemoryMutation supersede;
+        supersede.id = MutationId::generate();
+        supersede.type = MemoryMutationType::Supersede;
+        supersede.scope = scope;
+        supersede.target = first.id;
+        supersede.expected_version = 1;
+        supersede.proposed = second;
+        supersede.proposed.supersedes = first.id;
+        supersede.evidence = second.provenance;
+        supersede.reason = MutationReasonCode::VerifiedEvent;
+        MIRA_CHECK(store.value()->apply(supersede).has_value());
+        auto predecessor = store.value()->get(first.id, scope);
+        MIRA_CHECK(predecessor.has_value() && predecessor.value().has_value());
+        MIRA_CHECK(predecessor.value()->status == MemoryStatus::Superseded);
+        MIRA_CHECK(!predecessor.value()->expires_at.has_value());
+        auto successor = store.value()->get(second.id, scope);
+        MIRA_CHECK(successor.has_value() && successor.value().has_value());
+        MIRA_CHECK(successor.value()->expires_at.has_value());
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+int kind_policy_withholds_the_semantic_leg() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-kind-legs.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+        const auto scope = env_scope("device-42");
+
+        auto episode = record(scope, "task settled: outcome=completed sequence=7");
+        episode.kind = MemoryKind::Episode;
+        episode.verification = MemoryVerification::Observed;
+        MIRA_CHECK(store.value()->apply(add_mutation(episode)).has_value());
+        MIRA_CHECK(
+            store.value()->index_embedding(episode.id, std::vector<float>{1.0F, 0.0F}).has_value());
+
+        // An episode is a canonical structured record: embedding similarity
+        // is not a retrieval mode for it (design Context/Memory §6.2).
+        MemoryQuery filtered;
+        filtered.scopes = {scope};
+        filtered.kinds = std::vector<MemoryKind>{MemoryKind::Episode};
+        filtered.query_embedding = {0.9F, 0.1F};
+        auto withheld = store.value()->query(filtered);
+        MIRA_CHECK(withheld.has_value());
+        MIRA_CHECK(withheld.value().quality.semantic_leg_withheld);
+        MIRA_CHECK(!withheld.value().quality.vector_leg_ran);
+        // The withheld embedding is not a ranking request: the kind-filtered
+        // set is the answer.
+        MIRA_CHECK(withheld.value().records.size() == 1);
+        MIRA_CHECK(withheld.value().records.front().id == episode.id);
+
+        // Without a kind filter the semantic leg runs as before.
+        MemoryQuery unfiltered;
+        unfiltered.scopes = {scope};
+        unfiltered.query_embedding = {0.9F, 0.1F};
+        auto semantic = store.value()->query(unfiltered);
+        MIRA_CHECK(semantic.has_value());
+        MIRA_CHECK(semantic.value().quality.vector_leg_ran);
+        MIRA_CHECK(!semantic.value().quality.semantic_leg_withheld);
+        MIRA_CHECK(!semantic.value().records.empty());
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
 int erasure_complete_and_pending_hold() {
     kairo::Executor exec;
     MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
@@ -746,6 +891,8 @@ int main() {
     failures += apply_scope_check_precedes_version_check();
     failures += mutation_ledger_is_scope_bound();
     failures += migration_adds_ledger_scope();
+    failures += kind_policy_bounds_the_store();
+    failures += kind_policy_withholds_the_semantic_leg();
     failures += erasure_complete_and_pending_hold();
     failures += reopen_reuses_existing_schema();
     std::filesystem::remove_all(temp_dir());

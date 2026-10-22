@@ -232,6 +232,15 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             report.entries.push_back(std::move(entry));
             continue;
         }
+        // The per-kind policy is a Core gate, not a store detail: a candidate
+        // whose kind does not belong in this scope, or whose verification is
+        // below that kind's floor, never reaches the store (design §6.2).
+        if (const auto kind_policy = check_memory_kind_policy(proposed); !kind_policy) {
+            entry.disposition = CandidateDisposition::RejectedInvalid;
+            entry.reason_code = "kind-policy";
+            report.entries.push_back(std::move(entry));
+            continue;
+        }
 
         // 4. Conflict retrieval inside the same scope: facts conflict when
         // their key prefix matches ("volume=..." vs "volume=..."), so a new

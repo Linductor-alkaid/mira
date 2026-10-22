@@ -183,20 +183,6 @@ constexpr const char *kSchemaDdl =
     return 3;
 }
 
-[[nodiscard]] int verification_rank(MemoryVerification verification) {
-    switch (verification) {
-    case MemoryVerification::Unverified:
-        return 0;
-    case MemoryVerification::Observed:
-        return 1;
-    case MemoryVerification::Verified:
-        return 2;
-    case MemoryVerification::HumanConfirmed:
-        return 3;
-    }
-    return 0;
-}
-
 struct Row final {
     std::string id;
     std::string scope_key;
@@ -654,6 +640,17 @@ class SqliteMemoryStore::Impl final {
 
         MemoryRecord proposed = mutation.proposed;
         proposed.scope = mutation.scope;
+        // The kind's default lifetime is a store default, not a caller duty:
+        // a claim that states no expiry of its own expires with its kind's
+        // TTL (design Context/Memory §6.2). An unstamped recording time has
+        // no meaningful base, so the write clock is used instead.
+        if (!proposed.expires_at.has_value() && mutation.type != MemoryMutationType::Tombstone) {
+            auto base = proposed.recorded_at;
+            if (base.time_since_epoch().count() <= 0) {
+                base = std::chrono::system_clock::now();
+            }
+            proposed.expires_at = memory_default_expiry(proposed.kind, base);
+        }
         std::uint64_t new_version = 1;
         switch (mutation.type) {
         case MemoryMutationType::Add: {
@@ -703,6 +700,10 @@ class SqliteMemoryStore::Impl final {
             if (mutation.type == MemoryMutationType::Tombstone) {
                 proposed = *existing.value();
                 proposed.status = MemoryStatus::Tombstoned;
+                // The tombstone retires the claim before its lifetime ends.
+                // The retired row is retained by the purge horizon instead
+                // (design §13.4), so the claim's expiry no longer applies.
+                proposed.expires_at.reset();
                 new_version = *existing_version.value() + 1;
                 break;
             }
@@ -717,6 +718,10 @@ class SqliteMemoryStore::Impl final {
                 MemoryRecord closed = *existing.value();
                 closed.status = MemoryStatus::Superseded;
                 closed.validity.valid_until = proposed.validity.valid_from;
+                // A closed claim is history, not a live claim: its lifetime
+                // ends with the supersession, and the row stays readable for
+                // the bitemporal as-of chain.
+                closed.expires_at.reset();
                 const auto closed_write =
                     write_record(db, closed, scope_key, *existing_version.value() + 1);
                 if (!closed_write) {
@@ -1014,8 +1019,27 @@ class SqliteMemoryStore::Impl final {
         }
 
         // Vector leg: bounded cosine over indexed embeddings.
+        //
+        // The per-kind retrieval policy decides whether embedding similarity
+        // is a legitimate way to reach the queried kinds: a kind whose claim
+        // is a canonical structured record (an episode, a procedure, a
+        // lesson, a skill hint) is recalled by identifier and keyword, not
+        // by similarity (design Context/Memory §6.2, §14.1).
+        const bool semantic_eligible =
+            !request.kinds.has_value() ||
+            std::all_of(request.kinds->begin(), request.kinds->end(), [](MemoryKind kind) {
+                const auto &policy = memory_kind_policy(kind);
+                return std::find(policy.retrieval_legs.begin(), policy.retrieval_legs.end(),
+                                 MemoryRetrievalLeg::Semantic) != policy.retrieval_legs.end();
+            });
+        const bool semantic_withheld = !request.query_embedding.empty() && !semantic_eligible;
+        if (semantic_withheld) {
+            result.quality.semantic_leg_withheld = true;
+            result.quality.note = "semantic retrieval is not eligible for the queried kinds";
+        }
         std::map<std::string, double> vector_scores;
-        if (!request.query_embedding.empty() && std::chrono::steady_clock::now() < deadline_point) {
+        if (!request.query_embedding.empty() && semantic_eligible &&
+            std::chrono::steady_clock::now() < deadline_point) {
             const std::size_t query_dim = request.query_embedding.size();
             Statement embeddings(db, "SELECT record_id, vector FROM memory_embeddings"
                                      " ORDER BY embedded_at DESC LIMIT ?");
@@ -1093,8 +1117,11 @@ class SqliteMemoryStore::Impl final {
         const bool any_leg = !exact_hits.empty() || !fts_rank.empty() || !vector_scores.empty();
         // A query that asked for ranking (text, terms or embedding) and got
         // no reliable hits must not dump the whole scope as a "fallback".
+        // An embedding the per-kind policy withheld is not a ranking request:
+        // the kind-filtered set is the answer, ordered by the remaining
+        // signals (design Context/Memory §6.2).
         const bool ranking_attempted = !request.text.empty() || !request.exact_terms.empty() ||
-                                       !request.query_embedding.empty();
+                                       (!request.query_embedding.empty() && !semantic_withheld);
         std::set<std::string> seen_statements;
         if (ranking_attempted && !any_leg && !result.quality.deadline_exceeded) {
             result.quality.degraded = result.quality.degraded || result.quality.vector_degraded;
@@ -1125,8 +1152,9 @@ class SqliteMemoryStore::Impl final {
             if (vector_entry != vector_scores.end()) {
                 score += weights.vector * vector_entry->second;
             }
-            score += weights.verification *
-                     (static_cast<double>(verification_rank(row.decoded.verification)) / 3.0);
+            score +=
+                weights.verification *
+                (static_cast<double>(memory_verification_rank(row.decoded.verification)) / 3.0);
             score += weights.confidence * row.confidence;
             if (newest >= oldest) {
                 const double recency =
