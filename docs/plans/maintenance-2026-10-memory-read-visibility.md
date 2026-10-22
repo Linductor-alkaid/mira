@@ -119,7 +119,9 @@
 - **依据**：[DEC-057](../decisions/DEC-057-scoped-memory-read-and-apply-check-order.md)；
   设计 §6.1、§8.3、§13.4、§14.1、§16。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核。
-  基线提交 `23a53b7`（本轮改动未提交，工作树状态）。
+  基线提交 `23a53b7`（连续循环工作树）。本轮改动与台账 scope 绑定一并经
+  [PR #101](https://github.com/Linductor-alkaid/mira/pull/101) 提交；该分支已 rebase 到
+  `origin/master`，rebase 前后工作树逐字节一致。
 - **命令与结果**：
 
   | 命令 | 结果 |

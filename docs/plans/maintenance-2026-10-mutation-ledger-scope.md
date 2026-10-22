@@ -101,7 +101,9 @@
 - **依据**：[DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md)；设计 §8.3、
   §16.2、§16.3。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
-  固定 SQLite amalgamation 3.53.4。前一轮提交 `17b1a34`（本轮改动未提交）。
+  固定 SQLite amalgamation 3.53.4。读可见性一轮见
+  [PR #101](https://github.com/Linductor-alkaid/mira/pull/101) 的第一个提交（按 id 读取的
+  scope 绑定），本轮为同一 PR 的第二个提交（台账 scope 绑定与 schema 1.1）。
 - **命令与结果**：
 
   | 命令 | 结果 |
