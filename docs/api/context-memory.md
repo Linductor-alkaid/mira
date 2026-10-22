@@ -66,6 +66,11 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
 - `apply()` 的 `Update`/`Supersede`/`Tombstone` 先判定目标记录 scope、再比较
   `expected_version`：跨 scope 调用方在版本正确与否时得到同一个 `ScopeDenied`，
   避免用错误码差二分探测版本；同 scope 内版本不匹配仍返回 `VersionConflict`。
+- 幂等台账（`memory_mutations`，schema 1.1）记录每个条目的归属 scope。重放只在该 scope
+  内被承认：跨 scope 复用 `mutation_id` 返回 `ScopeDenied`，不披露条目指向的记录 id 与
+  版本。1.0 → 1.1 的显式迁移在 `open()` 时完成：加列后从存活记录与擦除审计轨迹回填归属；
+  归属无法确定的历史行保持拒绝。见
+  [DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md)。
 
 ## memory_consolidation.hpp
 

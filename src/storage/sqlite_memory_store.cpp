@@ -31,7 +31,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 0};
+constexpr SchemaVersion kMemoryStoreSchema{1, 1};
 constexpr const char *kStoreKind = "memory";
 
 constexpr const char *kSchemaDdl =
@@ -79,6 +79,7 @@ constexpr const char *kSchemaDdl =
     " PRIMARY KEY(record_id, event_id));"
     "CREATE TABLE IF NOT EXISTS memory_mutations("
     " mutation_id TEXT PRIMARY KEY,"
+    " scope_key TEXT NOT NULL DEFAULT '',"
     " applied_type TEXT NOT NULL,"
     " record_id TEXT NOT NULL,"
     " result_version INTEGER NOT NULL,"
@@ -117,6 +118,55 @@ constexpr const char *kSchemaDdl =
     key += '|';
     key += scope.tenant_id.value_or(std::string{});
     return key;
+}
+
+// True when the mutation ledger already carries the scope that owns each
+// entry (schema 1.1 and later).
+[[nodiscard]] bool ledger_has_scope_column(sqlite3 *db) {
+    Statement query(db, "PRAGMA table_info(memory_mutations)");
+    if (!query.valid()) {
+        return false;
+    }
+    while (sqlite3_step(query.get()) == SQLITE_ROW) {
+        const auto *name = reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 1));
+        if (name != nullptr && std::string_view(name) == "scope_key") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Schema 1.0 -> 1.1: the mutation ledger records the scope that owns each
+// entry, so an idempotent replay can be refused when the caller declares a
+// different scope than the mutation was applied in.
+//
+// Existing rows are backfilled from the live record and then from the
+// erasure audit trail; both ledgers are append-only, so an erased record
+// stays attributable there. A row whose record was removed by a scope-level
+// erasure has no per-record audit entry and keeps the empty placeholder.
+// Such a ledger entry is refused rather than replayed: the alternative would
+// hand an unattributable scope's record id to whoever presents the id.
+[[nodiscard]] Result<void> migrate_memory_schema_1_0_to_1_1(sqlite3 *db) {
+    constexpr const char *kBackfill =
+        "UPDATE memory_mutations SET scope_key ="
+        " (SELECT m.scope_key FROM memory_records m WHERE m.id = memory_mutations.record_id)"
+        " WHERE scope_key = '';"
+        "UPDATE memory_mutations SET scope_key ="
+        " (SELECT e.scope_key FROM memory_erasure_log e"
+        "  WHERE e.record_id = memory_mutations.record_id AND e.scope_key IS NOT NULL"
+        "  ORDER BY e.id DESC LIMIT 1)"
+        " WHERE scope_key = '';";
+    constexpr const char *kAddColumn =
+        "ALTER TABLE memory_mutations ADD COLUMN scope_key TEXT NOT NULL DEFAULT '';";
+    const std::string sql = "BEGIN;" + std::string(ledger_has_scope_column(db) ? "" : kAddColumn) +
+                            kBackfill + "COMMIT;";
+    const auto applied = storage::exec_sql(db, sql.c_str());
+    if (!applied) {
+        // Leave no half-applied transaction behind for the store worker.
+        (void)storage::exec_sql(db, "ROLLBACK;");
+        return applied.error();
+    }
+    return Result<void>{};
 }
 
 [[nodiscard]] int sensitivity_rank(Sensitivity sensitivity) {
@@ -562,28 +612,41 @@ class SqliteMemoryStore::Impl final {
         }
         const std::string mutation_id = mutation.id.to_string();
         {
-            Statement replay(db, "SELECT applied_type, record_id, result_version"
+            Statement replay(db, "SELECT scope_key, applied_type, record_id, result_version"
                                  " FROM memory_mutations WHERE mutation_id = ?1");
             if (!replay.valid()) {
                 return store_error(ErrorCode::Internal, "mutation replay failed to prepare");
             }
             sqlite3_bind_text(replay.get(), 1, mutation_id.c_str(), -1, storage::transient_copy());
             if (sqlite3_step(replay.get()) == SQLITE_ROW) {
+                // The ledger is keyed by mutation id alone. Honouring a replay
+                // whose entry was written in another scope would hand that
+                // scope's record id and version to the caller, so a mutation
+                // id is only replayable from the scope it was applied in. A
+                // ledger row without a scope (a pre-migration entry that
+                // could not be attributed) is refused as well.
+                const auto *scope_text =
+                    reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 0));
+                const std::string replay_scope = scope_text != nullptr ? scope_text : "";
+                if (replay_scope != scope_key) {
+                    return make_memory_error(MemoryDomainCode::ScopeDenied,
+                                             "mutation id belongs to another scope");
+                }
                 MemoryMutationResult result;
                 const auto *type_text =
-                    reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 0));
+                    reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 1));
                 result.applied =
                     type_text != nullptr && memory_mutation_type_from(type_text).has_value()
                         ? *memory_mutation_type_from(type_text)
                         : MemoryMutationType::Noop;
                 const auto *record_text =
-                    reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 1));
+                    reinterpret_cast<const char *>(sqlite3_column_text(replay.get(), 2));
                 if (auto parsed = MemoryId::parse(record_text != nullptr ? record_text : "");
                     parsed) {
                     result.record = *parsed;
                 }
                 result.new_version =
-                    static_cast<std::uint64_t>(sqlite3_column_int64(replay.get(), 2));
+                    static_cast<std::uint64_t>(sqlite3_column_int64(replay.get(), 3));
                 result.idempotent_replay = true;
                 return result; // read-only; the transaction rolls back
             }
@@ -681,18 +744,20 @@ class SqliteMemoryStore::Impl final {
             return written.error();
         }
         {
-            Statement log(db, "INSERT INTO memory_mutations(mutation_id, applied_type, record_id,"
-                              " result_version, applied_at) VALUES(?1, ?2, ?3, ?4, ?5)");
+            Statement log(db, "INSERT INTO memory_mutations(mutation_id, scope_key, applied_type,"
+                              " record_id, result_version, applied_at)"
+                              " VALUES(?1, ?2, ?3, ?4, ?5, ?6)");
             if (!log.valid()) {
                 return store_error(ErrorCode::Internal, "mutation log failed to prepare");
             }
             const std::string record_id = proposed.id.to_string();
             sqlite3_bind_text(log.get(), 1, mutation_id.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_text(log.get(), 2, memory_mutation_type_name(mutation.type).c_str(), -1,
+            sqlite3_bind_text(log.get(), 2, scope_key.c_str(), -1, storage::transient_copy());
+            sqlite3_bind_text(log.get(), 3, memory_mutation_type_name(mutation.type).c_str(), -1,
                               storage::transient_copy());
-            sqlite3_bind_text(log.get(), 3, record_id.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_int64(log.get(), 4, static_cast<std::int64_t>(new_version));
-            sqlite3_bind_int64(log.get(), 5, wall_nanos(std::chrono::system_clock::now()));
+            sqlite3_bind_text(log.get(), 4, record_id.c_str(), -1, storage::transient_copy());
+            sqlite3_bind_int64(log.get(), 5, static_cast<std::int64_t>(new_version));
+            sqlite3_bind_int64(log.get(), 6, wall_nanos(std::chrono::system_clock::now()));
             if (sqlite3_step(log.get()) != SQLITE_DONE) {
                 return store_error(ErrorCode::Internal, "mutation log failed");
             }
@@ -1612,7 +1677,13 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
         const SchemaVersion file_version{static_cast<std::uint16_t>(major),
                                          static_cast<std::uint16_t>(minor)};
         diagnostics.file_schema = file_version;
-        if (file_version.major > kMemoryStoreSchema.major) {
+        // Compare the minor version too: a file written by a newer minor
+        // revision must not be accepted as an older one and rewritten with
+        // this reader's version stamp.
+        const bool file_newer = file_version.major > kMemoryStoreSchema.major ||
+                                (file_version.major == kMemoryStoreSchema.major &&
+                                 file_version.minor > kMemoryStoreSchema.minor);
+        if (file_newer) {
             if (options.read_only_diagnostic) {
                 diagnostics.disposition = StoreSchemaDisposition::ReadOnlyDiagnostic;
                 diagnostics.note = "file schema is newer than this reader; writes are rejected";
@@ -1627,6 +1698,15 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
             if (!supported) {
                 return store_error(ErrorCode::UnsupportedVersion,
                                    "store schema is too old for this reader");
+            }
+            // Apply the pending schema steps before the version bump: the
+            // reader must not claim the newer schema before the data on disk
+            // matches it.
+            if (file_version.major == 1 && file_version.minor < 1) {
+                const auto migrated = migrate_memory_schema_1_0_to_1_1(handle.get());
+                if (!migrated) {
+                    return migrated.error();
+                }
             }
             const auto bump = storage::meta_write(handle.get(), "schema_version", schema_text);
             if (!bump) {

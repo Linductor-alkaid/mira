@@ -89,6 +89,8 @@ embedding、版本、provenance 与关联 artifact），而不是 `Tombstone`。
   读出 `(record_id, result_version)` 元数据（不含内容）。修复需要为台账增加
   `scope_key` 列（schema 1.1 + ALTER + 存量行回填策略），属于独立的迁移工作，
   本轮不处理。
+  **后续：该残余风险已由 [DEC-058](DEC-058-mutation-ledger-scope-binding.md) 关闭**
+  （台账记录归属 scope，Memory schema 提升到 1.1 并提供 1.0 → 1.1 显式迁移）。
 - `get()` 现在需要调用方持有 scope。若某个下游实现此前依赖"按 id 直读任意
   scope"的行为（例如跨租户运维看板），改动后必须显式声明目标 scope，或改走
   `query()`。

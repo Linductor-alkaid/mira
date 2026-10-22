@@ -80,12 +80,14 @@
 
 ## 5. 风险与阻塞
 
-- **残余风险（未在本轮修复）**：`memory_mutations` 幂等台账没有 `scope_key` 列，
+- **残余风险（本轮未修复，后续已关闭）**：`memory_mutations` 幂等台账没有 `scope_key` 列，
   `apply()` 的幂等重放查询不按 scope 隔离。持有他人 scope 内 mutation id 的调用方
   可读出 `(record_id, result_version)` 元数据（不含内容）。修复需要为台账增加
   `scope_key` 列：schema 1.1 + `ALTER TABLE` + 存量行回填策略（存量行无 scope，
   需决定按"未知 scope 放行"还是"拒绝重放"）。该迁移及其取舍属于独立工作项，
-  建议单独立项排期，不与本轮的读取可见性修复混做。
+  不与本轮的读取可见性修复混做。
+  **后续：本条残余风险由 [DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md)
+  与[台账 scope 绑定维护计划](maintenance-2026-10-mutation-ledger-scope.md)关闭**。
 - **破坏性契约变更**：下游 `IMemory` 实现需要同步 `get` 签名。仓库内已全部同步，
   外部适配器需在下一次集成时跟进。
 - **宿主语义依赖**：若某个下游宿主此前依赖"按 id 直读任意 scope"的行为，改动后
@@ -151,5 +153,6 @@
   `docs/api/context-memory.md`、`docs/decisions/DEC-057-scoped-memory-read-and-apply-check-order.md`（新增）、
   本计划（新增）。
 - **剩余项**：§5 所列 `memory_mutations` 台账 `scope_key` 缺失导致的
-  `(record_id, result_version)` 元数据跨 scope 披露，需要独立 schema 迁移工作项，
-  本轮按 §2.2 非目标处理，未登记为缺陷台账条目（编号待独立工作项立项时分配）。
+  `(record_id, result_version)` 元数据跨 scope 披露，本轮按 §2.2 非目标处理；
+  后续由 [DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md) 与
+  [台账 scope 绑定维护计划](maintenance-2026-10-mutation-ledger-scope.md)关闭。

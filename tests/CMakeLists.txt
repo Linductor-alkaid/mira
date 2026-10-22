@@ -141,7 +141,7 @@ mira_add_m4_test(mira_m4_recovery_test m4/m4_recovery_test.cpp)
 function(mira_add_m4_store_test name source)
     add_executable(${name} ${source})
     target_link_libraries(${name} PRIVATE
-        Mira::core Mira::state_store kairo::kairo)
+        Mira::core Mira::state_store kairo::kairo Mira::sqlite3)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_include_directories(${name} SYSTEM PRIVATE
         "${PROJECT_SOURCE_DIR}/third_party/kairo/include")

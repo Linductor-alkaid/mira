@@ -388,6 +388,9 @@ expired 的记录行在其自身 scope 内仍可按 id 读取，供审计与保�
 得到同一个 `ScopeDenied`，否则两种不同的错误码会成为跨 scope 的版本预言机。同 scope 内
 的乐观并发语义不变。
 
+`apply()` 的幂等台账同样按 scope 承认：台账条目记录其归属 scope，跨 scope 复用
+`mutation_id` 返回 `ScopeDenied`（见 §16.2）。
+
 ### 8.4 IContextManager
 
 ```cpp
@@ -708,6 +711,12 @@ memory_erasure_log
 SQLite 使用单 writer 策略和 bounded request channel；读取可以使用独立只读连接/快照。数据库
 迁移在 Runtime 接受 Task 前完成，不能由第一个随机请求隐式触发。
 
+`memory_mutations` 是幂等台账，主键为 `mutation_id`；每个条目同时记录写入时所属的
+scope（`scope_key`）。重放只在该 scope 内被承认：条目 scope 与调用方声明的 scope 不一致
+时返回 `ScopeDenied`，不披露条目指向的记录 id 与版本。归属固化在条目上而不是在重放时
+反查，因为 scope 级 Erasure 不写逐条审计行，反查会在删除后丢失归属——而那正是重试
+一条已被擦除的 mutation 必须保持幂等、且不得把已擦除数据写回的时候。
+
 ### 16.3 Schema Migration
 
 - Event、Checkpoint、Memory 和 embedding model 分别版本化。
@@ -715,6 +724,12 @@ SQLite 使用单 writer 策略和 bounded request channel；读取可以使用�
 - Migration 是显式、可取消、可诊断的 Runtime 初始化任务。
 - 无法迁移时以只读诊断模式打开，不静默清空数据。
 - Vector index 可删后重建；Event provenance 和 MemoryRecord 不能因索引损坏丢失。
+- 版本比较同时覆盖 major 与 minor：文件带有更新的 minor 版本时按"比本 reader 新"处理，
+  写入被拒，不把更新版本当作旧版本接受并盖上自己的版本戳。
+- Memory schema 1.0 → 1.1 为幂等台账增加归属 scope 列（见 §16.2）。存量行从存活记录与
+  擦除审计轨迹回填归属；归属仍无法确定的历史行保持占位，其 `mutation_id` 在任何 scope
+  下都被拒绝重放——宁可拒绝一次重放，也不把无法归属的 scope 的记录 id 交给持有该 id
+  的调用方。迁移在写入前完成，不产生半迁移状态。
 
 ## 17. Executor 映射
 
