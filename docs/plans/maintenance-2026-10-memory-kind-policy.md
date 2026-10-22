@@ -117,7 +117,8 @@
 - **依据**：[DEC-059](../decisions/DEC-059-memory-kind-policy.md)；设计 §5、§6.2、
   §6.3、§13.4、§14.1、§19。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
-  固定 SQLite amalgamation 3.53.4。基线提交 `792cccf`（PR #101 合并后的 master）。
+  固定 SQLite amalgamation 3.53.4。基线提交 `792cccf`（PR #101 合并后的 master）；
+  本轮经 [PR #102](https://github.com/Linductor-alkaid/mira/pull/102) 提交。
 - **命令与结果**：
 
   | 命令 | 结果 |
