@@ -37,7 +37,7 @@ class FakeMemory final : public IMemory {
         MemoryQueryResult result;
         return result;
     }
-    Result<std::optional<MemoryRecord>> get(MemoryId) const override {
+    Result<std::optional<MemoryRecord>> get(MemoryId, const MemoryScope &) const override {
         return std::optional<MemoryRecord>{};
     }
     Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override {

@@ -96,7 +96,7 @@ int add_get_and_idempotent_replay() {
         MIRA_CHECK(replay.value().idempotent_replay);
         MIRA_CHECK(replay.value().new_version == 1);
 
-        auto fetched = store.value()->get(base.id);
+        auto fetched = store.value()->get(base.id, scope);
         MIRA_CHECK(fetched.has_value() && fetched.value().has_value());
         MIRA_CHECK(fetched.value()->statement == base.statement);
         MIRA_CHECK(fetched.value()->version == 1);
@@ -166,6 +166,17 @@ int update_conflict_and_supersede_chain() {
         MIRA_CHECK(now_result.records.size() == 1);
         MIRA_CHECK(now_result.records.front().statement == "volume=50");
 
+        // get() applies the scope ACL but not the lifecycle rules: the
+        // superseded predecessor keeps its history and stays readable by id
+        // inside its own scope (Tombstone and Supersede mean "no longer
+        // retrieved", not "deleted").
+        auto predecessor = store.value()->get(original.id, scope);
+        MIRA_CHECK(predecessor.has_value() && predecessor.value().has_value());
+        MIRA_CHECK(predecessor.value()->status == MemoryStatus::Superseded);
+        // The predecessor row holds the statement it carried when it was
+        // closed; the earlier "volume=30" era lives in the version history.
+        MIRA_CHECK(predecessor.value()->statement == "volume=31");
+
         // Bitemporal replay: each validity era returns its own truth.
         MemoryQuery historical;
         historical.scopes = {scope};
@@ -221,7 +232,7 @@ int tombstone_and_ttl_expiry() {
         auto swept = store.value()->compact(scope);
         MIRA_CHECK(swept.has_value());
         MIRA_CHECK(swept.value().expired_records_purged == 1);
-        auto gone = store.value()->get(expiring.id);
+        auto gone = store.value()->get(expiring.id, scope);
         MIRA_CHECK(gone.has_value() && !gone.value().has_value());
 
         // Tombstone removes a record from retrieval without deleting it.
@@ -238,7 +249,7 @@ int tombstone_and_ttl_expiry() {
         MIRA_CHECK(buried.has_value());
         auto after_bury = run_query(*store.value(), scope);
         MIRA_CHECK(after_bury.records.empty());
-        auto still_there = store.value()->get(keep.id);
+        auto still_there = store.value()->get(keep.id, scope);
         MIRA_CHECK(still_there.has_value() && still_there.value().has_value());
         MIRA_CHECK(still_there.value()->status == MemoryStatus::Tombstoned);
         MIRA_CHECK(store.value()->close().has_value());
@@ -325,6 +336,119 @@ int scope_acl_and_provenance_enforcement() {
     return 0;
 }
 
+// A by-id read is bound to the caller's declared scope, exactly like a
+// query. A record outside that scope must be indistinguishable from a
+// record that does not exist; otherwise the read becomes an existence
+// oracle across scopes and tenants.
+int get_enforces_scope_acl() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-get-acl.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+
+        const auto tenant_a = env_scope("user-1", "tenant-a");
+        const auto tenant_b = env_scope("user-1", "tenant-b");
+        const auto other_subject = env_scope("user-2", "tenant-a");
+        const auto tenant_less = env_scope("user-1");
+
+        const auto owned = record(tenant_a, "prefers dark mode");
+        MIRA_CHECK(store.value()->apply(add_mutation(owned)).has_value());
+
+        // The owning scope reads the record back.
+        auto own = store.value()->get(owned.id, tenant_a);
+        MIRA_CHECK(own.has_value() && own.value().has_value());
+        MIRA_CHECK(own.value()->statement == "prefers dark mode");
+
+        // Another tenant with the same subject, another subject in the same
+        // tenant, and the tenant-less scope all read as absent.
+        for (const auto &foreign : {tenant_b, other_subject, tenant_less}) {
+            auto hidden = store.value()->get(owned.id, foreign);
+            MIRA_CHECK(hidden.has_value());
+            MIRA_CHECK(!hidden.value().has_value());
+        }
+
+        // An id that never existed reads as absent in every scope, so a
+        // caller cannot tell "wrong scope" from "no such record".
+        auto missing = store.value()->get(MemoryId::generate(), tenant_a);
+        MIRA_CHECK(missing.has_value());
+        MIRA_CHECK(!missing.value().has_value());
+
+        // The rejected reads left the record untouched.
+        auto still_own = store.value()->get(owned.id, tenant_a);
+        MIRA_CHECK(still_own.has_value() && still_own.value().has_value());
+        MIRA_CHECK(still_own.value()->version == 1);
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+// The scope check must precede the version comparison in apply(). If the
+// version were compared first, the two different error codes would let a
+// caller outside the record's scope binary-search its current version.
+int apply_scope_check_precedes_version_check() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-apply-scope.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+
+        const auto owner = env_scope("user-1", "tenant-a");
+        const auto foreign = env_scope("user-1", "tenant-b");
+        const auto original = record(owner, "volume=30");
+        MIRA_CHECK(store.value()->apply(add_mutation(original)).has_value());
+
+        // Wrong scope, wrong version: the scope denial wins, so the caller
+        // learns nothing about the version.
+        MemoryMutation probe;
+        probe.id = MutationId::generate();
+        probe.type = MemoryMutationType::Update;
+        probe.scope = foreign;
+        probe.target = original.id;
+        probe.expected_version = 99;
+        probe.proposed = record(foreign, "volume=31");
+        probe.evidence = probe.proposed.provenance;
+        auto denied = store.value()->apply(probe);
+        MIRA_CHECK(!denied.has_value());
+        MIRA_CHECK(denied.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // Wrong scope, correct version: still denied, with the identical
+        // error, so the pair reveals no version.
+        MemoryMutation right_version = probe;
+        right_version.id = MutationId::generate();
+        right_version.expected_version = 1;
+        auto denied_too = store.value()->apply(right_version);
+        MIRA_CHECK(!denied_too.has_value());
+        MIRA_CHECK(denied_too.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // The owner still gets the version conflict: the reorder did not
+        // weaken the optimistic-concurrency check.
+        MemoryMutation owner_probe = probe;
+        owner_probe.id = MutationId::generate();
+        owner_probe.scope = owner;
+        owner_probe.proposed = record(owner, "volume=31");
+        auto conflict = store.value()->apply(owner_probe);
+        MIRA_CHECK(!conflict.has_value());
+        MIRA_CHECK(conflict.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::VersionConflict));
+
+        // None of the denied attempts modified the record.
+        auto unchanged = store.value()->get(original.id, owner);
+        MIRA_CHECK(unchanged.has_value() && unchanged.value().has_value());
+        MIRA_CHECK(unchanged.value()->version == 1);
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
 int erasure_complete_and_pending_hold() {
     kairo::Executor exec;
     MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
@@ -381,7 +505,7 @@ int erasure_complete_and_pending_hold() {
         MIRA_CHECK(store.value()->apply(add_mutation(with_artifact)).has_value());
         const auto plain = record(scope, "plain note");
         MIRA_CHECK(store.value()->apply(add_mutation(plain)).has_value());
-        MIRA_CHECK(store.value()->get(plain.id).has_value());
+        MIRA_CHECK(store.value()->get(plain.id, scope).has_value());
 
         // First erasure fails on the artifact backend: stays Pending, holds
         // the scope out of Context (queries fail closed).
@@ -464,6 +588,8 @@ int main() {
     failures += update_conflict_and_supersede_chain();
     failures += tombstone_and_ttl_expiry();
     failures += scope_acl_and_provenance_enforcement();
+    failures += get_enforces_scope_acl();
+    failures += apply_scope_check_precedes_version_check();
     failures += erasure_complete_and_pending_hold();
     failures += reopen_reuses_existing_schema();
     std::filesystem::remove_all(temp_dir());

@@ -554,11 +554,17 @@ int main() {
                 return result;
             }
             mira::Result<std::optional<mira::MemoryRecord>>
-            get(mira::MemoryId record) const override {
+            get(mira::MemoryId record, const mira::MemoryScope &scope) const override {
                 for (const auto &stored : records_) {
-                    if (stored.id == record) {
-                        return std::optional<mira::MemoryRecord>{stored};
+                    if (stored.id != record) {
+                        continue;
                     }
+                    // Outside the scope is indistinguishable from absent.
+                    // Lifecycle is not filtered: Tombstone is not deletion.
+                    if (!(stored.scope == scope)) {
+                        return std::optional<mira::MemoryRecord>{};
+                    }
+                    return std::optional<mira::MemoryRecord>{stored};
                 }
                 return std::optional<mira::MemoryRecord>{};
             }

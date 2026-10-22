@@ -265,7 +265,18 @@ class IMemory {
 
     // Scope-filtered hybrid retrieval; never crosses the query scopes.
     [[nodiscard]] virtual Result<MemoryQueryResult> query(const MemoryQuery &query) const = 0;
-    [[nodiscard]] virtual Result<std::optional<MemoryRecord>> get(MemoryId record) const = 0;
+    // Reads one record under the caller's declared scope. A record outside
+    // that scope is indistinguishable from a record that does not exist and
+    // yields an empty optional, so a by-id read never becomes an existence
+    // or version oracle across scopes (design Context/Memory §8.3).
+    //
+    // Lifecycle is not filtered: Tombstone means "no longer retrieved", not
+    // "deleted" (design §13.4 — privacy erasure has its own physical deletion
+    // path, and Tombstone must not be used to fake one). A tombstoned,
+    // superseded or expired row therefore stays readable by id inside its own
+    // scope, for audit and retention work.
+    [[nodiscard]] virtual Result<std::optional<MemoryRecord>>
+    get(MemoryId record, const MemoryScope &scope) const = 0;
     // Idempotent by mutation id; optimistic version conflicts return
     // VersionConflict instead of silently overwriting.
     [[nodiscard]] virtual Result<MemoryMutationResult> apply(const MemoryMutation &mutation) = 0;

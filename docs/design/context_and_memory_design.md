@@ -18,6 +18,10 @@
 - §8.3 `IMemory` 在 M4 实现中为同步门面（与 `ICheckpointStore` 一致，不带
   OperationContext 参数）；Executor 路由与关闭由
   `ContextMemorySupervisor`（§17 的 M4 实现）承载。
+- §8.3 `IMemory::get` 按 scope 绑定：签名携带调用方声明的 `MemoryScope`，scope 不符
+  时返回空 optional 且与「记录不存在」不可区分；`apply()` 的 scope 判定先于版本比较。
+  生命周期不在 `get()` 中过滤（Tombstone 表示不再参与检索而非删除，见 §13.4）。
+  见 [DEC-057](../decisions/DEC-057-scoped-memory-read-and-apply-check-order.md)。
 - §13.3 Consolidation：确定性提取器消费 `TaskFactVerified`（User scope 归类为
   Preference，Application scope 归类为 ApplicationFact）与 `LoopSettled(Completed)`
   （Episode）；User-scope Preference 默认要求人工审批；模型辅助候选强制
@@ -361,7 +365,7 @@ public:
     virtual Result<MemoryQueryResult> query(
         const MemoryQuery&, const OperationContext&) = 0;
     virtual Result<std::optional<MemoryRecord>> get(
-        MemoryId, const OperationContext&) = 0;
+        MemoryId, const MemoryScope&, const OperationContext&) = 0;
     virtual Result<MemoryMutationResult> apply(
         const MemoryMutation&, const OperationContext&) = 0;
     virtual Result<MemoryCompactionResult> compact(
@@ -373,6 +377,16 @@ public:
 
 `apply()` 必须支持幂等 mutation ID 和 optimistic version。重复完成消息不能生成两条相同长期
 Memory。
+
+按 id 读取与查询共享同一条 scope 边界：`get()` 要求调用方声明目标 scope，scope 不符时
+返回空 optional，与「记录不存在」不可区分——返回 `ScopeDenied` 会让按 id 读取退化为跨
+scope 的存在性预言机。`get()` 不过滤生命周期：§13.4 规定 Tombstone 表示「不再参与
+检索」而非删除，隐私删除走 `erase()` 的物理删除路径，因此 tombstoned / superseded /
+expired 的记录行在其自身 scope 内仍可按 id 读取，供审计与保留期工作。
+
+`apply()` 的 scope 判定先于版本比较：跨 scope 的调用方在 `expected_version` 正确与否时
+得到同一个 `ScopeDenied`，否则两种不同的错误码会成为跨 scope 的版本预言机。同 scope 内
+的乐观并发语义不变。
 
 ### 8.4 IContextManager
 
@@ -570,6 +584,12 @@ struct MemoryMutation {
 
 普通事实变化使用 Supersede，保留历史和有效时间。Tombstone 表示不再参与检索。隐私 Erasure
 走独立的物理删除/crypto-shredding 流程，不能只用 Tombstone 冒充删除。
+
+宿主责任：需要「这条记忆被忘记」时必须调用 `IMemory::erase()`，不能用 `Tombstone`
+替代。Tombstone 只把记录移出检索结果，记录行与其 payload 仍保留在其 scope 内，可由
+持有该 scope 的调用方按 id 读取（审计与保留期工作需要这一可读性），并在
+`purge_horizon` 之外长期留存。`SqliteMemoryStoreOptions::purge_horizon` 默认为 0，
+即 tombstone 行默认永不物理清除。
 
 ## 14. 混合检索
 

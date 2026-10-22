@@ -450,6 +450,31 @@ class SqliteMemoryStore::Impl final {
         return std::optional<MemoryRecord>(row.value().decoded);
     }
 
+    // Reads one record under the caller's declared scope. A record outside
+    // that scope is reported as absent: a by-id read must not be able to
+    // distinguish it from a record that never existed, or it becomes an
+    // existence oracle across scopes (design Context/Memory §8.3).
+    //
+    // Lifecycle is deliberately NOT filtered here. Tombstone means "no longer
+    // retrieved", not "deleted" (design §13.4: privacy erasure has its own
+    // physical deletion path, and Tombstone must not be used to fake one), so
+    // a tombstoned, superseded or expired row stays readable by id for audit
+    // and retention work inside its own scope.
+    [[nodiscard]] static Result<std::optional<MemoryRecord>>
+    read_scoped_record(sqlite3 *db, const MemoryId &id, const MemoryScope &scope) {
+        auto existing = read_record(db, id);
+        if (!existing) {
+            return existing.error();
+        }
+        if (!existing.value().has_value()) {
+            return std::optional<MemoryRecord>{};
+        }
+        if (scope_key_of(existing.value()->scope) != scope_key_of(scope)) {
+            return std::optional<MemoryRecord>{};
+        }
+        return existing.value();
+    }
+
     // Writes one record row (24 columns, ?1..?24) at the given version.
     [[nodiscard]] static Result<void> write_record(sqlite3 *db, const MemoryRecord &record,
                                                    const std::string &scope_key,
@@ -584,29 +609,33 @@ class SqliteMemoryStore::Impl final {
         case MemoryMutationType::Update:
         case MemoryMutationType::Supersede:
         case MemoryMutationType::Tombstone: {
-            const auto existing_version = current_version(db, *mutation.target);
-            if (!existing_version) {
-                return existing_version.error();
-            }
-            if (!existing_version.value().has_value()) {
-                return make_memory_error(MemoryDomainCode::VersionConflict,
-                                         "mutation target does not exist");
-            }
-            if (*existing_version.value() != *mutation.expected_version) {
-                return make_memory_error(MemoryDomainCode::VersionConflict,
-                                         "memory version moved on; re-read and re-plan");
-            }
+            // Read the target and settle the scope before comparing versions.
+            // The scope check must precede the version comparison: otherwise
+            // the two different error codes let a caller outside the record's
+            // scope binary-search its current version.
             auto existing = read_record(db, *mutation.target);
             if (!existing) {
                 return existing.error();
             }
             if (!existing.value().has_value()) {
                 return make_memory_error(MemoryDomainCode::VersionConflict,
-                                         "mutation target vanished mid-transaction");
+                                         "mutation target does not exist");
             }
             if (scope_key_of(existing.value()->scope) != scope_key) {
                 return make_memory_error(MemoryDomainCode::ScopeDenied,
                                          "mutations cannot move a record across scopes");
+            }
+            auto existing_version = current_version(db, *mutation.target);
+            if (!existing_version) {
+                return existing_version.error();
+            }
+            if (!existing_version.value().has_value()) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "mutation target vanished mid-transaction");
+            }
+            if (*existing_version.value() != *mutation.expected_version) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "memory version moved on; re-read and re-plan");
             }
             if (mutation.type == MemoryMutationType::Tombstone) {
                 proposed = *existing.value();
@@ -1642,10 +1671,11 @@ Result<MemoryQueryResult> SqliteMemoryStore::query(const MemoryQuery &query) con
         [this, &query](sqlite3 *db) { return impl_->query(db, query); });
 }
 
-Result<std::optional<MemoryRecord>> SqliteMemoryStore::get(MemoryId record) const {
+Result<std::optional<MemoryRecord>> SqliteMemoryStore::get(MemoryId record,
+                                                           const MemoryScope &scope) const {
     return impl_->channel_->run<std::optional<MemoryRecord>>(
-        [record](sqlite3 *db) -> Result<std::optional<MemoryRecord>> {
-            return Impl::read_record(db, record);
+        [record, scope](sqlite3 *db) -> Result<std::optional<MemoryRecord>> {
+            return Impl::read_scoped_record(db, record, scope);
         });
 }
 
