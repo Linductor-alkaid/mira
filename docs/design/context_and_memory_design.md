@@ -18,6 +18,10 @@
 - §8.3 `IMemory` 在 M4 实现中为同步门面（与 `ICheckpointStore` 一致，不带
   OperationContext 参数）；Executor 路由与关闭由
   `ContextMemorySupervisor`（§17 的 M4 实现）承载。
+- §8.3 `IMemory::get` 按 scope 绑定：签名携带调用方声明的 `MemoryScope`，scope 不符
+  时返回空 optional 且与「记录不存在」不可区分；`apply()` 的 scope 判定先于版本比较。
+  生命周期不在 `get()` 中过滤（Tombstone 表示不再参与检索而非删除，见 §13.4）。
+  见 [DEC-057](../decisions/DEC-057-scoped-memory-read-and-apply-check-order.md)。
 - §13.3 Consolidation：确定性提取器消费 `TaskFactVerified`（User scope 归类为
   Preference，Application scope 归类为 ApplicationFact）与 `LoopSettled(Completed)`
   （Episode）；User-scope Preference 默认要求人工审批；模型辅助候选强制
@@ -361,7 +365,7 @@ public:
     virtual Result<MemoryQueryResult> query(
         const MemoryQuery&, const OperationContext&) = 0;
     virtual Result<std::optional<MemoryRecord>> get(
-        MemoryId, const OperationContext&) = 0;
+        MemoryId, const MemoryScope&, const OperationContext&) = 0;
     virtual Result<MemoryMutationResult> apply(
         const MemoryMutation&, const OperationContext&) = 0;
     virtual Result<MemoryCompactionResult> compact(
@@ -373,6 +377,19 @@ public:
 
 `apply()` 必须支持幂等 mutation ID 和 optimistic version。重复完成消息不能生成两条相同长期
 Memory。
+
+按 id 读取与查询共享同一条 scope 边界：`get()` 要求调用方声明目标 scope，scope 不符时
+返回空 optional，与「记录不存在」不可区分——返回 `ScopeDenied` 会让按 id 读取退化为跨
+scope 的存在性预言机。`get()` 不过滤生命周期：§13.4 规定 Tombstone 表示「不再参与
+检索」而非删除，隐私删除走 `erase()` 的物理删除路径，因此 tombstoned / superseded /
+expired 的记录行在其自身 scope 内仍可按 id 读取，供审计与保留期工作。
+
+`apply()` 的 scope 判定先于版本比较：跨 scope 的调用方在 `expected_version` 正确与否时
+得到同一个 `ScopeDenied`，否则两种不同的错误码会成为跨 scope 的版本预言机。同 scope 内
+的乐观并发语义不变。
+
+`apply()` 的幂等台账同样按 scope 承认：台账条目记录其归属 scope，跨 scope 复用
+`mutation_id` 返回 `ScopeDenied`（见 §16.2）。
 
 ### 8.4 IContextManager
 
@@ -571,6 +588,12 @@ struct MemoryMutation {
 普通事实变化使用 Supersede，保留历史和有效时间。Tombstone 表示不再参与检索。隐私 Erasure
 走独立的物理删除/crypto-shredding 流程，不能只用 Tombstone 冒充删除。
 
+宿主责任：需要「这条记忆被忘记」时必须调用 `IMemory::erase()`，不能用 `Tombstone`
+替代。Tombstone 只把记录移出检索结果，记录行与其 payload 仍保留在其 scope 内，可由
+持有该 scope 的调用方按 id 读取（审计与保留期工作需要这一可读性），并在
+`purge_horizon` 之外长期留存。`SqliteMemoryStoreOptions::purge_horizon` 默认为 0，
+即 tombstone 行默认永不物理清除。
+
 ## 14. 混合检索
 
 ### 14.1 检索阶段
@@ -688,6 +711,12 @@ memory_erasure_log
 SQLite 使用单 writer 策略和 bounded request channel；读取可以使用独立只读连接/快照。数据库
 迁移在 Runtime 接受 Task 前完成，不能由第一个随机请求隐式触发。
 
+`memory_mutations` 是幂等台账，主键为 `mutation_id`；每个条目同时记录写入时所属的
+scope（`scope_key`）。重放只在该 scope 内被承认：条目 scope 与调用方声明的 scope 不一致
+时返回 `ScopeDenied`，不披露条目指向的记录 id 与版本。归属固化在条目上而不是在重放时
+反查，因为 scope 级 Erasure 不写逐条审计行，反查会在删除后丢失归属——而那正是重试
+一条已被擦除的 mutation 必须保持幂等、且不得把已擦除数据写回的时候。
+
 ### 16.3 Schema Migration
 
 - Event、Checkpoint、Memory 和 embedding model 分别版本化。
@@ -695,6 +724,12 @@ SQLite 使用单 writer 策略和 bounded request channel；读取可以使用�
 - Migration 是显式、可取消、可诊断的 Runtime 初始化任务。
 - 无法迁移时以只读诊断模式打开，不静默清空数据。
 - Vector index 可删后重建；Event provenance 和 MemoryRecord 不能因索引损坏丢失。
+- 版本比较同时覆盖 major 与 minor：文件带有更新的 minor 版本时按"比本 reader 新"处理，
+  写入被拒，不把更新版本当作旧版本接受并盖上自己的版本戳。
+- Memory schema 1.0 → 1.1 为幂等台账增加归属 scope 列（见 §16.2）。存量行从存活记录与
+  擦除审计轨迹回填归属；归属仍无法确定的历史行保持占位，其 `mutation_id` 在任何 scope
+  下都被拒绝重放——宁可拒绝一次重放，也不把无法归属的 scope 的记录 id 交给持有该 id
+  的调用方。迁移在写入前完成，不产生半迁移状态。
 
 ## 17. Executor 映射
 

@@ -10,6 +10,10 @@
 
 #include <kairo/executor.hpp>
 
+// The migration test needs to hand-craft a pre-1.1 store file, which the
+// public API cannot express: the schema layout is the subject under test.
+#include <sqlite3.h>
+
 namespace {
 
 using namespace mira;
@@ -96,7 +100,7 @@ int add_get_and_idempotent_replay() {
         MIRA_CHECK(replay.value().idempotent_replay);
         MIRA_CHECK(replay.value().new_version == 1);
 
-        auto fetched = store.value()->get(base.id);
+        auto fetched = store.value()->get(base.id, scope);
         MIRA_CHECK(fetched.has_value() && fetched.value().has_value());
         MIRA_CHECK(fetched.value()->statement == base.statement);
         MIRA_CHECK(fetched.value()->version == 1);
@@ -166,6 +170,17 @@ int update_conflict_and_supersede_chain() {
         MIRA_CHECK(now_result.records.size() == 1);
         MIRA_CHECK(now_result.records.front().statement == "volume=50");
 
+        // get() applies the scope ACL but not the lifecycle rules: the
+        // superseded predecessor keeps its history and stays readable by id
+        // inside its own scope (Tombstone and Supersede mean "no longer
+        // retrieved", not "deleted").
+        auto predecessor = store.value()->get(original.id, scope);
+        MIRA_CHECK(predecessor.has_value() && predecessor.value().has_value());
+        MIRA_CHECK(predecessor.value()->status == MemoryStatus::Superseded);
+        // The predecessor row holds the statement it carried when it was
+        // closed; the earlier "volume=30" era lives in the version history.
+        MIRA_CHECK(predecessor.value()->statement == "volume=31");
+
         // Bitemporal replay: each validity era returns its own truth.
         MemoryQuery historical;
         historical.scopes = {scope};
@@ -221,7 +236,7 @@ int tombstone_and_ttl_expiry() {
         auto swept = store.value()->compact(scope);
         MIRA_CHECK(swept.has_value());
         MIRA_CHECK(swept.value().expired_records_purged == 1);
-        auto gone = store.value()->get(expiring.id);
+        auto gone = store.value()->get(expiring.id, scope);
         MIRA_CHECK(gone.has_value() && !gone.value().has_value());
 
         // Tombstone removes a record from retrieval without deleting it.
@@ -238,7 +253,7 @@ int tombstone_and_ttl_expiry() {
         MIRA_CHECK(buried.has_value());
         auto after_bury = run_query(*store.value(), scope);
         MIRA_CHECK(after_bury.records.empty());
-        auto still_there = store.value()->get(keep.id);
+        auto still_there = store.value()->get(keep.id, scope);
         MIRA_CHECK(still_there.has_value() && still_there.value().has_value());
         MIRA_CHECK(still_there.value()->status == MemoryStatus::Tombstoned);
         MIRA_CHECK(store.value()->close().has_value());
@@ -325,6 +340,269 @@ int scope_acl_and_provenance_enforcement() {
     return 0;
 }
 
+// A by-id read is bound to the caller's declared scope, exactly like a
+// query. A record outside that scope must be indistinguishable from a
+// record that does not exist; otherwise the read becomes an existence
+// oracle across scopes and tenants.
+int get_enforces_scope_acl() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-get-acl.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+
+        const auto tenant_a = env_scope("user-1", "tenant-a");
+        const auto tenant_b = env_scope("user-1", "tenant-b");
+        const auto other_subject = env_scope("user-2", "tenant-a");
+        const auto tenant_less = env_scope("user-1");
+
+        const auto owned = record(tenant_a, "prefers dark mode");
+        MIRA_CHECK(store.value()->apply(add_mutation(owned)).has_value());
+
+        // The owning scope reads the record back.
+        auto own = store.value()->get(owned.id, tenant_a);
+        MIRA_CHECK(own.has_value() && own.value().has_value());
+        MIRA_CHECK(own.value()->statement == "prefers dark mode");
+
+        // Another tenant with the same subject, another subject in the same
+        // tenant, and the tenant-less scope all read as absent.
+        for (const auto &foreign : {tenant_b, other_subject, tenant_less}) {
+            auto hidden = store.value()->get(owned.id, foreign);
+            MIRA_CHECK(hidden.has_value());
+            MIRA_CHECK(!hidden.value().has_value());
+        }
+
+        // An id that never existed reads as absent in every scope, so a
+        // caller cannot tell "wrong scope" from "no such record".
+        auto missing = store.value()->get(MemoryId::generate(), tenant_a);
+        MIRA_CHECK(missing.has_value());
+        MIRA_CHECK(!missing.value().has_value());
+
+        // The rejected reads left the record untouched.
+        auto still_own = store.value()->get(owned.id, tenant_a);
+        MIRA_CHECK(still_own.has_value() && still_own.value().has_value());
+        MIRA_CHECK(still_own.value()->version == 1);
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+// The scope check must precede the version comparison in apply(). If the
+// version were compared first, the two different error codes would let a
+// caller outside the record's scope binary-search its current version.
+int apply_scope_check_precedes_version_check() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-apply-scope.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+
+        const auto owner = env_scope("user-1", "tenant-a");
+        const auto foreign = env_scope("user-1", "tenant-b");
+        const auto original = record(owner, "volume=30");
+        MIRA_CHECK(store.value()->apply(add_mutation(original)).has_value());
+
+        // Wrong scope, wrong version: the scope denial wins, so the caller
+        // learns nothing about the version.
+        MemoryMutation probe;
+        probe.id = MutationId::generate();
+        probe.type = MemoryMutationType::Update;
+        probe.scope = foreign;
+        probe.target = original.id;
+        probe.expected_version = 99;
+        probe.proposed = record(foreign, "volume=31");
+        probe.evidence = probe.proposed.provenance;
+        auto denied = store.value()->apply(probe);
+        MIRA_CHECK(!denied.has_value());
+        MIRA_CHECK(denied.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // Wrong scope, correct version: still denied, with the identical
+        // error, so the pair reveals no version.
+        MemoryMutation right_version = probe;
+        right_version.id = MutationId::generate();
+        right_version.expected_version = 1;
+        auto denied_too = store.value()->apply(right_version);
+        MIRA_CHECK(!denied_too.has_value());
+        MIRA_CHECK(denied_too.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // The owner still gets the version conflict: the reorder did not
+        // weaken the optimistic-concurrency check.
+        MemoryMutation owner_probe = probe;
+        owner_probe.id = MutationId::generate();
+        owner_probe.scope = owner;
+        owner_probe.proposed = record(owner, "volume=31");
+        auto conflict = store.value()->apply(owner_probe);
+        MIRA_CHECK(!conflict.has_value());
+        MIRA_CHECK(conflict.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::VersionConflict));
+
+        // None of the denied attempts modified the record.
+        auto unchanged = store.value()->get(original.id, owner);
+        MIRA_CHECK(unchanged.has_value() && unchanged.value().has_value());
+        MIRA_CHECK(unchanged.value()->version == 1);
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+// The idempotency ledger is keyed by mutation id alone. A caller holding
+// another scope's mutation id must neither read that scope's ledger entry
+// nor write through it.
+int mutation_ledger_is_scope_bound() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        SqliteMemoryStoreOptions options;
+        options.path = temp_dir() / "memory-ledger-scope.db";
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store.has_value());
+
+        const auto owner = env_scope("user-1", "tenant-a");
+        const auto foreign = env_scope("user-1", "tenant-b");
+
+        // The owner applies one mutation under a known mutation id.
+        const auto owned = record(owner, "volume=30");
+        const MemoryMutation applied = add_mutation(owned);
+        auto first = store.value()->apply(applied);
+        MIRA_CHECK(first.has_value());
+        MIRA_CHECK(!first.value().idempotent_replay);
+        MIRA_CHECK(first.value().record == owned.id);
+
+        // The owner replaying the same mutation id still gets the stored
+        // result: the ledger stays idempotent inside its scope.
+        auto replay = store.value()->apply(applied);
+        MIRA_CHECK(replay.has_value());
+        MIRA_CHECK(replay.value().idempotent_replay);
+        MIRA_CHECK(replay.value().record == owned.id);
+        MIRA_CHECK(replay.value().new_version == first.value().new_version);
+
+        // Another scope presenting the same mutation id is refused. It must
+        // not learn the owner's record id or version.
+        MemoryMutation stolen = applied; // same mutation id, foreign scope
+        stolen.scope = foreign;
+        stolen.proposed = record(foreign, "volume=31");
+        stolen.evidence = stolen.proposed.provenance;
+        auto denied = store.value()->apply(stolen);
+        MIRA_CHECK(!denied.has_value());
+        MIRA_CHECK(denied.error().domain_code ==
+                   static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+
+        // The refusal wrote nothing in the foreign scope.
+        auto foreign_view = run_query(*store.value(), foreign);
+        MIRA_CHECK(foreign_view.records.empty());
+
+        // The owner is unaffected by the refused attempt.
+        auto owner_view = run_query(*store.value(), owner);
+        MIRA_CHECK(owner_view.records.size() == 1);
+        MIRA_CHECK(owner_view.records.front().statement == "volume=30");
+        MIRA_CHECK(owner_view.records.front().version == 1);
+
+        // A mutation id the foreign scope has never used still applies
+        // normally: scopes are independent, only the id is not shared.
+        MemoryMutation independent = add_mutation(record(foreign, "volume=31"));
+        auto own_write = store.value()->apply(independent);
+        MIRA_CHECK(own_write.has_value());
+        MIRA_CHECK(!own_write.value().idempotent_replay);
+        auto foreign_after = run_query(*store.value(), foreign);
+        MIRA_CHECK(foreign_after.records.size() == 1);
+        MIRA_CHECK(store.value()->close().has_value());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+// A store file written by a 1.0 reader carries no scope on its mutation
+// ledger. Reopening it with the current reader migrates the ledger in place,
+// keeps the records queryable and makes the pre-migration mutation ids
+// replayable inside their own scope again.
+int migration_adds_ledger_scope() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        const auto path = temp_dir() / "memory-migration.db";
+        SqliteMemoryStoreOptions options;
+        options.path = path;
+        const auto scope = env_scope("device-legacy");
+
+        const MemoryMutation applied = add_mutation(record(scope, "legacy fact"));
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition == StoreSchemaDisposition::Created);
+            MIRA_CHECK(store.value()->apply(applied).has_value());
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        // Rewrite the file into the 1.0 layout: no scope on the ledger and
+        // the older recorded schema version.
+        {
+            sqlite3 *db = nullptr;
+            // sqlite3_open takes a narrow path; std::filesystem::path::value_type
+            // is wchar_t on Windows.
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db, "ALTER TABLE memory_mutations DROP COLUMN scope_key;",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db,
+                                    "UPDATE store_meta SET value = '1.0'"
+                                    " WHERE key = 'schema_version';",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            sqlite3_close(db);
+        }
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::Migrated);
+            // The record survived the migration.
+            auto found = run_query(*store.value(), scope, "legacy");
+            MIRA_CHECK(found.records.size() == 1);
+            MIRA_CHECK(found.records.front().statement == "legacy fact");
+            // The backfilled ledger still replays the pre-migration mutation
+            // id inside its own scope.
+            auto replay = store.value()->apply(applied);
+            MIRA_CHECK(replay.has_value());
+            MIRA_CHECK(replay.value().idempotent_replay);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        {
+            // The migration is not repeated on the next open.
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::UpToDate);
+            auto found = run_query(*store.value(), scope, "legacy");
+            MIRA_CHECK(found.records.size() == 1);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        {
+            // A file stamped with a newer minor revision is refused, not
+            // accepted as an older one and re-stamped with this reader's
+            // version.
+            sqlite3 *db = nullptr;
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db,
+                                    "UPDATE store_meta SET value = '1.9'"
+                                    " WHERE key = 'schema_version';",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            sqlite3_close(db);
+        }
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(!store.has_value());
+            MIRA_CHECK(store.error().code == ErrorCode::UnsupportedVersion);
+        }
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
 int erasure_complete_and_pending_hold() {
     kairo::Executor exec;
     MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
@@ -381,7 +659,7 @@ int erasure_complete_and_pending_hold() {
         MIRA_CHECK(store.value()->apply(add_mutation(with_artifact)).has_value());
         const auto plain = record(scope, "plain note");
         MIRA_CHECK(store.value()->apply(add_mutation(plain)).has_value());
-        MIRA_CHECK(store.value()->get(plain.id).has_value());
+        MIRA_CHECK(store.value()->get(plain.id, scope).has_value());
 
         // First erasure fails on the artifact backend: stays Pending, holds
         // the scope out of Context (queries fail closed).
@@ -464,6 +742,10 @@ int main() {
     failures += update_conflict_and_supersede_chain();
     failures += tombstone_and_ttl_expiry();
     failures += scope_acl_and_provenance_enforcement();
+    failures += get_enforces_scope_acl();
+    failures += apply_scope_check_precedes_version_check();
+    failures += mutation_ledger_is_scope_bound();
+    failures += migration_adds_ledger_scope();
     failures += erasure_complete_and_pending_hold();
     failures += reopen_reuses_existing_schema();
     std::filesystem::remove_all(temp_dir());

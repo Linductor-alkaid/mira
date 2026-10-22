@@ -214,12 +214,19 @@ class FaithfulMemory final : public IMemory {
         return result;
     }
 
-    Result<std::optional<MemoryRecord>> get(MemoryId record) const override {
+    Result<std::optional<MemoryRecord>> get(MemoryId record,
+                                            const MemoryScope &scope) const override {
         std::lock_guard lock(mutex_);
         for (const auto &stored : records_) {
-            if (stored.id == record) {
-                return std::optional<MemoryRecord>{stored};
+            if (stored.id != record) {
+                continue;
             }
+            // Outside the scope is indistinguishable from absent. Lifecycle
+            // is not filtered: Tombstone is not deletion.
+            if (!(stored.scope == scope)) {
+                return std::optional<MemoryRecord>{};
+            }
+            return std::optional<MemoryRecord>{stored};
         }
         return std::optional<MemoryRecord>{};
     }

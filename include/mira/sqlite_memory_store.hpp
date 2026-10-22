@@ -62,7 +62,8 @@ class SqliteMemoryStore final : public IMemory {
     SqliteMemoryStore &operator=(const SqliteMemoryStore &) = delete;
 
     [[nodiscard]] Result<MemoryQueryResult> query(const MemoryQuery &query) const override;
-    [[nodiscard]] Result<std::optional<MemoryRecord>> get(MemoryId record) const override;
+    [[nodiscard]] Result<std::optional<MemoryRecord>> get(MemoryId record,
+                                                          const MemoryScope &scope) const override;
     [[nodiscard]] Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override;
     [[nodiscard]] Result<MemoryCompactionResult> compact(const MemoryScope &scope) override;
     [[nodiscard]] Result<ErasureResult> erase(const ErasureRequest &request) override;

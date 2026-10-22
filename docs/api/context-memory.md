@@ -40,10 +40,17 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
 - `MemoryRecord` 带 `MemoryKind`、`MemoryVerification`、双时态 validity、TTL、
   `MemoryStatus`（含 Tombstone）；`MemoryMutation` 幂等于 mutation id，乐观版本冲突
   返回 `VersionConflict` 而不是静默覆盖；`Supersede` 在原 id 上闭合前驱区间。
-- `IMemory`：`query(MemoryQuery)`（scope 过滤的混合检索）/ `get()` / `apply()` /
+- `IMemory`：`query(MemoryQuery)`（scope 过滤的混合检索）/
+  `get(MemoryId, MemoryScope)` / `apply()` /
   `compact(scope)`（保留期清扫，连带删除引用的 Artifact）/ `erase(ErasureRequest)`。
   隐私删除部分失败时整体保持 `ErasureResult` Pending 并 fail-closed 阻止该 scope 进入
   Context；审计只含 id/计数/原因，不含被删正文。
+- `get()` 按 scope 绑定：调用方声明目标 scope，scope 不符时返回空 optional，与
+  「记录不存在」不可区分（返回 `ScopeDenied` 会让按 id 读取成为跨 scope 存在性
+  预言机）。`get()` 不过滤生命周期——Tombstone 表示「不再参与检索」而非删除，
+  tombstoned / superseded / expired 的记录行在其自身 scope 内仍可按 id 读取，供
+  审计与保留期工作。宿主需要「这条记忆被忘记」时必须调用 `erase()`，不能用
+  Tombstone 替代（见 [DEC-057](../decisions/DEC-057-scoped-memory-read-and-apply-check-order.md)）。
 
 ## sqlite_memory_store.hpp：SqliteMemoryStore（`Mira::state_store`）
 
@@ -56,6 +63,14 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   （`index_lag()` / `clear_embeddings()`）。
 - 生命周期语义与 `SqliteCheckpointStore` 相同：单 writer、`open()` 显式迁移、宿主线程
   `close()`、Executor 长寿命（见[事件页](events-recovery.md)）。
+- `apply()` 的 `Update`/`Supersede`/`Tombstone` 先判定目标记录 scope、再比较
+  `expected_version`：跨 scope 调用方在版本正确与否时得到同一个 `ScopeDenied`，
+  避免用错误码差二分探测版本；同 scope 内版本不匹配仍返回 `VersionConflict`。
+- 幂等台账（`memory_mutations`，schema 1.1）记录每个条目的归属 scope。重放只在该 scope
+  内被承认：跨 scope 复用 `mutation_id` 返回 `ScopeDenied`，不披露条目指向的记录 id 与
+  版本。1.0 → 1.1 的显式迁移在 `open()` 时完成：加列后从存活记录与擦除审计轨迹回填归属；
+  归属无法确定的历史行保持拒绝。见
+  [DEC-058](../decisions/DEC-058-mutation-ledger-scope-binding.md)。
 
 ## memory_consolidation.hpp
 

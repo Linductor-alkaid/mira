@@ -439,8 +439,9 @@ class KnobbedMemory final : public IMemory {
         }
         return inner_->query(query);
     }
-    Result<std::optional<MemoryRecord>> get(MemoryId record) const override {
-        return inner_->get(record);
+    Result<std::optional<MemoryRecord>> get(MemoryId record,
+                                            const MemoryScope &scope) const override {
+        return inner_->get(record, scope);
     }
     Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override {
         return inner_->apply(mutation);

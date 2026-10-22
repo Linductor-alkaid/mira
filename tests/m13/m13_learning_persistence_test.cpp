@@ -249,7 +249,7 @@ void drive_scenario(PersistenceHarness &harness, ScenarioEvidence &evidence) {
     // Snapshot the direct-path records straight from the store before any
     // teardown: the persistence and rebuild groups compare against these.
     const auto fetch = [&](const MemoryId &id) -> MemoryRecord {
-        auto record = harness.store->get(id);
+        auto record = harness.store->get(id, learning_scope());
         if (!record.has_value() || !record.value().has_value()) {
             std::cerr << "learning record missing from sqlite store\n";
             std::abort();
@@ -493,8 +493,8 @@ int sqlite_records_survive_owner_rebuild() {
             auto &store = *opened.value();
 
             // Same-id reads return every persisted field unchanged.
-            const auto episode =
-                store.get(workflow_episode_memory_id(evidence.failed_run.to_string()));
+            const auto episode = store.get(
+                workflow_episode_memory_id(evidence.failed_run.to_string()), learning_scope());
             MIRA_CHECK(episode.has_value() && episode.value().has_value());
             const auto &reloaded = episode.value().value();
             MIRA_CHECK(reloaded.statement == evidence.episode_failed.statement);
@@ -508,8 +508,8 @@ int sqlite_records_survive_owner_rebuild() {
             MIRA_CHECK(reloaded.provenance == evidence.episode_failed.provenance);
             MIRA_CHECK(reloaded.provenance.size() == 1);
 
-            const auto lesson =
-                store.get(recovery_lesson_memory_id(evidence.recovered_run.to_string()));
+            const auto lesson = store.get(
+                recovery_lesson_memory_id(evidence.recovered_run.to_string()), learning_scope());
             MIRA_CHECK(lesson.has_value() && lesson.value().has_value());
             MIRA_CHECK(lesson.value().value().statement == evidence.lesson_recovered.statement);
             MIRA_CHECK(lesson.value().value().kind == MemoryKind::RecoveryLesson);
@@ -692,8 +692,9 @@ class SlowMemory final : public IMemory {
         std::this_thread::sleep_for(delay_);
         return inner_->query(query);
     }
-    Result<std::optional<MemoryRecord>> get(MemoryId record) const override {
-        return inner_->get(record);
+    Result<std::optional<MemoryRecord>> get(MemoryId record,
+                                            const MemoryScope &scope) const override {
+        return inner_->get(record, scope);
     }
     Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override {
         std::this_thread::sleep_for(delay_);
