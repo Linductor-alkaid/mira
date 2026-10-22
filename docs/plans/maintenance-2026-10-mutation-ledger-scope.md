@@ -131,8 +131,15 @@
     按本仓库既有取证模式（M2/M8/M9/M10/M11 计划）关闭 ASLR 后全绿。属运行环境限制。
   - ASAN/UBSAN/TSAN 仅覆盖记忆相关测试组（m4 / m13 / m23，17 项）；全量 109 项仅在
     debug 配置下执行。
-  - 未在 Windows 与 Android 目标上构建验证：迁移步骤只用 SQLite 通用 DDL 与
-    `PRAGMA table_info`，不含平台相关代码路径，但迁移路径尚未在目标平台上实测。
+  - **CI 首轮失败与修复**：PR #101 的 Windows Debug 构建在 `m4_sqlite_memory_test.cpp`
+    编译失败——`sqlite3_open(path.c_str(), ...)` 中 `std::filesystem::path::value_type`
+    在 Windows 上是 `wchar_t`，与只接受窄字符的 `sqlite3_open` 不匹配（Linux/Android 上
+    `value_type` 是 `char`，因此本地与移动端 job 均未暴露）。改用仓库既有模式
+    `path.string().c_str()`（与 `storage::open_database` 一致）修复，两处调用同时修正。
+    该失败仅出现在 CI 的 Windows 目标，本地 Linux 验证无法提前暴露。
+  - 未在 Windows 与 Android 目标上本地构建验证：迁移步骤只用 SQLite 通用 DDL 与
+    `PRAGMA table_info`，不含平台相关代码路径。Windows 目标由 CI 覆盖；Android 目标
+    在 CI 首轮已通过。
   - 未做"中和守卫后确认新测试失败"的变异验证：移除 scope 守卫的操作被执行环境权限
     策略拒绝；改以断言本身论证判别力——没有台账 scope 校验时，外部 scope 的
     `apply()` 会命中重放分支并返回归属 scope 的台账条目，`ScopeDenied` 断言必然失败；

@@ -544,7 +544,9 @@ int migration_adds_ledger_scope() {
         // the older recorded schema version.
         {
             sqlite3 *db = nullptr;
-            MIRA_CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+            // sqlite3_open takes a narrow path; std::filesystem::path::value_type
+            // is wchar_t on Windows.
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
             MIRA_CHECK(sqlite3_exec(db, "ALTER TABLE memory_mutations DROP COLUMN scope_key;",
                                     nullptr, nullptr, nullptr) == SQLITE_OK);
             MIRA_CHECK(sqlite3_exec(db,
@@ -584,7 +586,7 @@ int migration_adds_ledger_scope() {
             // accepted as an older one and re-stamped with this reader's
             // version.
             sqlite3 *db = nullptr;
-            MIRA_CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
             MIRA_CHECK(sqlite3_exec(db,
                                     "UPDATE store_meta SET value = '1.9'"
                                     " WHERE key = 'schema_version';",
