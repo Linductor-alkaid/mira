@@ -29,6 +29,11 @@
 - §13.4 Supersede 语义：后继记录使用新 id 并携带 `supersedes`；前驱记录在原 id 上
   关闭有效区间（version+1 的 Superseded 历史版本），双时态 as-of 查询按
   "Superseded 闭合区间链"解析（被替代记录不为其后继时代的查询作答）。
+- §6.3 per-kind 策略表：Core 提供唯一策略表（`memory_kind_policy()`），存储在写入时
+  补齐 kind 的默认 TTL，Core 写入门执行最低验证等级与允许 scope（带
+  `source_namespace` 的记录由 §19 导入契约管辖，Tombstone 不受该门约束），查询按
+  kind 声明的检索腿运行。见
+  [DEC-059](../decisions/DEC-059-memory-kind-policy.md)。
 - §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
   当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
   §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
@@ -184,6 +189,51 @@ enum class MemoryKind {
 
 MemoryKind 决定默认 TTL、最低验证等级、允许的 scope 和检索方式。例如用户偏好可跨 Session，
 屏幕元素位置不能作为长期 ApplicationFact 保存。
+
+### 6.3 per-kind 策略表
+
+`MemoryKind` 携带的策略由 Core 的唯一策略表给出（`memory_kind_policy()`），实现见
+[DEC-059](../decisions/DEC-059-memory-kind-policy.md)：
+
+| MemoryKind | 默认 TTL | 最低验证等级 | 允许的 scope | 检索腿 |
+| --- | --- | --- | --- | --- |
+| Preference | 180 天 | Unverified | User / Session / Environment / Application | Exact / Lexical / Semantic |
+| EnvironmentFact | 7 天 | Observed | Environment / Task / Session / Agent / TaskSkill | Exact / Lexical / Semantic |
+| ApplicationFact | 30 天 | Observed | Application / Task / Session / Agent | Exact / Lexical / Semantic |
+| Episode | 30 天 | Observed | Task / Session / Environment / Agent | Exact / Lexical |
+| Procedure | 180 天 | Unverified | Agent / TaskSkill / Application | Exact / Lexical |
+| RecoveryLesson | 90 天 | Verified | Agent / Task / Session | Exact / Lexical |
+| SkillHint | 30 天 | Observed | TaskSkill / Task / Session | Exact / Lexical |
+
+表项依据 §5 的记忆层级与参考实现的实际 scope 用法：
+
+- Preference 是 §5 中 User scope 的语义层：跨 Session 存续，因此允许落在 User scope，
+  默认寿命最长。用户明确表达的偏好本身就是证据，故验证等级下限为 Unverified。
+- EnvironmentFact / ApplicationFact 是环境与应用事实。环境事实寿命短（屏幕布局活不过
+  一次重建），且必须先被观察到才能作为事实归档；应用事实稳定，但同样需要观察支撑。
+- Episode 是 §5 的情节层：一次被验证的运行结果。它是规范结构化记录，按标识符和关键词
+  召回，不按嵌入相似度召回。
+- Procedure / RecoveryLesson / SkillHint 是 §5 的程序层：版本化的操作知识，归 Agent 或
+  TaskSkill 所有。已发布的 procedure 来自注册表而非运行验证，故下限为 Unverified；
+  recovery lesson 由已验证的失败蒸馏而来，要求 Verified。
+
+四个轴的落地方式：
+
+- **默认 TTL**：存储在写入时补齐。记录未声明 `expires_at` 时按其 kind 的默认寿命设置，
+  这是存储默认值而不是调用方义务。关闭一条 claim（Supersede / Tombstone）即结束它的
+  寿命：前驱与墓碑行不再带到期时间，改由 `purge_horizon` 与版本保留窗口处置（§13.4），
+  双时态 as-of 链条因此不被 TTL 截断。
+- **最低验证等级**与**允许的 scope**：写入时的 Core 门（`check_memory_kind_policy()`，
+  经 `MemoryMutation::validate()` 生效），所有 `IMemory` 实现一致适用。验证不足返回
+  `InvalidRecord`，kind 与 scope 不匹配返回 `ScopeDenied`。带 `source_namespace` 的记录
+  由导入契约（§19）管辖，不受该门约束。Tombstone 不受该门约束：退役一条记录永远
+  必须可用，包括策略生效之前写入的记录。
+- **检索方式**：查询声明 kind 时，存储只运行这些 kind 都声明可用的检索腿。Exact 与
+  Lexical 腿对所有 kind 都可用——冲突检测管线（`exact_terms` + kind 过滤）与失败签名
+  召回都依赖它们，扣下它们会静默劣化冲突检测而不是检索质量。真正被 kind 扣下的是
+  语义腿：结构化 kind（Episode / Procedure / RecoveryLesson / SkillHint）不参与嵌入
+  相似度召回；被策略扣下的嵌入不构成排序请求，kind 过滤后的集合即为答案
+  （`MemoryQueryQuality::semantic_leg_withheld` 报告该事实，这不是降级）。
 
 ## 7. 核心数据契约
 
@@ -592,7 +642,9 @@ struct MemoryMutation {
 替代。Tombstone 只把记录移出检索结果，记录行与其 payload 仍保留在其 scope 内，可由
 持有该 scope 的调用方按 id 读取（审计与保留期工作需要这一可读性），并在
 `purge_horizon` 之外长期留存。`SqliteMemoryStoreOptions::purge_horizon` 默认为 0，
-即 tombstone 行默认永不物理清除。
+即 tombstone 行默认永不物理清除。Tombstone 与 Supersede 关闭一条 claim，即结束它的
+默认寿命（§6.3）：退役行不再带到期时间，改由 `purge_horizon` 与版本保留窗口处置，
+因此墓碑行与双时态历史不会被 TTL 截断。
 
 ## 14. 混合检索
 
@@ -602,7 +654,9 @@ struct MemoryMutation {
 2. 过滤 status、TTL、validity、schema version 和 sensitivity。
 3. 对 ID、应用包名、TaskSkill 等字段做 exact match。
 4. 使用 BM25/FTS 召回关键词候选。
-5. 可用时使用 embedding 召回语义候选。
+5. 可用时使用 embedding 召回语义候选。查询声明 kind 时，第 3–5 步只运行这些 kind 都
+   声明可用的检索腿（§6.3）：结构化 kind 不参与嵌入相似度召回，被扣下的嵌入不构成
+   排序请求。
 6. 合并去重并按时间、置信度、来源和当前 Task 相关性重排。
 7. 做多样性选择，避免多个近重复 Memory 占满预算。
 8. 按 token budget 打包，并附 provenance 和 authority 标记。
