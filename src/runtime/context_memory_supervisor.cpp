@@ -441,7 +441,7 @@ ContextMemorySupervisor::schedule_global_retention_sweep(IMemoryRetentionSweep &
                                                          MemorySweepOptions options) {
     return submit<MemoryCompactionResult>(
         "global_retention_sweep", SupervisedOpClass::Deferrable,
-        [&sweep, options = std::move(options)](SupervisorToken token) {
+        [&sweep, options](SupervisorToken token) {
             if (token.stop_requested()) {
                 return Result<MemoryCompactionResult>(
                     supervisor_error(ErrorCode::Cancelled, "global retention sweep cancelled"));
