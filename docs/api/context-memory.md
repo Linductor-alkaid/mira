@@ -176,12 +176,28 @@ Context/Memory 操作的 Executor 监督者（M4-16）：
 - `SupervisorConfig` 配置容量；操作按 `SupervisedOpClass`（`Critical` / `Interactive` /
   `Deferrable`）分类调度：checkpoint 写入与 Erasure 是 Critical（不可静默放弃），
   查询是 Interactive，consolidation/GC 可延迟合并。
+- 事件名按设计 §20：`ContextBuildStarted/Finished/Failed`、
+  `ContextCheckpointRequested/Stored/Failed`、`MemoryQueryStarted/Finished/Degraded`、
+  `MemoryMutationProposed/Applied/Rejected`、`MemorySuperseded/Tombstoned`、
+  `MemoryErasureRequested`、`MemoryErased`、`MemoryIndexLagged/Rebuilt`、
+  `MemoryConsolidationStarted/Finished/Failed`，未识别的标签落到
+  `ContextMemoryOperation*` 通用回退。载荷只含 label/类别/结论与计数，不含 memory 正文
+  或凭据；存储层不发事件，其审计面是 `memory_erasure_log`。
+- `submit(label, op_class, op, outcome_event = {})` 的 `outcome_event` 指定成功时报告的
+  事件名（空 = 标签默认名）：路由过的操作因此能报告它造成的**转移**，而不是通用完成
+  （supersede / tombstone 见上）。
 - 典型用法：`schedule_checkpoint(coordinator, task, session, trigger, now).get()`、
   `schedule_memory_query(store, query).get()`（返回 future，必须消费）。
 - 保留期清扫有两个入口：`schedule_retention_sweep(memory, scope)` 清扫一个 scope，
   `schedule_global_retention_sweep(sweep, options)` 跑一趟跨 scope 的有界清扫（设计
   §16.4）。两者都是 Deferrable 类——清扫不阻塞 Task 路径；取消在 shutdown 时以
   `Cancelled` 错误结算 future。
+- 向量投影修复：`schedule_embedding_repair(indexer, memory, scope, options)` 跑一趟
+  有界修复（设计 §14.4/§17 的显式 maintenance task），Deferrable 类。修复 pass 的
+  结果同时进事件面：投影仍落后时发 `MemoryIndexLagged`（带 lag 计数），真的重建了才发
+  `MemoryIndexRebuilt`（带 repaired / failed / ineligible 计数）——设计 §20 的记忆面
+  事件口径，见
+  [DEC-064](../decisions/DEC-064-memory-event-surface.md)。
 - `begin_shutdown()` 返回 `SupervisorShutdownReport`（含 `critical_drain_complete`），
   按固定顺序停 producer、结算 Critical、回收 worker；`SupervisorToken` 是可移植的
   取消令牌。
