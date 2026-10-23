@@ -521,6 +521,17 @@ Result<void> MemoryRecord::validate() const {
     return Result<void>{};
 }
 
+Result<void> MemorySweepOptions::validate() const {
+    if (max_records == 0) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "a sweep pass must be allowed to touch at least one record");
+    }
+    if (deadline.count() < 0) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "sweep deadline must not be negative");
+    }
+    return Result<void>{};
+}
+
 Result<void> MemoryQuery::validate() const {
     if (scopes.empty()) {
         return memory_error(MemoryDomainCode::ScopeDenied,

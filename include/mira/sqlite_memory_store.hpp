@@ -54,8 +54,12 @@ struct RetrievalWeights final {
 // degrades retrieval quality and never blocks the control plane.
 //
 // The store also implements IMemoryEmbeddingIndex, so a host that supplies an
-// IEmbeddingProvider can drive the projection (design Context/Memory §14.3).
-class SqliteMemoryStore final : public IMemory, public IMemoryEmbeddingIndex {
+// IEmbeddingProvider can drive the projection (design Context/Memory §14.3),
+// and IMemoryRetentionSweep, so the store owner can run a bounded retention
+// pass over every scope (design Context/Memory §16.4).
+class SqliteMemoryStore final : public IMemory,
+                                public IMemoryEmbeddingIndex,
+                                public IMemoryRetentionSweep {
   public:
     [[nodiscard]] static Result<std::unique_ptr<SqliteMemoryStore>>
     open(kairo::Executor &executor, SqliteMemoryStoreOptions options,
@@ -86,6 +90,13 @@ class SqliteMemoryStore final : public IMemory, public IMemoryEmbeddingIndex {
     // Drops every embedding (e.g. after an embedding-model change); records
     // stay authoritative and retrieval degrades to exact/FTS until rebuilt.
     [[nodiscard]] Result<std::size_t> clear_embeddings() override;
+
+    // ---- Retention (cross-scope sweep) ----
+
+    // One bounded pass over every scope: expired records, version history
+    // and stale tombstones are reclaimed. The caller repeats the pass
+    // while the result reports more_pending (design Context/Memory §16.4).
+    [[nodiscard]] Result<MemoryCompactionResult> sweep(MemorySweepOptions options) override;
 
     [[nodiscard]] const StoreDiagnostics &diagnostics() const noexcept;
     // Queued-but-not-executed request count (bounded-queue observability).

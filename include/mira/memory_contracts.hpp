@@ -344,7 +344,31 @@ struct MemoryCompactionResult final {
     std::size_t versions_pruned = 0;
     // Tombstones older than the purge horizon.
     std::size_t tombstones_purged = 0;
+    // Erasures that failed and were rolled back. A failed purge is
+    // visible, never a silent skip; the record stays whole and the next
+    // pass retries it.
+    std::size_t erasures_failed = 0;
+    // Distinct scopes this sweep acted on.
+    std::size_t scopes_swept = 0;
+    // A bounded pass stopped at its bound and more work remains: the
+    // caller runs another pass.
+    bool more_pending = false;
     std::string note;
+};
+
+// Bounds for one cross-scope retention pass. A pass is bounded so a large
+// store is swept over several passes instead of one long transaction that
+// would outrun the store's operation timeout.
+struct MemorySweepOptions final {
+    // Maximum records the pass purges (expired records and tombstones).
+    std::size_t max_records = 512;
+    // Maximum version rows the pass prunes.
+    std::size_t max_versions = 4'096;
+    // Soft deadline for the pass; the pass stops early and reports
+    // more_pending.
+    std::chrono::milliseconds deadline{30'000};
+
+    [[nodiscard]] Result<void> validate() const;
 };
 
 // ---------------------------------------------------------------------------
@@ -382,6 +406,22 @@ class IMemory {
     // scope out of Context (query/apply reject for held scopes) until a retry
     // completes; the audit trail never records the erased statements.
     [[nodiscard]] virtual Result<ErasureResult> erase(const ErasureRequest &request) = 0;
+};
+
+// The store owner's retention surface: one bounded pass over every scope.
+//
+// It is deliberately not part of IMemory: every IMemory method is bound to
+// one scope, and a sweep that spans all scopes is the store owner's
+// operation, not a tenant-scoped one (design Context/Memory §16.4).
+// A durable store that has no global retention need not implement it.
+class IMemoryRetentionSweep {
+  public:
+    virtual ~IMemoryRetentionSweep() = default;
+
+    // One bounded pass: expired records, version history and stale
+    // tombstones are reclaimed across every scope. The caller repeats the
+    // pass while the result reports more_pending.
+    [[nodiscard]] virtual Result<MemoryCompactionResult> sweep(MemorySweepOptions options) = 0;
 };
 
 // ---------------------------------------------------------------------------
