@@ -1,6 +1,6 @@
 # 维护计划：记忆冲突检测的 claim key（2026-10）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M27 后维护轮）
 > 前置：[MNT-202610-31…34 embedding 生产者与投影](maintenance-2026-10-memory-embedding-provider.md)（Completed）
@@ -112,7 +112,9 @@
 - **依据**：[DEC-061](../decisions/DEC-061-memory-claim-key.md)；设计 §13.3、§13.4、
   §14.1、§16.2、§23。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
-  固定 SQLite amalgamation 3.53.4。基线提交 `96e3240`（PR #103 合并后的 master）。
+  固定 SQLite amalgamation 3.53.4。基线提交 `96e3240`（PR #103 合并后的 master）；
+  本轮经 [PR #104](https://github.com/Linductor-alkaid/mira/pull/104) 提交，合并提交
+  `7457091`（squash）。
 - **命令与结果**：
 
   | 命令 | 结果 |
@@ -129,6 +131,9 @@
   | `python3 tools/check_platform_boundary.py` | `Mira Core platform boundary is clean` |
   | `cmake --build build/debug --target format-check` | 通过（268 个文件） |
   | `mira_stateful_consumer` / `mira_working_context_host_consumer` / `mira_minimal_consumer` | 三个可执行消费端均正常退出（0） |
+  | `gh pr checks 104` | **24/24 通过**（push run 39901286559 与 pull_request run 39901290342 各 12 项，linux gcc/clang × Debug/Release、windows ×2、android arm64/x86_64、ASAN/UBSAN/TSAN、quality） |
+  | `git diff fc7668a origin/master` | 空——合并进 master 的树就是 CI 验证过的树 |
+  | 合并后在 master 上复验 | `ctest --preset debug -j 14` **111/111 通过**；三个消费端正常退出；架构 / 文档 / 平台边界 / 格式检查全过 |
 
 - **变异验证**：把冲突检索改回修复前的 `=` 前缀 + `exact_terms` 规则后重建，
   `mira_m4_claim_key_test` 出现三处断言失败（`duplicate-noop` 与 `superseded-existing`
