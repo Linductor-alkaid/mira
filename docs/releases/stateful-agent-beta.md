@@ -33,10 +33,18 @@ M4 交付 Mira 的有状态基线：以 EventStore/ArtifactStore 为事实源、
 supervisor 通过可选 `IEventStore` 以 Diagnostic 级别发出脱敏事件（设计
 Context/Memory §20 的 M4 实现面）：`ContextBuildStarted/Finished/Failed`、
 `ContextCheckpointRequested/Stored/Failed`、`MemoryQueryStarted/Finished/Degraded`、
-`MemoryMutationProposed/Applied`、`MemoryErasureRequested`、`MemoryErased`、
+`MemoryMutationProposed/Applied/Rejected`、`MemorySuperseded/Tombstoned`、
+`MemoryErasureRequested`、`MemoryErased`、`MemoryIndexLagged/Rebuilt`、
 `MemoryConsolidationStarted/Finished/Failed`、`ContextMemoryOperation*`（通用回退）。
 载荷仅含 label/类别/结论与计数，不含 memory 正文或凭据。存储层自身不直接发事件；
 其审计面是 `memory_erasure_log`（计数与原因，无正文）。
+
+事件口径（[DEC-064](../decisions/DEC-064-memory-event-surface.md)）：转移事件
+（`MemorySuperseded` / `MemoryTombstoned`）替换该次 mutation 的通用完成名，与 erasure
+路由报 `MemoryErased` 同一口径；投影事件（`MemoryIndexLagged` / `MemoryIndexRebuilt`）
+由显式维护任务路由 `schedule_embedding_repair()` 发出，修复 pass 发现投影仍落后时报
+lag、真的重建了才报 rebuilt；索引事件的载荷带 lag / scanned / repaired / failed /
+ineligible 计数。
 
 ## 4. 已知限制
 

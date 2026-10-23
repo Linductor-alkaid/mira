@@ -8,6 +8,7 @@
 #include <mira/core_contracts.hpp>
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
+#include <mira/memory_embedding.hpp>
 #include <mira/task_checkpoint.hpp>
 
 #include <atomic>
@@ -109,9 +110,15 @@ class ContextMemorySupervisor final {
     // Submits one operation. The returned future always resolves: with the
     // operation result, a rejection error, or a Cancelled error when a
     // deferrable operation is cancelled at shutdown.
+    //
+    // `outcome_event` names the event a successful operation reports; an
+    // empty name uses the label's default. It lets a routed operation
+    // report the transition it caused (a supersede, a tombstone) rather
+    // than the generic completion (design Context/Memory §20).
     template <typename T>
     [[nodiscard]] std::future<Result<T>> submit(std::string label, SupervisedOpClass op_class,
-                                                std::function<Result<T>(SupervisorToken)> op);
+                                                std::function<Result<T>(SupervisorToken)> op,
+                                                std::string outcome_event = {});
 
     // Convenience wrappers for the common routing decisions (§5 of the M4
     // plan). All of them are synchronous store/component calls wrapped in
@@ -180,6 +187,16 @@ class ContextMemorySupervisor final {
     // consumed like every other wrapper.
     [[nodiscard]] std::future<Result<MemoryCompactionResult>>
     schedule_global_retention_sweep(IMemoryRetentionSweep &sweep, MemorySweepOptions options);
+    // Vector projection repair (design Context/Memory §14.4/§17): one bounded
+    // pass that brings the rebuildable embedding projection back in line with
+    // the authoritative records. Deferrable class — a projection rebuild is
+    // deferrable by construction. The pass reports the projection's state as
+    // events: MemoryIndexLagged when it finds records without a vector, and
+    // MemoryIndexRebuilt when it repaired some. The future must be consumed
+    // like every other wrapper.
+    [[nodiscard]] std::future<Result<MemoryEmbeddingRepairReport>> schedule_embedding_repair(
+        MemoryEmbeddingIndexer &indexer, IMemory &memory, MemoryScope scope,
+        MemoryEmbeddingRepairOptions options = MemoryEmbeddingRepairOptions{});
 
     // Executes the §17.2 shutdown order once; subsequent submissions are
     // rejected. Does not close stores or the Executor (host-owned).
@@ -196,7 +213,7 @@ class ContextMemorySupervisor final {
     // caller may immediately read stats()/events, so accounting must already
     // be complete (this ordering is what the shutdown test relies on).
     [[nodiscard]] Result<void> submit_erased(
-        const std::string &label, SupervisedOpClass op_class,
+        const std::string &label, SupervisedOpClass op_class, const std::string &outcome_event,
         std::function<void(SupervisorToken, const std::function<void(bool failed, bool degraded,
                                                                      bool cancelled)> &settle)> op);
 
@@ -214,13 +231,14 @@ namespace supervisor_detail {
 } // namespace supervisor_detail
 
 template <typename T>
-std::future<Result<T>>
-ContextMemorySupervisor::submit(std::string label, SupervisedOpClass op_class,
-                                std::function<Result<T>(SupervisorToken)> op) {
+std::future<Result<T>> ContextMemorySupervisor::submit(std::string label,
+                                                       SupervisedOpClass op_class,
+                                                       std::function<Result<T>(SupervisorToken)> op,
+                                                       std::string outcome_event) {
     auto promise = std::make_shared<std::promise<Result<T>>>();
     auto future = promise->get_future();
     const auto rejection = submit_erased(
-        label, op_class,
+        label, op_class, outcome_event,
         [promise, op = std::move(op)](
             SupervisorToken token,
             const std::function<void(bool failed, bool degraded, bool cancelled)> &settle) mutable {

@@ -44,6 +44,12 @@
   claim，不再并存；`MemoryQuery::claim_key` 提供按主语的硬过滤，冲突检索在排序与
   多样性裁剪之前收窄候选集，Core 侧另做一次主语复核。见
   [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
+- §20 事件面：记忆面点名的七个事件此前从未发出（`ContextBuildFinished` /
+  `MemoryQueryFinished` / `MemoryMutationRejected` 落到通用回退，`MemorySuperseded` /
+  `MemoryTombstoned` / `MemoryIndexLagged` / `MemoryIndexRebuilt` 不存在）。现已补齐：
+  转移事件由变更类型命名并替换通用完成名，投影事件由显式维护任务路由发出，事件载荷
+  带计数不带正文。见
+  [DEC-064](../decisions/DEC-064-memory-event-surface.md)。
 - §16.4 保留期清扫：跨 scope 的清扫入口是独立的窄接口 `IMemoryRetentionSweep`
   （存储所有者的操作，不并入每个方法都绑定 scope 的 `IMemory`）。一趟 pass 有界
   （`MemorySweepOptions`），到上限停下并报告 `more_pending`；保留期清除失败整体回滚并
@@ -949,7 +955,7 @@ class IMemoryRetentionSweep {
 | Embedding/索引更新 | 普通有限任务或受控本地推理路径 | 可延迟、可重建 |
 | Memory consolidation | delayed/低优先级普通任务 | Task 终态不等待非关键候选 |
 | Retention/GC | soft periodic timer | 不与 realtime 混用；跨 scope 清扫入口见 §16.4，Deferrable 类 |
-| Full projection rebuild | 显式 maintenance task | 可暂停、可取消、报告进度 |
+| Full projection rebuild | 显式 maintenance task | 可暂停、可取消、报告进度；入口是 `schedule_embedding_repair()`，并发出 §20 的投影事件 |
 
 任何工作都不能创建私有线程池。SQLite、embedding/ONNX 或其他第三方库内部线程必须在 Provider
 边界显式配置和记录；Mira 发起的任务、Session 生命周期和 shutdown 仍由 Executor 管理。
@@ -1019,6 +1025,21 @@ class IMemoryRetentionSweep {
 - `MemoryConsolidationStarted/Finished/Failed`
 
 预算事件记录分区 token、估算质量、水位、选入/排除数量和 provider usage，不记录敏感正文。
+
+**记忆面的实现口径**（M4 记忆实现面，发布说明 §3 的同名清单）：
+
+- 事件由 supervisor 统一发出，存储层不发事件（它的审计面是 `memory_erasure_log`：
+  计数与原因，无正文）。
+- 转移事件（`MemorySuperseded` / `MemoryTombstoned`）**替换**该次 mutation 的通用完成名
+  （`MemoryMutationApplied`）——与 erasure 路由报 `MemoryErased` 同一口径：一次
+  supersede 是一次「记录被关闭」的转移，不是一次普通 mutation。
+- `MemoryIndexLagged` / `MemoryIndexRebuilt` 由**显式维护任务路由**（§17 的 Full
+  projection rebuild）发出：修复 pass 发现投影仍落后时报 lag，真的重建了才报 rebuilt。
+  lag 在存储层产生（statement 改变即丢弃向量），而存储层不发事件，因此这里是
+  「发现仍然落后」；当前值仍由查询结果的 `MemoryQueryResult::quality.index_lag`
+  报告。
+- 载荷只含 label / 类别 / 结论与**计数**（lag、scanned、repaired、failed、ineligible
+  等），不含 memory 正文、向量或凭据。
 
 建议指标：
 

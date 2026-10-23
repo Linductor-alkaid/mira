@@ -47,7 +47,7 @@ namespace {
 }
 
 [[nodiscard]] std::string finished_event_for(const std::string &label, bool failed, bool cancelled,
-                                             bool degraded) {
+                                             bool degraded, const std::string &outcome_event) {
     if (failed) {
         if (label == "context_prepare") {
             return "ContextBuildFailed";
@@ -61,6 +61,9 @@ namespace {
         if (label == "memory_query") {
             return "MemoryQueryDegraded";
         }
+        if (label == "mutation") {
+            return "MemoryMutationRejected";
+        }
         return "ContextMemoryOperationFailed";
     }
     if (cancelled) {
@@ -68,6 +71,18 @@ namespace {
     }
     if (degraded && label == "memory_query") {
         return "MemoryQueryDegraded";
+    }
+    // A routed operation may name the event its success reports: the
+    // transition it caused (a supersede, a tombstone) rather than the
+    // generic completion (design Context/Memory §20).
+    if (!outcome_event.empty()) {
+        return outcome_event;
+    }
+    if (label == "context_prepare") {
+        return "ContextBuildFinished";
+    }
+    if (label == "memory_query") {
+        return "MemoryQueryFinished";
     }
     if (label == "checkpoint") {
         return "ContextCheckpointStored";
@@ -85,6 +100,24 @@ namespace {
 }
 
 } // namespace
+
+// The lifecycle event a successful mutation reports. A supersede retires
+// its predecessor and a tombstone retires the record itself, and the design
+// names those transitions separately from the mutation itself (design
+// Context/Memory §20). An ordinary add or update reports the mutation.
+[[nodiscard]] std::string memory_mutation_transition_event(MemoryMutationType applied) {
+    switch (applied) {
+    case MemoryMutationType::Supersede:
+        return "MemorySuperseded";
+    case MemoryMutationType::Tombstone:
+        return "MemoryTombstoned";
+    case MemoryMutationType::Add:
+    case MemoryMutationType::Update:
+    case MemoryMutationType::Noop:
+        return "MemoryMutationApplied";
+    }
+    return "MemoryMutationApplied";
+}
 
 std::string supervised_op_class_name(SupervisedOpClass op_class) {
     switch (op_class) {
@@ -121,7 +154,7 @@ class ContextMemorySupervisor::Impl final {
     // The thunk invokes `settle` (accounting + events) before resolving the
     // caller's promise, so a resolved future implies settled accounting.
     [[nodiscard]] Result<void> dispatch(
-        const std::string &label, SupervisedOpClass op_class,
+        const std::string &label, SupervisedOpClass op_class, const std::string &outcome_event,
         std::function<void(SupervisorToken, const std::function<void(bool, bool, bool)> &)> thunk) {
         {
             std::lock_guard lock(mutex_);
@@ -142,12 +175,13 @@ class ContextMemorySupervisor::Impl final {
         const SupervisorToken token = op_class == SupervisedOpClass::Deferrable
                                           ? SupervisorToken(deferrable_stop_)
                                           : SupervisorToken{};
-        const auto settle = [this, label, op_class](bool failed, bool degraded, bool cancelled) {
+        const auto settle = [this, label, op_class, outcome_event](bool failed, bool degraded,
+                                                                   bool cancelled) {
             std::lock_guard lock(mutex_);
             if (cancelled) {
                 ++stats_.cancelled;
-                emit_locked(label, finished_event_for(label, false, true, false), op_class,
-                            "cancelled");
+                emit_locked(label, finished_event_for(label, false, true, false, outcome_event),
+                            op_class, "cancelled");
                 return;
             }
             if (failed) {
@@ -155,8 +189,8 @@ class ContextMemorySupervisor::Impl final {
             } else {
                 ++stats_.completed;
             }
-            emit_locked(label, finished_event_for(label, failed, false, degraded), op_class,
-                        failed ? "failed" : "completed");
+            emit_locked(label, finished_event_for(label, failed, false, degraded, outcome_event),
+                        op_class, failed ? "failed" : "completed");
         };
         try {
             auto future =
@@ -176,6 +210,18 @@ class ContextMemorySupervisor::Impl final {
             return supervisor_error(ErrorCode::Unavailable,
                                     "executor rejected the supervised operation");
         }
+    }
+
+    // Emits a projection event with the repair pass's counters. The payload
+    // carries counts only: no statement, no vector, no credential.
+    void emit_projection_event(const std::string &type, const MemoryEmbeddingRepairReport &report) {
+        std::lock_guard lock(mutex_);
+        emit_locked("embedding_repair", type, SupervisedOpClass::Deferrable, "completed",
+                    {{"lag", static_cast<std::int64_t>(report.index_lag)},
+                     {"scanned", static_cast<std::int64_t>(report.scanned)},
+                     {"repaired", static_cast<std::int64_t>(report.repaired)},
+                     {"failed", static_cast<std::int64_t>(report.failed)},
+                     {"ineligible", static_cast<std::int64_t>(report.ineligible)}});
     }
 
     SupervisorShutdownReport begin_shutdown() {
@@ -243,7 +289,8 @@ class ContextMemorySupervisor::Impl final {
 
     // Requires mutex_ held. Sink failures never propagate to the hot path.
     void emit_locked(const std::string &label, const std::string &type, SupervisedOpClass op_class,
-                     const std::string &outcome) {
+                     const std::string &outcome,
+                     const std::vector<std::pair<std::string, std::int64_t>> &counts = {}) {
         if (event_sink_ == nullptr || runtime_id_.is_nil() || session_id_.is_nil()) {
             return;
         }
@@ -256,6 +303,11 @@ class ContextMemorySupervisor::Impl final {
         object.emplace_back("label", label);
         object.emplace_back("class", supervised_op_class_name(op_class));
         object.emplace_back("outcome", outcome);
+        // Counts, never content: the payload reports how much happened, not
+        // what it happened to (design Context/Memory §20).
+        for (const auto &[name, value] : counts) {
+            object.emplace_back(name, static_cast<std::int64_t>(value));
+        }
         request.payload.data = to_json_string(JsonValue(std::move(object)));
         request.payload.classification = EventClass::Diagnostic;
         auto receipt = event_sink_->append(request);
@@ -293,11 +345,11 @@ ContextMemorySupervisor::ContextMemorySupervisor(kairo::Executor &executor, Supe
 ContextMemorySupervisor::~ContextMemorySupervisor() { (void)impl_->begin_shutdown(); }
 
 Result<void> ContextMemorySupervisor::submit_erased(
-    const std::string &label, SupervisedOpClass op_class,
+    const std::string &label, SupervisedOpClass op_class, const std::string &outcome_event,
     std::function<void(SupervisorToken, const std::function<void(bool failed, bool degraded,
                                                                  bool cancelled)> &settle)>
         op) {
-    return impl_->dispatch(label, op_class, std::move(op));
+    return impl_->dispatch(label, op_class, outcome_event, std::move(op));
 }
 
 std::future<Result<std::optional<TaskCheckpoint>>>
@@ -410,10 +462,17 @@ ContextMemorySupervisor::schedule_working_context_curate(
 
 std::future<Result<MemoryMutationResult>>
 ContextMemorySupervisor::schedule_mutation(IMemory &memory, MemoryMutation mutation) {
-    return submit<MemoryMutationResult>("mutation", SupervisedOpClass::Critical,
-                                        [&memory, mutation = std::move(mutation)](SupervisorToken) {
-                                            return memory.apply(mutation);
-                                        });
+    // A supersede or a tombstone is a lifecycle transition, and the design
+    // names it separately from the mutation that caused it (design
+    // Context/Memory §20). A rejected mutation reports the rejection
+    // instead, so the transition name only applies to the success path.
+    const std::string transition = memory_mutation_transition_event(mutation.type);
+    return submit<MemoryMutationResult>(
+        "mutation", SupervisedOpClass::Critical,
+        [&memory, mutation = std::move(mutation)](SupervisorToken) {
+            return memory.apply(mutation);
+        },
+        transition);
 }
 
 std::future<Result<ErasureResult>>
@@ -447,6 +506,35 @@ ContextMemorySupervisor::schedule_global_retention_sweep(IMemoryRetentionSweep &
                     supervisor_error(ErrorCode::Cancelled, "global retention sweep cancelled"));
             }
             return sweep.sweep(options);
+        });
+}
+
+std::future<Result<MemoryEmbeddingRepairReport>>
+ContextMemorySupervisor::schedule_embedding_repair(MemoryEmbeddingIndexer &indexer, IMemory &memory,
+                                                   MemoryScope scope,
+                                                   MemoryEmbeddingRepairOptions options) {
+    return submit<MemoryEmbeddingRepairReport>(
+        "embedding_repair", SupervisedOpClass::Deferrable,
+        [&indexer, &memory, scope = std::move(scope), options,
+         this](SupervisorToken token) -> Result<MemoryEmbeddingRepairReport> {
+            if (token.stop_requested()) {
+                return Result<MemoryEmbeddingRepairReport>(
+                    supervisor_error(ErrorCode::Cancelled, "embedding repair cancelled"));
+            }
+            auto repaired = indexer.repair(memory, scope, options);
+            if (!repaired) {
+                return repaired;
+            }
+            // The projection's state is observable: it is still behind the
+            // authoritative records, and this pass brought part of it back
+            // (design Context/Memory §20).
+            if (repaired.value().index_lag > 0) {
+                impl_->emit_projection_event("MemoryIndexLagged", repaired.value());
+            }
+            if (repaired.value().repaired > 0) {
+                impl_->emit_projection_event("MemoryIndexRebuilt", repaired.value());
+            }
+            return repaired;
         });
 }
 
