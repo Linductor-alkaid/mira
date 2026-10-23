@@ -461,6 +461,24 @@ class SqliteMemoryStore::Impl final {
             static_cast<std::uint64_t>(sqlite3_column_int64(query.get(), 0)));
     }
 
+    // Drops the vector of one record. The vector index is a projection of
+    // the authoritative statement (design §14.1/§16.2): a record whose text
+    // changed, or which left the live plane, must not keep a vector that no
+    // longer describes it. The record then counts as index lag until the
+    // projection is rebuilt.
+    [[nodiscard]] static Result<void> drop_embedding(sqlite3 *db, const MemoryId &id) {
+        Statement drop(db, "DELETE FROM memory_embeddings WHERE record_id = ?1");
+        if (!drop.valid()) {
+            return store_error(ErrorCode::Internal, "embedding drop failed to prepare");
+        }
+        const std::string text = id.to_string();
+        sqlite3_bind_text(drop.get(), 1, text.c_str(), -1, storage::transient_copy());
+        if (sqlite3_step(drop.get()) != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "embedding drop failed");
+        }
+        return Result<void>{};
+    }
+
     [[nodiscard]] static Result<std::optional<MemoryRecord>> read_record(sqlite3 *db,
                                                                          const MemoryId &id) {
         Statement query(
@@ -704,6 +722,10 @@ class SqliteMemoryStore::Impl final {
                 // The retired row is retained by the purge horizon instead
                 // (design §13.4), so the claim's expiry no longer applies.
                 proposed.expires_at.reset();
+                const auto dropped = drop_embedding(db, *mutation.target);
+                if (!dropped) {
+                    return dropped.error();
+                }
                 new_version = *existing_version.value() + 1;
                 break;
             }
@@ -722,6 +744,12 @@ class SqliteMemoryStore::Impl final {
                 // ends with the supersession, and the row stays readable for
                 // the bitemporal as-of chain.
                 closed.expires_at.reset();
+                // The predecessor left the live plane, so its vector stops
+                // describing a retrievable record.
+                const auto dropped = drop_embedding(db, *mutation.target);
+                if (!dropped) {
+                    return dropped.error();
+                }
                 const auto closed_write =
                     write_record(db, closed, scope_key, *existing_version.value() + 1);
                 if (!closed_write) {
@@ -737,6 +765,17 @@ class SqliteMemoryStore::Impl final {
             // Update is in place: the target keeps its identity and version
             // history; only Supersede introduces a fresh record id.
             proposed.id = *mutation.target;
+            // The vector index projects the statement. When the statement
+            // changes, the stored vector no longer describes the record, so
+            // it is dropped: the record counts as index lag until the
+            // projection is rebuilt, rather than answering semantic queries
+            // with the previous text.
+            if (proposed.statement != existing.value()->statement) {
+                const auto dropped = drop_embedding(db, *mutation.target);
+                if (!dropped) {
+                    return dropped.error();
+                }
+            }
             new_version = *existing_version.value() + 1;
             break;
         }
@@ -1853,6 +1892,25 @@ Result<std::size_t> SqliteMemoryStore::index_lag() const {
             return store_error(ErrorCode::Internal, "index lag failed");
         }
         return static_cast<std::size_t>(sqlite3_column_int64(lag.get(), 0));
+    });
+}
+
+Result<bool> SqliteMemoryStore::has_embedding(MemoryId record) const {
+    return impl_->channel_->run<bool>([record](sqlite3 *db) -> Result<bool> {
+        Statement query(db, "SELECT 1 FROM memory_embeddings WHERE record_id = ?1");
+        if (!query.valid()) {
+            return store_error(ErrorCode::Internal, "embedding probe failed to prepare");
+        }
+        const std::string id = record.to_string();
+        sqlite3_bind_text(query.get(), 1, id.c_str(), -1, storage::transient_copy());
+        const int step = sqlite3_step(query.get());
+        if (step == SQLITE_ROW) {
+            return true;
+        }
+        if (step != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "embedding probe failed");
+        }
+        return false;
     });
 }
 

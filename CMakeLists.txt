@@ -94,6 +94,7 @@ add_library(mira_core
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
+    src/context/memory_embedding.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp
