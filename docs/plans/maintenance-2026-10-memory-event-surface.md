@@ -1,6 +1,6 @@
 # 维护计划：记忆面事件面补齐（2026-10）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M27 后维护轮）
 > 前置：[MNT-202610-43…44 M22 评估确定性](maintenance-2026-10-m22-eval-determinism.md)（Completed）
@@ -109,7 +109,8 @@
   §13.4；发布说明 §3。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
   固定 SQLite amalgamation 3.53.4。基线提交 `4029c37`（PR #106 合并并结项后的
-  master）。
+  master）；本轮经 [PR #107](https://github.com/Linductor-alkaid/mira/pull/107) 提交，
+  合并提交 `62ae5cb`（squash）。
 - **命令与结果**：
 
   | 命令 | 结果 |
@@ -126,6 +127,9 @@
   | `python3 tools/check_platform_boundary.py` | `Mira Core platform boundary is clean` |
   | `cmake --build build/debug --target format-check` | 通过（269 个文件） |
   | `mira_stateful_consumer` / `mira_working_context_host_consumer` / `mira_minimal_consumer` | 三个可执行消费端均正常退出（0） |
+  | `gh pr checks 107` | **24/24 通过**（push run 39964261408 与 pull_request run 39965625979 各 12 项） |
+  | `git diff 639269c origin/master` | 空——合并进 master 的树就是 CI 验证过的树 |
+  | 合并后在 master 上复验 | `ctest --preset debug -j 14` **112/112 通过** |
 
 - **变异验证**：
   - 把命名映射改回通用回退（`ContextBuildFinished` / `MemoryQueryFinished` /
