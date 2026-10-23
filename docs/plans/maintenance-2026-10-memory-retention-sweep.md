@@ -143,6 +143,13 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
 - **变异验证**：三个修正各还原一次，各有一个用例失败：去掉 savepoint 回滚 → 失败清除
   的记录被部分删除；去掉 hold 排除 → 被 hold 的 scope 的记录被清扫掉；让记录级清除重新
   释放 hold → 按 scope 清扫后 hold 消失、scope 回到 Context。
+- **CI 上的一次既有抖动**（记录，不掩盖）：PR #105 的首个 push run 中
+  `linux (clang, Debug)` 的 `mira_m22_auto_trigger_eval` 报 G2 门失败
+  （`coexistence mismatches 1`）。同一份代码的下一个 run（只差一个纯文档提交）该用例
+  通过——两份 run 的差异只有那一个文档提交，故判定为既有抖动而非本轮回归。依据：��用例
+  的判定含一个自旋等待（最多 1e8 次 `yield` 等存储水位到达目标），在 CI 的双核 runner 上
+  属于时序敏感；且该评估不链接记忆存储实现（本轮的存储改动不在其二进制里），只共用
+  supervisor 与契约头文件。本轮未修改该用例。
 - **同步**：`docs/design/context_and_memory_design.md`（§0、§8.3、§16.4、§17）、
   `docs/api/context-memory.md`、
   `docs/decisions/DEC-062-memory-retention-sweep.md`（新增）、本计划（新增）。
