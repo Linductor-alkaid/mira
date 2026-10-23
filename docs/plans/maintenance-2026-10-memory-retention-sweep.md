@@ -121,10 +121,10 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
   | `cmake --build --preset debug -j 14` | 通过，无告警（改动文件 0 条） |
   | `ctest --preset debug -j 14` | **112/112 通过** |
   | `ctest --test-dir build/debug -R "m4\|m13\|m23" -j 8` | 20/20 通过 |
-  | `cmake --build --preset static-analysis -j 14` | 见下 |
-  | `cmake --build --preset asan -j 14` + `ctest --test-dir build/asan -R "m4\|m13\|m23" -j 8` | 见下 |
-  | `cmake --build --preset ubsan -j 14` + `ctest --test-dir build/ubsan -R "m4\|m13\|m23" -j 8` | 见下 |
-  | `cmake --build --preset tsan -j 14` + `setarch x86_64 -R ctest --test-dir build/tsan -R "m4\|m13\|m23" -j 4` | 见下 |
+  | `cmake --build --preset static-analysis -j 14` | 通过；改动文件 0 条告警（余下全部来自 `third_party/kairo` 与 libstdc++ 头文件实例化） |
+  | `cmake --build --preset asan -j 14` + `ctest --test-dir build/asan -R "m4\|m13\|m23" -j 8` | **20/20 通过**，无 ASan 报告 |
+  | `cmake --build --preset ubsan -j 14` + `ctest --test-dir build/ubsan -R "m4\|m13\|m23" -j 8` | **20/20 通过**，无 UBSan 报告 |
+  | `cmake --build --preset tsan -j 14` + `setarch x86_64 -R ctest --test-dir build/tsan -R "m4\|m13\|m23" -j 4` | **20/20 通过**，0 条 ThreadSanitizer 告警 |
   | `cmake --build build/debug --target architecture-check` | `architecture policy is clean`（8 模块，17 条既有 baseline 抑制项，0 条 stale） |
   | `python3 tools/check_docs.py .` | `Markdown links and fences: OK` |
   | `python3 tools/check_platform_boundary.py` | `Mira Core platform boundary is clean` |
@@ -140,6 +140,9 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
     但未测万级 scope 的实际耗时。
   - 未验证「清扫与隐私删除并发」的时序：两者跑在同一条单写者通道上，天然串行；本轮用
     「被 hold 的 scope 不参与清扫」覆盖可观测的那一半。
+- **变异验证**：三个修正各还原一次，各有一个用例失败：去掉 savepoint 回滚 → 失败清除
+  的记录被部分删除；去掉 hold 排除 → 被 hold 的 scope 的记录被清扫掉；让记录级清除重新
+  释放 hold → 按 scope 清扫后 hold 消失、scope 回到 Context。
 - **同步**：`docs/design/context_and_memory_design.md`（§0、§8.3、§16.4、§17）、
   `docs/api/context-memory.md`、
   `docs/decisions/DEC-062-memory-retention-sweep.md`（新增）、本计划（新增）。
