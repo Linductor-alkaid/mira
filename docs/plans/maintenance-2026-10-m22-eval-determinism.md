@@ -1,6 +1,6 @@
 # 维护计划：M22 自动触发评估的确定性（2026-10）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M27 后维护轮）
 > 前置：[M22 Stage W3](m22-working-context-stage-w3.md)（Completed）、
@@ -113,7 +113,8 @@ coexistence 场景**故意**在第一个调用停在闸门里的时候装入第�
   「测试矩阵」条目；Context Curator 设计 §8–§9。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
   固定 SQLite amalgamation 3.53.4。基线提交 `e81b493`（PR #105 合并并结项后的
-  master）。
+  master）；本轮经 [PR #106](https://github.com/Linductor-alkaid/mira/pull/106) 提交，
+  合并提交 `5f2d4ab`（squash）。
 - **定位过程**：
   - CI 现象：PR #105 的首个 push run 中 `linux (clang, Debug)` 的
     `mira_m22_auto_trigger_eval` 报 G2 门失败（`coexistence mismatches 1`）；下一个
@@ -138,6 +139,9 @@ coexistence 场景**故意**在第一个调用停在闸门里的时候装入第�
   | `python3 tools/check_docs.py .` | `Markdown links and fences: OK` |
   | `python3 tools/check_platform_boundary.py` | `Mira Core platform boundary is clean` |
   | `cmake --build build/debug --target format-check` | 通过（269 个文件） |
+  | `gh pr checks 106` | **24/24 通过**（push run 39925789339 与 pull_request run 39928421745 各 12 项） |
+  | `git diff a511064 origin/master` | 空——合并进 master 的树就是 CI 验证过的树 |
+  | 合并后在 master 上复验 | `ctest --preset debug -j 14` **112/112 通过** |
 
 - **变异验证**：把 provider 改回「闸门之后读脚本」，评估 **8/8** 失败（G2 门）——
   新守卫是确定性的：共享计划必然被抓到，而修复前只有 1/8 的概率被 CI 抓到。
