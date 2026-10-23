@@ -161,6 +161,7 @@ mira_add_m4_store_test(mira_m4_consolidation_test m4/m4_consolidation_test.cpp)
 mira_add_m4_store_test(mira_m4_stateful_replay_test m4/m4_stateful_replay_test.cpp)
 mira_add_m4_store_test(mira_m4_memory_embedding_test m4/m4_memory_embedding_test.cpp)
 mira_add_m4_store_test(mira_m4_claim_key_test m4/m4_claim_key_test.cpp)
+mira_add_m4_store_test(mira_m4_retention_sweep_test m4/m4_retention_sweep_test.cpp)
 mira_add_m4_test(mira_m4_continuation_test m4/m4_continuation_test.cpp)
 mira_add_m4_test(mira_m4_supervisor_test m4/m4_supervisor_test.cpp)
 

@@ -533,7 +533,13 @@ class SqliteMemoryStore::Impl final {
     [[nodiscard]] static Result<void> write_record(sqlite3 *db, const MemoryRecord &record,
                                                    const std::string &scope_key,
                                                    std::uint64_t version) {
-        const std::string document = to_json_string(memory_record_to_json(record));
+        // The stored document carries the store's version, not the caller's:
+        // the version is the optimistic-concurrency token the backend sets on
+        // read (mira/memory_contracts.hpp), so a read-modify-write cycle
+        // must not observe a stale one.
+        MemoryRecord indexed = record;
+        indexed.version = version;
+        const std::string document = to_json_string(memory_record_to_json(indexed));
         Statement upsert(
             db, "INSERT INTO memory_records(id, scope_key, scope_kind, subject_id, tenant_id,"
                 " kind, statement, evidence, valid_from, valid_until, recorded_at,"
@@ -555,8 +561,6 @@ class SqliteMemoryStore::Impl final {
         if (!upsert.valid()) {
             return store_error(ErrorCode::Internal, "record upsert failed to prepare");
         }
-        MemoryRecord indexed = record;
-        indexed.version = version;
         bind_record_insert(upsert, indexed, scope_key, version);
         if (record.evidence.has_value()) {
             const std::string evidence =
@@ -1353,12 +1357,25 @@ class SqliteMemoryStore::Impl final {
         const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
         bool failed = false;
         std::string failure_note;
+        std::optional<MemoryScope> record_scope;
         for (const auto &id : targets.value().ids) {
             auto evidence = evidence_artifact(db, id);
             if (!evidence) {
                 failed = true;
                 failure_note = "evidence lookup failed";
                 break;
+            }
+            // Resolve the record's scope before the deletions: a partial
+            // failure has to name the scope it holds out of Context, and
+            // the row is gone by the time the failure is detected.
+            if (!request.scope.has_value() && !record_scope.has_value()) {
+                const auto parsed = MemoryId::parse(id);
+                if (parsed) {
+                    auto existing = read_record(db, *parsed);
+                    if (existing && existing.value().has_value()) {
+                        record_scope = existing.value()->scope;
+                    }
+                }
             }
             struct Step final {
                 const char *sql = nullptr;
@@ -1452,11 +1469,18 @@ class SqliteMemoryStore::Impl final {
             result.note = failure_note + "; scope held out of context, retry the erasure";
             if (request.scope.has_value()) {
                 result.held_scope = *request.scope;
+            } else if (record_scope.has_value()) {
+                // A record-scoped erasure still holds its own scope out of
+                // Context until the retry completes (design §8.3).
+                result.held_scope = *record_scope;
             }
             return result;
         }
-        // A completed erasure releases any hold on the scope.
-        if (!scope_key.empty()) {
+        // A completed scope erasure releases any hold on the scope. A
+        // record-level erase does not: the hold means a privacy erasure is
+        // still pending for that scope, and a retention purge of one
+        // unrelated record must not put the scope back into Context.
+        if (!scope_key.empty() && request.scope.has_value()) {
             Statement release(db, "DELETE FROM memory_scope_holds WHERE scope_key = ?1");
             if (release.valid()) {
                 sqlite3_bind_text(release.get(), 1, scope_key.c_str(), -1,
@@ -1535,13 +1559,64 @@ class SqliteMemoryStore::Impl final {
         return settled;
     }
 
+    // Purges one record inside the caller's transaction.
+    //
+    // A failed erasure is rolled back to its savepoint: the partial
+    // deletions erase_locked already made must not survive a failure, so
+    // the record stays whole and the next pass retries it. Returns true
+    // when the record was purged and false when the erasure failed and was
+    // rolled back — a failed purge is counted, never silently skipped.
+    //
+    // A retention failure does not hold the scope out of Context: the
+    // record it could not reclaim is already expired, so it is excluded
+    // from retrieval anyway, and the scope's live claims are untouched.
+    // Holding the scope is the privacy path's rule (design §8.3).
+    [[nodiscard]] Result<bool> purge_record(sqlite3 *db, const std::string &id,
+                                            bool include_artifacts, const char *reason) {
+        const auto parsed = MemoryId::parse(id);
+        if (!parsed) {
+            return Result<bool>(false);
+        }
+        const auto savepoint = storage::exec_sql(db, "SAVEPOINT mira_purge");
+        if (!savepoint) {
+            return savepoint.error();
+        }
+        ErasureRequest request;
+        request.record = *parsed;
+        request.reason = reason;
+        request.include_artifacts = include_artifacts;
+        auto erased = erase_locked(db, request);
+        if (!erased) {
+            const auto undone = storage::exec_sql(db, "ROLLBACK TO mira_purge");
+            if (!undone) {
+                return undone.error();
+            }
+            (void)storage::exec_sql(db, "RELEASE mira_purge");
+            return erased.error();
+        }
+        if (erased.value().status == ErasureStatus::Complete) {
+            const auto released = storage::exec_sql(db, "RELEASE mira_purge");
+            if (!released) {
+                return released.error();
+            }
+            return Result<bool>(true);
+        }
+        // Partial failure: undo the partial deletions. The record survives
+        // whole and the next pass retries the reclamation.
+        const auto undone = storage::exec_sql(db, "ROLLBACK TO mira_purge");
+        if (!undone) {
+            return undone.error();
+        }
+        (void)storage::exec_sql(db, "RELEASE mira_purge");
+        return Result<bool>(false);
+    }
+
     [[nodiscard]] Result<MemoryCompactionResult> compact(sqlite3 *db, const MemoryScope &scope) {
         const auto writable = check_writable();
         if (!writable) {
             return writable.error();
         }
         MemoryCompactionResult result;
-        std::vector<std::string> pending_holds;
         const std::string key = scope_key_of(scope);
         const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
         Transaction transaction(db);
@@ -1571,22 +1646,14 @@ class SqliteMemoryStore::Impl final {
                 return store_error(ErrorCode::Internal, "expiry scan failed");
             }
             for (const auto &id : expired) {
-                ErasureRequest request;
-                if (auto parsed = MemoryId::parse(id); parsed) {
-                    request.record = parsed;
-                } else {
-                    continue;
+                const auto purged = purge_record(db, id, true, "retention-expiry");
+                if (!purged) {
+                    return purged.error();
                 }
-                request.reason = "retention-expiry";
-                request.include_artifacts = true;
-                const auto erased = erase_locked(db, request);
-                if (!erased) {
-                    return erased.error();
-                }
-                if (erased.value().status == ErasureStatus::Complete) {
+                if (purged.value()) {
                     result.expired_records_purged += 1;
-                } else if (erased.value().held_scope.has_value()) {
-                    pending_holds.emplace_back(scope_key_of(*erased.value().held_scope));
+                } else {
+                    result.erasures_failed += 1;
                 }
             }
         }
@@ -1635,22 +1702,14 @@ class SqliteMemoryStore::Impl final {
                 return store_error(ErrorCode::Internal, "tombstone scan failed");
             }
             for (const auto &id : tombstoned) {
-                ErasureRequest request;
-                if (auto parsed = MemoryId::parse(id); parsed) {
-                    request.record = parsed;
-                } else {
-                    continue;
+                const auto purged = purge_record(db, id, false, "retention-expiry");
+                if (!purged) {
+                    return purged.error();
                 }
-                request.reason = "retention-expiry";
-                request.include_artifacts = false;
-                const auto erased = erase_locked(db, request);
-                if (!erased) {
-                    return erased.error();
-                }
-                if (erased.value().status == ErasureStatus::Complete) {
+                if (purged.value()) {
                     result.tombstones_purged += 1;
-                } else if (erased.value().held_scope.has_value()) {
-                    pending_holds.emplace_back(scope_key_of(*erased.value().held_scope));
+                } else {
+                    result.erasures_failed += 1;
                 }
             }
         }
@@ -1658,8 +1717,181 @@ class SqliteMemoryStore::Impl final {
         if (!commit) {
             return commit.error();
         }
-        for (const auto &hold_key : pending_holds) {
-            record_pending_hold(db, hold_key, "retention-expiry");
+        result.scopes_swept = 1;
+        if (result.erasures_failed > 0) {
+            result.note =
+                "some retention erasures failed and were rolled back; the next pass retries them";
+        }
+        return result;
+    }
+
+    // One bounded pass over every scope (design Context/Memory §16.4).
+    //
+    // The pass is the same three phases the per-scope compaction runs, but
+    // unscoped and bounded: expired records, version history and stale
+    // tombstones are reclaimed across the whole store, and the pass stops
+    // at its bounds and reports more_pending so a large store is swept
+    // over several passes instead of one long transaction.
+    [[nodiscard]] Result<MemoryCompactionResult> sweep(sqlite3 *db, MemorySweepOptions options) {
+        const auto writable = check_writable();
+        if (!writable) {
+            return writable.error();
+        }
+        const auto valid = options.validate();
+        if (!valid) {
+            return valid.error();
+        }
+        MemoryCompactionResult result;
+        std::set<std::string> scopes;
+        const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
+        const auto deadline_point = std::chrono::steady_clock::now() + options.deadline;
+        bool deadline_hit = false;
+
+        Transaction transaction(db);
+        if (!transaction.valid()) {
+            return store_error(ErrorCode::Internal, "sweep transaction rejected");
+        }
+
+        // A record is a candidate when it is expired (or a stale tombstone)
+        // and its scope is not held out of Context. Held scopes are skipped
+        // entirely: a privacy erasure owns them until it completes, and a
+        // retention pass must neither touch them nor release their hold.
+        struct Candidate final {
+            std::string id;
+            std::string scope_key;
+        };
+        const auto collect = [&db](const char *sql, std::int64_t bound, std::size_t limit,
+                                   std::vector<Candidate> &out) -> Result<void> {
+            Statement query(db, sql);
+            if (!query.valid()) {
+                return store_error(ErrorCode::Internal, "sweep scan failed to prepare");
+            }
+            sqlite3_bind_int64(query.get(), 1, bound);
+            sqlite3_bind_int64(query.get(), 2, static_cast<std::int64_t>(limit));
+            int step = sqlite3_step(query.get());
+            while (step == SQLITE_ROW) {
+                const auto *id_text =
+                    reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 0));
+                const auto *scope_text =
+                    reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 1));
+                if (id_text != nullptr) {
+                    Candidate candidate;
+                    candidate.id = id_text;
+                    if (scope_text != nullptr) {
+                        candidate.scope_key = scope_text;
+                    }
+                    out.push_back(std::move(candidate));
+                }
+                step = sqlite3_step(query.get());
+            }
+            if (step != SQLITE_DONE) {
+                return store_error(ErrorCode::Internal, "sweep scan failed");
+            }
+            return Result<void>{};
+        };
+
+        // Phase 1: expired records across every scope.
+        {
+            std::vector<Candidate> expired;
+            const auto scanned =
+                collect("SELECT id, scope_key FROM memory_records WHERE expires_at IS NOT NULL"
+                        " AND expires_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
+                        " memory_scope_holds) ORDER BY expires_at LIMIT ?2",
+                        now, options.max_records, expired);
+            if (!scanned) {
+                return scanned.error();
+            }
+            if (expired.size() >= options.max_records) {
+                result.more_pending = true;
+            }
+            for (const auto &candidate : expired) {
+                if (std::chrono::steady_clock::now() >= deadline_point) {
+                    deadline_hit = true;
+                    break;
+                }
+                const auto purged = purge_record(db, candidate.id, true, "retention-expiry");
+                if (!purged) {
+                    return purged.error();
+                }
+                scopes.insert(candidate.scope_key);
+                if (purged.value()) {
+                    result.expired_records_purged += 1;
+                } else {
+                    result.erasures_failed += 1;
+                }
+            }
+        }
+        // Phase 2: version history beyond the keep window, every scope.
+        {
+            Statement prune(db,
+                            "DELETE FROM memory_versions WHERE rowid IN (SELECT rowid FROM"
+                            " memory_versions WHERE record_id IN (SELECT id FROM memory_records)"
+                            " AND version <= (SELECT MAX(version) FROM memory_versions v2"
+                            " WHERE v2.record_id = memory_versions.record_id) - ?1 LIMIT ?2)");
+            if (!prune.valid()) {
+                return store_error(ErrorCode::Internal, "version prune failed to prepare");
+            }
+            sqlite3_bind_int64(prune.get(), 1,
+                               static_cast<std::int64_t>(options_.keep_versions_per_record));
+            sqlite3_bind_int64(prune.get(), 2, static_cast<std::int64_t>(options.max_versions));
+            if (sqlite3_step(prune.get()) != SQLITE_DONE) {
+                return store_error(ErrorCode::Internal, "version prune failed");
+            }
+            const auto pruned = static_cast<std::size_t>(sqlite3_changes(db));
+            result.versions_pruned += pruned;
+            if (pruned >= options.max_versions) {
+                result.more_pending = true;
+            }
+        }
+        // Phase 3: tombstones past the purge horizon (0 keeps them forever).
+        if (options_.purge_horizon.count() > 0) {
+            const std::int64_t horizon =
+                now - std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::duration_cast<std::chrono::seconds>(options_.purge_horizon))
+                          .count();
+            std::vector<Candidate> tombstoned;
+            const auto scanned =
+                collect("SELECT id, scope_key FROM memory_records WHERE status = 'tombstoned'"
+                        " AND updated_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
+                        " memory_scope_holds) ORDER BY updated_at LIMIT ?2",
+                        horizon, options.max_records, tombstoned);
+            if (!scanned) {
+                return scanned.error();
+            }
+            if (tombstoned.size() >= options.max_records) {
+                result.more_pending = true;
+            }
+            for (const auto &candidate : tombstoned) {
+                if (std::chrono::steady_clock::now() >= deadline_point) {
+                    deadline_hit = true;
+                    break;
+                }
+                const auto purged = purge_record(db, candidate.id, false, "retention-expiry");
+                if (!purged) {
+                    return purged.error();
+                }
+                scopes.insert(candidate.scope_key);
+                if (purged.value()) {
+                    result.tombstones_purged += 1;
+                } else {
+                    result.erasures_failed += 1;
+                }
+            }
+        }
+
+        const auto commit = transaction.commit();
+        if (!commit) {
+            return commit.error();
+        }
+        result.scopes_swept = scopes.size();
+        if (deadline_hit) {
+            result.more_pending = true;
+        }
+        if (result.erasures_failed > 0) {
+            result.note =
+                "some retention erasures failed and were rolled back; the next pass retries them";
+        } else if (deadline_hit) {
+            result.note = "sweep deadline reached; more work remains";
         }
         return result;
     }
@@ -1852,6 +2084,11 @@ Result<MemoryMutationResult> SqliteMemoryStore::apply(const MemoryMutation &muta
 Result<MemoryCompactionResult> SqliteMemoryStore::compact(const MemoryScope &scope) {
     return impl_->channel_->run<MemoryCompactionResult>(
         [this, &scope](sqlite3 *db) { return impl_->compact(db, scope); });
+}
+
+Result<MemoryCompactionResult> SqliteMemoryStore::sweep(MemorySweepOptions options) {
+    return impl_->channel_->run<MemoryCompactionResult>(
+        [this, options](sqlite3 *db) { return impl_->sweep(db, options); });
 }
 
 Result<ErasureResult> SqliteMemoryStore::erase(const ErasureRequest &request) {

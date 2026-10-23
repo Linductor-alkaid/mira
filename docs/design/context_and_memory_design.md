@@ -44,6 +44,11 @@
   claim，不再并存；`MemoryQuery::claim_key` 提供按主语的硬过滤，冲突检索在排序与
   多样性裁剪之前收窄候选集，Core 侧另做一次主语复核。见
   [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
+- §16.4 保留期清扫：跨 scope 的清扫入口是独立的窄接口 `IMemoryRetentionSweep`
+  （存储所有者的操作，不并入每个方法都绑定 scope 的 `IMemory`）。一趟 pass 有界
+  （`MemorySweepOptions`），到上限停下并报告 `more_pending`；保留期清除失败整体回滚并
+  计数，不把 scope 挡在 Context 之外；被 hold 的 scope 不参与清扫。见
+  [DEC-062](../decisions/DEC-062-memory-retention-sweep.md)。
 - §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
   当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
   §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
@@ -447,6 +452,10 @@ expired 的记录行在其自身 scope 内仍可按 id 读取，供审计与保�
 `apply()` 的 scope 判定先于版本比较：跨 scope 的调用方在 `expected_version` 正确与否时
 得到同一个 `ScopeDenied`，否则两种不同的错误码会成为跨 scope 的版本预言机。同 scope 内
 的乐观并发语义不变。
+
+跨 scope 的保留期清扫是存储所有者的操作，不在 `IMemory` 内：它由独立的窄接口
+`IMemoryRetentionSweep` 承担（§16.4）。`IMemory` 的每个方法都绑定一个 scope，把一个
+没有 scope 的方法塞进去会让「谁能清扫全部租户的数据」这个问题失去答案。
 
 `apply()` 的幂等台账同样按 scope 承认：台账条目记录其归属 scope，跨 scope 复用
 `mutation_id` 返回 `ScopeDenied`（见 §16.2）。
@@ -890,6 +899,45 @@ claim key 不是存储列，而是查询时按 statement 现算的过滤条件�
   下都被拒绝重放——宁可拒绝一次重放，也不把无法归属的 scope 的记录 id 交给持有该 id
   的调用方。迁移在写入前完成，不产生半迁移状态。
 
+### 16.4 保留期清扫（Retention sweep）
+
+`IMemory::compact(scope)` 只清扫一个 scope：宿主必须先知道要回收哪个 scope，才谈得上回收。
+没有跨 scope 的入口，宿主就只能回收「它已经知道的」——而 TTL 到期、墓碑过期、版本历史增长
+这些都不知道发生在哪里。跨 scope 的保留期清扫是**存储所有者**的操作，不是某个租户的
+scope 操作，所以它不并入 `IMemory`（`IMemory` 的每个方法都绑定一个 scope），而是独立的窄接口：
+
+```cpp
+class IMemoryRetentionSweep {
+  public:
+    virtual ~IMemoryRetentionSweep() = default;
+    virtual Result<MemoryCompactionResult> sweep(MemorySweepOptions options) = 0;
+};
+```
+
+一次 pass 做与按 scope 清扫相同的三件事——到期清除、版本历史裁剪、墓碑越过 `purge_horizon`
+后清除——但**跨全部 scope**，并且是**有界**的：
+
+- `MemorySweepOptions{max_records, max_versions, deadline}` 给出上限。一趟 pass 在上限处停下
+  并报告 `more_pending`，宿主继续跑下一趟。大 store 因此被分成若干趟，而不是一笔拖过存储
+  操作超时的长事务。
+- pass 结果沿用 `MemoryCompactionResult`，并新增三个字段：`more_pending`（还有活没干完）、
+  `scopes_swept`（这一趟动过几个 scope）、`erasures_failed`（清除失败并已回滚的条数）。
+
+**失败语义**（保留期与隐私删除不是一回事）：
+
+- 保留期清除失败时，该条记录**整体回滚**（savepoint）：erase 路径已经删掉的 FTS、向量、
+  版本、provenance 与记录行全部复原，记录原样留下，下一趟 pass 重试。失败被计入
+  `erasures_failed` 并写进 note——失败可见，不吞掉。note 说清它已被回滚并会被重试，
+  不会让人误以为那个 scope 被挡出了 Context。
+- 保留期失败**不**把 scope 挡在 Context 之外：那条记录本来就已到期，本来就不参与检索，
+  而 scope 里的活 claim 毫发无损。把 scope 挡出去是隐私删除的规则（§8.3），不是保留期的。
+- 隐私删除的部分失败仍然 fail-closed：scope 被 hold 住，直到重试成功（§8.3）。
+- **被 hold 的 scope 不参与清扫**：隐私删除未完成前，那条记录属于那次删除；清扫既不碰它，
+  也不释放它的 hold。清除本身也不会释放 hold——清掉一条无关记录不等于隐私删除完成。
+
+**路由**：清扫是 `Deferrable` 类的后台工作（§17），宿主用 `soft periodic timer` 驱动，
+一趟一趟地跑，直到 `more_pending` 为假。清扫不阻塞 Task 路径。
+
 ## 17. Executor 映射
 
 | 工作 | Executor 路径 | 约束 |
@@ -900,7 +948,7 @@ claim key 不是存储列，而是查询时按 statement 现算的过滤条件�
 | SQLite checkpoint/memory I/O | blocking I/O worker | bounded queue、单 writer |
 | Embedding/索引更新 | 普通有限任务或受控本地推理路径 | 可延迟、可重建 |
 | Memory consolidation | delayed/低优先级普通任务 | Task 终态不等待非关键候选 |
-| Retention/GC | soft periodic timer | 不与 realtime 混用 |
+| Retention/GC | soft periodic timer | 不与 realtime 混用；跨 scope 清扫入口见 §16.4，Deferrable 类 |
 | Full projection rebuild | 显式 maintenance task | 可暂停、可取消、报告进度 |
 
 任何工作都不能创建私有线程池。SQLite、embedding/ONNX 或其他第三方库内部线程必须在 Provider

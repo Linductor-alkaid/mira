@@ -71,6 +71,14 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   `memory_claim_key(statement).key` 比较，调用方用 `memory_normalize_claim_key()`
   归一化自己的主语。被 claim key 收窄的查询不再套用每 (scope, kind) 组的多样性上限。
   见 [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
+- 保留期清扫（设计 §16.4）：`IMemoryRetentionSweep::sweep(MemorySweepOptions)` 是存储
+  所有者的跨 scope 入口，独立于每个方法都绑定 scope 的 `IMemory`。
+  `MemorySweepOptions{max_records, max_versions, deadline}` 给出这一趟的上限；一趟在
+  上限处停下并报告 `more_pending`，宿主继续跑下一趟。结果沿用 `MemoryCompactionResult`，
+  另带三个字段：`more_pending`、`scopes_swept`、`erasures_failed`。
+  保留期清除失败整体回滚（savepoint）并计数，不把 scope 挡在 Context 之外——那是隐私
+  删除的规则；被 hold 的 scope 不参与清扫，清扫也不释放 hold。见
+  [DEC-062](../decisions/DEC-062-memory-retention-sweep.md)。
 
 ## memory_embedding.hpp：向量腿的生产者与投影
 
@@ -129,6 +137,12 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   `memory_claim_key(statement).key` 收窄候选集；该查询不再套用每 (scope, kind) 组的
   多样性上限，因为调用方点名了一个主语。claim key 不是存储列，查询时现算，不需要
   迁移。
+- 跨 scope 清扫：存储同时实现 `IMemoryRetentionSweep`，`sweep(options)` 是有界的一趟
+  保留期清扫（到期清除、版本历史裁剪、越过 `purge_horizon` 的墓碑清除），跨全部 scope。
+  清除失败整体回滚并计入 `erasures_failed`；被 hold 的 scope 不参与清扫，其 hold 也不
+  被清扫释放。只读诊断模式下清扫返回错误。
+- 版本是存储侧的事实：读回的记录带的是存储自己的版本号（乐观并发的令牌），不是调用方
+  写进来的那个——否则一次读改写会拿着过期版本号去比对，凭空撞上 `VersionConflict`。
 
 ## memory_consolidation.hpp
 
@@ -164,6 +178,10 @@ Context/Memory 操作的 Executor 监督者（M4-16）：
   查询是 Interactive，consolidation/GC 可延迟合并。
 - 典型用法：`schedule_checkpoint(coordinator, task, session, trigger, now).get()`、
   `schedule_memory_query(store, query).get()`（返回 future，必须消费）。
+- 保留期清扫有两个入口：`schedule_retention_sweep(memory, scope)` 清扫一个 scope，
+  `schedule_global_retention_sweep(sweep, options)` 跑一趟跨 scope 的有界清扫（设计
+  §16.4）。两者都是 Deferrable 类——清扫不阻塞 Task 路径；取消在 shutdown 时以
+  `Cancelled` 错误结算 future。
 - `begin_shutdown()` 返回 `SupervisorShutdownReport`（含 `critical_drain_complete`），
   按固定顺序停 producer、结算 Critical、回收 worker；`SupervisorToken` 是可移植的
   取消令牌。

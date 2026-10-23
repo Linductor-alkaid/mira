@@ -173,6 +173,13 @@ class ContextMemorySupervisor final {
                                                                       ErasureRequest request);
     [[nodiscard]] std::future<Result<MemoryCompactionResult>>
     schedule_retention_sweep(IMemory &memory, MemoryScope scope);
+    // Cross-scope retention sweep (design Context/Memory §16.4): one bounded
+    // pass over every scope, Deferrable class like the per-scope sweep — a
+    // retention pass never blocks the Task path. The caller repeats the
+    // pass while the result reports more_pending. The future must be
+    // consumed like every other wrapper.
+    [[nodiscard]] std::future<Result<MemoryCompactionResult>>
+    schedule_global_retention_sweep(IMemoryRetentionSweep &sweep, MemorySweepOptions options);
 
     // Executes the §17.2 shutdown order once; subsequent submissions are
     // rejected. Does not close stores or the Executor (host-owned).
