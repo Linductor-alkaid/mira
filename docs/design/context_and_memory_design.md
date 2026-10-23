@@ -34,6 +34,12 @@
   `source_namespace` 的记录由 §19 导入契约管辖，Tombstone 不受该门约束），查询按
   kind 声明的检索腿运行。见
   [DEC-059](../decisions/DEC-059-memory-kind-policy.md)。
+- §14.4 Embedding 供给：Core 提供 `IEmbeddingProvider`（生产者）与
+  `IMemoryEmbeddingIndex`（投影）两个契约，以及把它们接起来的 `MemoryEmbeddingIndexer`；
+  宿主提供生产者实现并在自己的 Executor worker 上驱动索引与修复。向量是 statement 的
+  可重建投影：statement 改变即丢弃旧向量。Core 不含推理实现——这与 `IModelProvider`、
+  `IContextEmbedder` 同一分工。见
+  [DEC-060](../decisions/DEC-060-memory-embedding-provider.md)。
 - §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
   当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
   §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
@@ -691,6 +697,42 @@ Safety/System memory 不依赖检索排名，而由 P0 pinned policy 管理。
 
 Graphiti 类双时态图后端只作为可选远程实现。首期不要求 Android 设备运行图数据库。
 
+### 14.4 Embedding 供给与向量投影
+
+向量腿需要两个东西：**产出向量的生产者**，和**存放向量的可重建投影**。两者都是宿主边界，
+Core 不做推理。
+
+```cpp
+class IEmbeddingProvider {          // 生产者：宿主提供实现
+    virtual Result<std::vector<float>> embed(std::string_view text) = 0;
+};
+
+class IMemoryEmbeddingIndex {        // 投影：没有向量腿的存储不必实现
+    virtual Result<void> index_embedding(MemoryId, std::span<const float>) = 0;
+    virtual Result<bool> has_embedding(MemoryId) const = 0;
+    virtual Result<std::size_t> index_lag() const = 0;
+    virtual Result<std::size_t> clear_embeddings() = 0;
+};
+```
+
+`MemoryEmbeddingIndexer` 把两者接起来：它按记录产出向量并写入投影，按 scope 做一次**有界
+修复**（把还没有向量的活记录补齐），并为 `MemoryQuery::query_embedding` 产出查询向量。
+
+规则：
+
+- **投影是 statement 的投影**。记录的 statement 改变时，旧向量不再描述该记录，存储随即
+  丢弃它：记录重新计入 index lag，等待修复，而不是用上一版文本回答语义查询。记录离开
+  活跃面（Supersede / Tombstone）时同样丢弃向量。
+- **kind 决定是否值得嵌入**。§6.3 的策略表把结构化 kind（Episode / Procedure /
+  RecoveryLesson / SkillHint）排除在语义召回之外：它们的 statement 是规范结构化记录，
+  嵌入它们只会白费一次模型调用。`index_record()` 对这类 kind 直接拒绝，修复pass 计数
+  跳过。
+- **失败只降级**。生产者失败或向量写入失败时，投影保持缺口，exact / lexical 腿继续
+  回答，记录本身仍然是权威源。修复pass 下一轮重试。
+- **不接写入热路径**。每个 Event 或每次写入都同步嵌入会增加控制面延迟，而向量索引是
+  可重建投影（§23 明确拒绝同步写 embedding）。宿主在自己的 Executor worker 上驱动索引
+  与修复。
+
 ## 15. Provider Context 管理
 
 ### 15.1 Capability
@@ -770,6 +812,10 @@ scope（`scope_key`）。重放只在该 scope 内被承认：条目 scope 与�
 时返回 `ScopeDenied`，不披露条目指向的记录 id 与版本。归属固化在条目上而不是在重放时
 反查，因为 scope 级 Erasure 不写逐条审计行，反查会在删除后丢失归属——而那正是重试
 一条已被擦除的 mutation 必须保持幂等、且不得把已擦除数据写回的时候。
+
+`memory_embeddings` 是 statement 的可重建投影，不是权威源：statement 改变或记录离开
+活跃面时向量被丢弃（§14.4），记录随即重新计入 index lag。向量表损坏或维度失配只按
+index lag 降级，不阻塞控制面。
 
 ### 16.3 Schema Migration
 

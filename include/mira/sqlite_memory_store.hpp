@@ -2,6 +2,7 @@
 
 #include <mira/artifact_store.hpp>
 #include <mira/memory_contracts.hpp>
+#include <mira/memory_embedding.hpp>
 #include <mira/state_store.hpp>
 
 #include <memory>
@@ -51,7 +52,10 @@ struct RetrievalWeights final {
 // leg and a bounded linear cosine scan carries the semantic leg. The vector
 // index is a rebuildable projection: corruption or dimension mismatch only
 // degrades retrieval quality and never blocks the control plane.
-class SqliteMemoryStore final : public IMemory {
+//
+// The store also implements IMemoryEmbeddingIndex, so a host that supplies an
+// IEmbeddingProvider can drive the projection (design Context/Memory §14.3).
+class SqliteMemoryStore final : public IMemory, public IMemoryEmbeddingIndex {
   public:
     [[nodiscard]] static Result<std::unique_ptr<SqliteMemoryStore>>
     open(kairo::Executor &executor, SqliteMemoryStoreOptions options,
@@ -73,12 +77,15 @@ class SqliteMemoryStore final : public IMemory {
     // Attaches an embedding for one record. Vectors are a projection of the
     // authoritative record; empty or oversized vectors are rejected so a
     // corrupt entry surfaces as index lag instead of poisoning queries.
-    [[nodiscard]] Result<void> index_embedding(MemoryId record, std::span<const float> vector);
+    [[nodiscard]] Result<void> index_embedding(MemoryId record,
+                                               std::span<const float> vector) override;
+    // Whether a record currently carries a usable vector.
+    [[nodiscard]] Result<bool> has_embedding(MemoryId record) const override;
     // Number of Active records without a usable embedding.
-    [[nodiscard]] Result<std::size_t> index_lag() const;
+    [[nodiscard]] Result<std::size_t> index_lag() const override;
     // Drops every embedding (e.g. after an embedding-model change); records
     // stay authoritative and retrieval degrades to exact/FTS until rebuilt.
-    [[nodiscard]] Result<std::size_t> clear_embeddings();
+    [[nodiscard]] Result<std::size_t> clear_embeddings() override;
 
     [[nodiscard]] const StoreDiagnostics &diagnostics() const noexcept;
     // Queued-but-not-executed request count (bounded-queue observability).

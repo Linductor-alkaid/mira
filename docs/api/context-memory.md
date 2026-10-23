@@ -2,6 +2,7 @@
 
 > 头文件：`mira/context_contracts.hpp`、`mira/context_manager.hpp`、
 > `mira/context_retrieval.hpp`、`mira/memory_contracts.hpp`、
+> `mira/memory_embedding.hpp`、
 > `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
 > `mira/stateful_replay.hpp`、`mira/context_curator.hpp`、
@@ -58,6 +59,31 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   `memory_default_expiry()` 给出按 kind 折算的默认到期时间。见
   [DEC-059](../decisions/DEC-059-memory-kind-policy.md)。
 
+## memory_embedding.hpp：向量腿的生产者与投影
+
+向量腿需要生产者与投影两个宿主边界，Core 不做推理（与 `IModelProvider`、
+`IContextEmbedder` 同一分工）：
+
+- `IEmbeddingProvider`：`embed(text)` 产出一个向量；`embed_batch(texts)` 默认逐条循环，
+  有批量 API 的宿主可覆写。结果按输入顺序返回。
+- `IMemoryEmbeddingIndex`（投影）：`index_embedding()` 写入、`has_embedding()` 探测、
+  `index_lag()` 统计缺少向量的活记录、`clear_embeddings()` 清空（例如换了 embedding
+  模型后）。没有向量腿的存储不必实现它；查询契约仍然报告 index lag。
+- `MemoryEmbeddingIndexer`（驱动）：`index_record(record)` 为一条记录产出并写入向量；
+  `repair(memory, scope, options)` 做一次有界修复，把该 scope 内尚无向量的活记录补齐，
+  返回 `MemoryEmbeddingRepairReport`（scanned / repaired / failed / ineligible /
+  index_lag）；`embed_query(text)` 产出 `MemoryQuery::query_embedding` 用的查询向量。
+
+规则：
+
+- **kind 决定是否值得嵌入**：策略表把结构化 kind 排除在语义召回之外，驱动对这类 kind
+  拒绝 `index_record()`、在修复 pass 中计数跳过——不为没有查询会用的向量花模型调用。
+- **失败只降级**：生产者失败或写入失败时，投影保持缺口，exact / lexical 腿继续回答，
+  记录仍是权威源，下一轮修复重试。
+- **投影是 statement 的投影**：statement 改变或记录离开活跃面时，存储丢弃旧向量，记录
+  重新计入 index lag，不用上一版文本回答语义查询。
+- **不接写入热路径**：宿主在自己的 Executor worker 上驱动索引与修复。
+
 ## sqlite_memory_store.hpp：SqliteMemoryStore（`Mira::state_store`）
 
 `IMemory` 的 SQLite/WAL 参考后端（`SqliteMemoryStoreOptions`，含 `RetrievalWeights`）：
@@ -83,6 +109,9 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   声明可用的检索腿：结构化 kind（Episode / Procedure / RecoveryLesson / SkillHint）不
   参与嵌入相似度召回，`MemoryQueryQuality::semantic_leg_withheld` 报告该事实（不是
   降级）。
+- 向量投影：存储同时实现 `IMemoryEmbeddingIndex`，宿主可用 `MemoryEmbeddingIndexer`
+  把 `IEmbeddingProvider` 的产出写入投影。statement 改变或记录离开活跃面时旧向量被
+  丢弃，记录重新计入 index lag。
 
 ## memory_consolidation.hpp
 
