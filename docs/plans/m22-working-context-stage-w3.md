@@ -305,6 +305,15 @@ Independent-Verification-Agent 独立完成并复验）。
   调用方 `get()` 抛 `std::future_error`——按其受控实验方案修复为单次
   `share()`（提交内修复），修复后 16/16 全绿；另修两处 clang-tidy
   `performance-move-const-arg`（平凡可拷贝 policy 去 `std::move`）。
+- **勘误（2026-10 维护轮）**：本条「确定性闸门同步，无 sleep 时序等待」当时只
+  覆盖了场景编排，未覆盖 harness 自身——脚本化 provider 的脚本槽位在**闸门之后**
+  才被读取，且槽位是无同步的跨线程状态。coexistence 场景两个并发刷新因此共享
+  同一份计划，场景退化为「两个相同的刷新」，谁先提交由调度器决定；这在 CI 上表现为
+  一次 G2 门抖动（8 会话里 1 个）。已按
+  [DEC-063](../decisions/DEC-063-m22-eval-determinism.md) 修复（脚本在调用到达时
+  绑定并加锁、移除断言前的 1e8 次自旋等待、新增「两个并发刷新被服务了两个不同
+  计划」的确定性守卫）。修复前后的评估报告 JSON 逐字节相同，本计划与已发布报告
+  的口径不受影响。
 - **首轮评估**（最终源码字节上正式运行一次，登记
   [auto-trigger 评估 v1](../benchmarks/context-intelligence-working-context-auto-trigger-v1.md)）：
   W3-G1–G6 全绿——纯函数表 13/13；640 次信号判定、206 次燃点与纯函数预测

@@ -43,6 +43,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -474,17 +475,41 @@ class ScriptedCuratorProvider final : public IModelProvider {
     [[nodiscard]] Result<ModelResponse> infer(const ModelRequest &request,
                                               const OperationContext &context,
                                               const ProviderInferOptions &) override {
-        calls_.fetch_add(1, std::memory_order_release);
+        const auto arrival = calls_.fetch_add(1, std::memory_order_release);
+        {
+            std::lock_guard lock(script_mutex_);
+            served_scripts_.emplace(arrival, std::string{});
+        }
         {
             std::lock_guard lock(transcript_mutex_);
             const auto *text = std::get_if<TextPart>(&request.input[1].content[0]);
             last_transcript_ = text != nullptr ? text->text : std::string{};
         }
+        // The script this call is served is the one that was current when
+        // the call arrived. A call that blocks at the gate must not pick up
+        // a script installed after it arrived: two concurrent calls would
+        // then share one plan, and which of them commits first would be
+        // decided by the scheduler instead of by the scenario. The capture
+        // under the lock is also the happens-before edge with the test
+        // thread that installed the script.
+        std::string script;
+        std::size_t expected_entries = 0;
+        Behavior behavior = Behavior::Ok;
+        CuratorGate *gate = nullptr;
+        bool park_after_gate = false;
+        {
+            std::lock_guard lock(script_mutex_);
+            script = response_;
+            expected_entries = expected_entries_;
+            behavior = behavior_;
+            gate = gate_;
+            park_after_gate = park_after_gate_;
+        }
         // Guard the numbering mirror: the transcript must present exactly the
         // number of entries the script computed for this call. Disabled
-        // (expected_entries_ == 0) for the failure-injection behaviors.
-        if (expected_entries_ != 0 &&
-            last_transcript_.find("; " + std::to_string(expected_entries_) + " numbered entries") ==
+        // (expected_entries == 0) for the failure-injection behaviors.
+        if (expected_entries != 0 &&
+            last_transcript_.find("; " + std::to_string(expected_entries) + " numbered entries") ==
                 std::string::npos) {
             Error mismatch;
             mismatch.code = ErrorCode::Internal;
@@ -492,12 +517,12 @@ class ScriptedCuratorProvider final : public IModelProvider {
             mismatch.safe_message = "scripted provider saw an unexpected transcript size";
             return mismatch;
         }
-        if (behavior_ == Behavior::SleepPastDeadline) {
+        if (behavior == Behavior::SleepPastDeadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(120));
         }
-        if (behavior_ == Behavior::Gate && gate_ != nullptr) {
-            gate_->wait_at_gate();
-            if (park_after_gate_) {
+        if (behavior == Behavior::Gate && gate != nullptr) {
+            gate->wait_at_gate();
+            if (park_after_gate) {
                 // Cooperative cancellation hold: only the supervisor's stop
                 // flag (or an explicit let-go) can end it, so begin_shutdown
                 // always has a drainable path.
@@ -513,19 +538,26 @@ class ScriptedCuratorProvider final : public IModelProvider {
                 }
             }
         }
-        if (behavior_ == Behavior::ProviderError) {
+        if (behavior == Behavior::ProviderError) {
             Error unavailable;
             unavailable.code = ErrorCode::Unavailable;
             unavailable.domain = "test";
             unavailable.safe_message = "provider down";
             return unavailable;
         }
-        if (behavior_ == Behavior::ReturnCancelled) {
+        if (behavior == Behavior::ReturnCancelled) {
             Error cancelled;
             cancelled.code = ErrorCode::Cancelled;
             cancelled.domain = "test";
             cancelled.safe_message = "provider observed cancellation";
             return cancelled;
+        }
+        // The script this call was actually served, keyed by its arrival
+        // index: the coexistence scenario asserts that two concurrent
+        // refreshes were served two different plans.
+        {
+            std::lock_guard lock(script_mutex_);
+            served_scripts_[arrival] = script;
         }
         ModelResponse response;
         response.contract_version = SchemaVersion{1, 0};
@@ -535,13 +567,13 @@ class ScriptedCuratorProvider final : public IModelProvider {
         response.requested_model = profile_->model_selector;
         response.status = ModelCompletionStatus::Completed;
         MessageOutput message;
-        if (behavior_ == Behavior::Refusal) {
+        if (behavior == Behavior::Refusal) {
             OutputRefusalPart refusal;
             refusal.safe_summary = "cannot help with that";
             message.content.emplace_back(std::move(refusal));
         } else {
             OutputTextPart text;
-            text.text = behavior_ == Behavior::MalformedJson ? "this is not json" : response_;
+            text.text = behavior == Behavior::MalformedJson ? "this is not json" : script;
             message.content.emplace_back(std::move(text));
         }
         response.output.emplace_back(std::move(message));
@@ -549,13 +581,35 @@ class ScriptedCuratorProvider final : public IModelProvider {
     }
 
     void set_script(std::string response, std::size_t expected_entries) {
+        std::lock_guard lock(script_mutex_);
         response_ = std::move(response);
         expected_entries_ = expected_entries;
     }
-    void set_behavior(Behavior behavior) { behavior_ = behavior; }
-    void arm_gate(CuratorGate &gate) { gate_ = &gate; }
-    void set_park_after_gate(bool park) { park_after_gate_ = park; }
+    void set_behavior(Behavior behavior) {
+        std::lock_guard lock(script_mutex_);
+        behavior_ = behavior;
+    }
+    void arm_gate(CuratorGate &gate) {
+        std::lock_guard lock(script_mutex_);
+        gate_ = &gate;
+    }
+    void set_park_after_gate(bool park) {
+        std::lock_guard lock(script_mutex_);
+        park_after_gate_ = park;
+    }
     void let_go() { let_go_ = true; }
+
+    // The script served to the call that arrived at this index, if that
+    // call was answered. The coexistence scenario asserts that two
+    // concurrent refreshes were served two different plans.
+    [[nodiscard]] std::optional<std::string> served_script(std::uint64_t arrival) const {
+        std::lock_guard lock(script_mutex_);
+        const auto found = served_scripts_.find(arrival);
+        if (found == served_scripts_.end()) {
+            return std::nullopt;
+        }
+        return found->second;
+    }
 
     [[nodiscard]] std::string last_transcript() const {
         std::lock_guard lock(transcript_mutex_);
@@ -565,11 +619,15 @@ class ScriptedCuratorProvider final : public IModelProvider {
 
   private:
     std::shared_ptr<ModelProfile> profile_;
+    // The script state is written by the test thread and read by the
+    // worker, so it lives under one mutex.
+    mutable std::mutex script_mutex_;
     Behavior behavior_ = Behavior::Ok;
     std::string response_ = "{}";
     std::size_t expected_entries_ = 0;
     CuratorGate *gate_ = nullptr;
     bool park_after_gate_ = false;
+    std::map<std::uint64_t, std::string> served_scripts_;
     std::atomic<bool> let_go_{false};
     mutable std::mutex transcript_mutex_;
     std::string last_transcript_;
@@ -1337,6 +1395,7 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
         provider.set_script(plan_output(nullptr, policy_checkpoint, 2, "coexist", layout),
                             layout.total);
         provider.set_behavior(ScriptedCuratorProvider::Behavior::Gate);
+        const auto calls_before = provider.calls();
         auto policy_result = auto_curator.on_signal(
             eval_session.session,
             make_refresh_input(policy_checkpoint, identity, live, 0, pair_recent(8, 200)));
@@ -1356,12 +1415,24 @@ void run_flush_round(const Dataset &dataset, const FrozenConfig &config,
         (void)consume_caller_future(policy_result.value(), counters.caller_future_defects);
         const auto flush_outcome =
             consume_caller_future(flush_future, counters.caller_future_defects);
-        for (int spin = 0; spin < 100'000'000; ++spin) {
-            if (store_latest_watermark(store, eval_session.session) == 16) {
-                break;
-            }
-            std::this_thread::yield();
+        // The two refreshes are concurrent and must be served two different
+        // plans: the policy refresh asserts the older watermark (8) and the
+        // forced flush the newer one (16). A shared plan would leave the
+        // commit winner to the scheduler, and the monotonic commit
+        // discipline would never be exercised — the older claim would never
+        // exist to be discarded.
+        const auto policy_served = provider.served_script(calls_before);
+        const auto flush_served = provider.served_script(calls_before + 1);
+        const bool distinct_plans = policy_served.has_value() && flush_served.has_value() &&
+                                    *policy_served != *flush_served;
+        if (!distinct_plans) {
+            ++counters.coexistence_final_mismatches;
         }
+        // Both refresh futures have resolved and each supervised task
+        // commits before it resolves, so the store state is final here.
+        // There is no wait: a spin over the store would be a timing wait
+        // that burns CPU on a contended runner and starves the writer it
+        // waits for.
         if (store_latest_watermark(store, eval_session.session) != 16) {
             ++counters.coexistence_final_mismatches;
         }
