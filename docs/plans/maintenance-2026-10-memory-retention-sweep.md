@@ -146,7 +146,7 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
 - **CI 上的一次既有抖动**（记录，不掩盖）：PR #105 的首个 push run 中
   `linux (clang, Debug)` 的 `mira_m22_auto_trigger_eval` 报 G2 门失败
   （`coexistence mismatches 1`）。同一份代码的下一个 run（只差一个纯文档提交）该用例
-  通过——两份 run 的差异只有那一个文档提交，故判定为既有抖动而非本轮回归。依据：��用例
+  通过——两份 run 的差异只有那一个文档提交，故判定为既有抖动而非本轮回归。依据：该用例
   的判定含一个自旋等待（最多 1e8 次 `yield` 等存储水位到达目标），在 CI 的双核 runner 上
   属于时序敏感；且该评估不链接记忆存储实现（本轮的存储改动不在其二进制里），只共用
   supervisor 与契约头文件。本轮未修改该用例。
