@@ -212,6 +212,61 @@ int memory_verification_rank(MemoryVerification verification) noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// Claim key (design Context/Memory §13.5)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] bool is_claim_space(char character) {
+    return character == ' ' || character == '\t' || character == '\n' || character == '\r' ||
+           character == '\f' || character == '\v';
+}
+
+} // namespace
+
+std::string memory_normalize_claim_key(std::string_view text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    bool pending_space = false;
+    for (const char character : text) {
+        if (is_claim_space(character)) {
+            // A run of whitespace is one separator, and a leading run is
+            // nothing at all: the normalized text never starts with a space.
+            pending_space = !normalized.empty();
+            continue;
+        }
+        if (pending_space) {
+            normalized.push_back(' ');
+            pending_space = false;
+        }
+        normalized.push_back(character >= 'A' && character <= 'Z'
+                                 ? static_cast<char>(character - 'A' + 'a')
+                                 : character);
+    }
+    return normalized;
+}
+
+MemoryClaimKey memory_claim_key(std::string_view statement) {
+    MemoryClaimKey claim;
+    const auto separator = statement.find('=');
+    if (separator == std::string_view::npos) {
+        // No value: the statement is its own subject.
+        claim.key = memory_normalize_claim_key(statement);
+        return claim;
+    }
+    claim.key = memory_normalize_claim_key(statement.substr(0, separator));
+    claim.value = memory_normalize_claim_key(statement.substr(separator + 1));
+    claim.keyed = true;
+    return claim;
+}
+
+bool memory_same_claim(std::string_view lhs, std::string_view rhs) {
+    const auto left = memory_claim_key(lhs);
+    const auto right = memory_claim_key(rhs);
+    return left.key == right.key && left.value == right.value;
+}
+
+// ---------------------------------------------------------------------------
 // Per-kind policy (design Context/Memory §6.2)
 // ---------------------------------------------------------------------------
 

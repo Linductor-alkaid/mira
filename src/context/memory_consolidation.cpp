@@ -242,18 +242,17 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             continue;
         }
 
-        // 4. Conflict retrieval inside the same scope: facts conflict when
-        // their key prefix matches ("volume=..." vs "volume=..."), so a new
-        // value supersedes the old record instead of duplicating it.
-        const auto separator = proposed.statement.find('=');
-        const std::string conflict_term = separator == std::string::npos
-                                              ? proposed.statement
-                                              : proposed.statement.substr(0, separator + 1);
+        // 4. Conflict retrieval inside the same scope: two records conflict
+        // when they make the same claim — the same normalized subject
+        // ("volume=30" and "volume = 30" are one claim, "volume=30" and
+        // "volume_level=high" are two), so a new value supersedes the old
+        // record instead of duplicating it (design Context/Memory §13.5).
+        const auto claim = memory_claim_key(proposed.statement);
         MemoryQuery conflict_query;
         conflict_query.scopes = {scope};
         conflict_query.kinds = std::vector<MemoryKind>{proposed.kind};
-        conflict_query.exact_terms = {conflict_term};
-        conflict_query.max_results = 4;
+        conflict_query.claim_key = claim.key;
+        conflict_query.max_results = 16;
         std::optional<MemoryRecord> conflict;
         {
             auto found = memory.query(conflict_query);
@@ -267,22 +266,21 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                 if (record.status != MemoryStatus::Active) {
                     continue;
                 }
-                const auto record_separator = record.statement.find('=');
-                const bool same_key =
-                    separator == std::string::npos
-                        ? lowercase(record.statement) == lowercase(proposed.statement)
-                        : record_separator == separator &&
-                              lowercase(record.statement.substr(0, separator)) ==
-                                  lowercase(proposed.statement.substr(0, separator));
-                if (same_key) {
+                // The store narrows the candidates by claim key; the Core
+                // verifies it, because a backend that ignores the filter
+                // must not turn an unrelated record into a conflict.
+                if (memory_claim_key(record.statement).key != claim.key) {
+                    continue;
+                }
+                // The live claim is the most recent one about the subject.
+                if (!conflict.has_value() || record.recorded_at > conflict->recorded_at) {
                     conflict = record;
-                    break;
                 }
             }
         }
-        if (conflict.has_value() && conflict->statement == proposed.statement &&
+        if (conflict.has_value() && memory_same_claim(conflict->statement, proposed.statement) &&
             conflict->verification >= proposed.verification) {
-            // Exact duplicate with a stored copy at least as verified as the
+            // The same claim with a stored copy at least as verified as the
             // proposal: no new memory, no churn — and never a downgrade (an
             // Unverified promotion candidate must not supersede a
             // HumanConfirmed record, M23 plan §4.2).

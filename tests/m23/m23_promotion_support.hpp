@@ -197,6 +197,15 @@ class FaithfulMemory final : public IMemory {
             if (!terms_ok) {
                 continue;
             }
+            // The claim-key filter narrows to the records about one subject
+            // (design Context/Memory §13.5); the store applies it before
+            // ranking, so the fake does the same.
+            const bool claim_ok = !request.claim_key.has_value() ||
+                                  memory_claim_key(record.statement).key ==
+                                      memory_normalize_claim_key(*request.claim_key);
+            if (!claim_ok) {
+                continue;
+            }
             matches.push_back(&record);
         }
         std::stable_sort(matches.begin(), matches.end(),

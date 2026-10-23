@@ -1005,6 +1005,19 @@ class SqliteMemoryStore::Impl final {
             candidates = std::move(resolved);
         }
 
+        // Claim-key filter: only records about the requested subject take
+        // part. The filter is hard and runs before the ranking legs, so the
+        // conflict retrieval of design Context/Memory §13.5 sees every
+        // record about one subject instead of the whole scope — and the
+        // diversity cap below cannot hide a sibling behind an unrelated
+        // record of the same kind.
+        if (request.claim_key.has_value()) {
+            const std::string wanted = memory_normalize_claim_key(*request.claim_key);
+            std::erase_if(candidates, [&wanted](const Row &row) {
+                return memory_claim_key(row.statement).key != wanted;
+            });
+        }
+
         // Exact leg: verbatim substrings.
         std::set<std::string> exact_hits;
         if (!request.exact_terms.empty()) {
@@ -1210,7 +1223,12 @@ class SqliteMemoryStore::Impl final {
                 break;
             }
             const std::string group = entry.row->scope_key + "|" + entry.row->kind;
-            if (group_counts[group] >= options_.max_per_scope_kind) {
+            // The diversity cap keeps one (scope, kind) group from flooding
+            // the result set. A claim-key filtered query asked for one
+            // subject, so the cap would only hide the siblings the caller
+            // came for.
+            if (!request.claim_key.has_value() &&
+                group_counts[group] >= options_.max_per_scope_kind) {
                 continue;
             }
             const std::uint64_t tokens =
