@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.3
-> 更新日期：2026-09-28
+> 版本：1.4
+> 更新日期：2026-10-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -237,6 +237,13 @@ _Avoid_: 模型自由合并（v1 无语义裁决）、自动同步
 **Consolidation（固化）**:
 把任务经验沉淀为长期记忆的学习过程（DEC-029/030）。
 _Avoid_: 压缩（Context 压缩是预算语义）
+
+**Claim Key（claim 键）**:
+长期记忆 statement 归一化后的「主语」：形如 `subject=value` 的 statement 在第一个
+`=` 处切分，不含 `=` 时 statement 自己就是主语；主语去首尾空白、折叠内部空白、折叠
+大小写。两条记录讲同一件事，当且仅当主语相同且断言值相同（DEC-061）。
+_Avoid_: 语义相似（claim key 是词法的，不做推理）、statement 相等（措辞不同可以
+同 claim）、主键/primary key（存储标识，不是语义身份）
 
 **行为轨迹（Behavior Trace）**:
 DEC-038 统一的任务执行事实轨迹平面，是 Working Context 等投影的

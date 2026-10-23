@@ -40,6 +40,10 @@
   可重建投影：statement 改变即丢弃旧向量。Core 不含推理实现——这与 `IModelProvider`、
   `IContextEmbedder` 同一分工。见
   [DEC-060](../decisions/DEC-060-memory-embedding-provider.md)。
+- §13.5 Claim Key：冲突检测以归一化主语为准——`volume=30` 与 `volume = 30` 是同一个
+  claim，不再并存；`MemoryQuery::claim_key` 提供按主语的硬过滤，冲突检索在排序与
+  多样性裁剪之前收窄候选集，Core 侧另做一次主语复核。见
+  [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
 - §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
   当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
   §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
@@ -652,20 +656,71 @@ struct MemoryMutation {
 默认寿命（§6.3）：退役行不再带到期时间，改由 `purge_horizon` 与版本保留窗口处置，
 因此墓碑行与双时态历史不会被 TTL 截断。
 
+### 13.5 Claim Key 与冲突检测
+
+冲突检测回答一个问题：两条记录是不是在讲同一件事。答案是 claim key——statement 归一化
+之后的「主语」。
+
+```cpp
+struct MemoryClaimKey {
+    std::string key;    // 归一化主语
+    std::string value;  // 归一化断言值
+    bool keyed;         // statement 是否形如 subject=value
+};
+```
+
+规则：
+
+- statement 形如 `subject=value` 时，在**第一个** `=` 处切分：左边是主语，右边是断言值。
+- statement 不含 `=` 时，它自己就是主语，没有断言值。
+- 主语与断言值做同样的归一化：去首尾空白、内部空白折叠为单个空格、ASCII 大小写折叠。
+  归一化是幂等的，因此后端可以对自己收到的 key 再归一化一次。
+- 两条 statement 构成同一个 claim，当且仅当主语相同**且**断言值相同。
+
+| statement | claim key | value | 关系 |
+| --- | --- | --- | --- |
+| `volume=30` | `volume` | `30` | 与下面两行同 claim |
+| `volume = 30` | `volume` | `30` | 与上面同 claim |
+| `VOLUME=30` | `volume` | `30` | 与上面同 claim |
+| `volume=60` | `volume` | `60` | 同主语不同 claim → 冲突 |
+| `volume_level=high` | `volume_level` | `high` | 不同主语 → 不冲突 |
+| `prefer dark mode` | `prefer dark mode` | （空） | 无值 statement |
+
+冲突检测因此是词法的，不是语义的：Core 不做推理（§23），两个措辞不同但意思相同的
+statement（`volume=30` 与 `volume is 30`）仍然是两条 claim，会并存。跨越这道边界需要
+模型判断，而模型不是 Core 的职责。另外，含 `=` 的散文 statement 按第一个 `=` 切分，
+其主语是前缀（如 `task settled: outcome=…` 的主语是 `task settled: outcome`）——这是
+词法规则的必然结果，不做例外。
+
+**检索面**：冲突检测需要在同一个 scope 内找到「同一个主语」的全部记录。这不是子串匹配
+能表达的——`volume=` 不是 `volume = 30` 的子串，大小写与空白折叠更无法用子串表达。因此
+`MemoryQuery` 增加 `claim_key` 过滤项：它是硬过滤（与 scope 白名单同级），在排序与
+多样性裁剪**之前**收窄候选集。存储按 `memory_claim_key(statement).key` 比较，调用方用
+`memory_normalize_claim_key()` 归一化自己的主语。Core 侧仍然自己复核主语是否相等：
+不信任后端的过滤，后端忽略过滤项时不至于把无关记录变成冲突。
+
+被 claim key 收窄的查询不再套用「每 (scope, kind) 组最多 N 条」的多样性上限——调用方
+点名了一个主语，上限只会把它要找的同主语记录挡在门外。
+
+冲突检测的一处已知边界：**存量**数据里可能已经存在多条同主语的活记录（修复前的
+`=` 前缀启发式留下的）。新写入只会取代其中最新的一条，更旧的同主语记录仍然留在活跃面
+上。修复既有数据需要一次专门的清扫（类似 §14.4 的向量修复 pass），本轮不做。
+
 ## 14. 混合检索
 
 ### 14.1 检索阶段
 
 1. 强制 tenant/user/session/environment scope 和 ACL 过滤。
 2. 过滤 status、TTL、validity、schema version 和 sensitivity。
-3. 对 ID、应用包名、TaskSkill 等字段做 exact match。
-4. 使用 BM25/FTS 召回关键词候选。
-5. 可用时使用 embedding 召回语义候选。查询声明 kind 时，第 3–5 步只运行这些 kind 都
+3. 查询声明 `claim_key` 时按归一化主语硬过滤：只有讲同一件事的记录参与（§13.5）。
+4. 对 ID、应用包名、TaskSkill 等字段做 exact match。
+5. 使用 BM25/FTS 召回关键词候选。
+6. 可用时使用 embedding 召回语义候选。查询声明 kind 时，第 4–6 步只运行这些 kind 都
    声明可用的检索腿（§6.3）：结构化 kind 不参与嵌入相似度召回，被扣下的嵌入不构成
    排序请求。
-6. 合并去重并按时间、置信度、来源和当前 Task 相关性重排。
-7. 做多样性选择，避免多个近重复 Memory 占满预算。
-8. 按 token budget 打包，并附 provenance 和 authority 标记。
+7. 合并去重并按时间、置信度、来源和当前 Task 相关性重排。
+8. 做多样性选择，避免多个近重复 Memory 占满预算。
+9. 按 token budget 打包，并附 provenance 和 authority 标记。
 
 ### 14.2 排名模型
 
@@ -816,6 +871,10 @@ scope（`scope_key`）。重放只在该 scope 内被承认：条目 scope 与�
 `memory_embeddings` 是 statement 的可重建投影，不是权威源：statement 改变或记录离开
 活跃面时向量被丢弃（§14.4），记录随即重新计入 index lag。向量表损坏或维度失配只按
 index lag 降级，不阻塞控制面。
+
+claim key 不是存储列，而是查询时按 statement 现算的过滤条件（§13.5）：它是 statement
+的函数，不是独立存放的事实，因此不需要迁移，也不会与 statement 脱节。存储侧在排序
+与多样性裁剪之前应用该过滤，并在 claim key 收窄的查询上跳过多样性上限。
 
 ### 16.3 Schema Migration
 

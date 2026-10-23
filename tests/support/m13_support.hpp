@@ -52,6 +52,12 @@ class FakeLearningMemory final : public IMemory {
             if (!terms_ok) {
                 continue;
             }
+            const bool claim_ok =
+                !query.claim_key.has_value() || memory_claim_key(record.statement).key ==
+                                                    memory_normalize_claim_key(*query.claim_key);
+            if (!claim_ok) {
+                continue;
+            }
             matches.push_back(&record);
         }
         std::sort(matches.begin(), matches.end(),

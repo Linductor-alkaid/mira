@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mira {
@@ -67,6 +68,42 @@ enum class MemoryVerification : std::uint8_t {
 // Verification levels are ordered: the rank drives the per-kind verification
 // floor and the ranking input of the retrieval legs.
 [[nodiscard]] int memory_verification_rank(MemoryVerification verification) noexcept;
+
+// ---------------------------------------------------------------------------
+// Claim key (design Context/Memory §13.5)
+// ---------------------------------------------------------------------------
+
+// The normalized identity of a claim: what the statement is *about*.
+//
+// A statement of the form `subject=value` is split at the first `=`; the
+// subject becomes the key and the remainder the value. A statement without
+// `=` is its own key and carries no value. Both halves are normalized, so
+// "volume=30", "volume = 30" and "VOLUME=30" are one claim, while
+// "volume=30" and "volume_level=high" are two.
+//
+// The rule is lexical by design: it never infers that two differently
+// worded statements mean the same thing (design Context/Memory §23 — Core
+// holds no inference).
+struct MemoryClaimKey final {
+    // The subject of the claim, normalized.
+    std::string key;
+    // The asserted value, normalized. Empty when the statement carried no
+    // `=` and therefore no value.
+    std::string value;
+    // True when the statement carried the `subject=value` shape.
+    bool keyed = false;
+};
+
+// Normalizes a claim subject: trims the ends, collapses internal whitespace
+// runs to a single space and folds ASCII case. The normalization is
+// idempotent, so a backend may apply it to a key it received.
+[[nodiscard]] std::string memory_normalize_claim_key(std::string_view text);
+
+// Splits a statement into its claim key and value.
+[[nodiscard]] MemoryClaimKey memory_claim_key(std::string_view statement);
+
+// Whether two statements make the same claim: same subject, same value.
+[[nodiscard]] bool memory_same_claim(std::string_view lhs, std::string_view rhs);
 
 // ---------------------------------------------------------------------------
 // Per-kind policy (design Context/Memory §6.2)
@@ -230,6 +267,13 @@ struct MemoryQuery final {
     std::string text;
     // Substrings that must appear verbatim in the statement (exact leg).
     std::vector<std::string> exact_terms;
+    // Only records whose claim key equals this subject participate. A hard
+    // filter, like the scope allowlist: it narrows the candidate set before
+    // ranking, so the conflict retrieval of design Context/Memory §13.5
+    // sees every record about one subject instead of the whole scope.
+    // The value is a claim subject, normalized by
+    // memory_normalize_claim_key().
+    std::optional<std::string> claim_key;
     // Optional embedding for the bounded cosine leg; dimension must match the
     // indexed vectors or the leg degrades to exact/FTS.
     std::vector<float> query_embedding;

@@ -58,6 +58,19 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
   不匹配返回 `ScopeDenied`；带 `source_namespace` 的记录由导入契约管辖，不受该门约束。
   `memory_default_expiry()` 给出按 kind 折算的默认到期时间。见
   [DEC-059](../decisions/DEC-059-memory-kind-policy.md)。
+- Claim key（设计 §13.5）：`MemoryClaimKey{key, value, keyed}` /
+  `memory_claim_key(statement)` / `memory_same_claim(lhs, rhs)` /
+  `memory_normalize_claim_key(text)`。statement 在第一个 `=` 处切分，左边是主语、右边
+  是断言值；不含 `=` 时 statement 自己就是主语。主语与值都做归一化（去首尾空白、内部
+  空白折叠、ASCII 大小写折叠），所以 `volume=30`、`volume = 30` 与 `VOLUME=30` 是同一
+  个 claim，而 `volume=30` 与 `volume_level=high` 是两个。规则是词法的：Core 不做推理，
+  措辞不同但意思相同的 statement 仍是两条 claim。
+- `MemoryQuery::claim_key`（可选）：按归一化主语的**硬**过滤，与 scope 白名单同级，在
+  排序与多样性裁剪之前收窄候选集。冲突检测用它找出「同一个主语」的全部记录——子串
+  匹配表达不了这件事（`volume=` 不是 `volume = 30` 的子串）。存储按
+  `memory_claim_key(statement).key` 比较，调用方用 `memory_normalize_claim_key()`
+  归一化自己的主语。被 claim key 收窄的查询不再套用每 (scope, kind) 组的多样性上限。
+  见 [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
 
 ## memory_embedding.hpp：向量腿的生产者与投影
 
@@ -112,6 +125,10 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
 - 向量投影：存储同时实现 `IMemoryEmbeddingIndex`，宿主可用 `MemoryEmbeddingIndexer`
   把 `IEmbeddingProvider` 的产出写入投影。statement 改变或记录离开活跃面时旧向量被
   丢弃，记录重新计入 index lag。
+- claim key 过滤：`MemoryQuery::claim_key` 声明后，存储在排序与多样性裁剪之前按
+  `memory_claim_key(statement).key` 收窄候选集；该查询不再套用每 (scope, kind) 组的
+  多样性上限，因为调用方点名了一个主语。claim key 不是存储列，查询时现算，不需要
+  迁移。
 
 ## memory_consolidation.hpp
 
@@ -125,6 +142,9 @@ Verified Event 到 Memory candidate 的确定性管道：
   对预先抽取的候选执行与 `consolidate()` 相同的策略管线（不做事件抽取、不挂模型
   钩子，候选 provenance 由调用方负责）；重复判定要求已存副本验证等级 ≥ 提案等级，
   杜绝验证等级降级。`consolidate()` 即"抽取 + 模型增强 + 本入口"，管线体只有一份。
+- 冲突检测（设计 §13.5）：冲突检索用 `MemoryQuery::claim_key` 按归一化主语收窄，同主语
+  的不同值判为冲突（Supersede），同主语同值且已存副本验证等级不低于提案判为
+  `duplicate-noop`。Core 侧自己复核主语是否相等，不信任后端的过滤。
 
 ## provider_continuation.hpp
 
