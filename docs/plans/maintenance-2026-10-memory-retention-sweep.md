@@ -1,6 +1,6 @@
 # 维护计划：跨 scope 的保留期清扫（2026-10）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M27 后维护轮）
 > 前置：[MNT-202610-35…38 claim key](maintenance-2026-10-memory-claim-key.md)（Completed）
@@ -113,7 +113,9 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
 - **依据**：[DEC-062](../decisions/DEC-062-memory-retention-sweep.md)；设计 §8.3、§13.4、
   §16.2、§16.4、§17。
 - **环境**：Linux 7.0.0-38-generic x86_64；gcc 13.3.0；cmake/ctest 3.28.3；14 核；
-  固定 SQLite amalgamation 3.53.4。基线提交 `a8a328d`（PR #104 合并并结项后的 master）。
+  固定 SQLite amalgamation 3.53.4。基线提交 `a8a328d`（PR #104 合并并结项后的 master）；
+  本轮经 [PR #105](https://github.com/Linductor-alkaid/mira/pull/105) 提交，合并提交
+  `17d7ce5`（squash）。
 - **命令与结果**：
 
   | 命令 | 结果 |
@@ -130,6 +132,9 @@ timer」，但实现里只有 `IMemory::compact(scope)`——一个绑定单个 
   | `python3 tools/check_platform_boundary.py` | `Mira Core platform boundary is clean` |
   | `cmake --build build/debug --target format-check` | 通过（269 个文件） |
   | `mira_stateful_consumer` / `mira_working_context_host_consumer` / `mira_minimal_consumer` | 三个可执行消费端均正常退出（0） |
+  | `gh pr checks 105` | **24/24 通过**（push run 39912752799 与 pull_request run 39912756797 各 12 项，linux gcc/clang × Debug/Release、windows ×2、android arm64/x86_64、ASAN/UBSAN/TSAN、quality） |
+  | `git diff ab7a7be origin/master` | 空——合并进 master 的树就是 CI 验证过的树 |
+  | 合并后在 master 上复验 | `ctest --preset debug -j 14` **112/112 通过**；三个消费端正常退出 |
 
 - **限制与未执行项**：
   - ASAN/UBSAN/TSAN 仅覆盖记忆相关测试组（m4 / m13 / m23）；全量 112 项仅在 debug
