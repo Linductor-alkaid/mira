@@ -103,6 +103,28 @@ route -> provider -> retry/circuit 监督 -> 预算结算 -> 本地决策解析�
   `build_tool_result_input(dialect, records)` 仍提供线格式 `JsonValue` 形态。
   工具执行模组化属后续范围（[DEC-009](../decisions/DEC-009-tool-module-boundary.md)）。
 
+### 方言终态分类（DEC-067）
+
+方言把供应商结果翻译成规范终态，映射由
+[设计 §7.2](../design/llm-api-protocol-design.md) 冻结且**不区分方言**：
+
+| 供应商结果 | 规范终态 | Chat Completions | Responses | Messages |
+| --- | --- | --- | --- | --- |
+| 明确 refusal | `Refused` | `finish_reason`/`message.refusal` | 拒绝内容 part 或拒绝输出项 | `stop_reason: "refusal"` |
+| content filter | `ContentFiltered` | `finish_reason: "content_filter"` | `incomplete_details.reason: "content_filter"` | （无此信号） |
+| 输出 token 上限 | `Incomplete(MaxOutputTokens)` | `finish_reason: "length"` | `incomplete_details.reason: "max_output_tokens"` | `stop_reason: "max_tokens"` |
+| 其它 incomplete | `Incomplete` | — | `Incomplete(Other)` | — |
+
+- **过滤与拒绝是终态，不是可恢复的回复**：两类信号都让循环 fail closed
+  （`"model refused or was filtered; no policy bypass"`），**不发起恢复、不重试**——
+  设计 §7.2 对 content filter 的要求是「不得换供应商绕过」。
+- `Incomplete` 与过滤/拒绝互斥：`incomplete_reason` 只与 `Incomplete` 终态共存
+  （`validate_model_response()` fail closed）。
+- 供应商说「没说完」的响应保持 `Incomplete`：那是不完整输出，按
+  [DEC-066](../decisions/DEC-066-conversation-incomplete-output-is-not-an-answer.md) 走
+  恢复路径，片段不进答案。
+- 拒绝的原因以**有界摘要**表达（Chat 与 Messages 用固定摘要），不回显供应商原文。
+
 ## agent_loop.hpp：离散闭环
 
 `AgentLoop` 驱动 Observe -> Reason -> Plan -> Act -> Verify：

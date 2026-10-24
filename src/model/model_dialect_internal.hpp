@@ -16,6 +16,13 @@ inline constexpr std::size_t kMaxThinkingBytes = 4ULL * 1024ULL * 1024ULL;
 // Shared by the Responses terminal decoder and the Chat Completions decoder.
 [[nodiscard]] ModelUsage parse_usage_object(const JsonValue *usage, bool from_stream_eof);
 
+// True when the response output carries an explicit provider refusal: a
+// refusal output item, or a refusal content part inside a message. Design
+// §7.2 maps such a response to the Refused terminal - the dialects must not
+// leave it looking like "completed with no text", which would make the loops
+// ask the model again instead of failing closed.
+[[nodiscard]] bool carries_refusal(const std::vector<ModelOutputItem> &output);
+
 // Encode-stage gates and artifact rendering shared by the OpenAI mappers.
 [[nodiscard]] Result<void> gate_generation_options(const ModelProfile &profile,
                                                    const ModelGenerationOptions &generation);

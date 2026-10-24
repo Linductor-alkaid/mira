@@ -150,6 +150,28 @@ int mappings() {
          R"({"id":"x","type":"message","role":"assistant","model":"m","content":[],"stop_reason":"pause_turn"})"}));
     return 0;
 }
+
+// Design §7.2: an explicit refusal is the Refused terminal. The Messages
+// dialect used to normalize stop_reason "refusal" onto the Chat content
+// filter shape, so a refusal was reported as ContentFiltered.
+int refusal_is_the_refused_terminal() {
+    auto r = request();
+    auto p = make_profile(ProtocolDialect::AnthropicMessagesV1, "https://api.anthropic.com");
+    AnthropicMessagesV1Mapper mapper;
+    const auto refused = mapper.decode_response(
+        r, p,
+        {200,
+         {},
+         R"({"id":"msg_r","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"I cannot help with that"}],"stop_reason":"refusal","usage":{"input_tokens":5,"output_tokens":2}})"});
+    MIRA_CHECK(refused.has_value());
+    MIRA_CHECK(refused.value().status == ModelCompletionStatus::Refused);
+    // The refusal is carried as a bounded summary item, like the Chat
+    // dialect, not as the provider's own wording.
+    const auto *refusal = std::get_if<RefusalOutput>(&refused.value().output.back());
+    MIRA_CHECK(refusal != nullptr);
+    MIRA_CHECK(refusal->safe_summary == "provider returned a refusal");
+    return 0;
+}
 int thinking() {
     auto r = request();
     auto p = make_profile(ProtocolDialect::AnthropicMessagesV1, "https://example.com");
@@ -541,7 +563,7 @@ int provider_error_events_and_post_terminal_tolerance() {
 } // namespace
 int main() {
     if (mappings() || thinking() || streams() || mutation_corpus() || authentication() ||
-        provider_error_events_and_post_terminal_tolerance())
+        provider_error_events_and_post_terminal_tolerance() || refusal_is_the_refused_terminal())
         return 1;
     return 0;
 }
