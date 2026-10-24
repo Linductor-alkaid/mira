@@ -139,12 +139,20 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   `conversation_loop.hpp` 295 行、新测试文件 245 行、共享支持头 263 行，均在预算内；
   `src/model/model_contracts.cpp` 的超长是既有基线抑制项，本轮行数净变化为 0）、
   `docs-check`、`format-check`、`sbom-check`、`platform-boundary-check` 通过。
-- 限制与补跑：Android / Windows 编译路径与真实模型端到端未在本机执行（原因：本机
-  无对应工具链与外部模型凭据；负责人：Mira Maintainers；补跑条件：PR CI matrix 与
-  Mirage pin 升级后的下游复验）。issue #100 的公开结论回复随 PR 一并发布
-  （`MNT-202610-53`）。
+- 限制与补跑：真实模型端到端与 Mirage 主机接线后的复验未在本机执行（原因：本机无外部
+  模型凭据；负责人：Mira Maintainers；补跑条件：Mirage 完成授权消费、pin 升级与供应链
+  同步后按 issue #100 端到端复验）。Android / Windows 编译路径本机未执行（原因：无对应
+  工具链），已由下条记录的 PR CI matrix 覆盖。
 
 2026-10-24：PR [#108](https://github.com/Linductor-alkaid/mira/pull/108)（分支
 `feat/conversation-terminal-truncation-reason`）已开出，并在 issue #100 下发布公开结论
-回复（契约形状、验收条件对照、验证证据与未覆盖范围）。PR CI 证据待 CI 完成后回填
-本节。
+回复（契约形状、验收条件对照、验证证据与未覆盖范围）。
+
+- PR CI（head `c567bcc`）：runs
+  [`40075614803`](https://github.com/Linductor-alkaid/mira/actions/runs/40075614803)（push）/
+  [`40075617780`](https://github.com/Linductor-alkaid/mira/actions/runs/40075617780)
+  （pull_request）**各 12/12 作业通过**——Linux GCC/Clang Debug+Release、Windows
+  Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、
+  clang-format、docs、SBOM、平台边界）全绿。
+- 本机未覆盖的 Android / Windows 编译路径已由该 CI matrix 关闭（§6 补跑条件）。
+- 本维护计划保持 `In Progress`：仅余 Mirage pin 升级后的下游端到端复验一项。
