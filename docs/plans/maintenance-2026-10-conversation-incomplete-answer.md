@@ -137,5 +137,12 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、
   clang-format、docs、SBOM、平台边界）全绿。
 - 本机未覆盖的 Android / Windows 编译路径已由该 CI matrix 关闭。
+- 合并：PR [#109](https://github.com/Linductor-alkaid/mira/pull/109) 以 squash 合并进
+  master，合并提交 `5c40aa2`；最终 head `a961d44` 的 CI（runs
+  [`40090385478`](https://github.com/Linductor-alkaid/mira/actions/runs/40090385478)/
+  [`40090387520`](https://github.com/Linductor-alkaid/mira/actions/runs/40090387520)）
+  **各 12/12 作业通过**。
+- 合并后在 master 上复验：`ctest --test-dir build/debug --output-on-failure`
+  **113/113 通过**（退出码 0）。
 - 本维护计划保持 `In Progress`：仅余 Mirage pin 升级后的下游端到端复验（`MNT-202610-60`
   的方言映射对齐属独立一轮，尚未立项）。
