@@ -1291,3 +1291,10 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 结构化事实——结果对象新增 `terminal_incomplete_reason`，`ConversationSettled` 载荷
 新增 `output_continuations` 与（仅终态截断时存在的）`incomplete_reason`；其余终态
 一律为空/缺省，不误报。实现与 PR 证据由维护计划记录，Mirage 消费另验。
+
+2026-10-24：新增 [对话不完整输出维护](maintenance-2026-10-conversation-incomplete-answer.md)
+（DEC-066，部分修订 DEC-065 的终态原因置位口径）：供应商声明「没有说完」的响应不再
+作为终态答案结算——片段不进答案、不进历史，改走既有恢复路径并在预算耗尽后 fail
+closed；恢复反馈只指认供应商报告过的原因；终态原因统一为「供应商为导致终态的不完整
+输出报告的原因」，供应商未报告原因则留空。实现与 PR 证据由维护计划记录，Mirage 消费
+另验。

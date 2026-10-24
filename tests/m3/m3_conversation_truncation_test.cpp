@@ -104,6 +104,8 @@ int other_terminals_carry_no_truncation_reason() {
     }
     // A cutoff the provider did not attribute to the output limit: the
     // recovery budget is what runs out, not the continuation budget.
+    // DEC-066 amends DEC-065 here: the terminal reason now reports the
+    // provider's own cause, so this terminal is not reason-free.
     {
         ConversationFixture fixture;
         fixture.use_provider({incomplete_response(IncompleteReason::ContextWindow, ""),
@@ -117,10 +119,11 @@ int other_terminals_carry_no_truncation_reason() {
                    std::string::npos);
         MIRA_CHECK(result.value().recoveries == 2);
         MIRA_CHECK(result.value().output_continuations == 0);
-        MIRA_CHECK(!result.value().terminal_incomplete_reason.has_value());
+        MIRA_CHECK(result.value().terminal_incomplete_reason == IncompleteReason::ContextWindow);
         const auto facts = settled_facts(fixture);
         MIRA_CHECK(facts.has_counter && facts.continuations == 0);
-        MIRA_CHECK(!facts.has_reason);
+        MIRA_CHECK(facts.has_reason);
+        MIRA_CHECK(facts.reason == incomplete_reason_name(IncompleteReason::ContextWindow));
     }
     // The tool budget runs out.
     {
@@ -229,6 +232,86 @@ int continuous_mode_keeps_the_same_terminal_semantics() {
     return 0;
 }
 
+int an_incomplete_output_is_never_the_answer() {
+    // A cutoff the provider attributed to the context window: the fragment it
+    // returned must not be settled as the answer. The loop recovers with
+    // cause-aware guidance and the retry answers.
+    ConversationFixture fixture;
+    fixture.use_provider({incomplete_response(IncompleteReason::ContextWindow, "partial answer"),
+                          text_response("the complete answer")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().answer == "the complete answer");
+    MIRA_CHECK(result.value().recoveries == 1);
+    // The fragment never became the answer and never became a terminal
+    // reason: the run answered on the retry.
+    MIRA_CHECK(result.value().answer.find("partial answer") == std::string::npos);
+    MIRA_CHECK(!result.value().terminal_incomplete_reason.has_value());
+    MIRA_CHECK(result.value().turns.size() == 2);
+    MIRA_CHECK(result.value().turns.front().summary != "answer");
+    MIRA_CHECK(result.value().turns.back().summary == "answer");
+    // The retry names the cause the provider reported.
+    const auto retry_text = fixture.provider_->request_text(1);
+    MIRA_CHECK(retry_text.find("context window") != std::string::npos);
+    MIRA_CHECK(retry_text.find("output-token limit") == std::string::npos);
+    const auto facts = settled_facts(fixture);
+    MIRA_CHECK(facts.has_counter && facts.continuations == 0);
+    MIRA_CHECK(!facts.has_reason);
+    return 0;
+}
+
+int an_incomplete_output_fails_closed_with_its_reason() {
+    // The recovery budget runs out on context-window cutoffs: the run fails
+    // closed and reports the provider's reason, so the failure class stays
+    // observable.
+    ConversationFixture fixture;
+    fixture.use_provider({incomplete_response(IncompleteReason::ContextWindow, "partial one"),
+                          incomplete_response(IncompleteReason::ContextWindow, "partial two"),
+                          incomplete_response(IncompleteReason::ContextWindow, "partial three")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Failed);
+    MIRA_CHECK(result.value().safe_summary.find("remained incomplete after recovery budget") !=
+               std::string::npos);
+    MIRA_CHECK(result.value().recoveries == 2);
+    // No fragment leaks into the answer of a failed run.
+    MIRA_CHECK(result.value().answer.empty());
+    MIRA_CHECK(result.value().terminal_incomplete_reason == IncompleteReason::ContextWindow);
+    const auto facts = settled_facts(fixture);
+    MIRA_CHECK(facts.has_counter && facts.continuations == 0);
+    MIRA_CHECK(facts.has_reason);
+    MIRA_CHECK(facts.reason == incomplete_reason_name(IncompleteReason::ContextWindow));
+    return 0;
+}
+
+int an_incomplete_output_without_a_reason_reports_none() {
+    // The provider did not say why the output was incomplete: the run still
+    // fails closed, but there is no reason to report - the field stays empty
+    // rather than inventing one.
+    ConversationFixture fixture;
+    std::vector<ModelResponse> script;
+    for (int index = 0; index < 3; ++index) {
+        auto response = incomplete_response(IncompleteReason::Other, "partial");
+        // The provider reported no reason at all.
+        response.incomplete_reason.reset();
+        script.push_back(std::move(response));
+    }
+    fixture.use_provider(script);
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Failed);
+    MIRA_CHECK(result.value().answer.empty());
+    MIRA_CHECK(!result.value().terminal_incomplete_reason.has_value());
+    const auto facts = settled_facts(fixture);
+    MIRA_CHECK(facts.has_counter && facts.continuations == 0);
+    MIRA_CHECK(!facts.has_reason);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -239,6 +322,15 @@ int main() {
         return code;
     }
     if (const int code = continuous_mode_keeps_the_same_terminal_semantics(); code != 0) {
+        return code;
+    }
+    if (const int code = an_incomplete_output_is_never_the_answer(); code != 0) {
+        return code;
+    }
+    if (const int code = an_incomplete_output_fails_closed_with_its_reason(); code != 0) {
+        return code;
+    }
+    if (const int code = an_incomplete_output_without_a_reason_reports_none(); code != 0) {
         return code;
     }
     return 0;

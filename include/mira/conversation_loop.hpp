@@ -97,12 +97,16 @@ struct ConversationLoopResult final {
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
     std::uint64_t output_continuations = 0;
-    // Terminal truncation reason (MIRA-20261022-001 / DEC-065): set only when
-    // the run settled Failed because a tolerated max_tokens cutoff exhausted
-    // the continuation budget, and then carries MaxOutputTokens. Every other
-    // terminal - Answered, MaxTurns, Cancelled and Failed for any other cause
-    // (recovery exhaustion, tool budget, refusal, admission) - leaves it
-    // empty. The counter above reports every tolerated cutoff of the run,
+    // Terminal truncation reason (MIRA-20261022-001 / DEC-065, amended by
+    // DEC-066): the reason the provider reported for the incomplete output
+    // that ended the run. It is set on the two terminal failures caused by an
+    // incomplete model output - the continuation budget being exhausted
+    // (MaxOutputTokens) and the recovery budget being exhausted after an
+    // incomplete reply (ContextWindow/Other, or whichever reason the provider
+    // reported). Every other terminal - Answered, MaxTurns, Cancelled and
+    // Failed for any other cause (tool budget, refusal, admission) - leaves it
+    // empty, and so does an incomplete output whose provider reported no
+    // reason. The counter above reports every tolerated cutoff of the run,
     // including those the model recovered from; this field reports why the
     // run ended, so hosts classify the terminal state without reading the
     // safe_summary text.

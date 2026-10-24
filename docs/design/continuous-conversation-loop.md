@@ -89,6 +89,9 @@ ConversationSettled 保留终态和累计数（原 turns 仍为保留记录数�
 `terminal_incomplete_reason`，ConversationSettled 载荷携带 `output_continuations`
 （整 run 累计）与仅在终态截断时出现的 `incomplete_reason`。持续模式的段内额度重置
 只影响段内可用额度，不改变终态字段与累计计数的口径——两种 limit mode 语义一致。
+DEC-066 把该字段的口径统一为「供应商为导致终态的不完整输出报告的原因」：恢复额度
+耗尽同样携带该原因，供应商未报告原因时留空。不完整输出在任何 limit mode 下都不作为
+答案（片段不进答案、不进历史），统一走恢复路径。
 
 ## 验证与后续
 
