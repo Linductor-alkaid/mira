@@ -66,8 +66,8 @@
   无原因不带原因）+ 既有文案断言更新；三条变异全部被捕获（见 §7）。
 - [x] `MNT-202610-58` 文档同步：DEC-066、DEC-065 修订注记、API 手册、持续循环设计、
   总计划索引与本记录。
-- [ ] `MNT-202610-59` 下游通报：issue #100 的契约修订评论（**未发布**：PR 尚未开出；
-  负责人：Mira Maintainers；补跑条件：PR 开出后随 PR 链接一并发布）。
+- [x] `MNT-202610-59` 下游通报：issue #100 的契约修订评论（修正「不完整输出不作答案」+
+  终态原因口径修订 + 已知遗留的方言映射缺口）。
 - [ ] `MNT-202610-60` 后续项（**本轮不修**）：Responses 方言把
   `incomplete_details.reason == "content_filter"` 折叠进 `IncompleteReason::Other`，
   而 Chat Completions 方言把 `finish_reason == "content_filter"` 映射为
@@ -96,7 +96,7 @@
 - [x] `MNT-202610-57`：三个新用例 + 既有文案断言更新；三条变异全部被捕获（§7）。
 - [x] 全量 ctest 通过（Linux x86_64 GCC Debug）与 `architecture-check`、`docs-check`、
   `format-check` 等质量门禁通过（见 §7）。
-- [ ] 下游通报发布（`MNT-202610-59`，随 PR 一并发布）。
+- [x] 下游通报发布（`MNT-202610-59`）。
 - [ ] Responses 方言 `content_filter` 映射对齐（`MNT-202610-60`，后续轮）。
 
 ## 7. 验证记录
@@ -116,7 +116,26 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   2. 去掉恢复耗尽终态的原因赋值 → `an_incomplete_output_fails_closed_with_its_reason`
      失败（终态原因为空）。
   3. 把反馈改回指认输出上限 → 「context window」断言失败（反馈不再指认真实原因）。
-- 全量回归与质量门禁：见本记录提交时的最终计数与命令输出。
+- 全量回归：`ctest --test-dir build/debug --output-on-failure` **113/113 通过**
+  （Linux x86_64，GCC 13.3.0，CMake debug 预设），ctest 退出码 0。
+- 质量门禁：`format-check`（270 个文件）、`docs-check`、`sbom-check`、
+  `platform-boundary-check`、`architecture-check` 全部通过（行数预算 1200：
+  `conversation_loop.cpp` 889 行、`conversation_loop.hpp` 299 行、
+  `m3_conversation_truncation_test.cpp` 337 行，均在预算内）。
 - 限制与补跑：Android / Windows 编译路径与真实模型端到端未在本机执行（原因：无对应
   工具链与外部模型凭据；负责人：Mira Maintainers；补跑条件：PR CI matrix 与下游
   端到端复验）。
+
+2026-10-24：PR [#109](https://github.com/Linductor-alkaid/mira/pull/109)（分支
+`fix/conversation-incomplete-is-not-an-answer`）已开出，issue #100 下已发布契约修订
+通报（修正 + 口径修订 + 已知遗留的方言映射缺口）。
+
+- PR CI（head `b740e55`）：runs
+  [`40087872320`](https://github.com/Linductor-alkaid/mira/actions/runs/40087872320)（push）/
+  [`40087875934`](https://github.com/Linductor-alkaid/mira/actions/runs/40087875934)
+  （pull_request）**各 12/12 作业通过**——Linux GCC/Clang Debug+Release、Windows
+  Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、
+  clang-format、docs、SBOM、平台边界）全绿。
+- 本机未覆盖的 Android / Windows 编译路径已由该 CI matrix 关闭。
+- 本维护计划保持 `In Progress`：仅余 Mirage pin 升级后的下游端到端复验（`MNT-202610-60`
+  的方言映射对齐属独立一轮，尚未立项）。
