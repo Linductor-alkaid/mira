@@ -2,6 +2,7 @@
 
 #include <mira/agent_loop.hpp>
 #include <mira/event_store.hpp>
+#include <mira/model_contracts.hpp>
 #include <mira/model_gateway.hpp>
 #include <mira/tool_executor.hpp>
 
@@ -96,6 +97,16 @@ struct ConversationLoopResult final {
     // Bounded max_tokens continuations spent by this run (DEC follow-up to
     // MIRA-20261009-002); zero without a tolerated cutoff.
     std::uint64_t output_continuations = 0;
+    // Terminal truncation reason (MIRA-20261022-001 / DEC-065): set only when
+    // the run settled Failed because a tolerated max_tokens cutoff exhausted
+    // the continuation budget, and then carries MaxOutputTokens. Every other
+    // terminal - Answered, MaxTurns, Cancelled and Failed for any other cause
+    // (recovery exhaustion, tool budget, refusal, admission) - leaves it
+    // empty. The counter above reports every tolerated cutoff of the run,
+    // including those the model recovered from; this field reports why the
+    // run ended, so hosts classify the terminal state without reading the
+    // safe_summary text.
+    std::optional<IncompleteReason> terminal_incomplete_reason;
     // Requests whose tool-history replay came from the host compaction seam
     // (DEC-088 follow-up), and requests where the seam degraded to the raw
     // replay (Error, exception, empty or invalid result). Both zero without

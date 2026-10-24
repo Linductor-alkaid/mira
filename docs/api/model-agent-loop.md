@@ -233,6 +233,36 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 - `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
   设备任务仍由 `AgentLoop` 承载。
 
+### 终态截断原因（DEC-065，mira#100）
+
+续写预算耗尽导致的 `Failed` 有结构化的终态原因，宿主不必解析 `safe_summary` 文案
+（[DEC-065](../decisions/DEC-065-conversation-terminal-truncation-reason.md)）：
+
+```cpp
+// 续写预算耗尽（唯一的置位点）：
+// result.terminal_incomplete_reason == mira::IncompleteReason::MaxOutputTokens
+// 其余终态（Answered / MaxTurns / Cancelled / 其它 Failed）一律为空。
+if (result.terminal_incomplete_reason == mira::IncompleteReason::MaxOutputTokens) {
+    // 本次以「输出上限耗尽」结束
+}
+```
+
+- **置位口径**：仅续写预算耗尽（被容忍的 `max_tokens` 截断用尽续写额度）这一处结算点
+  置位；恢复耗尽、工具预算、请求装配失败、拒绝、准入拒绝、取消与 deadline 等其它
+  `Failed` 终态**一律为空**，不误报。
+- **与 `output_continuations` 的口径差**：计数是**过程中**被容忍的截断次数（截断后续写
+  成功并答出的运行计数同样为正）；`terminal_incomplete_reason` 是**终态**原因。判终态看
+  字段，看过程看计数。
+- **事件面**：`ConversationSettled` 载荷带两个增量键，事件订阅方不持有 loop 结果也能
+  读到终态语义——
+  - `output_continuations`（int64，**始终存在**）：整 run 累计的被容忍截断次数；
+  - `incomplete_reason`（string，**仅终态截断时存在**）：`incomplete_reason_name()` 的
+    稳定名（如 `max_output_tokens`）。**键缺省**表示本次终态不是输出上限耗尽，不是
+    「原因未知」，消费方按键存在判定。
+- **两种 limit mode 一致**：Continuous 的续写额度按连续截断段计算（完整工具轮后重置），
+  终态字段与累计计数的口径不变。
+- 事件 schema 本轮只做增量键扩展，未新增事件类型。
+
 ### 逐轮多模态输入供给缝（DEC-053，mira#85）
 
 宿主工具产出的图片（截图等）经 `set_model_input_supplier` 进入下一次模型请求，

@@ -661,6 +661,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             result.safe_summary =
                 "output-limit continuation budget exhausted; the reply was truncated at the "
                 "per-call output limit";
+            // DEC-065 / MIRA-20261022-001: the terminal truncation reason is a
+            // structured fact, not a text anchor. Only this settle sets it; the
+            // recovery-exhaustion settle below reports a different cause and
+            // stays empty.
+            result.terminal_incomplete_reason = IncompleteReason::MaxOutputTokens;
             retain_turn(std::move(record));
             break;
         }
@@ -828,16 +833,25 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     if (result.outcome == ConversationOutcome::MaxTurns && result.safe_summary.empty()) {
         result.safe_summary = "turn budget exhausted before a final answer";
     }
-    emit(spec, "ConversationSettled",
-         JsonValue::Object{
-             {"outcome", conversation_outcome_name(result.outcome)},
-             {"turns", static_cast<std::int64_t>(result.turns.size())},
-             {"total_turns", continuous_support::event_counter(result.total_turns)},
-             {"recoveries", continuous_support::event_counter(result.recoveries)},
-             {"tool_executions", continuous_support::event_counter(result.tool_executions)},
-             {"turn_records_dropped",
-              continuous_support::event_counter(result.turn_records_dropped)}},
-         EventClass::State);
+    // DEC-065 / MIRA-20261022-001: the settled payload carries the truncation
+    // counters, so an event-only consumer can tell an output-limit exhaustion
+    // from any other Failed settle without holding the loop result. The
+    // incomplete_reason key is present only when the terminal truncation reason
+    // is set - absence means "not an output-limit termination", never an empty
+    // reason.
+    JsonValue::Object settled{
+        {"outcome", conversation_outcome_name(result.outcome)},
+        {"turns", static_cast<std::int64_t>(result.turns.size())},
+        {"total_turns", continuous_support::event_counter(result.total_turns)},
+        {"recoveries", continuous_support::event_counter(result.recoveries)},
+        {"tool_executions", continuous_support::event_counter(result.tool_executions)},
+        {"turn_records_dropped", continuous_support::event_counter(result.turn_records_dropped)},
+        {"output_continuations", continuous_support::event_counter(result.output_continuations)}};
+    if (result.terminal_incomplete_reason.has_value()) {
+        settled.emplace_back("incomplete_reason",
+                             incomplete_reason_name(*result.terminal_incomplete_reason));
+    }
+    emit(spec, "ConversationSettled", JsonValue{std::move(settled)}, EventClass::State);
 
     return result;
 }

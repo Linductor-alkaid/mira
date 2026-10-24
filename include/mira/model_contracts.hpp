@@ -304,6 +304,12 @@ enum class IncompleteReason : std::uint8_t {
     Other,
 };
 
+// Stable name of a truncation reason ("max_output_tokens", "context_window",
+// "other"). The same string travels on the ConversationSettled event payload
+// (DEC-065), so hosts can compare against this function instead of pinning
+// the literals.
+[[nodiscard]] std::string incomplete_reason_name(IncompleteReason reason);
+
 struct OutputTextPart final {
     std::string text;
     std::optional<std::string> annotations_digest;

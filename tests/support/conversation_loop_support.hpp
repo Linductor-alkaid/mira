@@ -9,10 +9,13 @@
 
 #include <mira/conversation_loop.hpp>
 
+#include <kairo/executor.hpp>
+
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -194,6 +197,63 @@ class ConversationFixture final {
         types.push_back(event.payload.type);
     }
     return types;
+}
+
+// The detail object of the last ConversationSettled event of a session, or
+// an empty optional when the session carries no such event. The detail is
+// returned by value: the parsed payload dies with this call.
+[[nodiscard]] std::optional<JsonValue> settled_detail(const MemoryEventStore &store,
+                                                      const SessionId &session) {
+    EventQuery query;
+    query.session_id = session;
+    auto page = store.read(query);
+    if (!page.has_value()) {
+        return std::nullopt;
+    }
+    const auto &events = page.value().events;
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+        if (it->payload.type != "ConversationSettled") {
+            continue;
+        }
+        auto parsed = parse_json(it->payload.data);
+        if (!parsed.has_value()) {
+            return std::nullopt;
+        }
+        const auto *detail = parsed.value().find("detail");
+        if (detail == nullptr) {
+            return std::nullopt;
+        }
+        return *detail;
+    }
+    return std::nullopt;
+}
+
+// A provider response cut off by the output-token budget: status Incomplete
+// with the given reason, optional partial text, and an optional tool call
+// that was cut mid call.
+[[nodiscard]] ModelResponse
+incomplete_response(IncompleteReason reason, const std::string &text,
+                    std::optional<ToolCallOutput> cut_call = std::nullopt) {
+    ModelResponse response;
+    response.contract_version = SchemaVersion{1, 0};
+    response.status = ModelCompletionStatus::Incomplete;
+    response.incomplete_reason = reason;
+    if (!text.empty() || !cut_call.has_value()) {
+        MessageOutput message;
+        message.role = ModelRole::Assistant;
+        if (!text.empty()) {
+            OutputTextPart part;
+            part.text = text;
+            message.content.emplace_back(std::move(part));
+        }
+        response.output.emplace_back(std::move(message));
+    }
+    if (cut_call.has_value())
+        response.output.emplace_back(std::move(*cut_call));
+    response.usage.input_tokens = 10;
+    response.usage.output_tokens = 5;
+    response.usage.quality = UsageQuality::ProviderReported;
+    return response;
 }
 
 // ---------------------------------------------------------------------------

@@ -1285,3 +1285,9 @@ M4–M7 的范围、稳定工作项、Executor 路由、测试矩阵、风险、
 2026-10-15：新增 [持续会话循环维护](maintenance-2026-10-continuous-conversation.md)
 （DEC-056 / Mirage MIRA-20261015-002），显式持续模式、请求预算、提交式压缩与
 有界结果窗口；实现与 PR 证据由维护计划记录，Mirage 消费另验。
+
+2026-10-24：新增 [对话终态截断原因维护](maintenance-2026-10-conversation-terminal-truncation.md)
+（DEC-065 / Mirage MIRA-20261022-001，mira#100）：`ConversationLoop` 终态截断原因成为
+结构化事实——结果对象新增 `terminal_incomplete_reason`，`ConversationSettled` 载荷
+新增 `output_continuations` 与（仅终态截断时存在的）`incomplete_reason`；其余终态
+一律为空/缺省，不误报。实现与 PR 证据由维护计划记录，Mirage 消费另验。
