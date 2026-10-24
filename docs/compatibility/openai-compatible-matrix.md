@@ -1,8 +1,8 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.5
-> 更新日期：2026-09-02
+> 版本：1.6
+> 更新日期：2026-10-25
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
 
@@ -258,6 +258,22 @@ MIRA_INTEROP_MAX_REQUESTS=2 \
   `mira_m3_sse_test` 增加官方事件名回归。
 - 安全：credential 内容未读取到会话、未打印、未提交；本地 secret 精确 gitignore 且权限 `0600`。
 - 关联：`M3-19`、本节 5.1 profile、[MiniMax Responses 文档](https://platform.minimaxi.com/docs/api-reference/responses-create)。
+
+### 2026-10-25：方言终态分类 fixture 证据（DEC-067）
+
+- 范围：三个方言把供应商的**过滤与拒绝**信号翻译成规范终态的本地实现——Chat
+  Completions 的 `finish_reason: "content_filter"` 与 `message.refusal`、Responses 的
+  `incomplete_details.reason: "content_filter"` 与拒绝内容 part/输出项、Messages 的
+  `stop_reason: "refusal"`（[设计 §7.2](../design/llm-api-protocol-design.md)）。
+- 验证：`mira_m3_dialect_test`（Responses 的过滤终态与两种拒绝形态、`max_output_tokens`
+  仍为 `Incomplete(MaxOutputTokens)`）、`mira_m3_anthropic_test`（Messages 拒绝终态与
+  有界摘要）、`mira_m3_conversation_loop_test`（被过滤响应 fail closed、不消耗恢复预算、
+  不重试、不产生答案）。Responses SSE 的 terminal 事件复用同一解码路径，故同步与流式
+  一致。
+- 限制：全部为本地 fixture；没有对任何真实 endpoint 的调用，Provider 表的 `Interop`
+  状态不变。真实服务返回 `content_filter`/拒绝时的行为仍待受控凭据下互操作复验。
+- 关联：[DEC-067](../decisions/DEC-067-dialect-terminal-classification-alignment.md)、
+  [维护计划](../plans/maintenance-2026-10-dialect-terminal-alignment.md)。
 
 ### 2026-08-31：方言 fixture 证据
 
