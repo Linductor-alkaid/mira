@@ -122,3 +122,21 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
 - 限制与补跑：Android / Windows 编译路径与真实模型端到端未在本机执行（原因：无对应
   工具链与外部模型凭据；负责人：Mira Maintainers；补跑条件：PR CI matrix 与下游
   端到端复验）。
+
+2026-10-25：PR [#110](https://github.com/Linductor-alkaid/mira/pull/110)（分支
+`fix/dialect-terminal-classification-alignment`）已开出，issue #100 下已发布行为变化
+通报（问题、修正后行为、下游需复核的两点与已知遗留）。
+
+- PR CI（代码 head `e038d4b`）：runs
+  [`40111608452`](https://github.com/Linductor-alkaid/mira/actions/runs/40111608452)（push）/
+  [`40111612248`](https://github.com/Linductor-alkaid/mira/actions/runs/40111612248)
+  （pull_request）**各 12/12 作业通过**——Linux GCC/Clang Debug+Release、Windows
+  Debug+Release、Android arm64+x86_64、ASAN/UBSAN/TSAN、quality（clang-tidy、
+  clang-format、docs、SBOM、平台边界）全绿。
+- 文档 head `404e0db` 的 CI（runs
+  [`40112622875`](https://github.com/Linductor-alkaid/mira/actions/runs/40112622875)/
+  [`40112626939`](https://github.com/Linductor-alkaid/mira/actions/runs/40112626939)）
+  同样**全部通过**。
+- 本机未覆盖的 Android / Windows 编译路径已由该 CI matrix 关闭。
+- 本维护计划保持 `In Progress`：仅余 Mirage pin 升级后的下游端到端复验（`MNT-202610-68`
+  的拒绝摘要策略属独立一轮，尚未立项）。
