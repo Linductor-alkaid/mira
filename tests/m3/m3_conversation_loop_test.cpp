@@ -855,31 +855,6 @@ int dialects_encode_tool_round_trip_and_reject_mixing() {
 
 } // namespace
 
-[[nodiscard]] ModelResponse
-incomplete_response(IncompleteReason reason, const std::string &text,
-                    std::optional<ToolCallOutput> cut_call = std::nullopt) {
-    ModelResponse response;
-    response.contract_version = SchemaVersion{1, 0};
-    response.status = ModelCompletionStatus::Incomplete;
-    response.incomplete_reason = reason;
-    if (!text.empty() || !cut_call.has_value()) {
-        MessageOutput message;
-        message.role = ModelRole::Assistant;
-        if (!text.empty()) {
-            OutputTextPart part;
-            part.text = text;
-            message.content.emplace_back(std::move(part));
-        }
-        response.output.emplace_back(std::move(message));
-    }
-    if (cut_call.has_value())
-        response.output.emplace_back(std::move(*cut_call));
-    response.usage.input_tokens = 10;
-    response.usage.output_tokens = 5;
-    response.usage.quality = UsageQuality::ProviderReported;
-    return response;
-}
-
 int truncated_text_continues_from_the_cut() {
     ConversationFixture fixture;
     fixture.use_provider(
@@ -978,6 +953,9 @@ int continuation_budget_exhaustion_settles_output_limit() {
     MIRA_CHECK(result.value().output_continuations == 2);
     MIRA_CHECK(result.value().safe_summary.find("output-limit continuation budget exhausted") !=
                std::string::npos);
+    // DEC-065: the terminal truncation reason is a structured fact, not a
+    // text anchor (the full matrix lives in m3_conversation_truncation_test).
+    MIRA_CHECK(result.value().terminal_incomplete_reason == IncompleteReason::MaxOutputTokens);
     return 0;
 }
 

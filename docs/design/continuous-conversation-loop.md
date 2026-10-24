@@ -85,6 +85,11 @@ ConversationSettled 保留终态和累计数（原 turns 仍为保留记录数�
 为推进尝试数），retained_history_items/bytes 报告最近一次
 请求前存量。事件写入延续既有 best-effort 契约，不能单凭发出事件宣称归档成功。
 
+终态截断原因是结构化事实（DEC-065）：续写额度耗尽时结果对象携带
+`terminal_incomplete_reason`，ConversationSettled 载荷携带 `output_continuations`
+（整 run 累计）与仅在终态截断时出现的 `incomplete_reason`。持续模式的段内额度重置
+只影响段内可用额度，不改变终态字段与累计计数的口径——两种 limit mode 语义一致。
+
 ## 验证与后续
 
 验证有限/零值、1,024 工具脚本、提交式压缩、签名多工具组、容量拒绝、错误/

@@ -296,18 +296,6 @@ constexpr std::size_t kMaxSafeMessageBytes = 2048;
     return std::nullopt;
 }
 
-[[nodiscard]] std::string incomplete_reason_name(IncompleteReason reason) {
-    switch (reason) {
-    case IncompleteReason::MaxOutputTokens:
-        return "max_output_tokens";
-    case IncompleteReason::ContextWindow:
-        return "context_window";
-    case IncompleteReason::Other:
-        return "other";
-    }
-    return "other";
-}
-
 [[nodiscard]] std::optional<IncompleteReason> incomplete_reason_from(const JsonValue &json) {
     const auto *text = json.as_string();
     if (text == nullptr) {
@@ -465,6 +453,18 @@ std::string model_domain_code_name(ModelDomainCode code) {
         return "ModelResourceExhausted";
     }
     return "Unknown";
+}
+
+std::string incomplete_reason_name(IncompleteReason reason) {
+    switch (reason) {
+    case IncompleteReason::MaxOutputTokens:
+        return "max_output_tokens";
+    case IncompleteReason::ContextWindow:
+        return "context_window";
+    case IncompleteReason::Other:
+        return "other";
+    }
+    return "other";
 }
 
 Error make_model_error(ModelDomainCode code, std::string safe_message, bool retryable,
