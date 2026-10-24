@@ -71,9 +71,10 @@
   用例有断言，无跳过项；变异验证记录见 §7。
 - [x] `MNT-202610-52`（#100 / MIRA-20261022-001）文档同步：DEC-065、API 手册
   ConversationLoop 节、持续循环设计的计数与终态口径、总计划索引与本记录。
-- [ ] `MNT-202610-53`（#100 / MIRA-20261022-001）对外动作：PR 与 issue #100 的公开结论
-  回复（**未发布**：PR 尚未开出，回复随 PR 链接一并发布；负责人：Mira Maintainers；
-  补跑条件：本轮 PR 开出后在 issue 下回复并回填 PR 链接）。
+- [x] `MNT-202610-53`（#100 / MIRA-20261022-001）对外动作：PR
+  [#108](https://github.com/Linductor-alkaid/mira/pull/108)（分支
+  `feat/conversation-terminal-truncation-reason`）与 issue #100 的公开结论回复
+  （含契约形状、验收条件对照、验证证据与未覆盖范围）。
 
 ## 5. 风险与阻塞
 
@@ -109,7 +110,7 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   （`incomplete_reason_name()` 由匿名命名空间移入 `mira` 命名空间并公开声明，签名与
   返回值不变）。
 - 测试：新增 `tests/m3/m3_conversation_truncation_test.cpp`（注册
-  `mira_m3_conversation_truncation_test`），3 个用例 / 11 组断言：
+  `mira_m3_conversation_truncation_test`），3 个用例 / 56 条断言：
   1. `output_limit_exhaustion_reports_the_terminal_reason`：Finite 模式续写预算耗尽 →
      `outcome == Failed`、`output_continuations == 2`、终态原因为 `MaxOutputTokens`；
      `ConversationSettled` 载荷 `output_continuations == 2`、
@@ -142,3 +143,8 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   无对应工具链与外部模型凭据；负责人：Mira Maintainers；补跑条件：PR CI matrix 与
   Mirage pin 升级后的下游复验）。issue #100 的公开结论回复随 PR 一并发布
   （`MNT-202610-53`）。
+
+2026-10-24：PR [#108](https://github.com/Linductor-alkaid/mira/pull/108)（分支
+`feat/conversation-terminal-truncation-reason`）已开出，并在 issue #100 下发布公开结论
+回复（契约形状、验收条件对照、验证证据与未覆盖范围）。PR CI 证据待 CI 完成后回填
+本节。
