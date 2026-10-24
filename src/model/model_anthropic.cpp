@@ -272,15 +272,21 @@ AnthropicMessagesV1Mapper::decode_response(const ModelRequest &request, const Mo
         !stop || !content || !content->is_array() || content->as_array()->size() > 64)
         return invalid();
     std::string finish, text;
+    bool refusal_stop = false;
     if (*stop == "end_turn" || *stop == "stop_sequence")
         finish = "stop";
     else if (*stop == "tool_use")
         finish = "tool_calls";
     else if (*stop == "max_tokens")
         finish = "length";
-    else if (*stop == "refusal")
+    else if (*stop == "refusal") {
+        // Design §7.2: an explicit refusal is the Refused terminal. The
+        // normalized body keeps the Chat finish shape; the status is fixed
+        // up after the decode, where the refusal stop is distinguishable
+        // from a provider content filter.
         finish = "content_filter";
-    else
+        refusal_stop = true;
+    } else
         return unsupported();
     JsonValue::Array calls;
     std::set<std::string> call_ids;
@@ -388,6 +394,15 @@ AnthropicMessagesV1Mapper::decode_response(const ModelRequest &request, const Mo
     for (const auto &item : normalized)
         if (std::holds_alternative<RefusalOutput>(item))
             result.output.push_back(item);
+    if (refusal_stop) {
+        // The provider refused: the Refused terminal, with a bounded summary
+        // instead of the provider's own wording (the Chat dialect keeps the
+        // same discipline).
+        result.status = ModelCompletionStatus::Refused;
+        RefusalOutput refusal;
+        refusal.safe_summary = "provider returned a refusal";
+        result.output.emplace_back(std::move(refusal));
+    }
     return result;
 }
 } // namespace mira

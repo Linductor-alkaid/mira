@@ -276,6 +276,14 @@ Result<ModelResponse> decode_responses_terminal_body(const ModelRequest &request
                 reason != nullptr && reason->is_string()) {
                 if (*reason->as_string() == "max_output_tokens") {
                     response.incomplete_reason = IncompleteReason::MaxOutputTokens;
+                } else if (*reason->as_string() == "content_filter") {
+                    // Design §7.2: a content filter is the ContentFiltered
+                    // terminal, not an incomplete output. Folding it into
+                    // Incomplete/Other made the loop recover from a filtered
+                    // reply - asking the model again instead of failing
+                    // closed on the provider's filter.
+                    response.status = ModelCompletionStatus::ContentFiltered;
+                    response.incomplete_reason.reset();
                 }
             }
         }
@@ -447,6 +455,17 @@ Result<ModelResponse> decode_responses_terminal_body(const ModelRequest &request
                 response.output.emplace_back(std::move(unknown));
             }
         }
+    }
+
+    // Design §7.2: an explicit refusal is the Refused terminal. The Responses
+    // dialect carries it as a refusal content part or a refusal output item;
+    // without this the response looked "completed with no text" and the loop
+    // asked the model again - a retry of a refusal, which the Refused terminal
+    // exists to prevent. A response the provider marked incomplete keeps its
+    // own status: an unfinished output is an incomplete output, and DEC-066
+    // already settles it without treating the fragment as an answer.
+    if (response.status == ModelCompletionStatus::Completed && carries_refusal(response.output)) {
+        response.status = ModelCompletionStatus::Refused;
     }
 
     response.usage = parse_usage_object(body.find("usage"), false);

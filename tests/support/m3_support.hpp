@@ -312,6 +312,19 @@ class ScriptedProvider final : public IModelProvider {
     return response;
 }
 
+// A provider content filter stopped the generation: the ContentFiltered
+// terminal (design §7.2). It carries no output - the filtered text never
+// reaches the host.
+[[nodiscard]] inline ModelResponse content_filtered_response() {
+    ModelResponse response;
+    response.contract_version = SchemaVersion{1, 0};
+    response.status = ModelCompletionStatus::ContentFiltered;
+    response.usage.input_tokens = 10;
+    response.usage.quality = UsageQuality::ProviderReported;
+    response.requested_model = "test-model";
+    return response;
+}
+
 // ---------------------------------------------------------------------------
 // Scripted real-socket HTTP server (single-threaded, test-driven)
 // ---------------------------------------------------------------------------

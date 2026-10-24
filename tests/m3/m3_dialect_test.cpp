@@ -362,6 +362,72 @@ int chat_completions_request_and_response() {
     return 0;
 }
 
+int responses_filter_and_refusal_are_their_own_terminals() {
+    // Design §7.2: a content filter is the ContentFiltered terminal and an
+    // explicit refusal is the Refused terminal. The Responses dialect used to
+    // fold the filter into Incomplete/Other and to leave a refusal looking
+    // like "completed with no text", which made the loops recover from a
+    // filtered or refused reply instead of failing closed on it.
+    ResponsesV1Mapper mapper;
+    const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
+    const auto request = base_request();
+
+    WireHttpResponse wire;
+    wire.status = 200;
+    wire.headers = {};
+
+    wire.body = R"({
+        "id": "resp_filter", "status": "incomplete", "model": "m",
+        "incomplete_details": {"reason": "content_filter"},
+        "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "partial"}
+        ]}],
+        "usage": {}
+    })";
+    auto filtered = mapper.decode_response(request, profile, wire);
+    MIRA_CHECK(filtered.has_value());
+    MIRA_CHECK(filtered.value().status == ModelCompletionStatus::ContentFiltered);
+    // A filtered response carries no incomplete reason: the contract only
+    // pairs one with the Incomplete status.
+    MIRA_CHECK(!filtered.value().incomplete_reason.has_value());
+
+    wire.body = R"({
+        "id": "resp_refusal", "status": "completed", "model": "m",
+        "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "refusal", "refusal": "cannot help"}
+        ]}],
+        "usage": {}
+    })";
+    auto refused_part = mapper.decode_response(request, profile, wire);
+    MIRA_CHECK(refused_part.has_value());
+    MIRA_CHECK(refused_part.value().status == ModelCompletionStatus::Refused);
+
+    wire.body = R"({
+        "id": "resp_refusal_item", "status": "completed", "model": "m",
+        "output": [{"type": "refusal", "refusal": "cannot help"}],
+        "usage": {}
+    })";
+    auto refused_item = mapper.decode_response(request, profile, wire);
+    MIRA_CHECK(refused_item.has_value());
+    MIRA_CHECK(refused_item.value().status == ModelCompletionStatus::Refused);
+
+    // An unfinished output keeps its own terminal: the filter and the refusal
+    // signals are what change the classification, not the presence of text.
+    wire.body = R"({
+        "id": "resp_incomplete", "status": "incomplete", "model": "m",
+        "incomplete_details": {"reason": "max_output_tokens"},
+        "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "partial"}
+        ]}],
+        "usage": {}
+    })";
+    auto incomplete = mapper.decode_response(request, profile, wire);
+    MIRA_CHECK(incomplete.has_value());
+    MIRA_CHECK(incomplete.value().status == ModelCompletionStatus::Incomplete);
+    MIRA_CHECK(incomplete.value().incomplete_reason == IncompleteReason::MaxOutputTokens);
+    return 0;
+}
+
 int image_transport_uses_artifact_bytes() {
     ResponsesV1Mapper mapper;
     const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
@@ -684,6 +750,9 @@ int main() {
         return status;
     }
     if (const int status = chat_completions_request_and_response(); status != 0) {
+        return status;
+    }
+    if (const int status = responses_filter_and_refusal_are_their_own_terminals(); status != 0) {
         return status;
     }
     if (const int status = reasoning_maps_to_bounded_thinking(); status != 0) {

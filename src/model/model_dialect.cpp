@@ -110,6 +110,22 @@ find_header(const std::vector<std::pair<std::string, std::string>> &headers,
     return Result<void>{};
 }
 
+[[nodiscard]] bool carries_refusal(const std::vector<ModelOutputItem> &output) {
+    for (const auto &item : output) {
+        if (std::holds_alternative<RefusalOutput>(item)) {
+            return true;
+        }
+        if (const auto *message = std::get_if<MessageOutput>(&item)) {
+            for (const auto &part : message->content) {
+                if (std::holds_alternative<OutputRefusalPart>(part)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] ModelUsage parse_usage_object(const JsonValue *usage, bool from_stream_eof) {
     ModelUsage result;
     if (usage == nullptr || !usage->is_object()) {
