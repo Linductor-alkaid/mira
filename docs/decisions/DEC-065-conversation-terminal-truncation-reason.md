@@ -5,6 +5,8 @@
 > 负责人：Mira Maintainers
 > 冻结里程碑：2026-10 对话终态截断维护轮
 > 替代/被替代：无
+> 修订：置位口径由 [DEC-066](DEC-066-conversation-incomplete-output-is-not-an-answer.md)
+> 部分修订（2026-10-24）
 > 关闭的缺口：ConversationLoop 终态不携带结构化的截断原因，事件面不可观测
 > （Mirage 反馈 `MIRA-20261022-001` / [mira#100](https://github.com/Linductor-alkaid/mira/issues/100)）
 
@@ -48,6 +50,10 @@ std::optional<IncompleteReason> terminal_incomplete_reason;
 - 采用 `std::optional<IncompleteReason>` 而不是布尔标记：理由词表（`MaxOutputTokens` /
   `ContextWindow` / `Other`）已经存在于模型契约（`model_contracts.hpp`），复用它可以让
   未来新增的容忍截断原因不必再扩公开面。
+- （2026-10-24 注记：本条置位口径已由
+  [DEC-066](DEC-066-conversation-incomplete-output-is-not-an-answer.md) 部分修订——
+  终态失败由不完整输出造成时，字段携带**供应商报告的原因**，不再限于续写预算耗尽
+  一条路径；「供应商未报告原因则留空」的口径不变。按值判别的消费方行为不变。）
 
 ### 2. 事件面携带续写计数与（终态时）原因名
 

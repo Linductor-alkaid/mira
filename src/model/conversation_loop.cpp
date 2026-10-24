@@ -788,7 +788,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
 
         // Text modes: a plain text answer is the terminal state; there is no
         // device verification and no forced decision JSON (DEC-047).
-        auto answer = assistant_text(outcome.response);
+        // DEC-066: an incomplete output is never an answer. The provider says
+        // the reply did not finish, so its text is a fragment - a filtered or
+        // context-cut reply included. Reporting that fragment as the terminal
+        // answer would present unfinished output as a completed answer, so an
+        // incomplete response takes the recovery path below instead.
+        auto answer = parse_outcome == DecisionParseOutcome::Incomplete
+                          ? std::string{}
+                          : assistant_text(outcome.response);
         if (!answer.empty()) {
             record.summary = "answer";
             retain_turn(std::move(record));
@@ -803,17 +810,32 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             record_recovery();
             // MaxOutputTokens cutoffs never reach this block: they settle by
             // bounded continuation above. What is left here is an empty or
-            // otherwise unusable reply (or a ContextWindow/Other cutoff).
-            // An Incomplete here lacks the MaxOutputTokens reason (provider
-            // did not report one): keep truncation-aware guidance so the
-            // retry does not regenerate the same long output.
+            // otherwise unusable reply, or a cutoff the provider attributed
+            // to something other than the output limit (ContextWindow/Other,
+            // or no reason at all). The guidance names the cause the provider
+            // actually reported - claiming an output-token limit it never
+            // reported would send the retry after the wrong problem.
             if (parse_outcome == DecisionParseOutcome::Incomplete) {
-                record.note = "output cut off; recovering";
-                retain_turn(std::move(record));
-                feedback = "Your previous reply was cut off by the output-token limit before "
-                           "it completed. Reply again with a concise plain-text response "
-                           "only: no tool calls and no long deliberation — state the current "
-                           "result or the blocking limitation in a few sentences.";
+                const auto reason = outcome.response.incomplete_reason;
+                if (reason.has_value() && *reason == IncompleteReason::ContextWindow) {
+                    record.note = "output incomplete (context window); recovering";
+                    retain_turn(std::move(record));
+                    feedback = "Your previous reply did not complete because the context "
+                               "window was exhausted. Reply with a concise plain-text "
+                               "response only: no tool calls, no long deliberation, and no "
+                               "repetition of earlier content — state the current result or "
+                               "the blocking limitation in a few sentences.";
+                } else {
+                    record.note = reason.has_value()
+                                      ? "output incomplete (" + incomplete_reason_name(*reason) +
+                                            "); recovering"
+                                      : "output incomplete; recovering";
+                    retain_turn(std::move(record));
+                    feedback = "Your previous reply did not complete before it was cut "
+                               "off. Reply again with a concise plain-text response only: "
+                               "no tool calls and no long deliberation — state the current "
+                               "result or the blocking limitation in a few sentences.";
+                }
             } else {
                 record.note = "no usable answer text; recovering";
                 retain_turn(std::move(record));
@@ -823,6 +845,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             continue;
         }
         result.outcome = ConversationOutcome::Failed;
+        // DEC-066: the terminal failure of an incomplete output carries the
+        // reason the provider reported, so the new failure class stays
+        // observable instead of collapsing into an unexplained Failed. A
+        // provider that reported no reason leaves the field empty.
+        if (parse_outcome == DecisionParseOutcome::Incomplete &&
+            outcome.response.incomplete_reason.has_value()) {
+            result.terminal_incomplete_reason = outcome.response.incomplete_reason;
+        }
         result.safe_summary = parse_outcome == DecisionParseOutcome::Incomplete
                                   ? "model output remained incomplete after recovery budget"
                                   : "model output carried no answer text";
