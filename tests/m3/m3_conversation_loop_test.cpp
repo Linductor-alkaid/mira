@@ -289,6 +289,24 @@ int refusal_fails_closed() {
     return 0;
 }
 
+int content_filtered_response_fails_closed_without_a_retry() {
+    // A provider content filter is a terminal, not a recoverable reply: the
+    // loop fails closed without spending the recovery budget on the filtered
+    // request (design §7.2).
+    ConversationFixture fixture;
+    fixture.use_provider({content_filtered_response(), text_response("never sent")});
+    auto loop = fixture.make_loop(ConversationLoopConfig{});
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result.has_value());
+    MIRA_CHECK(result.value().outcome == ConversationOutcome::Failed);
+    MIRA_CHECK(result.value().safe_summary.find("no policy bypass") != std::string::npos);
+    MIRA_CHECK(result.value().answer.empty());
+    MIRA_CHECK(result.value().recoveries == 0);
+    // The filtered request was not asked again.
+    MIRA_CHECK(fixture.provider_->requests().size() == 1);
+    return 0;
+}
+
 int pre_cancelled_context_settles_cancelled() {
     ConversationFixture fixture;
     fixture.use_provider({text_response("never sent")});
@@ -985,6 +1003,9 @@ int main() {
         return code;
     }
     if (const int code = refusal_fails_closed(); code != 0) {
+        return code;
+    }
+    if (const int code = content_filtered_response_fails_closed_without_a_retry(); code != 0) {
         return code;
     }
     if (const int code = pre_cancelled_context_settles_cancelled(); code != 0) {
