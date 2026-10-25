@@ -138,5 +138,12 @@ x86_64，GCC 13.3.0，CMake debug 预设，clang-format 18.1.8。
   [`40112626939`](https://github.com/Linductor-alkaid/mira/actions/runs/40112626939)）
   同样**全部通过**。
 - 本机未覆盖的 Android / Windows 编译路径已由该 CI matrix 关闭。
+- 合并：PR [#110](https://github.com/Linductor-alkaid/mira/pull/110) 以 squash 合并进
+  master，合并提交 `d5e47a0`；最终 head `dd0b79a` 的 CI（runs
+  [`40115907035`](https://github.com/Linductor-alkaid/mira/actions/runs/40115907035)/
+  [`40115910751`](https://github.com/Linductor-alkaid/mira/actions/runs/40115910751)）
+  **全部通过**。
+- 合并后在 master 上复验：`ctest --test-dir build/debug --output-on-failure`
+  **113/113 通过**（退出码 0）。
 - 本维护计划保持 `In Progress`：仅余 Mirage pin 升级后的下游端到端复验（`MNT-202610-68`
   的拒绝摘要策略属独立一轮，尚未立项）。
