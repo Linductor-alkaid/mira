@@ -193,7 +193,7 @@ loop.set_tool_registry(registry);
 - `enqueue_user_message(text)`（[DEC-016](../decisions/DEC-016-conversation-events-and-user-messages.md)）：
   线程安全、有界队列；消息在步边界取出、发 `UserMessageInjected` 事件（文本、字节数、
   digest），并作为常驻指令进入本轮及后续每轮请求（provenance
-  `mira.agent-loop.user-message.v1`）。**脱敏责任在宿主**：入队文本原样进入事件存储
+  `mira.agent-loop.context.v1`）。**脱敏责任在宿主**：入队文本原样进入事件存储
   与模型请求，凭据、输入法敏感内容必须在入队前移除。
 
 ## agent_loop.hpp：Working Context 快照供给缝（M25，DEC-045）

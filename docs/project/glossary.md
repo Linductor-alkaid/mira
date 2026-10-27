@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.4
-> 更新日期：2026-10-23
+> 版本：1.5
+> 更新日期：2026-10-28
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -323,3 +323,59 @@ _Avoid_: 手写 if 分支（无 provenance 与生命周期的裸规则）
 `ReactivePolicyRuntime` 承载的确定性评估与宿主显式生命周期（归纳/采纳/
 测试/晋升/降级/退役）；每 tick 有界同步、不读系统时钟、不建线程。
 _Avoid_: 状态机引擎（HSM/BT 归 T5）、自治治理（晋升无自动面）
+
+## 10. 统一交互与容量（DEC-068 / DEC-069）
+
+权威来源：[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
+[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)、
+[M28 计划](../plans/m28-interaction-coordinator-first-stage.md)。
+
+**Interaction Coordinator（交互协调层）**:
+DEC-068 冻结的主体级协调组件，位于 Runtime 之上、宿主之下：持有主体身份、
+接纳输入、裁决输入归属哪个内部 Session/Task、准备该工作的上下文、
+归集结果并统一回复。它**不实现第二套状态机**，唯一地使用 Runtime 的既有命令面，
+也不创建 Agent Loop。
+_Avoid_: 会话路由器（协调层还负责上下文与结果关联）、第二 Runtime、
+权限代理（授权语义归 PolicyEngine）
+
+**Input Envelope（输入信封）**:
+一次主体输入的接纳载荷：主体身份、宿主提供的稳定 `input_id`、内容与
+回复/附件引用。`input_id` 是**幂等键**，不是内容哈希。
+_Avoid_: 消息（Message 是 Loop 内的输入单元）、请求
+
+**Input Ledger（输入台账）**:
+持久化的输入幂等台账：记录 `input_id`、Mira 内部入口身份
+（`ControlIngressId`）、接纳时间、归属与当前阶段，在声明窗口内阻止重复输入
+产生重复副作用；窗口外的重复输入得到**明确过期拒绝**。
+_Avoid_: Command 去重表（绑定 Task/Session 终态 retention）、缓存、
+记忆台账（`memory_mutations` 是记忆变更的幂等台账）
+
+**Routing Decision（路由裁决）**:
+协调层对一次输入做出的**确定性**归属决定：延续/补充/新建/恢复/暂停/取消/
+澄清/拒绝，并给出目标 Session/Task 与可审计理由。模型只能提出建议，
+不得直接裁决。
+_Avoid_: 意图（意图是模型的语义产物）、计划、模型路由
+
+**Capacity Budget（容量预算）**:
+DEC-069 冻结的**持久化与驻留资源**总量上限，分层为总量、按主体份额、
+软水位、硬水位与回收预留。它与 Context 预算（单次请求的 token 预算）
+**互不相干**，两者不可互证。
+_Avoid_: Context 预算、请求上限、配额（单对象限额）、
+模型预算（`BudgetLedger` 按 Task 的计价账本）
+
+**Forgetting Layer（遗忘分层）**:
+DEC-069 冻结的四层遗忘机制：召回降权、去重/抽象巩固、有限归档、物理删除。
+召回降权**不释放空间**，不计入「已遗忘」。
+_Avoid_: 遗忘（泛称）、TTL 到期（只是物理删除的一条触发）
+
+**Protection Set（保护集合）**:
+不得按普通情景淘汰的最小必要状态集合：活动/挂起任务的最低必要状态、
+未决副作用、待批准/待澄清事项、当前安全与授权约束。它本身**占用预算且有上限**，
+满时限制新工作而非扩大保护集合。
+_Avoid_: 固定集、永久保留、豁免
+
+**Archive（归档）**:
+会话退出后的有限保留态：释放受管理/驻留会话名额，保留有限摘要、元数据与
+必要工件，有自己的总额与保留期。归档**不是**「忘掉」——隐私删除的 hold
+不因归档解除。
+_Avoid_: 归档文件（文件系统语义）、备份、冷存储

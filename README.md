@@ -125,6 +125,14 @@ runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the
 first stage of the unified behavior trace (DEC-038). Mira ships the runtime and
 installable packages; it deliberately contains no product UI or end-user app.
 
+Next, and not yet implemented: **M28–M31** add a principal-level interaction
+layer on top of the runtime — one input entry point that decides which internal
+session or task a message belongs to, with a durable idempotency ledger and
+deterministic routing ([DEC-068](docs/decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md))
+— together with a bounded capacity model, layered forgetting, and session
+archival ([DEC-069](docs/decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)).
+Routing quality and capacity figures are **not** yet measured.
+
 ## Getting started
 
 Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja. Executor, Mbed TLS, and

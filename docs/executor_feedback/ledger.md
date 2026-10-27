@@ -22,6 +22,7 @@
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260922-001` | 2026-09-22 | Resolved | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | 已随 pin 升级（`ef821dc`，上游 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)）恢复 MinGW 全树可构建 | 已删除（pin 升级后无需子集回避） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)、[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`） |
+| `EXE-20261028-001` | 2026-10-28 | Open | 总量有界 admission 缺少按主体分桶的份额准入语义 | 阻塞 DEC-069 的分主体份额准入；Mira 侧只能用二段式预过滤近似 | 无安全临时方案完全等价者；M31 期间用 Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」） | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -339,3 +340,173 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
 | 2026-10-05 | Open（上游复核） | 上游已更名 kairo 并发布 v0.6.0（破坏性变更窗口）；对照 tag `v0.6.0` 源码复核，同一表达式仍在 `src/kairo/blocking_io_executor.cpp:157`，且上游 tracker 无 MinGW/native_handle 相关 issue——本缺口未随 0.6.0 关闭，升级 pin 不能解决 | [kairo v0.6.0](https://github.com/Linductor-alkaid/kairo/releases/tag/v0.6.0) |
 | 2026-10-05 | Open（pin 迁移） | Mira 随附依赖升级为 kairo v0.6.0（`d9602ea`，上游更名 + 兼容层清理 + Scheduling Runtime）；迁移复核确认缺陷仍在，条目保持 Open，关联路径更新为 `third_party/kairo` | 维护计划 maintenance-2026-10-kairo-migration.md |
 | 2026-10-05 | Open → Resolved | 上游修复合入 master：[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`，合入 `ef821dc`）按本条期望语义解耦 `native_handle_type`——新增 `set_current_thread_priority/affinity()`，两执行器 self_handle `#ifdef` 块删除；MinGW posix/win32 双模型全树构建零诊断、Linux ctest 147/147；上游 master CI 绿。Mira pin 升级至 `ef821dc`（`v0.6.0-12-gef821dc`），Mira 全量回归见维护计划。MinGW 交叉全树验收（Mirage 门禁侧）与 MSVC 复验由本 PR CI/mirage 补跑承接 | kairo#215、mira#75 |
+
+### EXE-20261028-001：总量有界 admission 缺少按主体分桶的份额准入语义
+
+- 状态：`Open`
+- 发现日期：`2026-10-28`
+- 记录人/责任人：Mira Maintainers
+- 影响组件：`kairo::Executor` 的接纳（admission）语义；Mira 侧计划中的主体级协调层
+  （[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)）
+  与有限容量资源模型
+  （[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)）
+- Executor 版本或提交：kairo v0.7.0，pin commit `32027c247dd4b9280d7c995454b732bac0db9095`
+  （`dependencies.lock.json:8-11`）
+- 关联代码/测试：`include/kairo/executor.hpp:182-184`、`include/kairo/executor.hpp:1031-1032`、
+  `include/kairo/task_router.hpp:17-22`、`include/kairo/scheduler.hpp:65-66`、
+  `include/kairo/scheduling.hpp:44-53`
+- 上游 issue/PR：尚未提交；经 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)
+  转交上游流程
+
+#### 使用场景
+
+Mira 计划引入**主体级（principal/tenant）协调层**：多个已认证主体共享同一个
+`kairo::Executor`，每个主体有自己的会话数、并发任务数与存储份额上限。issue #111 §6 明确
+要求「区分总预算、分主体份额、软水位、硬水位与回收/取消所需预留」，且
+「容量预留与并发接纳一致」——即份额上限必须**作用在 Executor 的接纳点**上，
+而不是在接纳之后再做一层应用层节流。
+
+Mira 侧既有设计也已经把这条写成了契约：
+[事件与崩溃一致性设计 §11](../design/event_artifact_crash_consistency.md)
+「配额至少按 runtime、tenant、session 和单 artifact 配置」；
+[核心契约与状态机设计 §5.3](../design/core_contracts_and_state_machine.md) 的
+`OpenSession` / `SubmitTask` 接纳条件含「配额允许」。
+
+#### 已核查证据
+
+**1. 现有 admission 是实例级单值计数器，没有 key 维度。**
+
+- `include/kairo/executor.hpp:1031-1032`：`max_in_flight_tasks_` / `in_flight_submissions_`
+  是两个 `std::size_t`，**没有**任何分桶键。
+- 公开 API 只有 `set_max_in_flight_tasks(size_t)` / `get_max_in_flight_tasks()` /
+  `get_in_flight_submissions()`（`include/kairo/executor.hpp:182-184`）——
+  **没有任何按主体分桶的接口**。
+- 计数语义本身是正确且原子的：`try_admit_submission`
+  （`include/kairo/executor.hpp:1077-1080`）+ `AdmissionReleaser`
+  （`include/kairo/executor.hpp:1046-1069`）保证「恰好一次释放」，
+  `record_capacity_exhausted`（`include/kairo/executor.hpp:1082-1084`）记拒绝。
+  **缺的只是分桶，不是计数。**
+
+**2. 没有配额 / 租约 / 许可原语。**
+
+- `include/kairo/` 全量 grep `quota|lease|permit|credit` 仅命中
+  `comm/bounded_queue.hpp:80,266,295` 的 `EnqueueLease` / `ConsumerLease`——
+  队列内部 RAII 的消费权交接，**不是配额**。
+- `include/kairo/scheduling.hpp:44-53` 的 `ResourceRequirements` 只有 `memory_bytes`
+  （GPU 内存可行性）与 `gpu_device`（设备归属）。契约明写「feasibility check against
+  capability snapshots」，`third_party/kairo/docs/API.md:385` 明确「**feasibility hint，
+  非资源保证；存在 TOCTOU 窗口**」，违约行为是 `BackendUnavailable` / `CapacityPressure`
+  ——**没有「扣减 / 释放 / 剩余额度」的配额账本语义**。
+
+**3. 降载是按 QoS 类别，不是按主体。**
+
+`include/kairo/adaptive_scheduler.hpp:59-94` 的 `queue_wait_p99_target_ns` 是按 `QosClass`
+索引的 4 元素数组；`:141-145` 的 `load_shed_active(QosClass)` 同理；
+`:27-31` 的学习粒度是 per-(backend, executor, qos)。**没有任何主体维度。**
+
+**4. `IScheduler` 注入点无法承担主体级配额。**
+
+- `include/kairo/task_router.hpp:17-22`：`TaskRouter::Request` 只有
+  `TaskOptions options; bool cpu_gpu_task; std::optional<bool> gpu_selected;`
+  ——**没有主体/租户身份字段**；`TaskOptions`
+  （`include/kairo/task_options.hpp:170-181`）也没有。
+- `include/kairo/scheduler.hpp:65-66`：`IScheduler::route()` 只**产出路由决策**，
+  不持有配额账本；且 `set_scheduler()` **必须在首次提交前调用**
+  （`include/kairo/executor.hpp:56-61`、`third_party/kairo/docs/API.md:387-391`）。
+- `IScheduler` **只被 `submit_auto` 咨询**
+  （`include/kairo/executor.hpp:2921,2943`）；`submit()` / `submit_delayed()` /
+  `submit_periodic()` / `submit_on()` / `submit_cancellable*()` **都不经过它**。
+  ⇒ 用自定义 `IScheduler` 实现配额**只覆盖 `submit_auto` 一条路径**。
+
+**5. 已排除「API 选型错误 / 应用层职责」两种解释。**
+
+- 不是选型错误：`EXE-20260830-001` 已把「总量有界 admission」迁移到 Executor 原生
+  `max_in_flight_tasks`（其正文只谈**总量**上限，未涉及分桶/份额）；
+  本条是它的自然延伸（总量 → 按主体分桶），不是重复登记。
+- 不是应用层职责：AGENTS.md 排除的是「模型供应商协议适配、手势映射、业务状态机策略、
+  错误使用已有 API、平台权限」。主体份额准入是**通用的并发容量治理原语**
+  （多个共存主体共享一个 Executor 时的配额与背压），不是 Mira 独有的业务策略；
+  而且它必须作用在接纳点才有意义——否则只能做「先拒后放」的二段式，
+  与 Executor 的「恰好一次释放」「future 就绪前计数已释放」不变式
+  （`third_party/kairo/docs/API.md:601-604`）产生双份计数。
+
+**最小复现思路**：设两个主体 A/B 共享一个 Executor，`max_in_flight_tasks = 2`。
+A 提交 2 个长任务后，B 的提交被**全局**拒绝，尽管 B 自己的配额为 0 未被触碰。
+现有公开 API 无法表达「A 已用满 A 的份额，但 B 仍有份额」。
+
+#### 期望能力与语义
+
+Executor 应提供**按 key 分桶的份额准入**，语义：
+
+- 接纳点接受一个可选的**分桶键**（泛型或字符串标签），并对每个键维护独立的在途计数与
+  份额上限；总上限与分桶上限**同时**生效，任一超限即拒绝该次提交。
+- 计数生命周期与现有总量计数一致：**恰好一次接纳、恰好一次释放**；
+  future 就绪前计数必须已释放。
+- 拒绝必须可观测：沿用现有 `CapacityExhaustedException` /
+  `FailureKind::CapacityExhausted` / `capacity_exhausted_count` 三通道
+  （`include/kairo/types.hpp:47-58,185,214`），并能区分「总量超限」与「某分桶份额超限」。
+- 份额上限的设置与查询应有运行期接口，且设置变更需与既有
+  `set_max_in_flight_tasks` 一样在**首次提交前**完成（或提供明确的热更新语义）。
+- **不要求** Executor 承担业务策略：份额值从哪来、是否按主体动态调整，仍由调用方决定；
+  Executor 只负责按 key 记账与拒绝。
+
+#### 影响与风险
+
+- **正确性**：无直接正确性缺陷——现有行为在总量维度是自洽的。
+- **交付阻塞**：[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)
+  §1/B2 的「分主体份额」与「容量预留与并发接纳一致」在当前 API 下**无法在接纳点实现**；
+  M31 的部署档位因此无法冻结。
+- **多租户公平性**：一个主体可以吃光全局在途额度，其他主体被全局拒绝——
+  这与 Mira 既有的「配额至少按 runtime、tenant、session 配置」设计契约不符。
+- **对上游的规模影响小**：是在既有 `try_admit_submission` / `AdmissionReleaser`
+  机制上加一个可选的 key 维度，不是新增调度模型。
+
+#### 临时方案
+
+**无完全等价的安全临时方案。** 在上游提供该能力前，M31 采用**嵌套预过滤**：
+
+- Mira 侧维护一个分桶账本，在**调用 Executor 提交之前**先做主体份额检查：
+  份额不足则由 Mira 直接返回 `ResourceExhausted`，**不进入** Executor 接纳点。
+- 通过 Mira 账本后，仍由 Executor 的 `max_in_flight_tasks` 做**全局**兜底。
+- 二者是**嵌套**关系（Mira 分桶 ⊆ Executor 全局），因此 Executor 的
+  「恰好一次释放」与「future 就绪前计数已释放」不变式**不被破坏**——
+  被 Mira 拒绝的请求从未进入 Executor 计数。
+
+**已知行为差异（必须记录，不得静默）**：
+
+1. 拒绝计数分散在两处：Mira 账本的拒绝与 Executor 的 `capacity_exhausted_count`
+   分别统计；上层诊断需要合并两者才能得到「因容量拒绝」的完整视图。
+2. 存在**双重记账窗口**：Mira 账本在提交前预留、Executor 接纳后释放，
+   两者之间若进程崩溃，Mira 账本可能残留预留（需由 M31 的恢复流程按
+   `ControlIngressId`/任务终态清理）。Executor 侧不受影响。
+3. 该方案**不是** Executor 原生分桶，因此不能覆盖 `submit_delayed` /
+   `submit_periodic` / realtime / blocking-I/O 等绕过 `submit_auto` 的路径——
+   这与 Executor 自身的 admission 覆盖面一致（总量维度同样不覆盖这些路径，
+   `third_party/kairo/docs/API.md:580-584`）。
+4. 若未来上游提供原生分桶，Mira 侧账本**必须删除**，不得与原生能力叠加。
+
+**移除条件**：上游按本条期望语义提供能力后，Mira 侧账本与预过滤路径整体删除，
+`DEC-069` §1/B2 改为直接使用 Executor 原生分桶。
+
+**测试覆盖**：M31 的容量门禁必须覆盖「A 用满自身份额后 B 仍可接纳」与
+「A+B 合计超过全局上限」两个用例，并断言拒绝原因可区分。
+
+#### 上游验收标准
+
+- Executor 支持按分桶键的独立在途计数与份额上限；总上限与分桶上限同时生效。
+- 分桶计数遵守「恰好一次接纳、恰好一次释放」；future 就绪前计数已释放。
+- 分桶份额超限的拒绝**可与总量超限区分**，且沿用既有三通道可观测面。
+- 正常场景：主体 A 与 B 各自未超份额时，双方提交均被接纳，互不影响。
+- 拒绝/过载场景：A 超自身份额被拒且 B 仍可接纳；A+B 合计超全局上限时双方按既有
+  总量语义被拒。
+- 取消场景：被取消或失败的任务**释放其分桶计数**，不泄漏额度。
+- 异常场景：任务体抛异常时，分桶计数同样被释放。
+- 超时场景：deadline 触发的拒绝与释放路径与总量语义一致。
+- shutdown 场景：shutdown 期间的分桶拒绝语义与总量语义一致，且计数全部归零。
+- 既有行为零回归：`max_in_flight_tasks` 的现有语义与全部既有测试不回归。
+
+#### 跟进记录
+
+| 日期 | 状态变化 | 说明 | 证据/链接 |
+| --- | --- | --- | --- |
+| 2026-10-28 | Open | 为 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) §6「分主体份额」需求核查 kairo v0.7.0 公开头文件、API 文档与集成指南后确认缺口：admission 为实例级单值、无 key 维度、无配额原语、`IScheduler` 仅覆盖 `submit_auto` 且无主体字段；经 [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §1/B2 引用登记 | mira#111、DEC-069 §1 |
