@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.4
-> 更新日期：2026-10-23
+> 版本：1.6
+> 更新日期：2026-10-28
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -323,3 +323,122 @@ _Avoid_: 手写 if 分支（无 provenance 与生命周期的裸规则）
 `ReactivePolicyRuntime` 承载的确定性评估与宿主显式生命周期（归纳/采纳/
 测试/晋升/降级/退役）；每 tick 有界同步、不读系统时钟、不建线程。
 _Avoid_: 状态机引擎（HSM/BT 归 T5）、自治治理（晋升无自动面）
+
+## 10. 统一交互与容量（DEC-068 / DEC-069）
+
+权威来源：[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
+[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)、
+[M28 计划](../plans/m28-interaction-coordinator-first-stage.md)。
+
+**Interaction Coordinator（交互协调层）**:
+DEC-068 冻结的主体级协调组件，位于 Runtime 之上、宿主之下：持有主体身份、
+接纳输入、裁决输入归属哪个内部 Session/Task、准备该工作的上下文、
+归集结果并统一回复。它**不实现第二套状态机**，唯一地使用 Runtime 的既有命令面，
+也不创建 Agent Loop。
+_Avoid_: 会话路由器（协调层还负责上下文与结果关联）、第二 Runtime、
+权限代理（授权语义归 PolicyEngine）
+
+**Input Envelope（输入信封）**:
+一次主体输入的接纳载荷：主体身份、宿主提供的稳定 `input_id`、内容与
+回复/附件引用。`input_id` 是**幂等键**，不是内容哈希。
+_Avoid_: 消息（Message 是 Loop 内的输入单元）、请求
+
+**Input Ledger（输入台账）**:
+持久化的输入幂等台账：记录 `input_id`、Mira 内部入口身份
+（`ControlIngressId`）、接纳时间、归属与当前阶段，在声明窗口内阻止重复输入
+产生重复副作用；窗口外的重复输入得到**明确过期拒绝**。
+_Avoid_: Command 去重表（绑定 Task/Session 终态 retention）、缓存、
+记忆台账（`memory_mutations` 是记忆变更的幂等台账）
+
+**Routing Decision（路由裁决）**:
+协调层对一次输入做出的**确定性**归属决定：延续/补充/新建/恢复/暂停/取消/
+澄清/拒绝，并给出目标 Session/Task 与可审计理由。模型只能提出建议，
+不得直接裁决。
+_Avoid_: 意图（意图是模型的语义产物）、计划、模型路由
+
+**Capacity Budget（容量预算）**:
+DEC-069 冻结的**持久化与驻留资源**总量上限，分层为总量、按主体份额、
+软水位、硬水位与回收预留。它与 Context 预算（单次请求的 token 预算）
+**互不相干**，两者不可互证。
+_Avoid_: Context 预算、请求上限、配额（单对象限额）、
+模型预算（`BudgetLedger` 按 Task 的计价账本）
+
+**Forgetting Layer（遗忘分层）**:
+DEC-069 冻结的四层遗忘机制：召回降权、去重/抽象巩固、有限归档、物理删除。
+召回降权**不释放空间**，不计入「已遗忘」。
+_Avoid_: 遗忘（泛称）、TTL 到期（只是物理删除的一条触发）
+
+**Protection Set（保护集合）**:
+不得按普通情景淘汰的最小必要状态集合：活动/挂起任务的最低必要状态、
+未决副作用、待批准/待澄清事项、当前安全与授权约束。它本身**占用预算且有上限**，
+满时限制新工作而非扩大保护集合。
+_Avoid_: 固定集、永久保留、豁免
+
+**Archive（归档）**:
+会话退出后的有限保留态：释放受管理/驻留会话名额，保留有限摘要、元数据与
+必要工件，有自己的总额与保留期。归档**不是**「忘掉」——隐私删除的 hold
+不因归档解除。
+_Avoid_: 归档文件（文件系统语义）、备份、冷存储
+
+## 11. 注意力与自主行为（DEC-071 / DEC-072）
+
+权威来源：[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)、
+[DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)、
+[M32](../plans/m32-attention-focus-and-safe-switch.md)、
+[M33](../plans/m33-autonomy-and-interruption-budget.md)。
+
+**Focus（认知焦点）**:
+DEC-071 冻结的**任务/活动级**注意力对象，由协调层持有、跨会话、单一提交点。
+与感知层的 ROI「焦点」和表现层的显示选择**不是同一契约**。
+_Avoid_: 感知焦点、设备焦点、窗口焦点、Session（焦点跨会话）
+
+**Task Origin（任务来源）**:
+`TaskOrigin{UserInitiated, Autonomous}`——工作由用户发起还是自主发起。
+与 `TaskPriority` **正交**：自主工作可以是高优先级，用户工作也可以是后台优先级。
+_Avoid_: GoalPriority（把来源与紧迫度混在一个枚举里）、
+用户类型（UserId 是主体，不是来源）
+
+**Task Priority（任务优先级）**:
+`TaskPriority{Background, Normal, High}`——同级竞争与抢占**候选资格**。
+`High` **不等于**可抢占：实际抢占仍受可中断性判定与授权约束。
+用户发起任务的优先级**始终不低于**自主任务。
+_Avoid_: Executor 调度优先级（不同概念，禁止混用）、
+抢占（抢占是动作，优先级是资格）
+
+**Interruptibility（可中断性）**:
+DEC-071 冻结的**纯函数只读**判定：`Interruptible` / `WaitForSettlement` /
+`NotInterruptible`。安全点是「在途 operation 结算为 Applied 或明确 Failed」的时刻；
+超时**不**构成强制终止。
+_Avoid_: 可取消（取消是用户意图，可中断是当前状态）、暂停（暂停是动作）
+
+**Safe Switch（安全切换）**:
+`Prepare → Suspend → Release → Commit → Resume` 五阶段协议：
+旧焦点先释放、新焦点后提交；失败回滚到原焦点；崩溃后可从持久化状态识别为
+「中断的切换」。
+_Avoid_: 抢占（抢占只是 Safe Switch 的一种触发）、注意力切换（泛称）
+
+**Autonomous Intent（自主意图）**:
+DEC-072 冻结的**第二输入源**：无用户主体、由宿主提出的工作意向
+（`IntentSource`、类别、优先级、期限、关联承诺、价值与风险估计）。
+它**不走**用户输入路径，但**共用**协调层的预算、租约、注意力、审计与恢复纪律。
+_Avoid_: Input Envelope（授权主体、幂等键与接纳判据都不同）、
+后台任务（后台任务可以由用户发起）
+
+**Interruption Budget（打断预算）**:
+DEC-072 冻结的**九道确定性闸门**：类别开关、全局开关、权限判定、静默期、冷却、
+最小间隔、合并窗口、每类别频率上限、每日/每小时配额。
+Core **强制执行**闸门；宿主只提供配置与「该不该说话」的策略。
+_Avoid_: 焦点稳定性（`min_focus_duration` 等只管切换任务，不管主动发言）、
+配额（单项限额，打断预算是多项闸门的合取）
+
+**Autonomy Permission（自主权限三分类）**:
+`Allowed`（只读无副作用）/ `NeedsConsent`（有副作用，需用户确认）/
+`Forbidden`（高风险，无论用户是否在线）。Core 侧同源判定；
+宿主的开关**只能收紧，不能放宽**。
+_Avoid_: 风险分级（ActionRisk 是动作维度，这是发起维度）、能力授权
+
+**Class Disable（按类别禁用）**:
+用户否决（「不要再…」）后由 Core **强制**持有的持久禁用状态。
+这是把宿主 UX 意图提升为 Core 不变量的一条规则。
+_Avoid_: 降频（降频只影响频率，禁用是硬拒绝）、
+模型判断（否决不是模型裁量）

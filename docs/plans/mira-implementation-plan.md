@@ -2,7 +2,39 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-09-28（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
+> 更新日期：2026-10-28（kairo 未发布 master pin 升级：
+> [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md) 冻结
+> pin `32027c2`（v0.7.0）→ `78c6f557`（`v0.7.2-14-g78c6f55`），消费上游
+> 分主体在途份额（PR #223/#224）；暴露面核对零命中、公开 API 差异纯增量、
+> 零代码迁移；未发布 master 的 pin 纪律与发版后复核见 §4.1 第 23 条。
+> 此前 2026-10-28（Mirage 侧
+> [持续性数字个体路线图](https://github.com/Linductor-alkaid/mirage)
+> §4.3/§4.6 深挖后的第二波立项：冻结
+> [DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md)（长期记忆行为契约，
+> 补 #111 §4 承接）、
+> [DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)（注意力焦点与安全切换）、
+> [DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)（主动行为、行为意图与
+> 打断预算）；立项 [M32](m32-attention-focus-and-safe-switch.md)、
+> [M33](m33-autonomy-and-interruption-budget.md) 并修订 DEC-069。详见 §4.1 第 22 条。）
+> 此前 2026-10-28（Mirage 侧
+> [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)（`MIRA-20261027-001`）
+> 「持续 Mira 的统一交互」需求经评审受理：冻结
+> [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
+> 「交互协调层与主体级输入入口」与
+> [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)
+> 「有限容量资源模型、分层遗忘与会话退出生命周期」两条决策；立项
+> [M28](m28-interaction-coordinator-first-stage.md)（主体级输入接纳与最小路由闭环，
+> 跑前冻结随立项完成）、[M29](m29-interaction-coordinator-concurrency-and-recovery.md)、
+> [M30](m30-long-term-memory-integration.md)、
+> [M31](m31-capacity-admission-and-archival-recovery.md) 四个里程碑；
+> 确认并登记 Executor 缺口
+> [`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体分桶的份额准入）——
+> **上游已交付**（kairo PR #223 合并入 master 并关闭 #222），但**尚未发布含该修复的
+> tag**，Mira 未消费，台账状态 `Accepted`；M31 须在版本可用后改用原生分桶并迁移
+> 受分桶约束的提交形态。
+> **真实模型语义质量与部署档位数值未验证**，本轮不宣称语义质量、容量达标或
+> 跨平台保证。详见 §4.1 第 21 条。）
+> 此前 2026-09-28（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
 > 首阶段「会话 World State 投影」经 [M27](m27-world-state-projection-core.md)
 > 立项并跑前冻结（`M27-01`）：实体词表对齐前置以
 > [DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md) 冻结（v1 基线 =
@@ -316,6 +348,12 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M25](m25-host-integration-round.md) | 宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：可选快照供给依赖（未注入零漂移）、`build_request` 经 `context_items_from_working_context` 注入已提交快照条目（身份对齐 + 有界渲染 + 失败降级）；W3/W4/W5 宿主显式编排、Loop 零自动化；三层验收——`tests/m25/` 契约矩阵 + `tests/integration/` 单系统闭环 + `examples/` 参考宿主；无模型） | M23/M24 关闭（已满足）；接线验收形态冻结（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M25 §4 冻结 | 真实模型轮与 Stage E 评估矩阵的接线前提（非发布物） | Completed |
 | [M26](m26-temporal-policy-stage-t1.md) | Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环（[DEC-037](../decisions/DEC-037-temporal-policy.md)：`TemporalHistory`/`TrackedEntity`/T1 子集版本化事件族/`ReactiveRule` schema v1 契约 + `IPolicyRuntime`/`ReactivePolicyRuntime` 最小闭环——冻结确定性数据集上「重复事件 → 候选规则 → 晋升后无需 Agent 正确执行」；无平台、无感知、无模型依赖，指标全部为管线行为指标） | DEC-037 冻结（已满足）；T1 纯 Core 确定性阶段常规授权（总计划 §4.1 第 7 条与 DEC-037 决策第 7 条，已满足）；M26 §4 冻结 | Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点（非发布物） | Completed |
 | [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物）；已交付（[PR #71](https://github.com/Linductor-alkaid/mira/pull/71) CI 全绿） | Completed |
+| [M28](m28-interaction-coordinator-first-stage.md) | 交互协调层首阶段——主体级输入接纳与最小路由闭环（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)/[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)：主体级 `InputEnvelope` 入口与四阶段 `InputStage`、耐久幂等台账 `IInputLedger`（宿主 `input_id` 去重 + 窗口外明确过期）、确定性路由裁决八意图闭集（含「指代不清 → 自然语言澄清」）、结果关联与迟到结果处置、`IUserInputSink` 输入缝与 `ConversationLoop` 对称入队通道、按工作组织的上下文归属；无模型、无平台） | DEC-068 冻结（已满足）；M25 供给缝接线形态（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M28 §4 冻结 | M29/M30/M31 的接线前提（非发布物） | Planned |
+| [M29](m29-interaction-coordinator-concurrency-and-recovery.md) | 交互协调层第二阶段——执行中插话、切换/恢复、并发归属、持久化与断线回补（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §5/§8；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5） | M28 关闭（**未满足**） | M30 长期记忆接入的接线前提（非发布物） | Planned |
+| [M30](m30-long-term-memory-integration.md) | 长期记忆接入——提取、检索、纠正、删除与可选回忆反馈（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §6 / [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §3；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**未满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | Planned |
+| [M31](m31-capacity-admission-and-archival-recovery.md) | 容量准入、自动归档与可恢复清理（[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：分层容量预算与主体份额、四层遗忘与冻结淘汰序、保护集合、会话退出生命周期与归档资格、跨存储可证明回收、周期清扫宿主、部署档位数值冻结；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6） | M28、M30 关闭（**未满足**）；DEC-069 数值档位冻结；[`EXE-20261028-001`](../executor_feedback/ledger.md) 临时边界确定 | 部署档位与有限容量契约的冻结锚点（非发布物） | Planned |
+| [M32](m32-attention-focus-and-safe-switch.md) | 注意力焦点与安全切换协议（[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)：`TaskOrigin`×`TaskPriority` 优先级正交化、纯函数只读的 `Interruptibility` 判定、`Prepare→Suspend→Release→Commit→Resume` 五阶段协议与失败回滚、焦点只读投影与变更事件、租约-焦点对照视图、`TaskCheckpoint` 追加 `held_resources`/`in_progress_step`、崩溃可识别；来源为 Mirage 路线图 §4.3/§4.9，**未**进入 #111；无模型、无平台） | DEC-071 冻结（已满足）；M28/M29 关闭（**未满足**）；M32 §4 冻结 | M33 自主行为通道的接线前提（非发布物） | Planned |
+| [M33](m33-autonomy-and-interruption-budget.md) | 主动行为通道与打断预算（[DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)：独立第二输入源 `AutonomousIntent`、权限三分类、九道确定性打断预算闸门（类别/全局开关、权限、最小间隔、合并窗口、每类别频率上限、配额、静默期、冷却）、Core 强制的用户否决禁用状态、跨重启预算账本与显式日界时区、不依赖模型请求的主动输出面、崩溃后自主任务不自动恢复；来源为 Mirage 路线图 §4.6，**未**进入 #111；无模型、无平台） | DEC-072 冻结（已满足）；M32/M30 关闭（**未满足**）；M33 §4 冻结 | 部署档位与主动交互契约的冻结锚点（非发布物） | Planned |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）
 
@@ -806,6 +844,96 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     抽取编排 API 与预算缺省值随其里程碑冻结（DEC-038 §非目标）。平台 Adapter
     宿主接入（须先补专项决策冻结接线验收形态）与真实模型轮/DEC-032 Stage E
     （`MNT-202609-27` 外部证据）留痕不变，均不被本立项解锁。
+
+21. 统一交互协调层立项入口（2026-10-28）：Mirage 侧以
+    [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)（`MIRA-20261027-001`）
+    提出「同一输入口、由 Mira 内部安排会话/任务/上下文/记忆」与「有限容量 + 分层遗忘 +
+    会话归档清理」的完整需求。经 2026-10-28 对 Runtime/Loop、Memory/存储与 kairo 公开
+    能力的三项静态审计（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
+    §背景与问题、[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)
+    §现状盘点）确认三处**新造物**而非接线：主体级输入入口与路由裁决、耐久幂等台账、
+    跨层总量准入与归档协调。随本轮冻结两条决策并立项四个里程碑——DEC-068
+    「交互协调层与主体级输入入口」（协调层位于 Runtime 之上、宿主之下；复用既有
+    `PrincipalContext` 主体身份与 `ControlIngressId` 预留 ID 位；输入信封四阶段；
+    `IInputLedger` 独立窄接口；八意图闭集路由裁决，模型只建议；权限校验 fail-closed；
+    事件自带版本标记，不信 `EventEnvelope::schema_version`）与 DEC-069
+    「有限容量资源模型、分层遗忘与会话退出生命周期」（分层容量预算与主体份额、
+    四层遗忘与冻结淘汰序、保护集合及其自身上限、会话退出生命周期与归档资格、
+    跨存储可证明回收的三种度量分别报告、周期清扫宿主落地）。里程碑拆分——
+    [M28](m28-interaction-coordinator-first-stage.md)（主体级输入接纳与最小路由闭环，
+    门禁 `M28-G1`–`M28-G8`，跑前冻结已随立项完成）、
+    [M29](m29-interaction-coordinator-concurrency-and-recovery.md)（执行中插话、并发归属、
+    持久化与断线回补）、
+    [M30](m30-long-term-memory-integration.md)（长期记忆提取/检索/纠正/删除）、
+    [M31](m31-capacity-admission-and-archival-recovery.md)（容量准入、自动归档与可恢复清理）；
+    M29–M31 仅冻结范围边界与非目标，跑前冻结待各自立项完成。Executor 侧确认一处缺口并按
+    AGENTS.md 登记 [`EXE-20261028-001`](../executor_feedback/ledger.md)——
+    「总量有界 admission 缺少按主体分桶的份额准入语义」（kairo 的
+    `max_in_flight_tasks` 为实例级单值无 key 维度，无配额原语，`IScheduler` 仅覆盖
+    `submit_auto` 且无主体字段），临时边界为 Mira 侧嵌套预过滤，移除条件与上游验收标准
+    已随条目登记。真实模型语义质量（路由准确率、必要澄清率）与部署档位数值**未**验证，
+    分别留待真实模型评估轮与 M31 按目标设备测量冻结；本轮**不**宣称语义质量、容量达标
+    或跨平台保证。
+
+22. 持续个体路线图其余两阶段立项入口（2026-10-28）：对 Mirage
+    [持续性数字个体路线图](https://github.com/Linductor-alkaid/mirage)
+    §4.2～4.7 做深挖核对后确认——Mirage 已提报上游的唯一持续个体条目
+    `MIRA-20261027-001`（= #111）的来源范围在 Mirage 反馈计划中写死为
+    **§4.2、§4.4～4.5、§5.2、§7.1**，**§4.3（注意力与安全切换）与 §4.6（自主行为）
+    从未向上游提报**；同时核对出 **#111 §4（长期记忆写入/检索/纠正/遗忘）在
+    Mira 侧此前没有任何决策承接**（DEC-068 覆盖 §1–§3/§5，DEC-069 覆盖 §6）。
+    本轮补三条决策与两个里程碑——
+    [DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md)
+    「长期记忆的行为契约」（承接 #111 §4：写入唯一路径与验证等级不由提及次数提升、
+    主体→`MemoryScope` 映射规则、承诺为独立受保护实体、纠正与四类删除发起者分别结算、
+    排序增量延后）、
+    [DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)
+    「注意力焦点与安全切换协议」（焦点为任务级协调层概念、优先级拆为
+    `TaskOrigin`×`TaskPriority` 两维正交、可中断性纯函数判定、五阶段切换协议与失败回滚、
+    租约-焦点不变量、检查点对齐、**明确不支持**执行级续跑）、
+    [DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)
+    「主动行为、行为意图与打断预算」（独立第二输入源、权限三分类、
+    **九道确定性打断预算闸门**、Core 强制的用户否决禁用状态、跨重启预算账本、
+    不依赖模型请求的主动输出面、崩溃后自主任务不自动恢复、Core 只提供机制层而策略归宿主）；
+    里程碑——
+    [M32](m32-attention-focus-and-safe-switch.md)（注意力焦点与安全切换，跑前冻结随立项完成）、
+    [M33](m33-autonomy-and-interruption-budget.md)（主动行为通道与打断预算，跑前冻结随立项完成）。
+    同轮修订 [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：
+    `CapacityBudget` 补受管会话数与归档数量/字节/保留期四个字段（结构上原先无处承载）、
+    保护集合补「未兑现承诺」与「已结算失败轮次正文」、
+    **数值档位责任落表**为「档位骨架与计量口径由 Mira 冻结、具体数值由 Mirage 在目标设备
+    实测后回填、双方共同冻结」（原表述与 Mirage DEC-119 的分工冲突）、
+    迁移验收补「占用/损失预估 + 可观察迁移结果 + 失败恢复 + 迁移宽限期」。
+    另记三条**未**进入本轮决策的上游诉求与前置：`MIRA-20261013-001`
+    （`Result::value()` error 态未定义行为——本轮协调层会显著增加该惯用法用量）、
+    `MIRA-20261012-002`（ProviderCircuit 无 cooldown 恢复路径——#111 §5 重启恢复的功能前置）、
+    `MIRA-20261016-003`（kairo QoS/AdaptiveScheduler 延期能力——与
+    `EXE-20261028-001`/kairo#222 同属调度与接纳面，需合并评估以免向 kairo 提两条互斥诉求）。
+    本轮**不**声明语义质量、容量达标或跨平台保证；注意力时延、打扰接受率与部署数值
+    均待目标设备与真实模型/真实用户取证。
+
+23. kairo 未发布 master pin 升级轮（2026-10-28）：DEC-069 §1/B2 要求的
+    **分主体在途份额**由上游 PR #223/#224 交付，但两个 PR 均合并在 v0.7.2 **之后**
+    的 master 上（上游最新 release 仍为 v0.7.2，能力「随下一个 release tag 发布」），
+    ⇒ 没有任何可用 tag 承载该能力，只能消费 master。经
+    [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md) 冻结升级决策：
+    pin 从 `32027c2`（`v0.7.0`）前进到 `78c6f557`（`v0.7.2-14-g78c6f55`，38 个提交，
+    越过 v0.7.1/v0.7.2 两个未消费发布）。暴露面核对结论：v0.7.1/v0.7.2 被移除或
+    语义变更的公开 API（`submit_priority`、`submit_batch_priority`、`submit_fast`、
+    `TaskRouter`/`IScheduler`/`set_scheduler`、`ResourceLease`/`try_reserve`）在 Mira
+    全仓使用点**全部为 0**；`v0.7.2 → 78c6f557` 的 `include/` 差异为**纯增量**
+    （唯一移除的是私有成员 `AdmissionReleaser` 构造签名与 `try_admit_submission`
+    内部参数表），**零代码迁移**。分级采纳：分主体份额运行期接口与
+    `kairo::subject()` 裸形态带键重载**即刻采纳**（本轮不改调用点，迁移属 M31 的
+    `M31-03`）；v0.7.1/v0.7.2 的调度类能力（能力快照 TTL 缓存、`DeadlinePolicy`、
+    `ResourceLease`、任务意图自动推断、优先级经调度器表达、`AdaptiveScheduler`）
+    **暂缓并记录触发条件**（沿 DEC-054 姿态）。未发布 master 的 pin 纪律：精确到
+    commit 且**不浮动**，`version` 记录 `v0.7.2-14-g78c6f55` 使「未发布」可被机器读出，
+    上游发版后**必须**复核改 pin（新提交进入 Mira 需重新走暴露面检索 + 差异性质判定
+    + 全量回归）。工作项见
+    [maintenance-2026-10-kairo-master-pin](maintenance-2026-10-kairo-master-pin.md)：
+    本地 Linux x86_64/gcc 13 全量 **113/113 通过**、`sbom-check` 与
+    `architecture-check` 零违规；CI 全矩阵与上游发版后复核两项**未完成**。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和
