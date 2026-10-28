@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.6
-> 更新日期：2026-10-28
+> 版本：1.7
+> 更新日期：2026-10-29
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -355,6 +355,36 @@ _Avoid_: Command 去重表（绑定 Task/Session 终态 retention）、缓存、
 澄清/拒绝，并给出目标 Session/Task 与可审计理由。模型只能提出建议，
 不得直接裁决。
 _Avoid_: 意图（意图是模型的语义产物）、计划、模型路由
+
+**Input Stage（输入阶段）**:
+一次已接纳输入的**闭集**阶段：已接纳 / 已路由 / 已回答 / 任务已终态 / 已拒绝。
+阶段区分「收到输入」与「任务完成」，且**永不回退**；迁移必须显式登记。
+_Avoid_: 任务状态（TaskState 是 Runtime 的任务状态机）、
+状态（泛称）、进度
+
+**Route Intent（路由意图）**:
+路由裁决的**闭集**语义目标：延续当前工作 / 补充纠正 / 新建 / 恢复 / 暂停 / 取消 /
+澄清 / 拒绝。它是**协调层裁决的词汇**，不是模型的语义产物。
+_Avoid_: 意图（泛称，模型语义）、GoalPriority、Task Priority
+
+**User Input Sink（用户输入汇）**:
+协调层把输入投递给某个**已在运行**的 Loop 的注册面（`task_id → IUserInputSink`）。
+协调层**不创建也不运行** Loop；投递经各 Loop 自己的有界入队通道，
+溢出以 `ResourceExhausted` 显式拒绝。
+_Avoid_: 消息队列（Loop 侧的有界队列）、回调、监听器
+
+**Principal Registry（主体注册表）**:
+协调层持有的 `(TenantId, UserId) → Session/Task` 映射，是台账事件流的
+**可重建投影**。宿主实例与 grant 是主体**属性**，不是身份维度；
+注册表由协调层独占写入。
+_Avoid_: 会话表（Runtime 独占的会话状态机）、用户表、
+记忆 ACL 域（`MemoryScope.subject_id` 是记忆作用域）
+
+**Interaction Event（交互事件）**:
+`mira.interaction.*.v1` 事件族的成员：输入的接纳、路由、澄清、拒绝、回答与
+任务终态。事件写在**主体级专用分区**，每个事件**自带版本标记**
+（信封的 `schema_version` 是死字段，不得依赖）。
+_Avoid_: 会话事件（Session 流的事件）、对话投影、指标
 
 **Capacity Budget（容量预算）**:
 DEC-069 冻结的**持久化与驻留资源**总量上限，分层为总量、按主体份额、

@@ -143,7 +143,8 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
     MIRA_CHECK(session.value().command.outcome(std::chrono::seconds(2)));
     const auto session_id = session.value().id;
 
-    const auto task = runtime.submit_task(session_id, TaskSpec{"finish the quarterly report"});
+    const auto task = runtime.submit_task(
+        session_id, TaskSpec{.goal = "finish the quarterly report", .user_constraints = {}});
     MIRA_CHECK(task);
     const auto submitted = task.value().command.outcome(std::chrono::seconds(2));
     MIRA_CHECK(submitted && submitted.value().task.has_value());
@@ -238,7 +239,8 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
         MIRA_CHECK(child_session.value().command.outcome(std::chrono::seconds(2)));
         child_session_id = child_session.value().id;
         const auto child_task =
-            runtime.submit_task(child_session_id, TaskSpec{"gather the login path facts"});
+            runtime.submit_task(child_session_id, TaskSpec{.goal = "gather the login path facts",
+                                                           .user_constraints = {}});
         MIRA_CHECK(child_task);
         const auto child_submitted = child_task.value().command.outcome(std::chrono::seconds(2));
         MIRA_CHECK(child_submitted && child_submitted.value().task.has_value());
@@ -415,7 +417,8 @@ int seam_degradation_visible_in_closed_loop(MiraRuntime &runtime,
     MIRA_CHECK(session.value().command.outcome(std::chrono::seconds(2)));
     const auto session_id = session.value().id;
 
-    const auto task = runtime.submit_task(session_id, TaskSpec{"send the daily report"});
+    const auto task = runtime.submit_task(
+        session_id, TaskSpec{.goal = "send the daily report", .user_constraints = {}});
     MIRA_CHECK(task);
     const auto submitted = task.value().command.outcome(std::chrono::seconds(2));
     MIRA_CHECK(submitted && submitted.value().task.has_value());

@@ -102,6 +102,35 @@ void ConversationLoop::set_history_transformer(HistoryTransformer transformer) {
     history_transformer_ = std::move(transformer);
 }
 
+Result<void> ConversationLoop::enqueue_user_message(std::string message) {
+    if (message.empty()) {
+        return conversation_error(ErrorCode::InvalidArgument, "user message must not be empty");
+    }
+    std::lock_guard lock(pending_user_messages_->mutex);
+    if (pending_user_messages_->messages.size() >= config_.max_pending_user_messages) {
+        return conversation_error(ErrorCode::ResourceExhausted, "user message queue is full");
+    }
+    pending_user_messages_->messages.push_back(std::move(message));
+    return Result<void>{};
+}
+
+void ConversationLoop::drain_user_messages(const AgentLoopSpec &spec,
+                                           std::vector<std::string> &user_instructions) {
+    std::deque<std::string> drained;
+    {
+        std::lock_guard lock(pending_user_messages_->mutex);
+        drained.swap(pending_user_messages_->messages);
+    }
+    for (auto &message : drained) {
+        emit(spec, "UserMessageInjected",
+             JsonValue::Object{{"text", message},
+                               {"bytes", static_cast<std::int64_t>(message.size())},
+                               {"digest", digest_string(message).to_string()}},
+             EventClass::State);
+        user_instructions.push_back(std::move(message));
+    }
+}
+
 void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
                             EventClass classification) const {
     loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
@@ -321,10 +350,10 @@ ConversationLoop::resolve_supplied_input(const AgentLoopSpec &spec) {
     return supplied;
 }
 
-Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
-                                                     const std::vector<ModelInputItem> &history,
-                                                     const std::string &feedback,
-                                                     const SuppliedInput &supplied) {
+Result<ModelRequest> ConversationLoop::build_request(
+    const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
+    const std::string &feedback, const std::vector<std::string> &user_instructions,
+    const SuppliedInput &supplied) {
     ModelRequest request = loop_support::begin_model_request(spec, tools_.get());
 
     ModelInputItem system_item;
@@ -354,6 +383,16 @@ Result<ModelRequest> ConversationLoop::build_request(const AgentLoopSpec &spec,
     goal_text.text = "Request: " + spec.goal;
     goal_text.sensitivity = Sensitivity::Internal;
     user_item.content.emplace_back(std::move(goal_text));
+    // The standing user instructions of this run (M28/DEC-068 §4.4): the
+    // messages that were queued while an earlier turn was in flight. They
+    // ride the loop's own user envelope and stay in context for the rest of
+    // the run, exactly like the device loop's user instructions.
+    for (const auto &instruction : user_instructions) {
+        TextPart instruction_text;
+        instruction_text.text = instruction;
+        instruction_text.sensitivity = Sensitivity::Internal;
+        user_item.content.emplace_back(std::move(instruction_text));
+    }
     if (!feedback.empty()) {
         TextPart feedback_text;
         feedback_text.text = feedback;
@@ -434,6 +473,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     // request so providers see native multi-turn tool semantics.
     std::vector<ModelInputItem> history;
     std::string feedback;
+    // The standing user instructions of this run: the queued messages are
+    // drained at the turn boundary and stay in context afterwards.
+    std::vector<std::string> user_instructions;
     std::uint64_t tool_executions = 0;
     std::size_t protected_items = 0;
     std::uint32_t output_continuations = 0;
@@ -480,6 +522,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         ConversationTurnRecord record;
         record.turn = result.total_turns;
 
+        // The queued user messages are drained at the turn boundary and stay
+        // in context for the rest of the run (M28/DEC-068 §4.4).
+        drain_user_messages(spec, user_instructions);
+
         // Supplied-input seam (DEC-053): resolved exactly once per assembled
         // request, after tool rounds complete and before the model call.
         const SuppliedInput supplied = resolve_supplied_input(spec);
@@ -511,7 +557,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 break;
             }
         }
-        auto request = build_request(spec, *replay, feedback, supplied);
+        auto request = build_request(spec, *replay, feedback, user_instructions, supplied);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "request assembly failed: " + request.error().safe_message;

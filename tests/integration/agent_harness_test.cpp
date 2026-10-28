@@ -97,7 +97,8 @@ int full_harness_session() {
     MIRA_CHECK(session.value().command.receipt(std::chrono::seconds(2)));
     MIRA_CHECK(session.value().command.outcome(std::chrono::seconds(2)));
 
-    const auto task = runtime.submit_task(session.value().id, TaskSpec{"send the daily report"});
+    const auto task = runtime.submit_task(
+        session.value().id, TaskSpec{.goal = "send the daily report", .user_constraints = {}});
     MIRA_CHECK(task);
     const auto submitted = task.value().command.outcome(std::chrono::seconds(2));
     MIRA_CHECK(submitted && submitted.value().task.has_value());
@@ -262,7 +263,8 @@ int takeover_releases_input_and_blocks_operations() {
     MIRA_CHECK(session.value().command.receipt(std::chrono::seconds(2)));
     MIRA_CHECK(session.value().command.outcome(std::chrono::seconds(2)));
 
-    const auto task = runtime.submit_task(session.value().id, TaskSpec{"hold the device"});
+    const auto task = runtime.submit_task(
+        session.value().id, TaskSpec{.goal = "hold the device", .user_constraints = {}});
     MIRA_CHECK(task);
     MIRA_CHECK(task.value().command.outcome(std::chrono::seconds(2)));
     const auto task_id = task.value().id;

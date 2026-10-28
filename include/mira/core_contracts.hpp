@@ -500,6 +500,10 @@ struct TaskSnapshot final {
     Timestamp updated_at;
     std::uint64_t control_sequence = 0;
     std::optional<TaskOutcome> terminal_outcome;
+    // The user constraints the task was created with (M28/DEC-068 §4.5).
+    // A constraint added later reaches the task through the loop input seam,
+    // not by rewriting this list.
+    std::vector<std::string> user_constraints;
 };
 
 struct CommandOutcome final {

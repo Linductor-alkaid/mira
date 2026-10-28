@@ -82,6 +82,10 @@ add_library(mira_core
     src/runtime/runtime.cpp
     src/runtime/task_recovery.cpp
     src/runtime/context_memory_supervisor.cpp
+    src/interaction/interaction_events.cpp
+    src/interaction/input_ledger.cpp
+    src/interaction/interaction_routing.cpp
+    src/interaction/interaction_coordinator.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/context_retrieval.cpp

@@ -203,7 +203,8 @@ int main() {
     MIRA_CHECK(session.value().command.outcome(2s));
     MIRA_CHECK(runtime.session_snapshot(session.value().id).value().state ==
                mira::SessionState::Autonomous);
-    auto task = runtime.submit_task(session.value().id, {"goal"});
+    auto task = runtime.submit_task(session.value().id,
+                                    mira::TaskSpec{.goal = "goal", .user_constraints = {}});
     MIRA_CHECK(task);
     const auto task_outcome = task.value().command.outcome(2s);
     MIRA_CHECK(task_outcome && task_outcome.value().task.has_value());

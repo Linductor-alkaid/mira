@@ -118,19 +118,23 @@ All implementation milestones **M0–M27** of the
 [implementation plan](docs/plans/mira-implementation-plan.md) are delivered, and
 CI is green across the full matrix (Linux GCC/Clang, Windows MSVC, Android NDK
 arm64/x86_64 cross-builds, ASAN/UBSAN/TSAN, clang-tidy/format and architecture
-gates).
+gates). The first stage of the principal-level interaction layer, **M28**, is
+implemented and locally green (119/119); its full-matrix CI evidence is taken
+on the pull request.
 
 Still open — and honestly reported rather than claimed: on-device Android
 runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the
 first stage of the unified behavior trace (DEC-038). Mira ships the runtime and
 installable packages; it deliberately contains no product UI or end-user app.
 
-Next, and not yet implemented: **M28–M31** add a principal-level interaction
-layer on top of the runtime — one input entry point that decides which internal
-session or task a message belongs to, with a durable idempotency ledger and
-deterministic routing ([DEC-068](docs/decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md))
-— together with a bounded capacity model, layered forgetting, and session
-archival ([DEC-069](docs/decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)).
+Delivered in **M28**: one principal-level input entry point that decides which
+internal session or task a message belongs to, with a durable idempotency
+ledger, deterministic routing and a natural-language clarification path
+([DEC-068](docs/decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md),
+[API manual](docs/api/interaction-coordinator.md)). Still not implemented:
+**M29–M31** add execution-time interruption, concurrent attribution and
+restart recovery, together with a bounded capacity model, layered forgetting,
+and session archival ([DEC-069](docs/decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)).
 Routing quality and capacity figures are **not** yet measured.
 
 ## Getting started
