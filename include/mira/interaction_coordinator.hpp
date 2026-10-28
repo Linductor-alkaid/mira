@@ -342,6 +342,11 @@ struct RouteSuggestion final {
 
 // The host-side route suggestion seam. Returns nullopt when the host has no
 // suggestion; the coordinator then falls back to its structural rules.
+//
+// Discipline: the resolver runs while the coordinator serializes its own
+// submissions, so it must not call back into the coordinator's mutating API
+// (that would wait on the submission lock the resolver itself holds). Keep it
+// bounded and free of blocking work, like the other host seams.
 using RouteResolver =
     std::function<std::optional<RouteSuggestion>(const InputEnvelope &, const PrincipalState &)>;
 
