@@ -83,7 +83,20 @@ auto store = mira::SqliteCheckpointStore::open(exec, options);  // Result<unique
 内存侧对应后端 `SqliteMemoryStore` 见
 [Context 与 Memory 页](context-memory.md)。
 
+## 交互事件分区
+
+M28 的幂等台账把 `mira.interaction.*.v1` 事件写在 EventStore 的一个**主体级专用
+分区**（`interaction_ledger_partition()`，见[交互协调层页](interaction-coordinator.md)），
+而不是混入业务会话或任务流。理由：一次主体输入跨会话、跨重启，而
+`IEventStore::read` 以 `session_id` 分区；若交互事件散落在多个会话分区，跨重启的
+重建就必须扫描全部会话流，与「台账是一个可重建投影」相悖。该分区是 **Mira 拥有的
+常量** id，使重启后的进程无需持久化 id 即可找到同一条耐久流。
+
+代价：交互事件不进入会话事件流——宿主若要观察交互生命周期需读该分区；会话对话
+投影与 checkpoint 投影因此不受交互事件影响。
+
 ## 相关文档
 
+- [交互协调层](interaction-coordinator.md)
 - [事件、资产与崩溃一致性设计](../design/event_artifact_crash_consistency.md)
 - [Stateful agent beta 发布说明](../releases/stateful-agent-beta.md)
