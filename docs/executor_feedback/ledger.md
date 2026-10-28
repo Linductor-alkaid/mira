@@ -22,7 +22,7 @@
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260922-001` | 2026-09-22 | Resolved | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | 已随 pin 升级（`ef821dc`，上游 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)）恢复 MinGW 全树可构建 | 已删除（pin 升级后无需子集回避） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)、[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`） |
-| `EXE-20261028-001` | 2026-10-28 | Open | 总量有界 admission 缺少按主体分桶的份额准入语义 | 阻塞 DEC-069 的分主体份额准入；Mira 侧只能用二段式预过滤近似 | 无安全临时方案完全等价者；M31 期间用 Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」） | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) |
+| `EXE-20261028-001` | 2026-10-28 | Open | 总量有界 admission 缺少按主体分桶的份额准入语义 | 阻塞 DEC-069 的分主体份额准入；Mira 侧只能用二段式预过滤近似 | 无安全临时方案完全等价者；M31 期间用 Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」） | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)、[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222) |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -355,7 +355,9 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
 - 关联代码/测试：`include/kairo/executor.hpp:182-184`、`include/kairo/executor.hpp:1031-1032`、
   `include/kairo/task_router.hpp:17-22`、`include/kairo/scheduler.hpp:65-66`、
   `include/kairo/scheduling.hpp:44-53`
-- 上游 issue/PR：尚未提交；经 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)
+- 上游 issue/PR：[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)（2026-10-28 提交，
+  「Per-subject bucket admission on top of total bounded admission」）；
+  经 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) 转交上游流程
   转交上游流程
 
 #### 使用场景
@@ -510,3 +512,4 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
 | 日期 | 状态变化 | 说明 | 证据/链接 |
 | --- | --- | --- | --- |
 | 2026-10-28 | Open | 为 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) §6「分主体份额」需求核查 kairo v0.7.0 公开头文件、API 文档与集成指南后确认缺口：admission 为实例级单值、无 key 维度、无配额原语、`IScheduler` 仅覆盖 `submit_auto` 且无主体字段；经 [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §1/B2 引用登记 | mira#111、DEC-069 §1 |
+| 2026-10-28 | Open（已提交上游） | 向上游提交 [kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)。核对范围扩展到 kairo **master**（含 v0.7.1 §3.1 `ResourceQuota`/`ResourceLease` 与 v0.7.2 §4.0 统一 `IScheduler` 协议）：`ResourceQuota` 的键是 **GPU device id / 进程级 CPU 独占核**（硬件预留，非任务槽位、无主体维度），`max_in_flight_tasks` 仍是实例级单值，`TaskRouter::Request` 仍无主体字段，`route_task` 的三个调用点仍全在 `submit_auto` 重载内——**缺口在 master 依然成立**。上游条目已给出期望语义、验收标准，以及 Mira 侧嵌套预过滤的临时边界与移除条件 | kairo#222 |

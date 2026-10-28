@@ -175,8 +175,9 @@ struct CapacityBudget final {
 > `IScheduler` 注入点**只被 `submit_auto` 咨询**（其余提交路径绕过），
 > 且 `TaskRouter::Request`/`TaskOptions` **没有任何主体身份字段**。
 > ⇒ 这是**确认的 Executor 能力缺口**，已按 [AGENTS.md](../../AGENTS.md) 登记为
-> [`EXE-20261028-001`](../executor_feedback/ledger.md)。M31 实施期按台账记录的
-> 临时边界执行，**不得**因此引入私有线程池或第二套调度器。
+> [`EXE-20261028-001`](../executor_feedback/ledger.md)，并于 2026-10-28 提交上游
+> [kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)。
+> M31 实施期按台账记录的临时边界执行，**不得**因此引入私有线程池或第二套调度器。
 
 ### 2. 计入范围（闭集）
 
@@ -436,7 +437,8 @@ M31 立项时冻结门禁矩阵，至少覆盖：
   [DEC-057](DEC-057-scoped-memory-read-and-apply-check-order.md)（scope/ACL）、
   [DEC-058](DEC-058-mutation-ledger-scope-binding.md)（台账 scope 绑定）、
   [DEC-068](DEC-068-interaction-coordinator-and-principal-input-entry.md)（输入台账计入预算）
-- Executor 反馈：[`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体份额准入）
+- Executor 反馈：[`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体份额准入；
+  上游 [kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)）
 - 设计：[Context 与 Memory 设计](../design/context_and_memory_design.md)、
   [Context Curator 设计](../design/context_curator_design.md)、
   [事件与崩溃一致性设计](../design/event_artifact_crash_consistency.md)、
