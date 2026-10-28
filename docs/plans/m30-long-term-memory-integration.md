@@ -1,7 +1,9 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
 > 状态：Planned（2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
-> 一并登记；**跑前冻结待本里程碑立项时完成**，本文件当前只冻结范围边界与非目标）
+> 一并登记；**§4 契约语义已由
+> [DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md) 冻结**，
+> 剩余的实现细则与门禁待本里程碑立项时完成）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -10,7 +12,8 @@
 > 的价值层；来源需求为
 > [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4）
 > 前置：M28 关闭（**未满足**）；M29 关闭（**未满足**，本阶段依赖上下文归属与并发归属）；
-> M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）
+> M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）；
+> DEC-070 契约冻结（已满足，2026-10-28 随 M28 登记一并冻结）
 > 建议发布点：非发布物；M31 价值驱动淘汰的输入侧前提
 > 更新日期：2026-10-28（登记）
 
@@ -68,16 +71,26 @@
   §5（记忆层级）、§6.1（MemoryScope）、§13（长期 Memory 写入）、§14（混合检索）。
 - [Context Curator 设计](../design/context_curator_design.md) §13（Stage W4 晋升纪律）。
 
-## 4. 冻结的契约语义（跑前冻结待立项）
+## 4. 冻结的契约语义（2026-10-28 由 DEC-070 冻结）
 
-本节**当前未冻结**。立项时必须回答并冻结：
+§4 的**行为契约**已由
+[DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md) 冻结：
+写入（§1）、检索与选择（§2）、主体 → `MemoryScope` 映射（§3）、
+承诺实体（§4）、纠正与删除（§5）、排序增量的延后（§6）。
+门禁矩阵 `M30-G1`–`M30-G8` 同步定义于 DEC-070「验证方式」。
 
-1. 记忆**候选**的提出点、验证等级与写入路径（必须经既有 consolidation 管线）。
-2. 主体 → `MemoryScope` 的**映射规则**与 tenant 隔离口径。
-3. 「记住 / 忘掉」的**意图路由**、作用范围判定与可解释输出。
-4. 召回排序的**分步**方案：使用信号与查询相关性**分离**，可验证回忆反馈的可选增量。
-5. 与 DEC-069 §3 四层遗忘的**接口**：本阶段只产出**价值信号**，
+本里程碑立项时**仍须**回答并冻结的实现细则：
+
+1. 承诺实体的**具体存储形态**（DEC-070 §4/P3 要求：可查询、可纠正、可删除、
+   计入 DEC-069 预算、属保护集合；具体类型与表结构由本里程碑冻结）。
+2. 主体 → `MemoryScope` 映射的**稳定内部表示**的具体生成方式
+   （DEC-070 §3 已冻结语义：稳定、不可逆、不含外部账号信息）。
+3. 候选提出的**具体触发点**（哪些既有管线节点提出候选、提出什么 kind/scope）。
+4. 与 DEC-069 §3 四层遗忘的**接口实现**：本阶段只产出**价值信号**，
    淘汰裁决归 M31；**不得**在本阶段实现物理删除。
+5. 召回排序增量的**分步方案**：使用信号与查询相关性**分离**，
+   可验证回忆反馈的可选增量——按 DEC-070 §6/O4，在 §4 闭环交付**之后**另行评审，
+   **不并入**本里程碑验收。
 
 ## 5. 工作项（立项时细化）
 

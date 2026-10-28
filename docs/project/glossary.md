@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.5
+> 版本：1.6
 > 更新日期：2026-10-28
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -379,3 +379,66 @@ _Avoid_: 固定集、永久保留、豁免
 必要工件，有自己的总额与保留期。归档**不是**「忘掉」——隐私删除的 hold
 不因归档解除。
 _Avoid_: 归档文件（文件系统语义）、备份、冷存储
+
+## 11. 注意力与自主行为（DEC-071 / DEC-072）
+
+权威来源：[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)、
+[DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)、
+[M32](../plans/m32-attention-focus-and-safe-switch.md)、
+[M33](../plans/m33-autonomy-and-interruption-budget.md)。
+
+**Focus（认知焦点）**:
+DEC-071 冻结的**任务/活动级**注意力对象，由协调层持有、跨会话、单一提交点。
+与感知层的 ROI「焦点」和表现层的显示选择**不是同一契约**。
+_Avoid_: 感知焦点、设备焦点、窗口焦点、Session（焦点跨会话）
+
+**Task Origin（任务来源）**:
+`TaskOrigin{UserInitiated, Autonomous}`——工作由用户发起还是自主发起。
+与 `TaskPriority` **正交**：自主工作可以是高优先级，用户工作也可以是后台优先级。
+_Avoid_: GoalPriority（把来源与紧迫度混在一个枚举里）、
+用户类型（UserId 是主体，不是来源）
+
+**Task Priority（任务优先级）**:
+`TaskPriority{Background, Normal, High}`——同级竞争与抢占**候选资格**。
+`High` **不等于**可抢占：实际抢占仍受可中断性判定与授权约束。
+用户发起任务的优先级**始终不低于**自主任务。
+_Avoid_: Executor 调度优先级（不同概念，禁止混用）、
+抢占（抢占是动作，优先级是资格）
+
+**Interruptibility（可中断性）**:
+DEC-071 冻结的**纯函数只读**判定：`Interruptible` / `WaitForSettlement` /
+`NotInterruptible`。安全点是「在途 operation 结算为 Applied 或明确 Failed」的时刻；
+超时**不**构成强制终止。
+_Avoid_: 可取消（取消是用户意图，可中断是当前状态）、暂停（暂停是动作）
+
+**Safe Switch（安全切换）**:
+`Prepare → Suspend → Release → Commit → Resume` 五阶段协议：
+旧焦点先释放、新焦点后提交；失败回滚到原焦点；崩溃后可从持久化状态识别为
+「中断的切换」。
+_Avoid_: 抢占（抢占只是 Safe Switch 的一种触发）、注意力切换（泛称）
+
+**Autonomous Intent（自主意图）**:
+DEC-072 冻结的**第二输入源**：无用户主体、由宿主提出的工作意向
+（`IntentSource`、类别、优先级、期限、关联承诺、价值与风险估计）。
+它**不走**用户输入路径，但**共用**协调层的预算、租约、注意力、审计与恢复纪律。
+_Avoid_: Input Envelope（授权主体、幂等键与接纳判据都不同）、
+后台任务（后台任务可以由用户发起）
+
+**Interruption Budget（打断预算）**:
+DEC-072 冻结的**九道确定性闸门**：类别开关、全局开关、权限判定、静默期、冷却、
+最小间隔、合并窗口、每类别频率上限、每日/每小时配额。
+Core **强制执行**闸门；宿主只提供配置与「该不该说话」的策略。
+_Avoid_: 焦点稳定性（`min_focus_duration` 等只管切换任务，不管主动发言）、
+配额（单项限额，打断预算是多项闸门的合取）
+
+**Autonomy Permission（自主权限三分类）**:
+`Allowed`（只读无副作用）/ `NeedsConsent`（有副作用，需用户确认）/
+`Forbidden`（高风险，无论用户是否在线）。Core 侧同源判定；
+宿主的开关**只能收紧，不能放宽**。
+_Avoid_: 风险分级（ActionRisk 是动作维度，这是发起维度）、能力授权
+
+**Class Disable（按类别禁用）**:
+用户否决（「不要再…」）后由 Core **强制**持有的持久禁用状态。
+这是把宿主 UX 意图提升为 Core 不变量的一条规则。
+_Avoid_: 降频（降频只影响频率，禁用是硬拒绝）、
+模型判断（否决不是模型裁量）
