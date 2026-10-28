@@ -119,8 +119,8 @@ All implementation milestones **M0–M27** of the
 CI is green across the full matrix (Linux GCC/Clang, Windows MSVC, Android NDK
 arm64/x86_64 cross-builds, ASAN/UBSAN/TSAN, clang-tidy/format and architecture
 gates). The first stage of the principal-level interaction layer, **M28**, is
-implemented and locally green (119/119); its full-matrix CI evidence is taken
-on the pull request.
+delivered: locally green (119/119, 118/118 under TSAN) and CI green across the
+full matrix (24/24).
 
 Still open — and honestly reported rather than claimed: on-device Android
 runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the

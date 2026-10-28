@@ -1,7 +1,7 @@
 # M28：交互协调层首阶段——主体级输入接纳与最小路由闭环
 
-> 状态：In Progress（2026-10-28 立项并跑前冻结；2026-10-29 实现完成并本地取证，
-> CI 全矩阵取证待 PR 合并）
+> 状态：Completed（2026-10-28 立项并跑前冻结；2026-10-29 实现交付并本地取证；
+> PR #113 合并关闭，CI 全矩阵 24/24 全绿）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -14,7 +14,7 @@
 > 与 [DEC-069 §9](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) 引用了
 > 2026-10-28 的 kairo 公开头文件/API 文档/集成指南核查结论）
 > 建议发布点：非发布物；DEC-068 协调层公开契约与 M29/M30/M31 的接线前提
-> 更新日期：2026-10-29（实现完成与本地取证）
+> 更新日期：2026-10-29（PR #113 合并关闭并回填 CI 与合并证据）
 
 ## 1. 目标
 
@@ -422,9 +422,9 @@ class IUserInputSink {
 
 - [x] `M28-01`–`M28-08` 全部工作项完成并勾选。
 - [x] `M28-G1`–`M28-G8` 全部通过，测试文件与 label 就位。
-- [ ] CI 24/24 全绿（linux gcc/clang × Debug/Release、windows Debug/Release、
+- [x] CI 24/24 全绿（linux gcc/clang × Debug/Release、windows Debug/Release、
       android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）。
-      **本地已全绿，但矩阵取证在 PR 上完成**——见 §9 的未执行记录。
+      **PR #113 的两个 workflow run 全部 success**，证据见 §9。
 - [x] 公开 API、事件 schema、错误语义与示例已同步更新。
 - [x] 受影响的设计、决策、计划、术语表、API 手册已同步更新。
 - [x] 验证记录（§9）含 commit、环境、命令、结果与限制。
@@ -522,15 +522,32 @@ class IUserInputSink {
     异步工作经注入的 `kairo::Executor` 与 Runtime 既有命令面）；`format-check`
     零违例。
 
+- **CI 取证（PR #113，已完成）**：最终 head `74ccd1b` 的两个 workflow run 全部
+  `success`——[push 40730755219](https://github.com/Linductor-alkaid/mira/actions/runs/40730755219)
+  与 [pull_request 40730765935](https://github.com/Linductor-alkaid/mira/actions/runs/40730765935)，
+  矩阵 12 个 job × 2 个 run = **24/24 全绿**（linux gcc/clang × Debug/Release、
+  windows Debug/Release、android arm64/x86_64 NDK 交叉、ASAN/TSAN/UBSAN、quality）。
+  逐 job 证据与本地取证一并记在 PR 评论
+  [#issuecomment-6477081863](https://github.com/Linductor-alkaid/mira/pull/113#issuecomment-6477081863)。
+- **合并证据**：PR #113 squash 合并为 `9595dfa`（2026-10-29），分支
+  `feat/interaction-coordinator-stage1` 已删除。
+
 - **未执行的验证**（保持未勾选）：
-  - **CI 24/24 全矩阵**（linux gcc/clang × Debug/Release、windows Debug/Release、
-    android arm64/x86_64 NDK 交叉、ASAN/TSAN/UBSAN、quality）。
-    **原因**：矩阵在 PR 上运行，本地环境不含 Windows 与 Android NDK 交叉工具链。
-    **负责人**：Mira Maintainers。**补跑条件**：PR 推送后以 CI 运行结果取证；
-    合并前必须看到 24/24 全绿，失败则回到对应门禁修复。
   - **真实模型的路由准确率与必要澄清率**：本阶段是纯 Core 确定性工作，
     不依赖真实模型；按 issue #111 的验证方法留待标注场景与真实模型评估轮。
     **补跑条件**：真实模型评估轮立项后执行。
+  - **跨重启后的恢复执行流程**：M28 只保证台账与注册表**耐久且可重建**，
+    恢复后的重新路由与未决副作用的重观测/验证归 M29。**补跑条件**：M29 立项后
+    以重启场景取证。
+
+### 2026-10-29 · 附带发现（不属本阶段范围，未修）
+
+本地以 `ctest -j 8` **并行**跑全量时，**既有**的 `mira_m22_auto_trigger_eval`
+偶发失败（约十几次里两三次）。已用 master worktree 做同负载对照：交替各跑 8 轮、
+以及 24 路 CPU 超订下对照，**两侧都不复现**；单独跑与**串行**跑从不失败。CI 的
+linux/sanitizers job 用的正是**串行** `ctest`，本 PR 的两个 run 全绿。该现象是
+既有测试对超订负载的敏感性，**不是本阶段引入**，故未在本阶段内改动，也未登记为
+缺陷。
 
 ### 2026-10-29 · CI 第一轮失败与修复
 

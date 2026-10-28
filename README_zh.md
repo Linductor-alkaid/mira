@@ -105,7 +105,8 @@ flowchart TB
 [实施总计划](docs/plans/mira-implementation-plan.md)的全部实现里程碑
 **M0–M27 已交付**，CI 全矩阵通过（Linux GCC/Clang、Windows MSVC、Android NDK
 arm64/x86_64 交叉构建、ASAN/UBSAN/TSAN、clang-tidy/format 与架构门禁）。
-主体级交互层的首阶段 **M28** 已实现且本地全绿（119/119），全矩阵 CI 取证在 PR 上完成。
+主体级交互层的首阶段 **M28** 已交付：本地全绿（119/119、TSAN 118/118），
+CI 全矩阵 **24/24 全绿**。
 
 尚未完成、也不宣称完成的部分：Android 真机运行证据、真实 Provider 评估轮
 （DEC-032 Stage E）、统一行为迹首阶段（DEC-038）。Mira 只交付运行时与安装包，
