@@ -1,6 +1,8 @@
 # 维护计划：kairo 未发布 master pin 升级轮（2026-10）
 
-> 状态：In Progress（实现与本地验证完成，待 CI 全矩阵取证后关闭）
+> 状态：Completed（2026-10-28 立项、升级、CI 全矩阵取证并合并关闭；
+> [PR #112](https://github.com/Linductor-alkaid/mira/pull/112)，
+> 合并提交 `f003e476`，CI 24/24 全绿）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M28 立项轮附带的依赖升级维护轮）
 > 前置：[DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md)（已冻结）；
@@ -65,12 +67,13 @@
       `python3 tools/check_sbom.py .` 通过。
 - [x] `MNT-KAIRO-04` 本地构建与全量回归（见 §6）。
 - [x] `MNT-KAIRO-05` 分级采纳决策与未发布 master 的 pin 纪律（DEC-073 决策 3、4）。
-- [ ] `MNT-KAIRO-06` CI 全矩阵取证（linux gcc/clang × Debug/Release、
+- [x] `MNT-KAIRO-06` CI 全矩阵取证（linux gcc/clang × Debug/Release、
       windows Debug/Release、android arm64/x86_64 NDK 交叉、sanitizers
-      ASAN/TSAN/UBSAN、quality）——见 §6 验证记录。
+      ASAN/TSAN/UBSAN、quality）——**24/24 全绿**，见 §6 验证记录。
 - [ ] `MNT-KAIRO-07` 上游发版后复核并改 pin 到正式 tag（或复核后仍保留 master commit
       并记录理由）。**触发条件**：上游发布包含 PR #223/#224 的 tag。
-      本项在发版前保持未完成。
+      本项在发版前保持未完成——**它是跨轮的开放项，不阻塞本轮关闭**：
+      升级本身已交付并取证，复核是对「未发布 pin」这一状态的周期性再确认。
 
 ## 5. 风险与阻塞
 
@@ -103,5 +106,21 @@
   这些由 CI 矩阵承担，`MNT-KAIRO-06` 在 CI 全绿前保持未完成。
   上游侧证据：PR #223/#224 的上游 CI 146/146 全绿、TSAN 0 报告
   （上游 PR 正文记录）。
-- 未执行的验证项与补跑条件：见 `MNT-KAIRO-06`（CI 全矩阵）与 `MNT-KAIRO-07`
-  （上游发版后复核）。
+- 未执行的验证项与补跑条件：见 `MNT-KAIRO-07`（上游发版后复核）。
+
+### 2026-10-28：CI 全矩阵取证与合并
+
+- PR：[#112](https://github.com/Linductor-alkaid/mira/pull/112)
+  （`feat(interaction): freeze the unified interaction coordinator and the
+  bounded capacity model`），合并提交 `f003e476`，squash 合并。
+- 两个 workflow run 均 `completed / success`：
+  - [40670169663](https://github.com/Linductor-alkaid/mira/actions/runs/40670169663)
+    （push）：quality、sanitizers (ASAN/TSAN/UBSAN)、linux (gcc/clang × Debug/Release)、
+    windows (Debug/Release)、android (arm64/x86_64 release)——12/12 success；
+  - [40670302026](https://github.com/Linductor-alkaid/mira/actions/runs/40670302026)
+    （pull_request）：同 12 个 job——12/12 success。
+  - 合计 **24/24 全绿**。squash 合并后的 tree 与 PR head `b08feb4` 一致，
+    故该取证即合并树的取证。
+- 取证同时记录于 PR #112 的评论。
+- 状态：`MNT-KAIRO-01`～`MNT-KAIRO-06` 全部完成；`MNT-KAIRO-07` 保持未完成
+  （等待上游正式 release）。本维护轮**关闭**，升级交付物与验证证据已落档。

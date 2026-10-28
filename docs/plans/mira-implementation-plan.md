@@ -933,7 +933,11 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     + 全量回归）。工作项见
     [maintenance-2026-10-kairo-master-pin](maintenance-2026-10-kairo-master-pin.md)：
     本地 Linux x86_64/gcc 13 全量 **113/113 通过**、`sbom-check` 与
-    `architecture-check` 零违规；CI 全矩阵与上游发版后复核两项**未完成**。
+    `architecture-check` 零违规；[PR #112](https://github.com/Linductor-alkaid/mira/pull/112)
+    已合并（`f003e476`），CI **24/24 全绿**（两个 workflow run：
+    [push](https://github.com/Linductor-alkaid/mira/actions/runs/40670169663) 与
+    [pull_request](https://github.com/Linductor-alkaid/mira/actions/runs/40670302026)）。
+    上游发版后的 pin 复核（`MNT-KAIRO-07`）**仍未完成**，为跨轮开放项。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

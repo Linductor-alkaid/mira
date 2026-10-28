@@ -144,7 +144,11 @@ Mira 的全部并发使用面是：默认调度器的单一异步池 + `submit_a
 - `python3 tools/check_sbom.py .` 确认 submodule commit、lock 与 SBOM 三者一致。
 - `python3 tools/check_architecture.py` 确认零新增违规。
 - CI 矩阵（linux gcc/clang × Debug/Release、windows Debug/Release、
-  android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）全绿。
+  android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）全绿——
+  **已取证**：[PR #112](https://github.com/Linductor-alkaid/mira/pull/112) 合并提交
+  `f003e476`，两个 workflow run 各 12 个 job 全 success，合计 **24/24**
+  （[push](https://github.com/Linductor-alkaid/mira/actions/runs/40670169663)、
+  [pull_request](https://github.com/Linductor-alkaid/mira/actions/runs/40670302026)）。
 - 上游侧证据：PR #223/#224 的上游 CI 146/144 → 146/146 全绿、TSAN 0 报告。
 
 ## 关联文档和工作项
