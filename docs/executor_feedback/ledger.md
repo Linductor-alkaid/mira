@@ -360,6 +360,10 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
   **已由上游 PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 交付并关闭**
   （merge `d493a69ce`，功能提交 `06f11dad9`，设计
   `docs/design/subject_bucket_admission.md`）；
+  下游三点后续调整由上游 PR
+  [#224](https://github.com/Linductor-alkaid/kairo/pull/224) 落实
+  （merge `78c6f5575`，功能提交 `52dd5a94d`，设计文档「修订（2026-10-28，
+  下游反馈）」R-1/R-2/R-3）；
   经 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) 转交上游流程
 - 上游交付时点：2026-10-28 合并入 master；**截至本次复核尚未进入任何发布 tag**
   （最新 release 仍为 `v0.7.2`，2026-10-19）。故状态为 `Accepted` 而非 `Resolved`
@@ -580,4 +584,5 @@ Mira 侧账本与预过滤路径**整体删除**，改为直接使用 Executor �
 | 2026-10-28 | Open | 为 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) §6「分主体份额」需求核查 kairo v0.7.0 公开头文件、API 文档与集成指南后确认缺口：admission 为实例级单值、无 key 维度、无配额原语、`IScheduler` 仅覆盖 `submit_auto` 且无主体字段；经 [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §1/B2 引用登记 | mira#111、DEC-069 §1 |
 | 2026-10-28 | Open（已提交上游） | 向上游提交 [kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)。核对范围扩展到 kairo **master**（含 v0.7.1 §3.1 `ResourceQuota`/`ResourceLease` 与 v0.7.2 §4.0 统一 `IScheduler` 协议）：`ResourceQuota` 的键是 **GPU device id / 进程级 CPU 独占核**（硬件预留，非任务槽位、无主体维度），`max_in_flight_tasks` 仍是实例级单值，`TaskRouter::Request` 仍无主体字段，`route_task` 的三个调用点仍全在 `submit_auto` 重载内——**缺口在 master 依然成立**。上游条目已给出期望语义、验收标准，以及 Mira 侧嵌套预过滤的临时边界与移除条件 | kairo#222 |
 | 2026-10-28 | Accepted（已向上游提出后续调整） | 已交付语义满足本条诉求，但发现三处**在真实使用形态下**的后续调整点，已在上游 #222 留评：[A] 裸 `submit_auto(lambda)` 形态不携带分桶键 → 份额对下游全部 11 处实际提交**静默失效**（无错、无告警、计数恒 0），请求上游补带 subject 的裸形态入口或至少补「未携带键的接纳数」诊断面；[B] 分桶键被逐字回显进异常消息与 failure 事件/状态快照，但设计文档与 API §3.12 **无脱敏约定**，请求补「键必须为不可识别派生标识」的明确约定；[C] 代际语义下查询面只反映当代计数，`get_subject_in_flight_submissions()` 在共存窗口内**低报**真实在途（差额 = 旧代残量，上界 = 旧份额），低报方向与配额用途相反，请求暴露残量或在 API 层强化告警并给出上界。另附范围备注：定时/周期路径两维均不覆盖，下游已自行设闸，**本次不请求**。三问均**不阻塞** M31 实施 | kairo#222 评论 |
+| 2026-10-28 | Accepted → Accepted（调整已落实，待版本可用） | 上游 PR [#224](https://github.com/Linductor-alkaid/kairo/pull/224) 落实三点：**R-1** 新增 `submit_auto(SubjectKey, F&&, Args&&...)`（用法 `ex.submit_auto(kairo::subject("key"), fn)`；`SubjectKey` 构造**刻意 explicit**，使 `submit_auto("key", fn)` 编译失败而非静默错绑键为 callable——负编译实证）＋ `SubjectQuotaStatus::admitted_total` 诊断面（**份额已配置但该值停在 0 = 键未流过接纳点**）；**R-2** 键脱敏约定成文（键被逐字复制进拒绝消息、`ExecutorFailureEvent::subject` 与状态快照，必须是不可识别派生标识；键空间清理责任在调用方）；**R-3** 跨代低报提升为 API 层 ⚠ 显式注意事项与监控口径（超额上界 + 自愈时间），**不**暴露 `retired_in_flight`（维持永久 graveyard 的成本取舍）——**低报本身按上游裁定保留**，下游监控口径已对齐。R-1 不改 D-1～D-5 的计数/释放/拒绝语义。仍不带键：公开 `submit()`、`submit_after` 裸形态、`submit_cancellable*`、`submit_on*`、`submit_batch*`。**上游仍未发布含本修复的 tag**（随下一个 release 发布）→ 状态维持 `Accepted`，待版本可用后迁移并关闭 | kairo#224 |
 | 2026-10-28 | Open → Accepted | 上游以 PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 交付并关闭 #222（merge `d493a69ce`，功能提交 `06f11dad9`，设计 `docs/design/subject_bucket_admission.md` D-1–D-5）。逐条核对本条目「上游验收标准」与上游验收 1–10：**全部覆盖**；拒绝面按 D-3 扩展为可区分两维（消息 / `subject_quota_exhausted_count` / 事件 `subject`）。记录三处行为差异：①覆盖路径仅 `submit_auto(TaskBuilder)` 等带键形态，Mira 现有 11 处裸 lambda 调用需迁移；②热更新弱一致（瞬时超额有界自愈）；③代际语义（解除后重配从 0 起计、跨代计数不可观测）。**上游尚未发布含该修复的 tag**（最新 release 仍为 `v0.7.2`），Mira 未迁移 → 状态转 `Accepted` | kairo#223、kairo#222 |
