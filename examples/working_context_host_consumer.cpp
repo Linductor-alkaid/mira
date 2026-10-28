@@ -337,7 +337,8 @@ int run(const std::filesystem::path &root) {
         return 1;
     }
     const auto session_id = session.value().id;
-    const auto task = runtime.submit_task(session_id, TaskSpec{"finish the quarterly report"});
+    const auto task = runtime.submit_task(
+        session_id, TaskSpec{.goal = "finish the quarterly report", .user_constraints = {}});
     if (!task || !task.value().command.outcome(std::chrono::seconds(2))) {
         std::cerr << "submit task failed\n";
         return 1;
@@ -442,8 +443,9 @@ int run(const std::filesystem::path &root) {
             ++failures;
         } else {
             child_session_id = child_session.value().id;
-            const auto child_task =
-                runtime.submit_task(child_session_id, TaskSpec{"gather the login path facts"});
+            const auto child_task = runtime.submit_task(
+                child_session_id,
+                TaskSpec{.goal = "gather the login path facts", .user_constraints = {}});
             if (!child_task || !child_task.value().command.outcome(std::chrono::seconds(2))) {
                 std::cerr << "submit child task failed\n";
                 ++failures;

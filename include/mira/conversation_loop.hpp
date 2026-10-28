@@ -8,9 +8,11 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,6 +54,10 @@ struct ConversationLoopConfig final {
     std::size_t max_history_bytes = 2 * 1024 * 1024;
     std::size_t max_retained_turns = 64;
     std::uint32_t max_tools_per_turn = 32;
+    // Bounded user-message queue (M28/DEC-068 §4.4): the symmetric
+    // counterpart of AgentLoop::max_pending_user_messages. Overflow rejects
+    // the enqueue with ResourceExhausted instead of dropping the message.
+    std::size_t max_pending_user_messages = 16;
 };
 
 enum class ConversationOutcome : std::uint8_t {
@@ -246,10 +252,27 @@ class ConversationLoop final {
     // history remains; exceeding its active capacity fails visibly.
     void set_history_transformer(HistoryTransformer transformer);
 
+    // Queues one user message for injection at the next turn boundary
+    // (M28/DEC-068 §4.4). This is the symmetric counterpart of
+    // AgentLoop::enqueue_user_message: the queue is bounded, the overflow
+    // rejects the enqueue with ResourceExhausted, and the messages are
+    // drained at turn boundaries and stay in context for the rest of the
+    // run. Text is stored and replayed into model requests verbatim: hosts
+    // must apply their own redaction policy before enqueueing.
+    [[nodiscard]] Result<void> enqueue_user_message(std::string message);
+
     [[nodiscard]] Result<ConversationLoopResult> run(const AgentLoopSpec &spec,
                                                      const OperationContext &context);
 
   private:
+    // The bounded user-message queue of the loop. It lives behind a shared
+    // pointer so the loop stays movable: the queue is a per-loop resource
+    // and a moved-from loop only shares it, it never copies it.
+    struct PendingUserMessages final {
+        std::mutex mutex;
+        std::deque<std::string> messages;
+    };
+
     struct SuppliedInput final {
         std::vector<ModelContentPart> parts;
         std::size_t offered = 0;
@@ -265,10 +288,14 @@ class ConversationLoop final {
         bool annotate_reuse = false;
     };
 
-    [[nodiscard]] Result<ModelRequest> build_request(const AgentLoopSpec &spec,
-                                                     const std::vector<ModelInputItem> &history,
-                                                     const std::string &feedback,
-                                                     const SuppliedInput &supplied);
+    [[nodiscard]] Result<ModelRequest>
+    build_request(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
+                  const std::string &feedback, const std::vector<std::string> &user_instructions,
+                  const SuppliedInput &supplied);
+    // Pops every pending user message, records UserMessageInjected events
+    // and appends the texts to the standing instructions of this run.
+    void drain_user_messages(const AgentLoopSpec &spec,
+                             std::vector<std::string> &user_instructions);
     // Resolves the seam once for the request being assembled (DEC-053):
     // validates and bounds the offered items, forces the untrusted envelope and
     // flattens the surviving parts. Never fails — supply errors and exceptions
@@ -294,6 +321,8 @@ class ConversationLoop final {
     ModelInputIdentityProvider identity_provider_;
     HistoryTransformer history_transformer_;
     ModelInputSupplyOptions supply_options_{};
+    std::shared_ptr<PendingUserMessages> pending_user_messages_ =
+        std::make_shared<PendingUserMessages>();
 };
 
 } // namespace mira

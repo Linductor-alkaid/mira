@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace mira {
 
@@ -23,6 +24,11 @@ struct SessionConfig final {
 
 struct TaskSpec final {
     std::string goal;
+    // The user constraints that bound the task from the start (M28/DEC-068
+    // §4.5). Append-only: the meaning of `goal` is unchanged, and a
+    // constraint added later is delivered through the loop input seam rather
+    // than by rewriting the goal.
+    std::vector<std::string> user_constraints;
 };
 
 struct ShutdownReport final {

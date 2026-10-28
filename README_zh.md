@@ -105,10 +105,19 @@ flowchart TB
 [实施总计划](docs/plans/mira-implementation-plan.md)的全部实现里程碑
 **M0–M27 已交付**，CI 全矩阵通过（Linux GCC/Clang、Windows MSVC、Android NDK
 arm64/x86_64 交叉构建、ASAN/UBSAN/TSAN、clang-tidy/format 与架构门禁）。
+主体级交互层的首阶段 **M28** 已实现且本地全绿（119/119），全矩阵 CI 取证在 PR 上完成。
 
 尚未完成、也不宣称完成的部分：Android 真机运行证据、真实 Provider 评估轮
 （DEC-032 Stage E）、统一行为迹首阶段（DEC-038）。Mira 只交付运行时与安装包，
 刻意不包含产品 UI 或面向终端用户的应用。
+
+**M28 已交付**：一个主体级统一输入入口——自己决定一条消息属于哪个内部会话或任务，
+带耐久幂等台账、确定性路由与自然语言澄清路径
+（[DEC-068](docs/decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
+[API 手册](docs/api/interaction-coordinator.md)）。**尚未实现**：M29–M31 的执行中
+插话、并发归属与重启恢复，以及容量预算、分层遗忘与会话归档
+（[DEC-069](docs/decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)）。
+路由准确率与容量数值**尚未测量**。
 
 ## 快速开始
 

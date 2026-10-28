@@ -1,12 +1,17 @@
 # DEC-068：交互协调层与主体级输入入口
 
-> 状态：Proposed
+> 状态：Accepted（2026-10-28 冻结方向；2026-10-29 随 M28 首阶段实现交付并回填）
 > 日期：2026-10-28
 > 负责人：Mira Maintainers
 > 冻结里程碑：M28
 > 替代/被替代：无
 > 来源需求：[Issue #111（`MIRA-20261027-001`）](https://github.com/Linductor-alkaid/mira/issues/111)
 > §1–§3、§5（会话/任务编排、统一输入接纳、上下文组织、持续交互契约）
+> 实现回填：M28 交付期的**冻结补充与细化**共七条（`IInputLedger` 增加 `advance`、
+> 交互事件写主体级专用分区、宿主建议缝与环境缝、`TaskSnapshot` 暴露约束、
+> `Clarify` 停在 `Accepted`、任务状态从 Runtime 刷新、投递失败保留待投递）逐条记录在
+> [M28 §4.10](../plans/m28-interaction-coordinator-first-stage.md)；
+> 公开契约见 [API 手册：交互协调层](../api/interaction-coordinator.md)
 
 ## 背景与问题
 

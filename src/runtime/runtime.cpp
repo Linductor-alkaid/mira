@@ -448,6 +448,10 @@ Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec t
         snapshot.state = TaskState::Idle;
         snapshot.updated_at = Timestamp::now();
         snapshot.control_sequence = sequence;
+        // The user constraints of the task are the ones it was created with
+        // (M28/DEC-068 §4.5); later constraints travel through the loop input
+        // seam.
+        snapshot.user_constraints = task.user_constraints;
         impl_->tasks.emplace(task_id, Impl::TaskRecord{snapshot, task.goal, session_id});
         Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);

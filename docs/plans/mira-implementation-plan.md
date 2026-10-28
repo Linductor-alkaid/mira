@@ -2,7 +2,13 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-10-28（kairo 未发布 master pin 升级：
+> 更新日期：2026-10-29（M28 首阶段实现交付：主体级统一输入入口
+> `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
+> 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
+> 通道、上下文归属、`mira.interaction.*.v1` 事件族；本地 119/119 通过，
+> CI 全矩阵取证待 PR。冻结补充与细化见 [M28 §4.10](m28-interaction-coordinator-first-stage.md)，
+> 详见 §4.1 第 24 条。）
+> 此前 2026-10-28（kairo 未发布 master pin 升级：
 > [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md) 冻结
 > pin `32027c2`（v0.7.0）→ `78c6f557`（`v0.7.2-14-g78c6f55`），消费上游
 > 分主体在途份额（PR #223/#224）；暴露面核对零命中、公开 API 差异纯增量、
@@ -348,7 +354,7 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M25](m25-host-integration-round.md) | 宿主集成轮——Agent Loop 快照供给缝与宿主编排参考（[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)：可选快照供给依赖（未注入零漂移）、`build_request` 经 `context_items_from_working_context` 注入已提交快照条目（身份对齐 + 有界渲染 + 失败降级）；W3/W4/W5 宿主显式编排、Loop 零自动化；三层验收——`tests/m25/` 契约矩阵 + `tests/integration/` 单系统闭环 + `examples/` 参考宿主；无模型） | M23/M24 关闭（已满足）；接线验收形态冻结（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M25 §4 冻结 | 真实模型轮与 Stage E 评估矩阵的接线前提（非发布物） | Completed |
 | [M26](m26-temporal-policy-stage-t1.md) | Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环（[DEC-037](../decisions/DEC-037-temporal-policy.md)：`TemporalHistory`/`TrackedEntity`/T1 子集版本化事件族/`ReactiveRule` schema v1 契约 + `IPolicyRuntime`/`ReactivePolicyRuntime` 最小闭环——冻结确定性数据集上「重复事件 → 候选规则 → 晋升后无需 Agent 正确执行」；无平台、无感知、无模型依赖，指标全部为管线行为指标） | DEC-037 冻结（已满足）；T1 纯 Core 确定性阶段常规授权（总计划 §4.1 第 7 条与 DEC-037 决策第 7 条，已满足）；M26 §4 冻结 | Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点（非发布物） | Completed |
 | [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物）；已交付（[PR #71](https://github.com/Linductor-alkaid/mira/pull/71) CI 全绿） | Completed |
-| [M28](m28-interaction-coordinator-first-stage.md) | 交互协调层首阶段——主体级输入接纳与最小路由闭环（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)/[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)：主体级 `InputEnvelope` 入口与四阶段 `InputStage`、耐久幂等台账 `IInputLedger`（宿主 `input_id` 去重 + 窗口外明确过期）、确定性路由裁决八意图闭集（含「指代不清 → 自然语言澄清」）、结果关联与迟到结果处置、`IUserInputSink` 输入缝与 `ConversationLoop` 对称入队通道、按工作组织的上下文归属；无模型、无平台） | DEC-068 冻结（已满足）；M25 供给缝接线形态（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M28 §4 冻结 | M29/M30/M31 的接线前提（非发布物） | Planned |
+| [M28](m28-interaction-coordinator-first-stage.md) | 交互协调层首阶段——主体级输入接纳与最小路由闭环（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)/[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)：主体级 `InputEnvelope` 入口与四阶段 `InputStage`、耐久幂等台账 `IInputLedger`（宿主 `input_id` 去重 + 窗口外明确过期）、确定性路由裁决八意图闭集（含「指代不清 → 自然语言澄清」）、结果关联与迟到结果处置、`IUserInputSink` 输入缝与 `ConversationLoop` 对称入队通道、按工作组织的上下文归属；无模型、无平台） | DEC-068 冻结（已满足）；M25 供给缝接线形态（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M28 §4 冻结 | M29/M30/M31 的接线前提（非发布物） | In Progress |
 | [M29](m29-interaction-coordinator-concurrency-and-recovery.md) | 交互协调层第二阶段——执行中插话、切换/恢复、并发归属、持久化与断线回补（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §5/§8；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5） | M28 关闭（**未满足**） | M30 长期记忆接入的接线前提（非发布物） | Planned |
 | [M30](m30-long-term-memory-integration.md) | 长期记忆接入——提取、检索、纠正、删除与可选回忆反馈（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §6 / [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §3；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**未满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | Planned |
 | [M31](m31-capacity-admission-and-archival-recovery.md) | 容量准入、自动归档与可恢复清理（[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：分层容量预算与主体份额、四层遗忘与冻结淘汰序、保护集合、会话退出生命周期与归档资格、跨存储可证明回收、周期清扫宿主、部署档位数值冻结；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6） | M28、M30 关闭（**未满足**）；DEC-069 数值档位冻结；[`EXE-20261028-001`](../executor_feedback/ledger.md) 临时边界确定 | 部署档位与有限容量契约的冻结锚点（非发布物） | Planned |
@@ -938,6 +944,37 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     [push](https://github.com/Linductor-alkaid/mira/actions/runs/40670169663) 与
     [pull_request](https://github.com/Linductor-alkaid/mira/actions/runs/40670302026)）。
     上游发版后的 pin 复核（`MNT-KAIRO-07`）**仍未完成**，为跨轮开放项。
+
+24. M28 首阶段实现交付（2026-10-29）：把 DEC-068 的冻结面落成可编译的公开契约
+    与可执行的门禁。新增公开头
+    [`include/mira/interaction_coordinator.hpp`](../../include/mira/interaction_coordinator.hpp)
+    与 `src/interaction/`（`interaction_events.cpp` / `input_ledger.cpp` /
+    `interaction_coordinator.cpp`，落在 `core` 模块 roots 内，**policy 零差异**）：
+    主体级统一输入入口 `submit_input(InputEnvelope) → InputDisposition`；闭集五阶段
+    `InputStage` 与闭集八意图 `RouteIntent`；耐久幂等台账 `IInputLedger`
+    （`EventStoreInputLedger` 实现，主体级专用 EventStore 分区 + 常量分区 id，
+    重启后可重建索引并保留幂等窗口）；确定性路由裁决（宿主建议缝 `RouteResolver`
+    **必须先通过校验**才被采纳，无建议时走冻结的结构回落规则）；fail-closed 权限
+    校验点（缺能力/grant 过期/身份版本不匹配一律拒绝）；`IUserInputSink` 输入缝与
+    `AgentLoopInputSink`/`ConversationLoopInputSink` 两个适配；`ConversationLoop`
+    **新增**与 `AgentLoop::enqueue_user_message` 对称的有界入队通道；`TaskSpec` 与
+    `TaskSnapshot` 追加 `user_constraints`；`mira.interaction.*.v1` 六事件闭集
+    （每个事件自带版本标记，不信 `EventEnvelope::schema_version`）。既有显式 API
+    （`open_session`/`submit_task`/暂停/取消/接管）**不删不改**，协调层是「默认用户
+    交互」的入口而非唯一入口。
+    交付期的**冻结补充与细化**共七条，逐条给出理由，记录在
+    [M28 §4.10](m28-interaction-coordinator-first-stage.md)：`IInputLedger` 增加
+    `advance`（承载阶段迁移的窄接口）、交互事件写主体级专用分区、宿主建议缝与环境
+    缝的注入形态、`TaskSnapshot` 同步暴露约束、`Clarify` 阶段语义（停在 `Accepted`）、
+    任务状态缓存从 Runtime 刷新、投递失败保留待投递。
+    本地取证：Linux x86_64/gcc（Debug）**119/119 通过**（改前 113/113，新增
+    `m28` 6 项覆盖 `M28-G1`–`M28-G6`）、`architecture-check` 零新增违规、
+    `docs-check`/`sbom-check`/`platform-boundary-check` 全绿、`format-check`
+    280 文件零违例。**CI 全矩阵取证待 PR**（本地无 Windows 与 Android NDK 交叉
+    工具链，按[项目管理与文档规范 §5](../project/project_management_and_documentation.md) 记录
+    原因、负责人与补跑条件）。**本轮不宣称**跨重启恢复流程（M29）、并发归属与指代
+    消解的完整语义（M29）、容量准入与归档遗忘（M31）、真实模型的路由准确率与必要
+    澄清率（真实模型评估轮）。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

@@ -1,6 +1,7 @@
 # M28：交互协调层首阶段——主体级输入接纳与最小路由闭环
 
-> 状态：Planned（2026-10-28 立项并跑前冻结；实现未开始）
+> 状态：In Progress（2026-10-28 立项并跑前冻结；2026-10-29 实现完成并本地取证，
+> CI 全矩阵取证待 PR 合并）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -13,7 +14,7 @@
 > 与 [DEC-069 §9](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) 引用了
 > 2026-10-28 的 kairo 公开头文件/API 文档/集成指南核查结论）
 > 建议发布点：非发布物；DEC-068 协调层公开契约与 M29/M30/M31 的接线前提
-> 更新日期：2026-10-28（立项并跑前冻结）
+> 更新日期：2026-10-29（实现完成与本地取证）
 
 ## 1. 目标
 
@@ -321,6 +322,68 @@ class IUserInputSink {
 | 容量归属 | 台账/注册表计入 DEC-069 预算，本阶段只保证不无界 | 独立设一个无界表 | DEC-069 §2 |
 | Executor 路由 | 复用 Runtime Executor + `ExecutionSupervisor` | 协调层自建 Executor/线程池 | AGENTS.md；Runtime 设计 §11.2 |
 
+### 4.10 实现注记（2026-10-29 交付期，冻结的补充与细化）
+
+以下七条是**实现期**对 §4 冻结面的**补充与细化**。它们不改变冻结语义，只把
+冻结面落到可编译的公开契约上；每条都给出理由，便于后续里程碑复核。
+
+1. **`IInputLedger` 增加第三个方法 `advance(input_id, transition)`。**
+   §4.2 的冻结草图只有 `admit` / `lookup` 两条，但「台账记录输入从
+   `Accepted` 到 `Routed`/`Answered`/`TaskSettled`/`Rejected` 的阶段迁移」是
+   DEC-068 §3 与 §4 的直接要求。没有 `advance` 就没有承载迁移的窄接口，
+   只能另开一条平行写入路径——那正是 DEC-068 §4 否决的形态。`advance` 是
+   **加法**，不改动已冻结的两条语义。迁移**耐久**且**阶段永不回退**。
+
+2. **交互事件写在 EventStore 的**主体级专用分区**，不混入 Session/Task 流。
+   台账是主体级、跨会话、跨重启的（DEC-068 §4），而 `IEventStore::read` 以
+   `session_id` 分区。若把交互事件写进业务会话流，一次输入会散落到多个会话
+   分区，跨重启的重建就必须扫描全部会话流——与「台账是一个可重建投影」相悖。
+   该分区是 **Mira 拥有的常量**（`interaction_ledger_partition()`），使重启后的
+   进程无需持久化 id 即可找到同一条耐久流。**代价**：交互事件不进入会话事件流，
+   宿主若要观察交互生命周期需读该分区；会话对话投影与 checkpoint 投影因此
+   不受交互事件影响（M28-G4 断言了这一点）。
+
+3. **新增宿主建议缝 `RouteResolver`。** 冻结的 `InputEnvelope` 没有承载模型建议
+   的字段，而 DEC-068 R1 明确「模型可以产出 `suggested_intent`」。建议因此走
+   **独立的注入缝**（沿用 DEC-045 的薄缝 + setter 注入先例），而不是扩
+   `InputEnvelope`——后者会把模型的语义产物写进公开的输入契约。
+   **无建议时的确定性回落规则**已冻结：① `reply_to` 指向存活任务 → 延续；
+   ② 主体恰好一个存活任务 → 延续；③ 无存活任务 → 新建；④ 多个存活任务 → 澄清。
+   「最近一个会话」**不是**默认归属（R3）。
+
+4. **新增宿主环境缝 `EnvironmentProvider`。** 协调层创建会话，因而需要会话的
+   `IEnvironment`；环境是平台适配器的产物，归宿主所有。协调层**不**自建环境。
+
+5. **`TaskSpec` 与 `TaskSnapshot` 追加 `user_constraints`。** 冻结的 §4.5 要求
+   `TaskSpec` 承载「最新用户约束」且**不改** `goal` 的既有语义。`TaskSnapshot`
+   同步暴露该字段，使约束在任务创建后仍**可观察**（否则该字段是写完即丢）。
+   后续新增的约束经 **Loop 输入缝** 到达目标任务，**不**重写 `goal`。
+
+6. **`ConversationLoop` 新增 `enqueue_user_message` 与
+   `ConversationLoopConfig::max_pending_user_messages`。** 与
+   `AgentLoop::enqueue_user_message` **对称**：同样的有界队列、同样的
+   `ResourceExhausted` 溢出语义、同样的线程安全纪律；消息在**轮边界**抽取并
+   作为常驻指令进入本轮及后续每轮请求（与 `AgentLoop` 的
+   `drain_user_messages` 形态一致）。为保持 `ConversationLoop` **可移动**，
+   待投递队列放在 `shared_ptr` 之后（移动只共享、不复制）。
+
+7. **`Clarify` 的阶段语义：输入停留在 `Accepted`。** 澄清是一句**问句**，不是
+   回答——用户尚未作答。因此澄清迁移登记 `mira.interaction.input-clarified.v1`
+   事件与澄清文本，阶段保持 `Accepted`；用户的回答是**另一次输入**（可用
+   `reply_to` 关联），它独立走接纳与路由。§4.1 的阶段表把 `Answered` 定义为
+   「已产出面向用户的回复」，澄清不满足该定义。
+
+**其他实现取舍（非冻结面变更）**：
+
+- 协调层在每次裁决前**从 Runtime 刷新**缓存的任务状态。Runtime 是任务状态的
+  唯一 owner，协调层的注册表只是缓存；不刷新会让已终态的任务被再次路由
+  （违反 R2）。
+- 投递失败的输入**保留在待投递队列**，等下一个 sink；它既不被静默丢弃，也不被
+  执行两次。`register_sink()` 的补投失败同样回队并返回错误。
+- 上下文准备是一个**有界的 Executor 有限任务**（`submit_auto()`），其 future 由
+  协调层**持有并消费**；等待超时未结算的 future 被**退役**并在关闭时被消费，
+  绝不丢弃。
+
 ## 5. 阶段冻结协议必答八问（2026-10-28）
 
 | # | 问题 | 回答 |
@@ -351,13 +414,14 @@ class IUserInputSink {
 
 ### 6.2 退出条件
 
-- [ ] `M28-01`–`M28-08` 全部工作项完成并勾选。
-- [ ] `M28-G1`–`M28-G8` 全部通过，测试文件与 label 就位。
+- [x] `M28-01`–`M28-08` 全部工作项完成并勾选。
+- [x] `M28-G1`–`M28-G8` 全部通过，测试文件与 label 就位。
 - [ ] CI 24/24 全绿（linux gcc/clang × Debug/Release、windows Debug/Release、
       android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）。
-- [ ] 公开 API、事件 schema、错误语义与示例已同步更新。
-- [ ] 受影响的设计、决策、计划、术语表、API 手册已同步更新。
-- [ ] 验证记录（§9）含 commit、环境、命令、结果与限制。
+      **本地已全绿，但矩阵取证在 PR 上完成**——见 §9 的未执行记录。
+- [x] 公开 API、事件 schema、错误语义与示例已同步更新。
+- [x] 受影响的设计、决策、计划、术语表、API 手册已同步更新。
+- [x] 验证记录（§9）含 commit、环境、命令、结果与限制。
 
 ### 6.3 未执行验证的记录要求
 
@@ -367,27 +431,30 @@ class IUserInputSink {
 
 ## 7. 工作项
 
-- [ ] `M28-01` 立项与跑前冻结：DEC-068 冻结面、本文件 §4 契约语义、§5 必答八问、
+- [x] `M28-01` 立项与跑前冻结：DEC-068 冻结面、本文件 §4 契约语义、§5 必答八问、
       §4.9 决策记录表、§6 门禁矩阵；状态转 `Planned`。
-- [ ] `M28-02` 公开契约面：`include/mira/interaction_coordinator.hpp`
+- [x] `M28-02` 公开契约面：`include/mira/interaction_coordinator.hpp`
       （`InputEnvelope`/`InputStage`/`RouteIntent`/`RoutingDecision`/`InputDisposition`/
       `IInputLedger`/`IUserInputSink`/`InteractionCoordinator`/`CoordinatorConfig`）；
       wire schema 键集冻结；`mira.interaction` 错误域冻结。
-- [ ] `M28-03` 幂等台账：`IInputLedger` 的耐久实现（EventStore 承载），
+      *实现注记见 §4.10 第 1、3、4 条。*
+- [x] `M28-03` 幂等台账：`IInputLedger` 的耐久实现（EventStore 承载），
       原子 `admit`、窗口内重复返回既有条目、窗口外明确过期拒绝、
       回收窗口接口、事件面写入；**不含**容量预算数值（归 M31）。
-- [ ] `M28-04` 协调器核心：主体注册表（`(TenantId, UserId)` → sessions/tasks，
+      *实现注记见 §4.10 第 1、2 条。*
+- [x] `M28-04` 协调器核心：主体注册表（`(TenantId, UserId)` → sessions/tasks，
       可由 EventStore 重建）、确定性路由裁决（八个 `RouteIntent`）、
       fail-closed 权限校验点、结果关联与迟到结果处置。
-- [ ] `M28-05` Loop 输入缝：`IUserInputSink` 抽象；
+- [x] `M28-05` Loop 输入缝：`IUserInputSink` 抽象；
       `AgentLoop` 适配实现（复用 `enqueue_user_message` 的有界队列与
       `ResourceExhausted` 语义）；`ConversationLoop` **新增**对称的有界入队通道
-      与适配实现。
-- [ ] `M28-06` 上下文归属与用户约束承载：`TaskSpec` 追加式用户约束字段；
+      与适配实现。*实现注记见 §4.10 第 6 条。*
+- [x] `M28-06` 上下文归属与用户约束承载：`TaskSpec` 追加式用户约束字段；
       协调层按工作组织上下文；插话纠正只更新目标任务；Layer 0 仍是唯一请求期准入。
-- [ ] `M28-07` IVA 测试矩阵：`tests/m28/` 六组用例（§6.1），
+      *实现注记见 §4.10 第 5 条。*
+- [x] `M28-07` IVA 测试矩阵：`tests/m28/` 六组用例（§6.1），
       label `integration;m28`，CMake 目标与门禁注册。
-- [ ] `M28-08` 文档同步：API 手册新页（`docs/api/interaction-coordinator.md`）、
+- [x] `M28-08` 文档同步：API 手册新页（`docs/api/interaction-coordinator.md`）、
       术语表新词条、总计划索引与 §4.1 入口、README 能力行、
       事件面说明、DEC-068 状态回填；修正
       `docs/api/model-agent-loop.md` 中用户消息 provenance 与实现不符的文档漂移
@@ -410,6 +477,54 @@ class IUserInputSink {
 
 ## 9. 验证记录
 
-> 尚无记录。实现开始后按时间追加：日期、commit、环境、命令、结果、限制与剩余项。
-> 未执行项必须保持未勾选并记录原因、负责人与补跑条件
-> （[项目管理与文档规范 §5、§10](../project/project_management_and_documentation.md)）。
+### 2026-10-29 · 实现交付与本地取证
+
+- **commit**：见 §9.1 的 PR（本地取证在提交前完成）。
+- **环境**：Linux x86_64、CMake + GCC（Debug 构建），kairo 固定在
+  `78c6f557`（`v0.7.2-14-g78c6f55`）。
+- **命令与结果**：
+
+| 命令 | 结果 |
+| --- | --- |
+| `cmake --build build/debug -j 8` | 通过（`mira_core` + 全部测试目标，零告警，warnings-as-errors） |
+| `ctest --test-dir build/debug -j 8` | **119/119 通过**（含新增 `m28` 6 项；改前为 113/113） |
+| `ctest --test-dir build/debug -R m28` | **6/6 通过**（`M28-G1`–`M28-G6`） |
+| `python3 tools/check_architecture.py .` | 架构策略干净（基线抑制 17 项，无新增违规） |
+| `python3 tools/check_docs.py .` | 链接与围栏 OK |
+| `python3 tools/check_platform_boundary.py .` | Core 平台边界干净 |
+| `python3 tools/check_sbom.py .` | 依赖锁与 SBOM 一致 |
+| `cmake --build build/debug --target format-check` | 280 个文件格式检查通过 |
+
+- **门禁映射**：
+  - `M28-G1` → `tests/m28/m28_input_admission_test.cpp`（阶段可观察、无隐式跳转、
+    拒绝带稳定错误码、事件自带版本标记）。
+  - `M28-G2` → `tests/m28/m28_input_ledger_test.cpp`（窗口内重复不产生第二次派发、
+    窗口外明确过期拒绝、同内容不同 id 不判重试、台账有界、重建保留窗口）。
+  - `M28-G3` → `tests/m28/m28_routing_test.cpp`（八个意图各有可复现用例、终态任务
+    不被复活、歧义走澄清、权限/过期 grant/身份版本不匹配一律 fail-closed、
+    紧急停止走确定性路径）。
+  - `M28-G4` → `tests/m28/m28_result_association_test.cpp`（回复/追问/后台结果/失败
+    可追溯到 `input_id` + `task_id`、迟到结果不冒认其他输入、事件族闭集与版本标记、
+    交互事件不污染会话流）。
+  - `M28-G5` → `tests/m28/m28_context_ownership_test.cpp`（纠正只更新目标任务、
+    不相关输入不污染其他任务约束、约束表有界、恢复任务继承被恢复任务的约束）。
+  - `M28-G6` → `tests/m28/m28_lifecycle_test.cpp`（投递失败/提交被拒/关闭中/
+    紧急停止各有结算路径、无未决句柄、Executor 可干净关闭）。
+  - `M28-G7` → 文档审查（`docs/api/interaction-coordinator.md` 新页 + 索引 +
+    术语表 v1.7 + 事件面说明）。
+  - `M28-G8` → `architecture-check` 零新增违规；无自建线程/定时器（协调层的全部
+    异步工作经注入的 `kairo::Executor` 与 Runtime 既有命令面）；`format-check`
+    零违例。
+
+- **未执行的验证**（保持未勾选）：
+  - **CI 24/24 全矩阵**（linux gcc/clang × Debug/Release、windows Debug/Release、
+    android arm64/x86_64 NDK 交叉、ASAN/TSAN/UBSAN、quality）。
+    **原因**：矩阵在 PR 上运行，本地环境不含 Windows 与 Android NDK 交叉工具链。
+    **负责人**：Mira Maintainers。**补跑条件**：PR 推送后以 CI 运行结果取证；
+    合并前必须看到 24/24 全绿，失败则回到对应门禁修复。
+  - **真实模型的路由准确率与必要澄清率**：本阶段是纯 Core 确定性工作，
+    不依赖真实模型；按 issue #111 的验证方法留待标注场景与真实模型评估轮。
+    **补跑条件**：真实模型评估轮立项后执行。
+
+- **本阶段不宣称**：跨重启后的完整恢复流程（M29）、并发归属与指代消解的完整
+  语义（M29）、容量准入与归档遗忘（M31）、路由准确率与澄清率（真实模型轮）。

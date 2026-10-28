@@ -899,7 +899,8 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
     }
 
     const std::string goal = "workflow:" + definition.name;
-    auto submission = runtime_.submit_task(session_, TaskSpec{goal});
+    auto submission =
+        runtime_.submit_task(session_, TaskSpec{.goal = goal, .user_constraints = {}});
     if (!submission.has_value()) {
         return submission.error();
     }

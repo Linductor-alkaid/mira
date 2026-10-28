@@ -772,6 +772,36 @@ mira_add_test(mira_working_context_host_test integration/working_context_host_te
     integration)
 
 # ---------------------------------------------------------------------------
+# M28 (DEC-068): the interaction coordinator - the principal-level input
+# entry point. The gate matrix M28-G1..M28-G6 (admission and stage
+# separation, idempotency, routing, result association, context ownership and
+# Executor discipline) over the milestone §4 frozen contract. Labels
+# integration;m28, TIMEOUT 120.
+# ---------------------------------------------------------------------------
+
+function(mira_add_m28_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Mira::core kairo::kairo)
+    target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(${name} SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+    mira_enable_warnings(${name})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -Wno-deprecated-declarations)
+    endif()
+    mira_enable_sanitizers(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m28" TIMEOUT 120)
+endfunction()
+
+mira_add_m28_test(mira_m28_input_admission_test m28/m28_input_admission_test.cpp)
+mira_add_m28_test(mira_m28_input_ledger_test m28/m28_input_ledger_test.cpp)
+mira_add_m28_test(mira_m28_routing_test m28/m28_routing_test.cpp)
+mira_add_m28_test(mira_m28_result_association_test m28/m28_result_association_test.cpp)
+mira_add_m28_test(mira_m28_context_ownership_test m28/m28_context_ownership_test.cpp)
+mira_add_m28_test(mira_m28_lifecycle_test m28/m28_lifecycle_test.cpp)
+
+# ---------------------------------------------------------------------------
 # M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability
 # catalog, fail-closed manifest parsing and deterministic negotiation. Pure
 # computation over caller-supplied data; gates M7-TM0-G1..G5 live in the test,

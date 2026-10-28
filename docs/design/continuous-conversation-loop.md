@@ -1,11 +1,13 @@
 # 持续会话循环
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-10-15
+> 版本：1.1
+> 更新日期：2026-10-29
 > 适用范围：ConversationLoop 的显式 Continuous 模式
-> 依据：[DEC-056](../decisions/DEC-056-continuous-conversation-loop.md)
-> 计划：[持续循环维护](../plans/maintenance-2026-10-continuous-conversation.md)
+> 依据：[DEC-056](../decisions/DEC-056-continuous-conversation-loop.md)、
+> [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §4.4
+> 计划：[持续循环维护](../plans/maintenance-2026-10-continuous-conversation.md)、
+> [M28](../plans/m28-interaction-coordinator-first-stage.md)
 
 ## 目标与边界
 
@@ -52,6 +54,18 @@ BudgetLedger 仍只有稳定 TaskId 的一个账户，不为每轮创建伪任�
 历史容量在压缩后、下一次模型派发前检查。超限明确失败，保持已执行工具计数，
 不重放动作。该阈值限制活动窗口，而非累计执行轮次。run 的局部历史不是持久
 checkpoint，本轮未提供从任意提案重新派发或持久 step/resume 的入口。
+
+## 用户输入通道
+
+M28/DEC-068 §4.4 为 `ConversationLoop` 补齐了与 `AgentLoop::enqueue_user_message`
+**对称**的有界入队通道：同样的有界队列、同样的 `ResourceExhausted` 溢出语义、
+同样的线程安全纪律。消息在**轮边界**抽取，记录 `UserMessageInjected` 事件，并作为
+常驻指令进入本轮及后续每轮请求。容量由
+`ConversationLoopConfig::max_pending_user_messages` 界定。
+
+这条通道是**交互协调层**的 Loop 输入缝之一：协调层把已路由的输入投递给已在运行
+的 Loop，**不**创建也不运行 Loop，也不改变本设计的请求预算、历史或工具派发语义。
+没有这条通道时，continuous 模式——长时持续交互的主形态——无法被统一输入口驱动。
 
 ## 工具派发的存量
 

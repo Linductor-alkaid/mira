@@ -252,6 +252,13 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
   显式持续模式见下节；取消、准入拒绝和终态回答阻止新工具派发。
 - 无注册表时工具提案 fail closed（`Failed`："tool proposals require a tool registry"）；
   桥接拒绝（调用未暴露的工具、重复 call id 冲突）同样 fail closed 并透传桥接诊断。
+- `enqueue_user_message(text)`（M28/DEC-068 §4.4）：与
+  `AgentLoop::enqueue_user_message` **对称**的有界入队通道——同样的有界队列、同样
+  的 `ResourceExhausted` 溢出语义、同样的线程安全纪律。消息在**轮边界**抽取，
+  记录 `UserMessageInjected` 事件并作为常驻指令进入本轮及后续每轮请求。容量由
+  `ConversationLoopConfig::max_pending_user_messages`（默认 16）界定。该通道是
+  [交互协调层](interaction-coordinator.md)的 Loop 输入缝之一：协调层把输入投递给
+  已在运行的 Loop，**不**创建也不运行 Loop。
 - `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
   设备任务仍由 `AgentLoop` 承载。
 
