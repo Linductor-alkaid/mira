@@ -526,5 +526,30 @@ class IUserInputSink {
     不依赖真实模型；按 issue #111 的验证方法留待标注场景与真实模型评估轮。
     **补跑条件**：真实模型评估轮立项后执行。
 
+### 2026-10-29 · CI 第一轮失败与修复
+
+PR #113 的第一轮 CI 在 **quality / windows / android** 三个 job 上失败，
+**根因只有一个**：`src/interaction/input_ledger.cpp` 把台账的窗口到期时刻声明为
+`std::chrono::system_clock::time_point`，并用**函数式转换**从
+`std::chrono::nanoseconds` 构造它。该转换**不可移植**——默认的
+`system_clock::duration` 在受支持工具链上并非纳秒（MSVC  ticks 100 ns，
+libc++ 又不同），因此只有「系统时钟按纳秒 tick」的那套工具链能编过。
+linux gcc/clang 恰好属于后者，所以本地全绿而 CI 三平台同时红。
+
+**修复**：窗口到期时刻改用仓库既有的 `WallTimePoint`（`core_contracts.hpp`
+为此专门钉了纳秒精度，注释里写明 MSVC 的 100 ns tick 问题），墙钟读数统一经
+一个做 `time_point_cast` 的辅助函数取得。窗口语义未变：仍按墙钟判定，
+窗口外的重复仍是明确过期拒绝。
+
+同一轮静态分析（clang-tidy）另报两处，均在新文件内：`InputLedgerOptions` 是
+可平凡复制的类型，`std::move` 无效；以及一处从 const 引用拷贝 `Error`。两处
+均已修正。
+
+**教训（对本仓库后续跨平台代码适用）**：公开契约里凡是**跨平台精度敏感**的
+时间点，必须用 `WallTimePoint` 而不是 `std::chrono::system_clock::time_point`；
+**函数式转换 chrono 类型**在本仓库的多平台支持下是隐患——编译通过与否取决于
+目标工具链的系统时钟精度，而不是代码本身。
+
+
 - **本阶段不宣称**：跨重启后的完整恢复流程（M29）、并发归属与指代消解的完整
   语义（M29）、容量准入与归档遗忘（M31）、路由准确率与澄清率（真实模型轮）。
