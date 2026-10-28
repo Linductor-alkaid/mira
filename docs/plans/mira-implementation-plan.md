@@ -23,7 +23,10 @@
 > [M30](m30-long-term-memory-integration.md)、
 > [M31](m31-capacity-admission-and-archival-recovery.md) 四个里程碑；
 > 确认并登记 Executor 缺口
-> [`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体分桶的份额准入）。
+> [`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体分桶的份额准入）——
+> **上游已交付**（kairo PR #223 合并入 master 并关闭 #222），但**尚未发布含该修复的
+> tag**，Mira 未消费，台账状态 `Accepted`；M31 须在版本可用后改用原生分桶并迁移
+> 受分桶约束的提交形态。
 > **真实模型语义质量与部署档位数值未验证**，本轮不宣称语义质量、容量达标或
 > 跨平台保证。详见 §4.1 第 21 条。）
 > 此前 2026-09-28（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)

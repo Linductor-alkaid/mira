@@ -22,7 +22,7 @@
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260922-001` | 2026-09-22 | Resolved | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | 已随 pin 升级（`ef821dc`，上游 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)）恢复 MinGW 全树可构建 | 已删除（pin 升级后无需子集回避） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)、[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`） |
-| `EXE-20261028-001` | 2026-10-28 | Open | 总量有界 admission 缺少按主体分桶的份额准入语义 | 阻塞 DEC-069 的分主体份额准入；Mira 侧只能用二段式预过滤近似 | 无安全临时方案完全等价者；M31 期间用 Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」） | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)、[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222) |
+| `EXE-20261028-001` | 2026-10-28 | Accepted | 总量有界 admission 缺少按主体分桶的份额准入语义 | 上游已交付（PR #223）但**尚未发布可用 tag**；Mira 侧消费与迁移待版本可用后进行 | 迁移前的等价近似：Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」）；上游可用后**整体移除** | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)、[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)（Closed）、[kairo#223](https://github.com/Linductor-alkaid/kairo/pull/223) |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -343,7 +343,7 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
 
 ### EXE-20261028-001：总量有界 admission 缺少按主体分桶的份额准入语义
 
-- 状态：`Open`
+- 状态：`Accepted`（上游已接受并交付，等待可用版本）
 - 发现日期：`2026-10-28`
 - 记录人/责任人：Mira Maintainers
 - 影响组件：`kairo::Executor` 的接纳（admission）语义；Mira 侧计划中的主体级协调层
@@ -356,8 +356,15 @@ executor 源码不依赖具体线程模型的 `native_handle_type` 表达：经 
   `include/kairo/task_router.hpp:17-22`、`include/kairo/scheduler.hpp:65-66`、
   `include/kairo/scheduling.hpp:44-53`
 - 上游 issue/PR：[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)（2026-10-28 提交，
-  「Per-subject bucket admission on top of total bounded admission」）；
+  「Per-subject bucket admission on top of total bounded admission」）——
+  **已由上游 PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 交付并关闭**
+  （merge `d493a69ce`，功能提交 `06f11dad9`，设计
+  `docs/design/subject_bucket_admission.md`）；
   经 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) 转交上游流程
+- 上游交付时点：2026-10-28 合并入 master；**截至本次复核尚未进入任何发布 tag**
+  （最新 release 仍为 `v0.7.2`，2026-10-19）。故状态为 `Accepted` 而非 `Resolved`
+  ——按本台账状态定义，`Resolved` 要求「依赖版本已提供能力**且** Mira 已完成迁移」，
+  二者均未满足。
   转交上游流程
 
 #### 使用场景
@@ -463,9 +470,70 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
 - **对上游的规模影响小**：是在既有 `try_admit_submission` / `AdmissionReleaser`
   机制上加一个可选的 key 维度，不是新增调度模型。
 
-#### 临时方案
+#### 上游交付复核（2026-10-28）
 
-**无完全等价的安全临时方案。** 在上游提供该能力前，M31 采用**嵌套预过滤**：
+上游 PR #223 在**同一接纳点**（`try_admit_submission`）叠加了可选分桶维度，
+公开面为：
+
+- `Executor::set_subject_max_in_flight_tasks(subject, max)` /
+  `get_subject_max_in_flight_tasks(subject)` /
+  `get_subject_in_flight_submissions(subject)` /
+  `get_subject_quota_status()`（`include/kairo/executor.hpp:280-283`）；
+- `TaskOptions::subject`（`include/kairo/task_options.hpp:199`）与
+  `TaskBuilder::subject()`（`:290-291`）；
+- `detail::SubjectQuotaRegistry`（`executor.hpp:1243`）；
+- 拒绝面沿用既有三通道并**可区分两维**：`CapacityExhaustedException`
+  消息区分（`Subject in-flight quota exhausted (key=…)` vs 总量文本）、
+  `ExecutorFailureStatus::subject_quota_exhausted_count`（分桶拒绝时与
+  `capacity_exhausted_count` 同时递增，前者是后者的子集）、
+  `ExecutorFailureEvent::subject`（空 = 总量拒绝）；
+- 冻结设计：`third_party/kairo/docs/design/subject_bucket_admission.md`
+  （D-1～D-5 + 验收 1–10）。
+
+**逐条核对本条目「上游验收标准」与上游验收 1–10：全部覆盖。**
+
+| 本条目期望 | 上游 | 结论 |
+| --- | --- | --- |
+| 分桶独立计数 + 总/分桶上限同时生效 | D-2 两维独立启用、全局先行 | 覆盖 |
+| 恰好一次接纳/释放、future 就绪前已释放 | D-2 继承 `bounded_admission.md` D-2 | 覆盖 |
+| 分桶拒绝**可与总量拒绝区分**且沿用三通道 | D-3（消息 / 计数 / 事件 `subject`） | 覆盖 |
+| A、B 互不影响；A 超份额被拒而 B 仍可接纳 | 验收 1 | 覆盖 |
+| A+B 超全局上限走既有总量语义 | 验收 2 | 覆盖 |
+| 取消 / 异常 / 超时 / 池丢弃释放分桶计数 | D-2 终态集合 | 覆盖 |
+| shutdown 语义一致且计数归零 | D-5、验收 7 | 覆盖 |
+| `max_in_flight_tasks == 0` 零回归、零热路径开销 | 验收 8 | 覆盖 |
+
+**三处必须记录的行为差异（不得静默）**：
+
+1. **覆盖路径比总量维度窄。** 只有 `submit_auto(TaskBuilder)`、
+   `submit_after(TaskBuilder)`、`submit_after_with_handle(TaskBuilder)`
+   （含单/多依赖重载）**携带 subject 键**；裸 `submit` 系、
+   `submit_with_handle`、`submit_cancellable*`、`submit_on*`、`submit_batch*`、
+   `submit_auto(F&&, Args...)`、`submit_batch_priority` **只受全局兜底**
+   （上游 D-4）。`submit_delayed*`/`submit_periodic*`、GPU、realtime、
+   Blocking I/O、lockfree 与总量维度同样不覆盖。
+   **Mira 侧集成约束**：仓库当前 11 处 `submit_auto` 调用**全部是裸 lambda 形态**
+   （`src/tool/tool_module_registry.cpp:736`、`src/tool/tool_module_mcp.cpp:368`、
+   `src/workflow/workflow_recovery.cpp:406`、`src/observation/observation_pipeline.cpp:154`、
+   `src/runtime/context_memory_supervisor.cpp:197`、
+   `src/workflow/workflow_runtime.cpp:986,1928,2334,2519`），
+   **不被分桶维度覆盖**。要真正按主体分桶，M31 必须把受分桶约束的提交
+   迁移到 `submit_auto(TaskBuilder(fn).subject(key))` 形态。
+2. **热更新弱一致。** 接纳的快照点 = 注册表临界区；`set()` 之后**开始**的提交
+   必须按新份额判定（严格可见），但与更新并发交错的**已开始**接纳允许按旧快照完成
+   （弱一致），瞬时超额上界 = 快照早于更新的并发在途接纳数，随终态释放自愈
+   （上游 D-2、验收 9）。这**不违反** DEC-069 §1/B2 的份额语义——
+   上界有界且自愈，但必须作为**已知**行为记录，不得宣称「绝不超额」。
+3. **代际语义。** `set(key, 0)` 即刻 erase（后续提交不再受该主体约束）；
+   **解除后同名重配创建新计数器、从 0 起计**，不继承旧代残量。
+   查询面（`get_subject_in_flight_submissions()` / `get_subject_quota_status()`）
+   **只反映当前代**；跨代在途总量**不承诺可观测**（上游 D-5、验收 10）。
+   这是上游刻意提供的「清除历史」杠杆，Mira 侧**不得**用它做常规配额调整，
+   也不得把跨代计数缺席误读为泄漏。
+
+#### 临时方案（版本可用前的过渡）
+
+**上游已交付但尚未发布可用 tag**，Mira 侧消费前仍需过渡：
 
 - Mira 侧维护一个分桶账本，在**调用 Executor 提交之前**先做主体份额检查：
   份额不足则由 Mira 直接返回 `ResourceExhausted`，**不进入** Executor 接纳点。
@@ -474,24 +542,22 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
   「恰好一次释放」与「future 就绪前计数已释放」不变式**不被破坏**——
   被 Mira 拒绝的请求从未进入 Executor 计数。
 
-**已知行为差异（必须记录，不得静默）**：
+**已知行为差异**：
 
 1. 拒绝计数分散在两处：Mira 账本的拒绝与 Executor 的 `capacity_exhausted_count`
    分别统计；上层诊断需要合并两者才能得到「因容量拒绝」的完整视图。
 2. 存在**双重记账窗口**：Mira 账本在提交前预留、Executor 接纳后释放，
    两者之间若进程崩溃，Mira 账本可能残留预留（需由 M31 的恢复流程按
    `ControlIngressId`/任务终态清理）。Executor 侧不受影响。
-3. 该方案**不是** Executor 原生分桶，因此不能覆盖 `submit_delayed` /
-   `submit_periodic` / realtime / blocking-I/O 等绕过 `submit_auto` 的路径——
-   这与 Executor 自身的 admission 覆盖面一致（总量维度同样不覆盖这些路径，
-   `third_party/kairo/docs/API.md:580-584`）。
-4. 若未来上游提供原生分桶，Mira 侧账本**必须删除**，不得与原生能力叠加。
+3. 该方案**不是** Executor 原生分桶，覆盖路径受限于带键的提交形态（见上）。
 
-**移除条件**：上游按本条期望语义提供能力后，Mira 侧账本与预过滤路径整体删除，
-`DEC-069` §1/B2 改为直接使用 Executor 原生分桶。
+**移除条件**：kairo 发布包含 PR #223 的可用版本**且** Mira 完成消费与迁移后，
+Mira 侧账本与预过滤路径**整体删除**，改为直接使用 Executor 原生分桶；
+**不得**与原生能力叠加（否则会出现双重份额判定）。
 
 **测试覆盖**：M31 的容量门禁必须覆盖「A 用满自身份额后 B 仍可接纳」与
-「A+B 合计超过全局上限」两个用例，并断言拒绝原因可区分。
+「A+B 合计超过全局上限」两个用例，并断言拒绝原因可区分
+（迁移到原生分桶后改由 `subject_quota_exhausted_count` 与事件 `subject` 断言）。
 
 #### 上游验收标准
 
@@ -513,3 +579,4 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
 | --- | --- | --- | --- |
 | 2026-10-28 | Open | 为 [mira#111](https://github.com/Linductor-alkaid/mira/issues/111) §6「分主体份额」需求核查 kairo v0.7.0 公开头文件、API 文档与集成指南后确认缺口：admission 为实例级单值、无 key 维度、无配额原语、`IScheduler` 仅覆盖 `submit_auto` 且无主体字段；经 [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §1/B2 引用登记 | mira#111、DEC-069 §1 |
 | 2026-10-28 | Open（已提交上游） | 向上游提交 [kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)。核对范围扩展到 kairo **master**（含 v0.7.1 §3.1 `ResourceQuota`/`ResourceLease` 与 v0.7.2 §4.0 统一 `IScheduler` 协议）：`ResourceQuota` 的键是 **GPU device id / 进程级 CPU 独占核**（硬件预留，非任务槽位、无主体维度），`max_in_flight_tasks` 仍是实例级单值，`TaskRouter::Request` 仍无主体字段，`route_task` 的三个调用点仍全在 `submit_auto` 重载内——**缺口在 master 依然成立**。上游条目已给出期望语义、验收标准，以及 Mira 侧嵌套预过滤的临时边界与移除条件 | kairo#222 |
+| 2026-10-28 | Open → Accepted | 上游以 PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 交付并关闭 #222（merge `d493a69ce`，功能提交 `06f11dad9`，设计 `docs/design/subject_bucket_admission.md` D-1–D-5）。逐条核对本条目「上游验收标准」与上游验收 1–10：**全部覆盖**；拒绝面按 D-3 扩展为可区分两维（消息 / `subject_quota_exhausted_count` / 事件 `subject`）。记录三处行为差异：①覆盖路径仅 `submit_auto(TaskBuilder)` 等带键形态，Mira 现有 11 处裸 lambda 调用需迁移；②热更新弱一致（瞬时超额有界自愈）；③代际语义（解除后重配从 0 起计、跨代计数不可观测）。**上游尚未发布含该修复的 tag**（最新 release 仍为 `v0.7.2`），Mira 未迁移 → 状态转 `Accepted` | kairo#223、kairo#222 |
