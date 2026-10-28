@@ -2,7 +2,12 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-10-28（Mirage 侧
+> 更新日期：2026-10-28（kairo 未发布 master pin 升级：
+> [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md) 冻结
+> pin `32027c2`（v0.7.0）→ `78c6f557`（`v0.7.2-14-g78c6f55`），消费上游
+> 分主体在途份额（PR #223/#224）；暴露面核对零命中、公开 API 差异纯增量、
+> 零代码迁移；未发布 master 的 pin 纪律与发版后复核见 §4.1 第 23 条。
+> 此前 2026-10-28（Mirage 侧
 > [持续性数字个体路线图](https://github.com/Linductor-alkaid/mirage)
 > §4.3/§4.6 深挖后的第二波立项：冻结
 > [DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md)（长期记忆行为契约，
@@ -906,6 +911,29 @@ consumer 交叉链接门禁，合并提交 CI 12/12 通过，两 ABI 均实际�
     `EXE-20261028-001`/kairo#222 同属调度与接纳面，需合并评估以免向 kairo 提两条互斥诉求）。
     本轮**不**声明语义质量、容量达标或跨平台保证；注意力时延、打扰接受率与部署数值
     均待目标设备与真实模型/真实用户取证。
+
+23. kairo 未发布 master pin 升级轮（2026-10-28）：DEC-069 §1/B2 要求的
+    **分主体在途份额**由上游 PR #223/#224 交付，但两个 PR 均合并在 v0.7.2 **之后**
+    的 master 上（上游最新 release 仍为 v0.7.2，能力「随下一个 release tag 发布」），
+    ⇒ 没有任何可用 tag 承载该能力，只能消费 master。经
+    [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md) 冻结升级决策：
+    pin 从 `32027c2`（`v0.7.0`）前进到 `78c6f557`（`v0.7.2-14-g78c6f55`，38 个提交，
+    越过 v0.7.1/v0.7.2 两个未消费发布）。暴露面核对结论：v0.7.1/v0.7.2 被移除或
+    语义变更的公开 API（`submit_priority`、`submit_batch_priority`、`submit_fast`、
+    `TaskRouter`/`IScheduler`/`set_scheduler`、`ResourceLease`/`try_reserve`）在 Mira
+    全仓使用点**全部为 0**；`v0.7.2 → 78c6f557` 的 `include/` 差异为**纯增量**
+    （唯一移除的是私有成员 `AdmissionReleaser` 构造签名与 `try_admit_submission`
+    内部参数表），**零代码迁移**。分级采纳：分主体份额运行期接口与
+    `kairo::subject()` 裸形态带键重载**即刻采纳**（本轮不改调用点，迁移属 M31 的
+    `M31-03`）；v0.7.1/v0.7.2 的调度类能力（能力快照 TTL 缓存、`DeadlinePolicy`、
+    `ResourceLease`、任务意图自动推断、优先级经调度器表达、`AdaptiveScheduler`）
+    **暂缓并记录触发条件**（沿 DEC-054 姿态）。未发布 master 的 pin 纪律：精确到
+    commit 且**不浮动**，`version` 记录 `v0.7.2-14-g78c6f55` 使「未发布」可被机器读出，
+    上游发版后**必须**复核改 pin（新提交进入 Mira 需重新走暴露面检索 + 差异性质判定
+    + 全量回归）。工作项见
+    [maintenance-2026-10-kairo-master-pin](maintenance-2026-10-kairo-master-pin.md)：
+    本地 Linux x86_64/gcc 13 全量 **113/113 通过**、`sbom-check` 与
+    `architecture-check` 零违规；CI 全矩阵与上游发版后复核两项**未完成**。
 
 M5/M6 保持 Cancelled；M7 经 DEC-042 重定义为 `Planned`（TM0–TM2 常规交付节奏，
 后续阶段随立项增补）。#8 的最小 BuiltIn 工具闭环已由 DEC-015 和

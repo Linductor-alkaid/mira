@@ -218,6 +218,11 @@ struct CapacityBudget final {
 >
 > 无论是否已消费上游能力，M31 都**不得**因此引入私有线程池或第二套调度器。
 >
+> **消费版本**：[DEC-073](DEC-073-kairo-master-pin-subject-quota.md) 已把 pin 升到
+> `78c6f557`（`v0.7.2-14-g78c6f55`，上游未发布 master）。本节的三条实施约束
+> 以该版本的上游公开面为准：`set_subject_max_in_flight_tasks` 等运行期接口与
+> `kairo::subject(key)` 裸形态带键重载均已可用。
+>
 > **上游后续调整已落实（PR #224）**：下游在上游 #222 提出的三点后续调整
 > （A 裸形态带键入口 / B 键脱敏约定 / C 跨代低报警示）已由上游 PR
 > [#224](https://github.com/Linductor-alkaid/kairo/pull/224) 全部落实

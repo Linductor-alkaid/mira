@@ -95,8 +95,11 @@
 ## 5. 工作项（立项时细化）
 
 - [ ] `M31-01` 立项与跑前冻结（含部署档位数值与测量方法）；
-      前置须确认 kairo **含 PR #223/#224 的可用版本**已发布并可被 Mira 消费
-      （否则分主体份额只能走台账的过渡边界）。
+      分主体份额的**能力面已就位**——[DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md)
+      已把 pin 升到 `78c6f557`（含 PR #223/#224 的上游未发布 master）；
+      立项前仍须确认上游**正式 release** 已发布并完成复核改 pin
+      （见 [维护计划](../plans/maintenance-2026-10-kairo-master-pin.md) `MNT-KAIRO-07`），
+      以免长期停在未发布 commit 上。
 - [ ] `M31-02` 容量账本、计量单位与跨层观测接口。
 - [ ] `M31-03` 准入裁决、份额分配与硬水位有界背压；**分主体份额**经
       Executor 原生分桶实现（`set_subject_max_in_flight_tasks` +

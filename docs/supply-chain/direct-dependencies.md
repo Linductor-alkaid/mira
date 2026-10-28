@@ -6,7 +6,7 @@
 
 | 依赖 | 固定版本 | 来源 | 许可证 | 许可证文件 |
 | --- | --- | --- | --- | --- |
-| kairo | `32027c247dd4b9280d7c995454b732bac0db9095`（`v0.7.0`，additive：Scheduling Metrics/FeedbackAggregator/AdaptiveScheduler，见 [DEC-054](../decisions/DEC-054-kairo-0.7.0-upgrade.md)） | git submodule | MIT | [`third_party/kairo/LICENSE`](../../third_party/kairo/LICENSE) |
+| kairo | `78c6f55753316769a0ae8140048bbd897f1f046c`（`v0.7.2-14-g78c6f55`，**未发布的上游 master**：含 v0.7.1/v0.7.2 与分主体在途份额 admission（PR #223/#224），见 [DEC-073](../decisions/DEC-073-kairo-master-pin-subject-quota.md)） | git submodule | MIT | [`third_party/kairo/LICENSE`](../../third_party/kairo/LICENSE) |
 | Mbed TLS | `068ff080b369adfac81509f9b57b2afabaf82dc5`（`v3.6.7`，3.6 LTS；framework `dde0c4a`） | recursive git submodule | Apache-2.0（从双许可证中选择） | [`third_party/mbedtls/LICENSE`](../../third_party/mbedtls/LICENSE) |
 | SQLite | `3.53.4`（amalgamation `3530400`，archive SHA-256 `1e71ddf9…e87d`） | vendored source archive | Public Domain | [`third_party/sqlite/LICENSE.md`](../../third_party/sqlite/LICENSE.md) |
 
