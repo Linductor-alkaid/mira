@@ -388,6 +388,13 @@ class InteractionCoordinator::Impl final {
         } catch (const kairo::ExecutorStopping &exception) {
             return make_error(ErrorCode::Unavailable, InteractionDomainCode::ExecutorRejected,
                               std::string("the executor is stopping: ") + exception.what(), true);
+        } catch (const std::runtime_error &exception) {
+            // The executor refuses the submission when it is not running.
+            // The refusal is retryable: the host may start a new executor.
+            return make_error(ErrorCode::Unavailable, InteractionDomainCode::ExecutorRejected,
+                              std::string("the executor refused the context preparation: ") +
+                                  exception.what(),
+                              true);
         } catch (const std::exception &exception) {
             return make_error(ErrorCode::Internal, InteractionDomainCode::ExecutorRejected,
                               std::string("the context preparation could not be submitted: ") +
@@ -898,7 +905,7 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
     // The context preparation of the work item runs on the shared executor.
     const auto prepared = impl_->prepare_context(target_task);
     if (!prepared) {
-        const auto reason = prepared.error();
+        const auto &reason = prepared.error();
         LedgerTransition transition;
         transition.stage = InputStage::Rejected;
         transition.note = reason.safe_message;

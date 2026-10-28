@@ -185,7 +185,12 @@ struct LedgerEntry final {
     // End of the idempotency window. A repeat of the same input id inside the
     // window is a duplicate; outside it the repeat is an explicit expiry
     // rejection and is never executed as a new input.
-    std::chrono::system_clock::time_point window_expires_at;
+    //
+    // The instant is pinned to nanosecond wall precision (WallTimePoint) for
+    // the same reason the rest of the runtime pins it: the default
+    // system_clock duration cannot represent nanoseconds on every supported
+    // toolchain (MSVC ticks at 100 ns, libc++ differs again).
+    WallTimePoint window_expires_at;
     // True when admit() matched an existing record instead of creating one.
     bool duplicate = false;
     // Auditable note of the last transition (routing rationale, rejection

@@ -21,13 +21,21 @@ namespace {
 constexpr std::array<std::uint8_t, 16> kLedgerPartitionBytes{
     0x6d, 0x69, 0x72, 0x61, 0x2e, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x61, 0x63, 0x74, 0x2e, 0x6c, 0x31};
 
-[[nodiscard]] std::int64_t to_nanos(std::chrono::system_clock::time_point point) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(point.time_since_epoch()).count());
+// The wall instant of the ledger. It is pinned to nanosecond precision
+// (WallTimePoint) for the same reason the rest of the runtime pins it: the
+// default system_clock duration cannot represent nanoseconds on every
+// supported toolchain (MSVC ticks at 100 ns, libc++ differs again), so a
+// functional cast from nanoseconds is not portable.
+[[nodiscard]] WallTimePoint now_wall() {
+    return std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
 }
 
-[[nodiscard]] std::chrono::system_clock::time_point from_nanos(std::int64_t nanos) {
-    return std::chrono::system_clock::time_point(std::chrono::nanoseconds(nanos));
+[[nodiscard]] std::int64_t to_nanos(WallTimePoint point) {
+    return static_cast<std::int64_t>(point.time_since_epoch().count());
+}
+
+[[nodiscard]] WallTimePoint from_nanos(std::int64_t nanos) {
+    return WallTimePoint(std::chrono::nanoseconds(nanos));
 }
 
 // The principal reference of an event payload: the irreversible internal
@@ -148,7 +156,7 @@ class EventStoreInputLedger::Impl final {
   public:
     Impl(std::shared_ptr<IEventStore> store, RuntimeId runtime_id,
          InputLedgerOptions ledger_options)
-        : events(std::move(store)), runtime(runtime_id), options(std::move(ledger_options)) {
+        : events(std::move(store)), runtime(runtime_id), options(ledger_options) {
         if (!this->options.partition.has_value()) {
             this->options.partition = interaction_ledger_partition();
         }
@@ -186,7 +194,7 @@ class EventStoreInputLedger::Impl final {
 
 EventStoreInputLedger::EventStoreInputLedger(std::shared_ptr<IEventStore> events, RuntimeId runtime,
                                              InputLedgerOptions options)
-    : impl_(std::make_unique<Impl>(std::move(events), runtime, std::move(options))) {}
+    : impl_(std::make_unique<Impl>(std::move(events), runtime, options)) {}
 
 EventStoreInputLedger::~EventStoreInputLedger() = default;
 
@@ -203,7 +211,7 @@ Result<LedgerEntry> EventStoreInputLedger::admit(const InputEnvelope &envelope) 
                                  "the input id must not be empty");
     }
     std::lock_guard lock(impl_->mutex);
-    const auto now = std::chrono::system_clock::now();
+    const auto now = now_wall();
     const auto found = impl_->index.find(envelope.input_id);
     if (found != impl_->index.end()) {
         if (now <= found->second.window_expires_at) {
@@ -239,7 +247,8 @@ Result<LedgerEntry> EventStoreInputLedger::admit(const InputEnvelope &envelope) 
     entry.ingress_id = ControlIngressId::generate();
     entry.admitted_at = Timestamp::now();
     entry.stage = InputStage::Accepted;
-    entry.window_expires_at = now + impl_->options.idempotency_window;
+    entry.window_expires_at = now + std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        impl_->options.idempotency_window);
     const auto appended =
         impl_->append("InputAccepted", accepted_payload(entry, envelope.principal));
     if (!appended) {
@@ -328,7 +337,7 @@ Result<LedgerEntry> EventStoreInputLedger::advance(std::string_view input_id,
 
 Result<std::size_t> EventStoreInputLedger::reclaim_expired() {
     std::lock_guard lock(impl_->mutex);
-    const auto now = std::chrono::system_clock::now();
+    const auto now = now_wall();
     std::size_t reclaimed = 0;
     for (auto it = impl_->index.begin(); it != impl_->index.end();) {
         if (now > it->second.window_expires_at) {
