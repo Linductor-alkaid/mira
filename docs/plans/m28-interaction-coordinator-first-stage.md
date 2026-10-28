@@ -383,6 +383,12 @@ class IUserInputSink {
 - 上下文准备是一个**有界的 Executor 有限任务**（`submit_auto()`），其 future 由
   协调层**持有并消费**；等待超时未结算的 future 被**退役**并在关闭时被消费，
   绝不丢弃。
+- **实现分层**：确定性路由裁决与共享的文本/约束边界放在独立编译单元
+  （`src/interaction/interaction_routing.{hpp,cpp}`，core 模块私有头，形态同
+  `src/model/loop_support.hpp`）。交付时协调层实现已到 1175 行、逼近
+  `tools/architecture-policy.json` 的 1200 行预算，而 M29 还要在同一组件上增加
+  执行中插话、并发归属与恢复——**在里程碑交付时按预算切分，好过在下一个里程碑
+  压力下切分**。切分不改变任何行为。
 
 ## 5. 阶段冻结协议必答八问（2026-10-28）
 
