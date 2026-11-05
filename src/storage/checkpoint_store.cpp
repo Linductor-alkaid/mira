@@ -1,4 +1,7 @@
+#include "action_journal_internal.hpp"
+#include "checkpoint_fact_wire.hpp"
 #include <mira/task_checkpoint.hpp>
+#include <mira/verified_fact.hpp>
 
 #include <algorithm>
 #include <sstream>
@@ -8,6 +11,10 @@
 namespace mira {
 
 namespace {
+using checkpoint_wire::event_ids_from_json;
+using checkpoint_wire::event_ids_to_json;
+using checkpoint_wire::fact_from;
+using checkpoint_wire::fact_to_json;
 
 [[nodiscard]] Error checkpoint_error(ErrorCode code, std::string message) {
     Error error;
@@ -15,52 +22,6 @@ namespace {
     error.domain = "mira.checkpoint";
     error.safe_message = std::move(message);
     return error;
-}
-
-[[nodiscard]] std::optional<TaskState> task_state_from_name(std::string_view name) {
-    static const std::pair<std::string_view, TaskState> kStates[] = {
-        {"Idle", TaskState::Idle},
-        {"Observing", TaskState::Observing},
-        {"Reasoning", TaskState::Reasoning},
-        {"Planning", TaskState::Planning},
-        {"Acting", TaskState::Acting},
-        {"Verifying", TaskState::Verifying},
-        {"Recovering", TaskState::Recovering},
-        {"Pausing", TaskState::Pausing},
-        {"Paused", TaskState::Paused},
-        {"TakeoverSettling", TaskState::TakeoverSettling},
-        {"SuspendedForTakeover", TaskState::SuspendedForTakeover},
-        {"Cancelling", TaskState::Cancelling},
-        {"Completed", TaskState::Completed},
-        {"Failed", TaskState::Failed},
-        {"Cancelled", TaskState::Cancelled},
-    };
-    for (const auto &[state_name, state] : kStates) {
-        if (state_name == name) {
-            return state;
-        }
-    }
-    return std::nullopt;
-}
-
-[[nodiscard]] JsonValue event_ids_to_json(const std::vector<EventId> &ids) {
-    JsonValue::Array array;
-    for (const auto &id : ids) {
-        array.emplace_back(id.to_string());
-    }
-    return JsonValue(std::move(array));
-}
-
-[[nodiscard]] std::vector<EventId> event_ids_from_json(const JsonValue &json) {
-    std::vector<EventId> ids;
-    if (json.is_array()) {
-        for (const auto &entry : *json.as_array()) {
-            if (auto parsed = EventId::parse(entry.as_string() ? *entry.as_string() : ""); parsed) {
-                ids.emplace_back(*parsed);
-            }
-        }
-    }
-    return ids;
 }
 
 [[nodiscard]] JsonValue constraint_to_json(const CheckpointConstraint &constraint) {
@@ -88,28 +49,6 @@ namespace {
         constraint.provenance = event_ids_from_json(*provenance);
     }
     return constraint;
-}
-
-[[nodiscard]] JsonValue fact_to_json(const VerifiedFact &fact) {
-    JsonValue::Object object;
-    object.emplace_back("key", fact.key);
-    object.emplace_back("value", fact.value);
-    object.emplace_back("provenance", event_ids_to_json(fact.provenance));
-    return JsonValue(std::move(object));
-}
-
-[[nodiscard]] VerifiedFact fact_from(const JsonValue &json) {
-    VerifiedFact fact;
-    if (const auto *key = json.find("key"); key != nullptr && key->is_string()) {
-        fact.key = *key->as_string();
-    }
-    if (const auto *value = json.find("value"); value != nullptr && value->is_string()) {
-        fact.value = *value->as_string();
-    }
-    if (const auto *provenance = json.find("provenance"); provenance != nullptr) {
-        fact.provenance = event_ids_from_json(*provenance);
-    }
-    return fact;
 }
 
 [[nodiscard]] JsonValue step_to_json(const CompletedStep &step) {
@@ -260,69 +199,6 @@ namespace {
 // Reducer event application
 // ---------------------------------------------------------------------------
 
-struct PipeFields final {
-    ActionId action_id;
-    TaskId task_id;
-    std::uint64_t task_epoch = 0;
-    std::uint64_t environment_epoch = 0;
-    std::string target_type;
-    std::string suffix;
-};
-
-[[nodiscard]] std::optional<std::uint64_t> parse_decimal(std::string_view text) {
-    if (text.empty()) {
-        return std::nullopt;
-    }
-    std::uint64_t value = 0;
-    for (const char digit : text) {
-        if (digit < '0' || digit > '9') {
-            return std::nullopt;
-        }
-        const std::uint64_t digit_value = static_cast<std::uint64_t>(digit) - '0';
-        const std::uint64_t next = value * 10 + digit_value;
-        if (next < value) {
-            return std::nullopt; // overflow
-        }
-        value = next;
-    }
-    return value;
-}
-
-[[nodiscard]] std::optional<PipeFields> parse_pipe_payload(const std::string &data) {
-    std::vector<std::string> fields;
-    std::istringstream stream(data);
-    std::string field;
-    while (std::getline(stream, field, '|')) {
-        fields.push_back(field);
-    }
-    if (fields.size() < 8) {
-        return std::nullopt;
-    }
-    PipeFields parsed;
-    if (auto id = ActionId::parse(fields[0]); id) {
-        parsed.action_id = *id;
-    } else {
-        return std::nullopt;
-    }
-    if (auto task = TaskId::parse(fields[1]); task) {
-        parsed.task_id = *task;
-    } else {
-        return std::nullopt;
-    }
-    const auto task_epoch = parse_decimal(fields[2]);
-    const auto environment_epoch = parse_decimal(fields[3]);
-    if (!task_epoch || !environment_epoch) {
-        return std::nullopt;
-    }
-    parsed.task_epoch = *task_epoch;
-    parsed.environment_epoch = *environment_epoch;
-    parsed.target_type = fields[5];
-    if (fields.size() > 8) {
-        parsed.suffix = fields[8];
-    }
-    return parsed;
-}
-
 void apply_recent_action(TaskCheckpoint &checkpoint, const CheckpointBuilder::Config &config,
                          const ActionId &action_id, const std::string &kind,
                          const std::string &outcome, std::uint64_t sequence) {
@@ -389,19 +265,40 @@ void apply_json_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Confi
             return candidate.key == *key;
         });
     } else if (type == "TaskFactVerified") {
-        const auto *key = require_string("key");
-        const auto *value = require_string("value");
-        if (key == nullptr || value == nullptr) {
-            ++stats.malformed;
-            return;
-        }
         VerifiedFact fact;
-        fact.key = *key;
-        fact.value = *value;
-        fact.provenance = {event.event_id};
-        auto existing =
-            std::find_if(checkpoint.verified_facts.begin(), checkpoint.verified_facts.end(),
-                         [&key](const VerifiedFact &candidate) { return candidate.key == *key; });
+        if (payload.find("schema")) {
+            auto published = parse_published_task_fact(event);
+            if (!published) {
+                ++stats.malformed;
+                return;
+            }
+            const auto &c = published.value().claim;
+            if (checkpoint.terminal_state || c.task_epoch < checkpoint.task_epoch ||
+                c.environment_epoch < checkpoint.environment_epoch) {
+                ++stats.stale_skipped;
+                return;
+            }
+            checkpoint.task_epoch = c.task_epoch;
+            checkpoint.environment_epoch = c.environment_epoch;
+            fact.key = c.key;
+            fact.value = c.value;
+            fact.provenance = {event.event_id, c.evidence_event};
+            fact.valid_from = c.valid_from;
+            fact.valid_until = c.valid_until;
+        } else {
+            const auto *key = require_string("key");
+            const auto *value = require_string("value");
+            if (key == nullptr || value == nullptr) {
+                ++stats.malformed;
+                return;
+            }
+            fact.key = *key;
+            fact.value = *value;
+            fact.provenance = {event.event_id};
+        }
+        auto existing = std::find_if(
+            checkpoint.verified_facts.begin(), checkpoint.verified_facts.end(),
+            [&fact](const VerifiedFact &candidate) { return candidate.key == fact.key; });
         if (existing != checkpoint.verified_facts.end()) {
             *existing = std::move(fact);
         } else {
@@ -576,27 +473,29 @@ void apply_json_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Confi
 void apply_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Config &config,
                  const EventEnvelope &event, ReducerStats &stats) {
     const auto &type = event.payload.type;
-    if (type == "ActionDispatchStarted" || type == "ActionReceipt" ||
+    if (type == "ActionPrepared" || type == "ActionDispatchStarted" || type == "ActionReceipt" ||
         type == "ActionExecutionUncertain") {
-        const auto parsed = parse_pipe_payload(event.payload.data);
-        if (!parsed) {
+        const auto parsed = journal_internal::parse(event.payload.data);
+        if (!parsed || event.task_id != parsed->task_id) {
             ++stats.malformed;
             return;
         }
         checkpoint.task_epoch = std::max(checkpoint.task_epoch, parsed->task_epoch);
         checkpoint.environment_epoch =
             std::max(checkpoint.environment_epoch, parsed->environment_epoch);
-        if (type == "ActionDispatchStarted") {
-            apply_recent_action(checkpoint, config, parsed->action_id, parsed->target_type,
+        if (type == "ActionPrepared") {
+            // Preparation records identity/epochs, not an attempted input.
+        } else if (type == "ActionDispatchStarted") {
+            apply_recent_action(checkpoint, config, parsed->action_id, parsed->target.type,
                                 "dispatched", event.session_sequence);
             checkpoint.verification_pending = true;
         } else if (type == "ActionReceipt") {
-            apply_recent_action(checkpoint, config, parsed->action_id, parsed->target_type,
+            apply_recent_action(checkpoint, config, parsed->action_id, parsed->target.type,
                                 "receipt", event.session_sequence);
         } else {
             UncertainSideEffect effect;
             effect.action_id = parsed->action_id;
-            effect.action_kind = parsed->target_type;
+            effect.action_kind = parsed->target.type;
             effect.reason = parsed->suffix.empty() ? "execution uncertain" : parsed->suffix;
             effect.provenance = {event.event_id};
             const auto existing = std::find_if(checkpoint.uncertain_side_effects.begin(),
@@ -616,7 +515,31 @@ void apply_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Config &co
         ++stats.malformed;
         return;
     }
-    apply_json_event(checkpoint, config, type, payload.value(), event, stats);
+    const JsonValue *body = &payload.value();
+    // Loop producers wrap their details in a task/epoch envelope, whereas
+    // legacy host events use flat JSON. Accept both without mistaking an
+    // unrelated nested payload for an authoritative task result.
+    if (type == "ActionDispatched" || type == "VerificationResult" || type == "LoopSettled") {
+        if (const auto *detail = body->find("detail"); detail != nullptr) {
+            const auto *task = body->find("task_id");
+            const auto *epoch = body->find("task_epoch");
+            if (!detail->is_object() || task == nullptr || !task->is_string() || !event.task_id ||
+                *task->as_string() != event.task_id->to_string() || epoch == nullptr ||
+                !epoch->is_integer() || *epoch->as_integer() < 0) {
+                ++stats.malformed;
+                return;
+            }
+            const auto value = static_cast<std::uint64_t>(*epoch->as_integer());
+            if (value < checkpoint.task_epoch) {
+                ++stats.stale_skipped;
+                return;
+            }
+            checkpoint.task_epoch = value;
+            body = detail;
+        }
+    }
+    const auto rejected_before = stats.malformed + stats.stale_skipped + stats.ignored;
+    apply_json_event(checkpoint, config, type, *body, event, stats);
     // JSON vocabulary events that reach this point and were not counted as
     // malformed or ignored are applied.
     const bool counted =
@@ -626,7 +549,7 @@ void apply_event(TaskCheckpoint &checkpoint, const CheckpointBuilder::Config &co
         type == "TaskIssueResolved" || type == "TaskStateChanged" || type == "TaskEpochAdvanced" ||
         type == "EnvironmentEpochChanged" || type == "ObservationRecorded" ||
         type == "ActionDispatched" || type == "VerificationResult" || type == "LoopSettled";
-    if (counted) {
+    if (counted && rejected_before == stats.malformed + stats.stale_skipped + stats.ignored) {
         ++stats.applied;
     }
 }
@@ -659,6 +582,12 @@ Result<void> TaskCheckpoint::validate() const {
         if (constraint.key.empty() || constraint.requirement.empty()) {
             return checkpoint_error(ErrorCode::InvalidArgument,
                                     "checkpoint constraints must be keyed");
+        }
+    }
+    for (const auto &fact : verified_facts) {
+        if (!checkpoint_wire::fact_validity_valid(fact, schema_version)) {
+            return checkpoint_error(ErrorCode::InvalidArgument,
+                                    "checkpoint fact validity is invalid");
         }
     }
     return Result<void>{};
@@ -723,9 +652,8 @@ Hash TaskCheckpoint::projection_digest() const {
     if (terminal_state.has_value()) {
         object.emplace_back(
             "terminal_state",
-            terminal_state.has_value() && *terminal_state == TaskState::Completed
-                ? "Completed"
-                : (*terminal_state == TaskState::Cancelled ? "Cancelled" : "Failed"));
+            std::string{task_state_name(is_terminal(*terminal_state) ? *terminal_state
+                                                                     : TaskState::Failed)});
     }
     return canonical_json_digest(JsonValue(std::move(object)));
 }
@@ -797,13 +725,11 @@ JsonValue checkpoint_to_json(const TaskCheckpoint &checkpoint) {
     object.emplace_back("recent_actions", JsonValue(std::move(actions)));
     object.emplace_back("verification_pending", checkpoint.verification_pending);
     if (checkpoint.terminal_state.has_value()) {
-        const char *name = "Failed";
-        if (*checkpoint.terminal_state == TaskState::Completed) {
-            name = "Completed";
-        } else if (*checkpoint.terminal_state == TaskState::Cancelled) {
-            name = "Cancelled";
-        }
-        object.emplace_back("terminal_state", name);
+        // Preserve the legacy fallback for unvalidated in-memory checkpoints.
+        object.emplace_back("terminal_state",
+                            std::string{task_state_name(is_terminal(*checkpoint.terminal_state)
+                                                            ? *checkpoint.terminal_state
+                                                            : TaskState::Failed)});
     }
     if (checkpoint.narrative_summary.has_value()) {
         object.emplace_back("narrative_summary", *checkpoint.narrative_summary);
@@ -908,6 +834,12 @@ Result<TaskCheckpoint> checkpoint_from_json(const JsonValue &json) {
         narrative != nullptr && narrative->is_string()) {
         checkpoint.narrative_summary = *narrative->as_string();
     }
+    for (const auto &fact : checkpoint.verified_facts) {
+        if (!checkpoint_wire::fact_validity_valid(fact, checkpoint.schema_version)) {
+            return checkpoint_error(ErrorCode::InvalidArgument,
+                                    "checkpoint fact validity is invalid");
+        }
+    }
     return checkpoint;
 }
 
@@ -949,6 +881,9 @@ CheckpointBuildResult CheckpointBuilder::build(const std::optional<TaskCheckpoin
         checkpoint.through_event_sequence = event.session_sequence;
         apply_event(checkpoint, config_, event, stats);
     }
+    checkpoint.schema_version = checkpoint_schema_current();
+    std::erase_if(checkpoint.verified_facts,
+                  [&](const VerifiedFact &fact) { return !fact.valid_at(now.wall); });
     checkpoint.id = CheckpointId::generate();
     checkpoint.created_at = now;
     return CheckpointBuildResult{std::move(checkpoint), stats};

@@ -1,8 +1,8 @@
 # Mira 核心公共契约与状态机设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.2
+> 更新日期：2026-11-05
 > 适用范围：Mira Core 公共类型、Runtime/Session/Task 生命周期和 Executor 控制面  
 > 上位决策：[DEC-001](../decisions/DEC-001-runtime-executor-ownership.md)、[DEC-002](../decisions/DEC-002-public-contract-versioning.md)
 
@@ -261,6 +261,20 @@ Constructed -> Initializing -> Running -> Stopping -> Quiesced -> Stopped
 - `Stopped` 是外部 finalizer 在 Executor 已关闭后设置的终态标记，所有资源 handle 已结算，析构只
   做无抛异常校验。它不触发 Event、Observer 或 Task/Session 状态变化。
 
+[DEC-080](../decisions/DEC-080-runtime-lifecycle-transition-boundary.md) 将 Runtime
+所有状态写入限定到校验表约束的 CAS，包含初始化、停止请求、控制回调和最终收尾。
+`Failed` 是业务失败终态，允许 `Failed -> Stopping` 做资源清理；未初始化对象也须经过
+`Stopping -> Quiesced -> Stopped`。初始化与停止准入串行化，进入 Stopping 后不能
+重新发布 Running，也不能登记新业务命令或 operation。业务状态仍由 kairo 控制回调提交。
+
+命令准入锁覆盖提交和 future 登记，登记表使用独立 mutex，不与平台回调持有的业务记录
+锁耦合；finalizer 等待时不持有准入锁。关闭命令容量拒绝立即暴露，外部 finalizer 消费
+已有 submission future 后至多补交一次收尾命令，并在报告记录补交诊断。异常 future
+补齐未结算 receipt/outcome。环境释放错误或异常使关闭命令及 Runtime Failed；最终
+Executor join 完成不代表业务释放成功，报告保持 clean=false，重复最终收尾保留该报告。
+控制回调内的 finish_shutdown 在等待前拒绝，不扫描 pending 数量、不关闭资源；须由
+外部 owner 收尾。平台必须保证 interrupt 有界、幂等且可解除阻塞，此协议不提供强制抢占。
+
 ### 6.2 Session
 
 ```text
@@ -280,6 +294,12 @@ Opening/Autonomous/TakeoverPending/Resuming -> Failed -> Closing
 - `Failed` 保留诊断但不能继续动作，必须 close 或由明确恢复协议重建新 Session。
 
 ### 6.3 Task
+
+TaskState 的稳定文本名称由 Core 的 `task_state_name` / `task_state_from_name`
+共用单一不可变表（[DEC-079](../decisions/DEC-079-workflow-validation-and-task-state-names.md)）。
+Interaction 输出与 Checkpoint 读取均使用这组契约；名称区分大小写，既有拼写不变。
+未知文本拒绝解析，非法枚举诊断为 `Unknown`，不得静默变成 Idle；名称转换不改变
+合法状态转换规则或任务所有权。
 
 ```mermaid
 stateDiagram-v2

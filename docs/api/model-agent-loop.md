@@ -4,7 +4,7 @@
 > `model_gateway.hpp`、`model_supervisor.hpp`、`model_budget.hpp`、`model_schema.hpp`、
 > `model_sse.hpp`、`model_dialect.hpp`、`model_transport.hpp`、`model_upload.hpp`、
 > `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
-> `mira/conversation_loop.hpp`
+> `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`
 
 模型层采用 API-first 设计：Core 依赖显式 HTTP 模型方言（OpenAI / Anthropic Messages），不依赖任何供应商
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
@@ -58,6 +58,10 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
   生产传输栈，无需自建（[DEC-013](../decisions/DEC-013-transport-export-and-image-media.md)）。
   `socket_transport.hpp` 的公共接口引用 Executor 类型，消费者需同时
   `find_package(executor)`。
+  两个 TLS 工厂均先检查初始化，再拒绝 `verify_peer=false`；固定准入错误保留
+  `mira.model.tls` 域、PermissionDenied、retryable=false。后端各自的证书、主机名、
+  SNI 与 BIO 语义保持，局部复用边界见
+  [DEC-082](../decisions/DEC-082-local-event-tls-reuse-and-public-retention.md)。
 - `ISecretResolver`：凭据解析边界。
 - `model_replay.hpp` 的 `ReplayModelProvider` 回放录制的规范响应，供离线 Replay。
 
@@ -75,17 +79,25 @@ route -> provider -> retry/circuit 监督 -> 预算结算 -> 本地决策解析�
   `DecisionParseResult`、可选 `ToolProposalBatch`、`BudgetReservation`/`BudgetSettlement`、
   wire digest、SSE 统计与 `admitted` 标志——三层成功（传输接受/规范响应/语义决策）
   严格分离，任何一层不能冒充下一层。
-- `TaskAdmissionGate`：epoch 与生命周期准入由协调者（而非 provider）决定；网关拿到
-  迟到响应时先问 gate，被拒的响应不结算进任务。测试与无协调者循环可用
-  `SimpleAdmissionGate`。
+- `ModelCallOutcome::attempts` 与 `ModelResponseReceived.detail.attempts` 为一次
+  infer 跨候选累计的 provider 调用次数；跳过熔断候选不计数。失败事件的 `attempt`
+  保留候选内次数，新增 `total_attempts` 便于在全部失败时诊断累计次数
+  （[DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md)）。
+- `TaskAdmissionGate`：epoch 与生命周期准入由协调者（而非 provider）决定；成功响应
+  先按 usage 结算，再问 gate。迟到响应可有费用且 admitted=false，宿主不得继续消费
+  其任务输出。测试与无协调者循环可用 `SimpleAdmissionGate`。
 
 ## 监督、预算、解析与流
 
 - `model_supervisor.hpp`：`RequestStage` 分类（`classify_stage()`）驱动重试表
   （`RetryBudget`/`RetryAction`）；`ProviderCircuit`（`CircuitState`）提供熔断。
 - `model_budget.hpp`：`PriceTable` + `estimate_input_tokens()` 预估、
-  `BudgetReservation`/`BudgetSettlement`/`BudgetLedger` 结算；未知价格默认拒绝而非
-  零成本放行。
+  `BudgetReservation`/`BudgetSettlement`/`BudgetLedger` 结算。库的
+  `ModelGatewayConfig::require_known_price` 默认 **false**；严格宿主须显式设 true。
+  允许未知价格不表示免费，须结合 settlement quality 与实际 ledger 余额显示。
+  单 profile 装配、完整/缺失/partial usage、取消与迟到结算见
+  [可运行价格宿主](model-price-host.md)。Task scope 限制未核销预留，不是累计账单
+  硬限额；多候选费用、resolved model 与审计边界同见该指南。
 - `model_schema.hpp`：`gate_schema_subset()` 限制请求携带的 JSON Schema 子集；
   `parse_decision()` 把响应文本解析为 `DecisionCandidate`（`DecisionParseOutcome`），
   配合 `RepairPolicy`/`RepairBudget` 做有界修复。原始模型文本永远不能直接触发平台输入。
@@ -157,6 +169,36 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id},
   宿主在注入的 store 内转码（RGBA→PNG/JPEG）即可控制 wire 格式，内联 8 MiB 门槛按
   实际编码字节数判定。方言层对非 `image/*` 媒体类型（如未编码原始帧的
   `application/octet-stream`）在 fetch 前 fail closed（`UnsupportedCapability`）。
+
+## action_dispatcher.hpp：输入派发与迁移（DEC-075）
+
+输入场景必须在 `run` 前调用 `set_action_dispatcher`，未装配时遇到输入动作即
+`Failed`，不会调用 Environment。`set_event_store` 仅装配 Loop 事件，不能替代此依赖。
+纯 done/fail 与工具分支不要求输入派发器；可写工具的 journal 接线仍属后续范围。
+
+装配片段（`acquire_lease` 为宿主实现的 `ActionLeaseAcquirer`，不是库默认授权策略）：
+
+```cpp
+auto dispatcher = std::make_shared<mira::JournaledActionDispatcher>(
+    runtime_id, session_id, events, acquire_lease);
+loop.set_event_store(events, runtime_id, session_id);
+loop.set_action_dispatcher(dispatcher);
+```
+
+`IActionDispatchLease::validate` 在 durable start 后重新检查任务/环境 epoch、许可与
+生命周期；lease 唯一所有权延续到结果记录结束，析构释放资源。宿主撤回时还必须取消
+context 并 interrupt 环境，Adapter 最终输入仍须检查取消。主循环以 spec 绑定动作
+session/task/epoch，保留 context 的 deadline 与取消探针；Dispatcher 本身不拥有 Executor。
+
+Unknown/Dispatched/side-effect flag 写 uncertain，未知/执行异常或错误时在 lease 释放前
+调用 interrupt 收敛输入，释放失败也显式返回。Verify 未证实目标时保留未决 pin 并结束
+本轮，不自动重发。取消/到期后的迟到结果不能让本轮进入 Completed。关键日志写入错误
+传播给调用方，主循环返回 Failed/Cancelled；普通 Observer/诊断 append 不承担提交门槛。
+
+迁移参考：[离线耐久派发宿主](../../examples/journaled_action_consumer.cpp) 展示
+FileEventStore、资源租约、Executor future 与恢复；仅操作 Simulator，不证明真实平台
+Takeover 或断电保证。完整职责与兼容性见
+[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md)。
 
 ## tool_executor.hpp：BuiltIn 工具执行边界
 

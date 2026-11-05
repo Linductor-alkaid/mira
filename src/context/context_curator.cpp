@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_curator.hpp>
 
 #include "context_support.hpp"
@@ -20,13 +21,7 @@ using context_support::RawStatement;
 // Error factory
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] Error curator_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.context.curator";
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory curator_error{"mira.context.curator"};
 
 // ---------------------------------------------------------------------------
 // Numbered transcript inputs

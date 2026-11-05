@@ -21,7 +21,7 @@ namespace mira {
 // Task checkpoint contracts (M4-01/M4-05)
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] constexpr SchemaVersion checkpoint_schema_current() noexcept { return {1, 0}; }
+[[nodiscard]] constexpr SchemaVersion checkpoint_schema_current() noexcept { return {2, 0}; }
 
 struct CheckpointConstraint final {
     std::string key;
@@ -34,6 +34,13 @@ struct VerifiedFact final {
     std::string key;
     std::string value;
     std::vector<EventId> provenance;
+    // Legacy 1.x facts have no validity interval. New facts carry both bounds;
+    // consumers of stored snapshots must check valid_at before using a fact.
+    std::optional<WallTimePoint> valid_from = std::nullopt;
+    std::optional<WallTimePoint> valid_until = std::nullopt;
+    [[nodiscard]] bool valid_at(WallTimePoint now) const noexcept {
+        return (!valid_from || now >= *valid_from) && (!valid_until || now < *valid_until);
+    }
     friend bool operator==(const VerifiedFact &, const VerifiedFact &) = default;
 };
 
@@ -145,7 +152,8 @@ struct CheckpointReducerConfig final {
 // TaskObjectiveAdded/Completed, TaskIssueRaised/Resolved, TaskStateChanged,
 // TaskEpochAdvanced, EnvironmentEpochChanged, ObservationRecorded,
 // ActionDispatched, VerificationResult, LoopSettled. ActionJournal pipe
-// payloads: ActionDispatchStarted, ActionReceipt, ActionExecutionUncertain.
+// payloads: ActionPrepared, ActionDispatchStarted, ActionReceipt,
+// ActionExecutionUncertain. Preparation never marks verification pending.
 class CheckpointBuilder final {
   public:
     using Config = CheckpointReducerConfig;

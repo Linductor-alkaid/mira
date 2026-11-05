@@ -33,9 +33,6 @@ inline constexpr std::size_t kMaxClarificationBytes = 1024;
 // messages and the durable event stream through this bound.
 [[nodiscard]] std::string bound_text(std::string_view text, std::size_t limit);
 
-// The task state names of the frozen task state machine.
-[[nodiscard]] std::string_view task_state_name(TaskState state);
-
 // The fail-closed capability check of the coordinator (DEC-068 R9): a missing
 // capability, an expired grant or a mismatched identity version rejects the
 // input; the check never defaults to allow.

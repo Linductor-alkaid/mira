@@ -1,3 +1,4 @@
+#include "tool_module_error.hpp"
 #include <mira/tool_module.hpp>
 
 #include <mira/model_schema.hpp>
@@ -11,13 +12,7 @@ namespace mira {
 
 namespace {
 
-Error make_module_error(ErrorCode code, std::string safe_message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.tool_module";
-    error.safe_message = std::move(safe_message);
-    return error;
-}
+using tool_module_support::make_module_error;
 
 std::string id_charset_message(std::string_view what, std::string_view value) {
     return std::string(what) + " is not a valid lowercase dot-separated id: '" +

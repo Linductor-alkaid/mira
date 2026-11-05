@@ -1,3 +1,4 @@
+#include "workflow_decode.hpp"
 #include <mira/workflow_navigation.hpp>
 
 #include <algorithm>
@@ -41,39 +42,15 @@ const AppModelLimits &clamp_limits(const AppModelLimits &limits) {
 }
 
 // Exact key-set check with the same fail-closed semantics as the IR decoder.
+using workflow_detail::bounded_string;
+
 [[nodiscard]] Result<void> check_keys(const JsonValue &object,
                                       std::span<const std::string_view> required,
                                       std::span<const std::string_view> optional,
                                       std::string_view where) {
-    if (!object.is_object()) {
-        return model_error(AppModelError::InvalidShape, std::string{where} + " must be an object");
-    }
-    for (const auto &member : *object.as_object()) {
-        const bool known = std::any_of(required.begin(), required.end(),
-                                       [&](std::string_view key) { return key == member.first; }) ||
-                           std::any_of(optional.begin(), optional.end(),
-                                       [&](std::string_view key) { return key == member.first; });
-        if (!known) {
-            return model_error(AppModelError::UnknownField,
-                               std::string{where} + ": unknown field '" + member.first + "'");
-        }
-    }
-    for (const auto key : required) {
-        if (object.find(key) == nullptr) {
-            return model_error(AppModelError::InvalidShape,
-                               std::string{where} + ": missing field '" + std::string{key} + "'");
-        }
-    }
-    return Result<void>{};
-}
-
-[[nodiscard]] std::optional<std::string> bounded_string(const JsonValue &value,
-                                                        std::size_t max_bytes) {
-    const auto *text = value.as_string();
-    if (text == nullptr || text->empty() || text->size() > max_bytes) {
-        return std::nullopt;
-    }
-    return *text;
+    return workflow_detail::check_keys(object, required, optional, where,
+                                       AppModelError::InvalidShape, AppModelError::UnknownField,
+                                       model_error);
 }
 
 [[nodiscard]] Result<std::uint64_t> parse_time_member(const JsonValue &json, const char *key,

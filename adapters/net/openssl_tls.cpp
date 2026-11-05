@@ -1,3 +1,4 @@
+#include "tls_support.hpp"
 #include <mira/adapters/net/openssl_tls.hpp>
 
 #include <mira/model_contracts.hpp>
@@ -14,14 +15,7 @@
 namespace mira::adapters::net {
 namespace {
 
-[[nodiscard]] Error tls_error(std::string message, bool retryable = false) {
-    Error error;
-    error.code = retryable ? ErrorCode::Unavailable : ErrorCode::PermissionDenied;
-    error.domain = "mira.model.tls";
-    error.safe_message = std::move(message);
-    error.retryable = retryable;
-    return error;
-}
+using tls_support::tls_error;
 
 [[nodiscard]] bool is_ip_literal(std::string_view host) {
     if (host.empty()) {
@@ -195,17 +189,9 @@ bool OpenSslTlsChannelFactory::initialize() {
 Result<std::unique_ptr<ITlsChannel>> OpenSslTlsChannelFactory::create(std::intptr_t native_handle,
                                                                       const std::string &host,
                                                                       const TlsOptions &options) {
-    if (ctx_->context == nullptr) {
-        return tls_error("tls factory was not initialized");
-    }
-    if (!options.verify_peer) {
-        return tls_error("tls peer verification cannot be disabled");
-    }
-    auto channel = std::make_unique<OpenSslChannel>(ctx_->context, native_handle, host);
-    if (!channel->setup()) {
-        return tls_error("tls channel setup failed");
-    }
-    return std::unique_ptr<ITlsChannel>(std::move(channel));
+    return tls_support::create_verified_channel(ctx_->context != nullptr, options, [&] {
+        return std::make_unique<OpenSslChannel>(ctx_->context, native_handle, host);
+    });
 }
 
 } // namespace mira::adapters::net

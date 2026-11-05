@@ -195,12 +195,6 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     last_trace_ = TransportTrace{};
     last_headers_.clear();
 
-    const auto stash_headers =
-        [this](const std::vector<std::pair<std::string, std::string>> &headers) {
-            last_headers_ = headers;
-        };
-    static_cast<void>(stash_headers);
-
     if (options.stream) {
         auto consume = [&](auto &parser) -> Result<ModelResponse> {
             std::string raw;

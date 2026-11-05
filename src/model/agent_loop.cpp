@@ -169,6 +169,10 @@ void AgentLoop::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools) {
     tools_ = std::move(tools);
 }
 
+void AgentLoop::set_action_dispatcher(std::shared_ptr<JournaledActionDispatcher> dispatcher) {
+    action_dispatcher_ = std::move(dispatcher);
+}
+
 Result<void> WorkingContextSeamOptions::validate() const {
     if (max_items == 0 || max_chars == 0) {
         return loop_error(ErrorCode::InvalidArgument, "seam bounds must be positive");
@@ -599,6 +603,11 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             result.safe_summary = outcome.rejection_reason;
             break;
         }
+        if (context.cancelled_or_expired(Timestamp::now())) {
+            result.outcome = context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
+            result.safe_summary = "model result arrived after cancellation or deadline";
+            break;
+        }
         record.phase = StepPhase::Reasoned;
 
         // --- Bounded schema repair ---------------------------------------
@@ -742,6 +751,13 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             auto verify_observation = observe_once(spec, context, ObservationMode::Verification);
             if (verify_observation) {
                 const auto verdict = verifier.verify(verify_observation.value(), decision);
+                if (context.cancelled_or_expired(Timestamp::now())) {
+                    result.outcome =
+                        context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
+                    result.safe_summary = "verification arrived after cancellation or deadline";
+                    result.steps.push_back(std::move(record));
+                    break;
+                }
                 if (verdict == ILoopVerifier::Verdict::Satisfied) {
                     record.phase = StepPhase::Verified;
                     record.action_summary = "done";
@@ -795,21 +811,37 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
         record.action_summary = summarize_action(sequence.value());
 
         OperationContext action_context = context;
+        action_context.session = spec.session_id;
+        action_context.task = spec.task_id;
+        action_context.task_epoch = spec.task_epoch;
         action_context.operation = OperationId::generate();
-        emit(spec, "ActionDispatched",
-             JsonValue::Object{{"step", static_cast<std::int64_t>(step)},
-                               {"action", record.action_summary},
-                               {"decision_digest", decision.decision_digest_field.to_string()}},
-             EventClass::State);
-        auto receipt = environment_->execute(sequence.value(), action_context);
-        if (!receipt) {
+        if (!action_dispatcher_) {
             result.outcome = LoopOutcome::Failed;
+            result.safe_summary = "input actions require a journaled action dispatcher";
+            result.steps.push_back(std::move(record));
+            break;
+        }
+        auto receipt = action_dispatcher_->dispatch(*environment_, sequence.value(), action_context,
+                                                    observation.value().environment_epoch);
+        if (!receipt) {
+            result.outcome = receipt.error().code == ErrorCode::Cancelled ? LoopOutcome::Cancelled
+                                                                          : LoopOutcome::Failed;
             result.safe_summary = "action dispatch failed: " + receipt.error().safe_message;
             result.steps.push_back(std::move(record));
             break;
         }
         record.phase = StepPhase::Acted;
-        if (receipt.value().status == ExecutionStatus::Rejected) {
+        const bool execution_uncertain = receipt.value().side_effect_may_have_occurred ||
+                                         (receipt.value().status != ExecutionStatus::Completed &&
+                                          receipt.value().status != ExecutionStatus::Rejected);
+        if (context.cancelled_or_expired(Timestamp::now())) {
+            result.outcome = context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
+            result.safe_summary =
+                "action completed after cancellation or deadline; verification pending";
+            result.steps.push_back(std::move(record));
+            break;
+        }
+        if (receipt.value().status == ExecutionStatus::Rejected && !execution_uncertain) {
             if (result.recoveries < config_.max_recoveries_per_step) {
                 ++result.recoveries;
                 record.note = "action rejected; recovering";
@@ -822,7 +854,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             result.steps.push_back(std::move(record));
             break;
         }
-        if (receipt.value().side_effect_may_have_occurred) {
+        if (execution_uncertain) {
             record.note = "uncertain side effect; verifying instead of resending";
         }
 
@@ -835,6 +867,21 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             break;
         }
         const auto verdict = verifier.verify(verify_observation.value(), decision);
+        if (context.cancelled_or_expired(Timestamp::now())) {
+            result.outcome = context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
+            result.safe_summary = "verification arrived after cancellation or deadline";
+            result.steps.push_back(std::move(record));
+            break;
+        }
+        if (execution_uncertain && verdict != ILoopVerifier::Verdict::Satisfied) {
+            // A goal-level disagreement cannot resolve an uncertain side
+            // effect. Keep the journal pin; do not emit VerificationResult,
+            // whose reducer semantics would otherwise clear all uncertainty.
+            result.outcome = LoopOutcome::Failed;
+            result.safe_summary = "uncertain action was not verified; host recovery required";
+            result.steps.push_back(std::move(record));
+            break;
+        }
         record.phase = StepPhase::Verified;
         emit(spec, "VerificationResult",
              JsonValue::Object{{"step", static_cast<std::int64_t>(step)},

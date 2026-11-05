@@ -27,7 +27,7 @@ using namespace mira::testing;
 
 class GatewayFixture final {
   public:
-    GatewayFixture() {
+    explicit GatewayFixture(ModelGatewayConfig gateway_config = {}) {
         kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
@@ -40,7 +40,7 @@ class GatewayFixture final {
             make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test"));
         router_.register_profile(profile_);
         gateway_ = std::make_unique<ModelGateway>(executor_, router_, nullptr, PriceTable{},
-                                                  ModelGatewayConfig{});
+                                                  gateway_config);
         gateway_->register_provider(std::make_shared<OpenAiCompatibleProvider>(
             profile_, transport_, std::make_shared<NullArtifactSource>()));
         admission_ = std::make_shared<SimpleAdmissionGate>();
@@ -273,6 +273,9 @@ int events_carry_no_prompt_or_secret_content() {
 int bounded_provider_fallback() {
     GatewayFixture fixture;
     fixture.admission_->activate(fixture.task_, 1);
+    auto events = std::make_shared<MemoryEventStore>();
+    const auto session = SessionId::generate();
+    fixture.gateway_->set_event_store(events, RuntimeId::generate(), session);
 
     // A second, healthy profile/provider registered after the failing one.
     auto backup_profile = std::make_shared<ModelProfile>(*fixture.profile_);
@@ -299,6 +302,77 @@ int bounded_provider_fallback() {
     MIRA_CHECK(outcome.value().parse.outcome == DecisionParseOutcome::Decision);
     MIRA_CHECK(outcome.value().route.selected_profile == backup_profile->id);
     MIRA_CHECK(backup_transport->recorded().size() == 1);
+    const auto calls = fixture.transport_->recorded().size() + backup_transport->recorded().size();
+    MIRA_CHECK(calls > 1);
+    MIRA_CHECK(outcome.value().attempts == calls);
+    auto page = events->read({session, std::nullopt, 100});
+    MIRA_CHECK(page);
+    std::size_t responses = 0;
+    for (const auto &event : page.value().events) {
+        if (event.payload.type == "ModelResponseReceived") {
+            auto payload = parse_json(event.payload.data);
+            MIRA_CHECK(payload);
+            const auto *detail = payload.value().find("detail");
+            MIRA_CHECK(detail != nullptr);
+            const auto *attempts = detail->find("attempts");
+            MIRA_CHECK(attempts != nullptr);
+            MIRA_CHECK(attempts->as_number() == static_cast<double>(calls));
+            ++responses;
+        }
+    }
+    MIRA_CHECK(responses == 1);
+    return 0;
+}
+
+int exhausted_fallback_and_open_circuits_count_only_calls() {
+    ModelGatewayConfig config;
+    config.retry_budget.max_attempts = 1;
+    config.circuit_config.consecutive_failures_to_open = 1;
+    GatewayFixture fixture(config);
+    fixture.admission_->activate(fixture.task_, 1);
+    auto events = std::make_shared<MemoryEventStore>();
+    const auto session = SessionId::generate();
+    fixture.gateway_->set_event_store(events, RuntimeId::generate(), session);
+    auto backup = std::make_shared<ModelProfile>(*fixture.profile_);
+    backup->id = ModelProfileId::generate();
+    fixture.gateway_->mutable_router().register_profile(backup);
+    auto transport = std::make_shared<MockHttpTransport>(fixture.secrets_);
+    fixture.gateway_->register_provider(std::make_shared<OpenAiCompatibleProvider>(
+        backup, transport, std::make_shared<NullArtifactSource>()));
+    MockStep failed;
+    failed.failure = make_model_error(ModelDomainCode::TransportFailed, "dns", true);
+    fixture.transport_->enqueue(failed);
+    transport->enqueue(failed);
+    auto exhausted = fixture.gateway_->infer(fixture.request(), plain_context());
+    MIRA_CHECK(!exhausted);
+    MIRA_CHECK(fixture.transport_->recorded().size() == 1);
+    MIRA_CHECK(transport->recorded().size() == 1);
+    auto page = events->read({session, std::nullopt, 100});
+    MIRA_CHECK(page);
+    std::size_t failures = 0;
+    for (const auto &event : page.value().events) {
+        if (event.payload.type == "ModelAttemptFailed") {
+            auto payload = parse_json(event.payload.data);
+            MIRA_CHECK(payload);
+            const auto *detail = payload.value().find("detail");
+            MIRA_CHECK(detail != nullptr);
+            const auto *total = detail->find("total_attempts");
+            MIRA_CHECK(total != nullptr);
+            MIRA_CHECK(total->as_number() == static_cast<double>(++failures));
+        }
+    }
+    MIRA_CHECK(failures == 2);
+    // Both candidates are now open. Skipping them emits no attempt failure
+    // and performs no additional provider invocation.
+    auto skipped = fixture.gateway_->infer(fixture.request(), plain_context());
+    MIRA_CHECK(!skipped);
+    MIRA_CHECK(fixture.transport_->recorded().size() == 1);
+    MIRA_CHECK(transport->recorded().size() == 1);
+    auto after = events->read({session, page.value().events.back().session_sequence, 100});
+    MIRA_CHECK(after);
+    for (const auto &event : after.value().events) {
+        MIRA_CHECK(event.payload.type != "ModelAttemptFailed");
+    }
     return 0;
 }
 
@@ -405,6 +479,9 @@ int untrusted_text_never_gains_prompt_authority() {
 } // namespace
 
 int main() {
+    if (const int status = exhausted_fallback_and_open_circuits_count_only_calls(); status != 0) {
+        return status;
+    }
     if (const int status = bounded_provider_fallback(); status != 0) {
         return status;
     }

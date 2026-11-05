@@ -121,6 +121,8 @@ class MiraRuntime final {
     Result<CommandHandle> request_human_takeover(SessionId session_id);
     Result<CommandHandle> release_human_takeover(SessionId session_id);
     Result<CommandHandle> close_session(SessionId session_id);
+    // Closes business admission even if the shutdown command is rejected.
+    // The external owner must still call finish_shutdown() and inspect its report.
     Result<CommandHandle> request_shutdown();
     Result<OperationKey> begin_operation(TaskId task_id, StepId step_id);
     Result<CommandHandle> admit_operation_completion(const OperationKey &key);
@@ -128,6 +130,10 @@ class MiraRuntime final {
     [[nodiscard]] Result<SessionSnapshot> session_snapshot(SessionId session_id) const;
     [[nodiscard]] RuntimeState state() const noexcept;
     [[nodiscard]] SchedulingMetricsSnapshot scheduling_metrics() const;
+    // External owner only. Consumes registered submission futures, performs at
+    // most one shutdown admission retry, then closes the context and Executor.
+    // Failed environment release yields clean=false/Failed; repeated completed
+    // finalization returns the same report. Own control callbacks are rejected.
     ShutdownReport finish_shutdown();
 
   private:

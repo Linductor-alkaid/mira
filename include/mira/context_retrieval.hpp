@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mira/content_markers.hpp>
+
 #include <mira/context_contracts.hpp>
 #include <mira/conversation_log.hpp>
 #include <mira/core_contracts.hpp>
@@ -72,8 +74,7 @@ struct ContextIndexPolicy final {
     std::size_t max_assets = 100'000;
     std::size_t max_embedding_dims = 4'096;
     // Content markers that must never enter the retrieval index.
-    std::vector<std::string> forbidden_markers = {
-        "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
+    std::vector<std::string> forbidden_markers = default_forbidden_content_markers();
 
     [[nodiscard]] Result<void> validate() const;
 };

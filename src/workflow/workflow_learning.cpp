@@ -1,3 +1,4 @@
+#include "workflow_decode.hpp"
 #include <mira/workflow_learning.hpp>
 
 #include <algorithm>
@@ -118,41 +119,15 @@ namespace {
     return make_workflow_learning_error(code, std::move(detail));
 }
 
+using workflow_detail::bounded_string;
+
 [[nodiscard]] Result<void> check_keys(const JsonValue &object,
                                       std::span<const std::string_view> required,
                                       std::span<const std::string_view> optional,
                                       std::string_view where) {
-    if (!object.is_object()) {
-        return learning_error(WorkflowLearningError::InvalidShape,
-                              std::string{where} + " must be an object");
-    }
-    for (const auto &member : *object.as_object()) {
-        const bool known = std::any_of(required.begin(), required.end(),
-                                       [&](std::string_view key) { return key == member.first; }) ||
-                           std::any_of(optional.begin(), optional.end(),
-                                       [&](std::string_view key) { return key == member.first; });
-        if (!known) {
-            return learning_error(WorkflowLearningError::UnknownField,
-                                  std::string{where} + ": unknown field '" + member.first + "'");
-        }
-    }
-    for (const auto key : required) {
-        if (object.find(key) == nullptr) {
-            return learning_error(WorkflowLearningError::InvalidShape, std::string{where} +
-                                                                           ": missing field '" +
-                                                                           std::string{key} + "'");
-        }
-    }
-    return Result<void>{};
-}
-
-[[nodiscard]] std::optional<std::string> bounded_string(const JsonValue &value,
-                                                        std::size_t max_bytes) {
-    const auto *text = value.as_string();
-    if (text == nullptr || text->empty() || text->size() > max_bytes) {
-        return std::nullopt;
-    }
-    return *text;
+    return workflow_detail::check_keys(object, required, optional, where,
+                                       WorkflowLearningError::InvalidShape,
+                                       WorkflowLearningError::UnknownField, learning_error);
 }
 
 // Sanitized identifier charset (DEC-029 §4): [A-Za-z0-9._:-] only. Raw error

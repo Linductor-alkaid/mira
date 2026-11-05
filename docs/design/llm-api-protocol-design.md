@@ -1,8 +1,8 @@
 # Mira LLM API 协议设计
 
 > 状态：Active  
-> 版本：1.1  
-> 更新日期：2026-08-31   
+> 版本：1.3
+> 更新日期：2026-11-06
 > 负责人：Mira Maintainers  
 > 适用范围：远端 LLM/VLM 请求、OpenAI-compatible wire dialect、流式响应、Structured Outputs、
 > Tool Calling、Provider 状态与费用核算  
@@ -320,6 +320,9 @@ resolved model 都进入事件；Replay 使用已记录 response，不重新调�
    `wire_request_digest`；敏感值另存受保护 Artifact 或只保留摘要。
 6. 记录 `ModelRequestPrepared` 和预算 reservation，经 Executor 管理的 transport 发送。
 7. 接收 terminal 结果后核销 usage/cost，记录 `ModelResponseReceived` 或稳定错误。
+   返回值与成功事件的 `attempts` 为一次 infer 跨候选的实际 provider 调用总数；
+   失败事件 `attempt` 为候选内次数，`total_attempts` 为累计次数。熔断跳过不计数，
+   retry budget 仍按候选内次数执行（[DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md)）。
 
 `wire_request_digest` 用于关联和 Replay 诊断，不作为 Provider 幂等保证。
 
@@ -530,6 +533,17 @@ Usage 分开保留 input、output、cached input、reasoning 和供应商扩展�
 版本、币种、有效时间、model revision 和来源；价格未知时由产品 policy 决定只允许 token hard limit
 还是拒绝，不能记录虚假的零成本。
 
+现有实现与离线宿主的核销边界由
+[DEC-084](../decisions/DEC-084-model-price-reference-host.md) 记录：库配置
+require_known_price 默认 false，严格宿主必须显式选择 true；它检查首选 selector，
+不保证 resolved model 一定可定价。成功响应先核销，再检查任务 admission，取消
+不能抹掉已报告费用；Missing/Partial/UnknownPrice 与模糊完成保持审计状态。
+reserved_remainder 不是账户余额快照，须同时读取 ledger.reserved(task)。Task
+scope 当前限制未核销 reservation，尚不等价于累计 spent+reserved 账单硬限额。
+单 profile、一次 infer 的可执行矩阵与生产审计限制见
+[价格宿主指南](../api/model-price-host.md)，产品级多候选/累计费用约束由维护项 12
+登记并核查专项立项，不扩大 M33 的自主打断/配额范围。
+
 Prompt caching 仅是成本/延迟优化。Cache hit、cached token 和 breakpoint 不影响语义正确性、Context
 保留、Replay 或 capability 授权。
 
@@ -685,6 +699,12 @@ M3 实现落点：canonical 契约与错误（`include/mira/model_contracts.hpp`
 演化（如 `TransportTrace` 阶段回填），以公共头与测试为准。
 
 ## 20. 已知限制与待验证项
+
+维护轮 [DEC-082](../decisions/DEC-082-local-event-tls-reuse-and-public-retention.md)
+只在 net Adapter 私有层共享 TLS 错误字段构造及工厂 create 的准入/构造/setup 尾部。
+初始化检查优先于禁止关闭 peer verification；各后端信任加载、SNI/IP、握手与 BIO
+错误映射不变，不建立新的 worker、timer 或 Executor owner。本轮仅有 Linux 回归
+证据，下面的既有平台证据不自动等同于新工作树已在相应平台补跑。
 
 - 传输实现已按 [DEC-010](../decisions/DEC-010-cross-platform-tls-proxy-upload.md) 落地为自研
   socket transport + 可插拔 TLS 通道，并锁定 Mbed TLS `v3.6.7` 作为

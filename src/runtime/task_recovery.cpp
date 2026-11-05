@@ -40,19 +40,31 @@ Result<std::vector<EventEnvelope>> RecoveryPlanner::read_task_events(TaskId task
                                                                      SessionId session) const {
     std::vector<EventEnvelope> collected;
     std::optional<SessionSequence> after;
+    std::uint64_t scanned = 0;
+    if (policy_.max_events_scanned == 0) {
+        return recovery_error(ErrorCode::InvalidArgument, "recovery scan bound must be positive");
+    }
     while (true) {
         EventQuery query;
         query.session_id = session;
         query.after_sequence = after;
-        query.limit = 1024;
+        query.limit = static_cast<std::size_t>(
+            std::min<std::uint64_t>(1024, policy_.max_events_scanned - scanned));
         auto page = events_.read(query);
         if (!page) {
             return page.error();
         }
-        if (page.value().events.empty()) {
-            break;
+        if (page.value().events.size() > query.limit ||
+            (page.value().events.empty() && page.value().has_more)) {
+            return recovery_error(ErrorCode::DataLoss, "recovery page made no valid progress");
         }
         for (const auto &event : page.value().events) {
+            if (event.session_id != session || event.session_sequence <= after.value_or(0)) {
+                return recovery_error(ErrorCode::DataLoss,
+                                      "recovery page identity or order is invalid");
+            }
+            after = event.session_sequence;
+            ++scanned;
             if (event.task_id.has_value() && *event.task_id == task) {
                 collected.push_back(event);
             }
@@ -60,8 +72,7 @@ Result<std::vector<EventEnvelope>> RecoveryPlanner::read_task_events(TaskId task
         if (!page.value().has_more) {
             break;
         }
-        after = page.value().events.back().session_sequence;
-        if (collected.size() > policy_.max_events_scanned) {
+        if (scanned == policy_.max_events_scanned) {
             return recovery_error(ErrorCode::ResourceExhausted,
                                   "recovery scan exceeded the event bound");
         }

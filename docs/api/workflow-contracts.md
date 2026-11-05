@@ -27,6 +27,11 @@
 契约函数全部为**同步纯函数**；`WorkflowRuntime` 的 Executor 路由与关闭顺序见
 [workflow_runtime_design](../design/workflow_runtime_design.md) 第 7/8 节。
 
+维护轮 [DEC-082](../decisions/DEC-082-local-event-tls-reuse-and-public-retention.md)
+仅共享 20 个事件编码器的 EventPayload 封装尾部，各事件仍显式指定字段顺序、schema
+与分类，wire 字节保持。`parse_workflow_publish_rejected` 继续作为发布拒绝审计的公开
+reader，支持宿主直接读取；不因内部无消费者删除，也不因共享封装改变解析或耐久语义。
+
 ## Workflow IR（`workflow_ir.hpp`）
 
 - `WorkflowDefinition`：参数 Schema（`WorkflowParameterSpec`，类型

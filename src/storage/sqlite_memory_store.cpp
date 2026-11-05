@@ -1,3 +1,5 @@
+#include "sqlite_store_open.hpp"
+#include <mira/embedding_math.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include "sqlite_support.hpp"
@@ -8,6 +10,7 @@
 #include <atomic>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <map>
 #include <set>
@@ -35,7 +38,6 @@ constexpr SchemaVersion kMemoryStoreSchema{1, 1};
 constexpr const char *kStoreKind = "memory";
 
 constexpr const char *kSchemaDdl =
-    "BEGIN;"
     "CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
     "CREATE TABLE IF NOT EXISTS memory_records("
     " id TEXT PRIMARY KEY,"
@@ -109,7 +111,7 @@ constexpr const char *kSchemaDdl =
     " scope_key TEXT PRIMARY KEY,"
     " reason TEXT NOT NULL,"
     " since INTEGER NOT NULL);"
-    "COMMIT;";
+    "";
 
 [[nodiscard]] std::string scope_key_of(const MemoryScope &scope) {
     std::string key = memory_scope_kind_name(scope.kind);
@@ -158,15 +160,8 @@ constexpr const char *kSchemaDdl =
         " WHERE scope_key = '';";
     constexpr const char *kAddColumn =
         "ALTER TABLE memory_mutations ADD COLUMN scope_key TEXT NOT NULL DEFAULT '';";
-    const std::string sql = "BEGIN;" + std::string(ledger_has_scope_column(db) ? "" : kAddColumn) +
-                            kBackfill + "COMMIT;";
-    const auto applied = storage::exec_sql(db, sql.c_str());
-    if (!applied) {
-        // Leave no half-applied transaction behind for the store worker.
-        (void)storage::exec_sql(db, "ROLLBACK;");
-        return applied.error();
-    }
-    return Result<void>{};
+    const std::string sql = std::string(ledger_has_scope_column(db) ? "" : kAddColumn) + kBackfill;
+    return storage::exec_sql(db, sql.c_str());
 }
 
 [[nodiscard]] int sensitivity_rank(Sensitivity sensitivity) {
@@ -256,21 +251,6 @@ struct Row final {
     }
     flush();
     return expression;
-}
-
-[[nodiscard]] double cosine_similarity(const float *left, const float *right, std::size_t dim) {
-    double dot = 0.0;
-    double left_norm = 0.0;
-    double right_norm = 0.0;
-    for (std::size_t index = 0; index < dim; ++index) {
-        dot += static_cast<double>(left[index]) * static_cast<double>(right[index]);
-        left_norm += static_cast<double>(left[index]) * static_cast<double>(left[index]);
-        right_norm += static_cast<double>(right[index]) * static_cast<double>(right[index]);
-    }
-    if (left_norm <= 0.0 || right_norm <= 0.0) {
-        return -1.0; // zero vector cannot establish similarity
-    }
-    return dot / (std::sqrt(left_norm) * std::sqrt(right_norm));
 }
 
 } // namespace
@@ -1101,6 +1081,7 @@ class SqliteMemoryStore::Impl final {
                                      " ORDER BY embedded_at DESC LIMIT ?");
             std::size_t vector_errors = 0;
             if (embeddings.valid()) {
+                std::vector<float> decoded(query_dim);
                 sqlite3_bind_int64(embeddings.get(), 1,
                                    static_cast<std::int64_t>(options_.max_vector_scan));
                 int estep = sqlite3_step(embeddings.get());
@@ -1120,11 +1101,15 @@ class SqliteMemoryStore::Impl final {
                         estep = sqlite3_step(embeddings.get());
                         continue;
                     }
-                    const auto *vector = static_cast<const float *>(blob);
-                    const double similarity =
-                        cosine_similarity(vector, request.query_embedding.data(), dim);
-                    if (similarity >= 0.0) {
-                        vector_scores[id_text] = similarity;
+                    // SQLite blobs need not have float alignment. Decode to
+                    // aligned storage before the shared numeric boundary.
+                    std::memcpy(decoded.data(), blob, static_cast<std::size_t>(bytes));
+                    const auto similarity =
+                        embedding_cosine_similarity(decoded, request.query_embedding);
+                    if (!similarity) {
+                        ++vector_errors;
+                    } else if (*similarity >= 0.0) {
+                        vector_scores[id_text] = *similarity;
                     }
                     estep = sqlite3_step(embeddings.get());
                 }
@@ -1919,129 +1904,19 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     db_options.busy_timeout = options.busy_timeout;
     db_options.mode = options.read_only_diagnostic ? storage::DbOpenMode::ReadOnlyDiagnostic
                                                    : storage::DbOpenMode::ReadWrite;
-    auto database = storage::open_database(db_options);
-    if (!database) {
-        return database.error();
+    auto opened = storage::open_reference_store(
+        db_options, {kStoreKind, kMemoryStoreSchema, kSchemaDdl, store_error,
+                     [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
+                         if (previous.major == 1 && previous.minor < 1) {
+                             return migrate_memory_schema_1_0_to_1_1(db);
+                         }
+                         return {};
+                     }});
+    if (!opened) {
+        return opened.error();
     }
-    storage::DatabaseHandle handle(database.value());
-
-    StoreDiagnostics diagnostics;
-    diagnostics.reader_schema = kMemoryStoreSchema;
-    diagnostics.read_only = options.read_only_diagnostic;
-
-    const auto tables = storage::list_tables(handle.get());
-    if (!tables) {
-        return tables.error();
-    }
-    const bool fresh = tables.value().empty();
-    if (!fresh && std::find(tables.value().begin(), tables.value().end(), "store_meta") ==
-                      tables.value().end()) {
-        return store_error(ErrorCode::InvalidState,
-                           "store file holds an unrecognized schema; refusing to touch it");
-    }
-    std::string schema_text =
-        std::to_string(kMemoryStoreSchema.major) + "." + std::to_string(kMemoryStoreSchema.minor);
-    if (fresh) {
-        if (options.read_only_diagnostic) {
-            diagnostics.disposition = StoreSchemaDisposition::Created;
-            diagnostics.journal_mode = "readonly";
-            diagnostics.note = "empty database opened read-only; no schema installed";
-        } else {
-            const auto install = storage::exec_sql(handle.get(), kSchemaDdl);
-            if (!install) {
-                return install.error();
-            }
-            const auto kind = storage::meta_write(handle.get(), "store_kind", kStoreKind);
-            if (!kind) {
-                return kind.error();
-            }
-            const auto version = storage::meta_write(handle.get(), "schema_version", schema_text);
-            if (!version) {
-                return version.error();
-            }
-            diagnostics.disposition = StoreSchemaDisposition::Created;
-            diagnostics.file_schema = kMemoryStoreSchema;
-        }
-    } else {
-        const auto kind = storage::meta_read(handle.get(), "store_kind");
-        if (!kind) {
-            return kind.error();
-        }
-        if (!kind.value().has_value() || *kind.value() != kStoreKind) {
-            return store_error(ErrorCode::InvalidArgument,
-                               "store file belongs to a different store kind");
-        }
-        const auto stored = storage::meta_read(handle.get(), "schema_version");
-        if (!stored) {
-            return stored.error();
-        }
-        if (!stored.value().has_value()) {
-            return store_error(ErrorCode::InvalidState, "store schema version is missing");
-        }
-        std::uint64_t major = 0;
-        std::uint64_t minor = 0;
-        const std::string &text = *stored.value();
-        const auto dot = text.find('.');
-        if (dot == std::string::npos) {
-            return store_error(ErrorCode::DataLoss, "store schema version is malformed");
-        }
-        try {
-            major = std::stoull(text.substr(0, dot));
-            minor = std::stoull(text.substr(dot + 1));
-        } catch (const std::exception &) {
-            return store_error(ErrorCode::DataLoss, "store schema version is malformed");
-        }
-        const SchemaVersion file_version{static_cast<std::uint16_t>(major),
-                                         static_cast<std::uint16_t>(minor)};
-        diagnostics.file_schema = file_version;
-        // Compare the minor version too: a file written by a newer minor
-        // revision must not be accepted as an older one and rewritten with
-        // this reader's version stamp.
-        const bool file_newer = file_version.major > kMemoryStoreSchema.major ||
-                                (file_version.major == kMemoryStoreSchema.major &&
-                                 file_version.minor > kMemoryStoreSchema.minor);
-        if (file_newer) {
-            if (options.read_only_diagnostic) {
-                diagnostics.disposition = StoreSchemaDisposition::ReadOnlyDiagnostic;
-                diagnostics.note = "file schema is newer than this reader; writes are rejected";
-            } else {
-                return store_error(ErrorCode::UnsupportedVersion,
-                                   "store schema is newer than this reader");
-            }
-        } else if (file_version == kMemoryStoreSchema) {
-            diagnostics.disposition = StoreSchemaDisposition::UpToDate;
-        } else {
-            const auto supported = validate_schema_version(file_version, kMemoryStoreSchema);
-            if (!supported) {
-                return store_error(ErrorCode::UnsupportedVersion,
-                                   "store schema is too old for this reader");
-            }
-            // Apply the pending schema steps before the version bump: the
-            // reader must not claim the newer schema before the data on disk
-            // matches it.
-            if (file_version.major == 1 && file_version.minor < 1) {
-                const auto migrated = migrate_memory_schema_1_0_to_1_1(handle.get());
-                if (!migrated) {
-                    return migrated.error();
-                }
-            }
-            const auto bump = storage::meta_write(handle.get(), "schema_version", schema_text);
-            if (!bump) {
-                return bump.error();
-            }
-            diagnostics.disposition = StoreSchemaDisposition::Migrated;
-        }
-    }
-
-    Statement journal(handle.get(), "PRAGMA journal_mode");
-    if (journal.valid() && sqlite3_step(journal.get()) == SQLITE_ROW) {
-        const auto *mode = reinterpret_cast<const char *>(sqlite3_column_text(journal.get(), 0));
-        diagnostics.journal_mode = mode != nullptr ? mode : "unknown";
-    }
-    Statement pages(handle.get(), "PRAGMA page_count");
-    if (pages.valid() && sqlite3_step(pages.get()) == SQLITE_ROW) {
-        diagnostics.page_count = sqlite3_column_int64(pages.get(), 0);
-    }
+    auto handle = std::move(opened.value().database);
+    auto diagnostics = std::move(opened.value().diagnostics);
 
     StoreChannel::Config channel_config;
     channel_config.worker_name = "mira-memory-store";

@@ -37,7 +37,6 @@ using mira::interaction_support::kMaxConstraintBytes;
 using mira::interaction_support::kMaxConstraintsPerTask;
 using mira::interaction_support::kMaxGoalBytes;
 using mira::interaction_support::permitted;
-using mira::interaction_support::task_state_name;
 
 } // namespace
 

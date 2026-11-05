@@ -1,9 +1,14 @@
 #include <mira/adapters/net/socket_transport.hpp>
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/content_markers.hpp>
 #include <mira/runtime_baseline.hpp>
 #include <mira/sqlite_memory_store.hpp>
 #include <mira/state_store.hpp>
+#include <mira/task_checkpoint.hpp>
+#include <mira/task_recovery.hpp>
+#include <mira/verified_fact.hpp>
 #include <mira/workflow_compiler.hpp>
+#include <mira/workflow_events.hpp>
 #include <mira/workflow_ir.hpp>
 #include <mira/workflow_learning.hpp>
 #include <mira/workflow_recovery.hpp>
@@ -24,6 +29,37 @@
 #endif
 
 int main() {
+    mira::VerifiedFactPublisher missing_authority({}, {}, {}, nullptr, {});
+    const auto no_fact = missing_authority.publish({}, mira::make_control_context());
+    if (no_fact || no_fact.error().code != mira::ErrorCode::InvalidState ||
+        mira::checkpoint_schema_current().major != 2)
+        return 86;
+
+    mira::WorkflowPublishRejectedEvent publication;
+    publication.workflow_id = mira::WorkflowId{mira::Id128{mira::Id128::Bytes{9}}};
+    publication.ir_digest = mira::digest_string("consumer-publication");
+    publication.reason_code = "fixture-rejected";
+    const auto rejected =
+        mira::parse_workflow_publish_rejected(mira::to_event_payload(publication));
+    if (!rejected || rejected.value().reason_code != publication.reason_code ||
+        mira::checkpoint_trigger_name(mira::CheckpointTrigger::Pause) != "Pause" ||
+        mira::recovery_action_name(mira::RecoveryAction::ResumeVerifying) != "ResumeVerifying") {
+        return 85;
+    }
+
+    const auto forbidden = mira::default_forbidden_content_markers();
+    const auto injection = mira::default_injection_content_markers();
+    if (forbidden.size() != 6 || injection.size() != 6 || forbidden.front() != "api_key" ||
+        injection.front() != "ignore previous") {
+        return 84;
+    }
+
+    const auto verifying = mira::task_state_from_name("Verifying");
+    if (!verifying || mira::task_state_name(*verifying) != "Verifying" ||
+        mira::task_state_from_name("Unknown").has_value()) {
+        return 83;
+    }
+
     mira::adapters::simulator::SimulatorEnvironment environment{
         mira::adapters::simulator::SimulatorSetup::single_display()};
 

@@ -1,3 +1,4 @@
+#include "sqlite_store_open.hpp"
 #include <mira/state_store.hpp>
 
 #include "sqlite_support.hpp"
@@ -29,7 +30,6 @@ constexpr SchemaVersion kCheckpointStoreSchema{1, 0};
 constexpr const char *kStoreKind = "checkpoint";
 
 constexpr const char *kSchemaDdl =
-    "BEGIN;"
     "CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
     "CREATE TABLE IF NOT EXISTS task_checkpoints("
     " task_id TEXT NOT NULL,"
@@ -48,30 +48,7 @@ constexpr const char *kSchemaDdl =
     " reason TEXT NOT NULL,"
     " removed INTEGER NOT NULL,"
     " at INTEGER NOT NULL);"
-    "COMMIT;";
-
-[[nodiscard]] std::string schema_version_text(SchemaVersion version) {
-    return std::to_string(version.major) + "." + std::to_string(version.minor);
-}
-
-[[nodiscard]] std::optional<SchemaVersion> parse_schema_version_text(const std::string &text) {
-    const auto dot = text.find('.');
-    if (dot == std::string::npos || dot == 0 || dot + 1 == text.size()) {
-        return std::nullopt;
-    }
-    std::uint64_t major = 0;
-    std::uint64_t minor = 0;
-    try {
-        major = std::stoull(text.substr(0, dot));
-        minor = std::stoull(text.substr(dot + 1));
-    } catch (const std::exception &) {
-        return std::nullopt;
-    }
-    if (major > 0xFFFF || minor > 0xFFFF) {
-        return std::nullopt;
-    }
-    return SchemaVersion{static_cast<std::uint16_t>(major), static_cast<std::uint16_t>(minor)};
-}
+    "";
 
 struct DecodeOutcome final {
     Result<std::optional<TaskCheckpoint>> value;
@@ -271,118 +248,13 @@ SqliteCheckpointStore::open(kairo::Executor &executor, SqliteStoreOptions option
     db_options.busy_timeout = options.busy_timeout;
     db_options.mode = options.read_only_diagnostic ? storage::DbOpenMode::ReadOnlyDiagnostic
                                                    : storage::DbOpenMode::ReadWrite;
-    auto database = storage::open_database(db_options);
-    if (!database) {
-        return database.error();
+    auto opened = storage::open_reference_store(
+        db_options, {kStoreKind, kCheckpointStoreSchema, kSchemaDdl, store_open_error});
+    if (!opened) {
+        return opened.error();
     }
-    storage::DatabaseHandle handle(database.value());
-
-    StoreDiagnostics diagnostics;
-    diagnostics.reader_schema = kCheckpointStoreSchema;
-    diagnostics.read_only = options.read_only_diagnostic;
-
-    const auto tables = storage::list_tables(handle.get());
-    if (!tables) {
-        return tables.error();
-    }
-    const bool fresh = tables.value().empty();
-    if (!fresh && std::find(tables.value().begin(), tables.value().end(), "store_meta") ==
-                      tables.value().end()) {
-        return store_open_error(ErrorCode::InvalidState,
-                                "store file holds an unrecognized schema; refusing to touch it "
-                                "(reopen with read_only_diagnostic to inspect)");
-    }
-
-    if (fresh) {
-        if (options.read_only_diagnostic) {
-            diagnostics.disposition = StoreSchemaDisposition::Created;
-            diagnostics.journal_mode = "readonly";
-            diagnostics.note = "empty database opened read-only; no schema installed";
-        } else {
-            const auto install = storage::exec_sql(handle.get(), kSchemaDdl);
-            if (!install) {
-                return install.error();
-            }
-            const auto kind = storage::meta_write(handle.get(), "store_kind", kStoreKind);
-            if (!kind) {
-                return kind.error();
-            }
-            const auto version = storage::meta_write(handle.get(), "schema_version",
-                                                     schema_version_text(kCheckpointStoreSchema));
-            if (!version) {
-                return version.error();
-            }
-            diagnostics.disposition = StoreSchemaDisposition::Created;
-            diagnostics.file_schema = kCheckpointStoreSchema;
-        }
-    } else {
-        const auto kind = storage::meta_read(handle.get(), "store_kind");
-        if (!kind) {
-            return kind.error();
-        }
-        if (kind.value().has_value() && *kind.value() != kStoreKind) {
-            return store_open_error(ErrorCode::InvalidArgument,
-                                    "store file belongs to a different store kind");
-        }
-        if (!kind.value().has_value()) {
-            // Pre-meta database from an earlier development build: recognized
-            // tables exist but provenance is unknown; fail closed.
-            return store_open_error(ErrorCode::InvalidState,
-                                    "store file predates store metadata; refusing migration");
-        }
-        const auto stored = storage::meta_read(handle.get(), "schema_version");
-        if (!stored) {
-            return stored.error();
-        }
-        if (!stored.value().has_value()) {
-            return store_open_error(ErrorCode::InvalidState, "store schema version is missing");
-        }
-        const auto parsed = parse_schema_version_text(*stored.value());
-        if (!parsed) {
-            return store_open_error(ErrorCode::DataLoss,
-                                    "store schema version is malformed; inspect read-only");
-        }
-        diagnostics.file_schema = *parsed;
-        if (parsed->major > kCheckpointStoreSchema.major) {
-            if (options.read_only_diagnostic) {
-                diagnostics.disposition = StoreSchemaDisposition::ReadOnlyDiagnostic;
-                diagnostics.note = "file schema is newer than this reader; writes are rejected";
-            } else {
-                return store_open_error(
-                    ErrorCode::UnsupportedVersion,
-                    "store schema is newer than this reader; reopen read_only_diagnostic");
-            }
-        } else if (*parsed == kCheckpointStoreSchema) {
-            diagnostics.disposition = StoreSchemaDisposition::UpToDate;
-        } else {
-            // Explicit migration step from an older compatible schema. There
-            // is no older released schema today; the branch documents where
-            // future migrations run and refuses unknown older minors only when
-            // the major regressed more than one generation.
-            const auto supported = validate_schema_version(*parsed, kCheckpointStoreSchema);
-            if (!supported) {
-                return store_open_error(ErrorCode::UnsupportedVersion,
-                                        "store schema is too old for this reader");
-            }
-            const auto bump = storage::meta_write(handle.get(), "schema_version",
-                                                  schema_version_text(kCheckpointStoreSchema));
-            if (!bump) {
-                return bump.error();
-            }
-            diagnostics.disposition = StoreSchemaDisposition::Migrated;
-        }
-    }
-
-    // Runtime diagnostics from the live connection.
-    Statement journal(handle.get(), "PRAGMA journal_mode");
-    if (journal.valid() && sqlite3_step(journal.get()) == SQLITE_ROW) {
-        const auto *mode = reinterpret_cast<const char *>(sqlite3_column_text(journal.get(), 0));
-        diagnostics.journal_mode = mode != nullptr ? mode : "unknown";
-    }
-    Statement pages(handle.get(), "PRAGMA page_count");
-    if (pages.valid() && sqlite3_step(pages.get()) == SQLITE_ROW) {
-        diagnostics.page_count = sqlite3_column_int64(pages.get(), 0);
-    }
+    auto handle = std::move(opened.value().database);
+    auto diagnostics = std::move(opened.value().diagnostics);
 
     StoreChannel::Config channel_config;
     channel_config.worker_name = "mira-checkpoint-store";

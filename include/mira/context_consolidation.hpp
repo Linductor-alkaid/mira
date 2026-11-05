@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mira/content_markers.hpp>
+
 #include <mira/context_contracts.hpp>
 #include <mira/context_retrieval.hpp>
 #include <mira/core_contracts.hpp>
@@ -93,12 +95,9 @@ struct ConsolidationOptions final {
     std::chrono::milliseconds deadline{10'000};
     std::uint64_t max_output_tokens = 1'024;
     // Content markers that must never enter the checkpoint (RULE-09).
-    std::vector<std::string> forbidden_markers = {
-        "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
+    std::vector<std::string> forbidden_markers = default_forbidden_content_markers();
     // Instruction-shaped markers for untrusted model text.
-    std::vector<std::string> injection_markers = {
-        "ignore previous", "disregard previous", "you are now",
-        "system:",         "new instructions:",  "override policy"};
+    std::vector<std::string> injection_markers = default_injection_content_markers();
     // Cooperative cancellation probe owned by the operation supervisor; the
     // adapter maps it into the provider OperationContext.
     std::function<bool()> cancellation_requested;

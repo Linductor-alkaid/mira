@@ -223,6 +223,25 @@ Planner produces ExecutableAction
 `ActionDispatchStarted` 包含 action digest、target descriptor、Task/Environment epoch、lease ID、
 confirmation ID（如有）和 idempotency metadata。它表示 Mira 即将越过副作用边界，不表示平台已执行。
 
+实现注记（2026-11-05）：`ActionJournal` 每次 append 检查回执 `achieved`，未达到
+`ProcessCrash` 或返回非法等级时以 `DataLoss` 拒绝推进本地阶段；更强的 `PowerLoss`
+可接受。失败不证明记录未写入，恢复保持保守。内存存储仅用于进程内测试，真实宿主
+必须提供耐久实现。此门槛修正不等于 Loop/Workflow 的自动接线已完成，后续归
+[维护计划](../plans/maintenance-2026-11-runtime-wiring-and-reuse.md) 01–03；
+契约澄清见 [DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md)。
+同日第二轮：[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md) 与
+[输入派发设计](journaled_input_dispatch_design.md) 将 AgentLoop 输入路径接到宿主
+lease + JournaledActionDispatcher；未装配即拒绝输入，未知结果不自动重发。
+Loop 的 task/epoch/detail envelope 与旧 flat JSON 都由 checkpoint reducer 消费，
+嵌套身份错误、负 epoch 或旧 epoch 不覆盖有效状态。Workflow/可写工具、连续控制及
+完整崩溃窗口仍属开放范围，不由本批输入接线替代。
+
+同日第三轮：[DEC-076](../decisions/DEC-076-journal-identity-and-bounded-recovery.md)
+收紧 journal 的 intent 绑定、pipe 校验与分页预算，坏回执/坏页不再被当作完整确认。
+journal 与 checkpoint 共用解析器，RecoveryPlanner 扫描预算计入其他任务事件。
+独立 CTest 子进程在提交边界通过 `_Exit` 跳过析构，由另一进程恢复验证，区别于
+正常关闭重开测试；它不等价于断电或目标平台的 watchdog/输入释放取证。
+
 在 durable ack 与真实调用之间仍存在进程崩溃窗口，因此恢复分类为 uncertain，而不是未执行。这是
 有意选择的安全保守性。
 

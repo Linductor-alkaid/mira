@@ -73,6 +73,31 @@ struct Fixture final {
     return mutation;
 }
 
+int zero_vectors_do_not_create_candidates() {
+    Fixture fixture(temp_dir() / "retrieval-zero.db");
+    const auto scope = scope_of("zero-vectors");
+    const auto record = make_record(scope, "alpha beta");
+    MIRA_CHECK(fixture.store->apply(add_for(record)));
+    MIRA_CHECK(fixture.store->index_embedding(record.id, std::vector<float>{0.0F, 0.0F}));
+    MemoryQuery query;
+    query.scopes = {scope};
+    query.query_embedding = {1.0F, 0.0F};
+    auto result = fixture.store->query(query);
+    MIRA_CHECK(result && result.value().records.empty());
+    MIRA_CHECK(result.value().quality.vector_degraded && !result.value().quality.vector_leg_ran);
+    query.text = "alpha";
+    auto fallback = fixture.store->query(query);
+    MIRA_CHECK(fallback && fallback.value().records.size() == 1);
+    MIRA_CHECK(fallback.value().quality.fts_leg_ran && fallback.value().quality.vector_degraded);
+    MIRA_CHECK(fixture.store->index_embedding(record.id, std::vector<float>{1.0F, 0.0F}));
+    query.text.clear();
+    query.query_embedding = {0.0F, 0.0F};
+    auto invalid_query = fixture.store->query(query);
+    MIRA_CHECK(invalid_query && invalid_query.value().records.empty());
+    MIRA_CHECK(invalid_query.value().quality.vector_degraded);
+    return 0;
+}
+
 int exact_fts_and_vector_legs_merge() {
     Fixture fixture(temp_dir() / "retrieval-hybrid.db");
     auto *store = fixture.store.get();
@@ -269,6 +294,7 @@ int fts_operator_text_is_never_injected() {
 
 int main() {
     int failures = 0;
+    failures += zero_vectors_do_not_create_candidates();
     failures += exact_fts_and_vector_legs_merge();
     failures += vector_corruption_degrades_without_blocking();
     failures += diversity_dedup_and_token_packing();

@@ -35,6 +35,11 @@ Observe -> Reason -> Plan -> Act -> Verify
 
 ## Architecture
 
+Input actions in `AgentLoop` require a host-supplied `JournaledActionDispatcher`
+with a durable event store and an action lease policy. Missing wiring fails
+before input dispatch. See the [migration contract](docs/api/model-agent-loop.md)
+and the [offline host example](examples/journaled_action_consumer.cpp).
+
 ```mermaid
 flowchart TB
     app["Host application"]
@@ -229,3 +234,12 @@ Mira is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 Third-party dependencies under `third_party/` remain under their own licenses
 (listed above) and are not subject to this repository's license.
+
+Verified-fact host migration: `VerifiedFactPublisher` requires explicit native evidence and a
+trusted host lease. Checkpoint documents now use schema 2.0 with fact validity intervals;
+rebuild C++ consumers and upgrade readers before enabling the new producer. See the
+[protocol migration](docs/compatibility/verified-fact-v1-and-checkpoint-v2.md) and
+[offline host example](examples/verified_fact_host_consumer.cpp).
+
+The [offline price host](docs/api/model-price-host.md) demonstrates explicit fixture pricing,
+unknown-cost policy and cancellation settlement. Its artificial rates are not supplier quotes.

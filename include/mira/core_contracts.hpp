@@ -336,6 +336,12 @@ enum class TaskState : std::uint8_t {
     Cancelled,
 };
 
+// Stable, case-sensitive event/checkpoint names (DEC-079). Unknown enum values
+// produce "Unknown"; unknown names return nullopt and never alias Idle.
+// Synchronous, allocation-free; the returned view has static lifetime.
+[[nodiscard]] std::string_view task_state_name(TaskState state) noexcept;
+[[nodiscard]] std::optional<TaskState> task_state_from_name(std::string_view name) noexcept;
+
 [[nodiscard]] inline bool is_terminal(TaskState state) noexcept {
     return state == TaskState::Completed || state == TaskState::Failed ||
            state == TaskState::Cancelled;
@@ -367,8 +373,9 @@ enum class TaskState : std::uint8_t {
         return to == RuntimeState::Quiesced || to == RuntimeState::Failed;
     case RuntimeState::Quiesced:
         return to == RuntimeState::Stopped;
-    case RuntimeState::Stopped:
     case RuntimeState::Failed:
+        return to == RuntimeState::Stopping; // Resource cleanup after business failure (DEC-080).
+    case RuntimeState::Stopped:
         return false;
     }
     return false;

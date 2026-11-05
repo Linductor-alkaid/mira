@@ -175,6 +175,62 @@ int forbidden_and_injection_content_rejected() {
     return 0;
 }
 
+int custom_markers_and_candidate_keys_use_ascii_folding() {
+    Fixture fixture;
+    const auto scope = scope_of("custom-markers-device");
+    auto candidate = [&](std::string text, bool model_assisted) {
+        MemoryCandidate value;
+        value.proposed.id = MemoryId::generate();
+        value.proposed.scope = scope;
+        value.proposed.kind = MemoryKind::EnvironmentFact;
+        value.proposed.statement = std::move(text);
+        value.proposed.recorded_at = std::chrono::system_clock::now();
+        value.proposed.validity.valid_from = value.proposed.recorded_at;
+        value.proposed.provenance = {EventId::generate()};
+        value.proposed.verification = MemoryVerification::Verified;
+        value.proposed.confidence = 0.9F;
+        value.evidence = value.proposed.provenance;
+        value.model_assisted = model_assisted;
+        return value;
+    };
+    ConsolidationPolicy policy;
+    policy.forbidden_markers = {"ORG_TOKEN="};
+    policy.injection_markers = {"OVERRIDE POLICY"};
+    MemoryConsolidator consolidator(policy);
+    for (const auto &text :
+         {std::string{"org_token=fixture"}, std::string{"OrG_ToKeN=fixture"},
+          std::string{"前缀org_token=fixture"}, std::string{"prefix\0org_token=fixture", 24}}) {
+        auto report = consolidator.consolidate_candidates(*fixture.store, {candidate(text, false)},
+                                                          scope, Timestamp::now());
+        MIRA_CHECK(report && report.value().count_of(CandidateDisposition::RejectedForbidden) == 1);
+    }
+    auto rejected = consolidator.consolidate_candidates(
+        *fixture.store, {candidate("override policy for this task", true)}, scope,
+        Timestamp::now());
+    MIRA_CHECK(rejected && rejected.value().count_of(CandidateDisposition::RejectedInjection) == 1);
+    MemoryQuery query;
+    query.scopes = {scope};
+    auto empty = fixture.store->query(query);
+    MIRA_CHECK(empty && empty.value().records.empty());
+
+    // Verified event text keeps its authority boundary: the injection filter
+    // still applies only to model-assisted candidates, while forbidden content
+    // above was rejected even for a verified deterministic candidate.
+    auto trusted = consolidator.consolidate_candidates(
+        *fixture.store, {candidate("override policy for this task", false)}, scope,
+        Timestamp::now());
+    MIRA_CHECK(trusted && trusted.value().count_of(CandidateDisposition::Applied) == 1);
+    auto key = consolidator.consolidate_candidates(
+        *fixture.store, {candidate("MiXeD_É=VaLuE", false)}, scope, Timestamp::now());
+    MIRA_CHECK(key && key.value().count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(key.value().entries.front().key ==
+               memory_kind_name(MemoryKind::EnvironmentFact) + ":mixed_É=value");
+    auto replay = consolidator.consolidate_candidates(
+        *fixture.store, {candidate("MiXeD_É=VaLuE", false)}, scope, Timestamp::now());
+    MIRA_CHECK(replay && replay.value().entries.front().reason_code == "duplicate-noop");
+    return 0;
+}
+
 int preference_requires_human_approval_then_applies() {
     Fixture fixture;
     const auto scope = user_scope();
@@ -231,6 +287,7 @@ int main() {
     int failures = 0;
     failures += verified_fact_becomes_memory_and_supersedes_on_change();
     failures += forbidden_and_injection_content_rejected();
+    failures += custom_markers_and_candidate_keys_use_ascii_folding();
     failures += preference_requires_human_approval_then_applies();
     failures += completed_loop_becomes_episode();
     std::filesystem::remove_all(temp_dir());

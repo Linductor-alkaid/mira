@@ -318,6 +318,32 @@ int missing_embedding_degrades_to_exact_and_lexical() {
     return 0;
 }
 
+int zero_vectors_do_not_create_candidates() {
+    const auto session = session_from_seed(470);
+    const auto id = context_asset_id_from_seed("zero-vector");
+    const auto profile = profile_from_seed(470);
+    InMemoryContextIndex index;
+    MIRA_CHECK(index.upsert_asset(conversation_asset(id, session, "user: alpha beta", 1)));
+    MIRA_CHECK(index.attach_embedding(id, ContextEmbedding{{0.0F, 0.0F}, profile}));
+    ContextQuery query;
+    query.session = session;
+    query.query_embedding = ContextEmbedding{{1.0F, 0.0F}, profile};
+    auto result = index.retrieve(query, RetrievalBudget{});
+    MIRA_CHECK(result && result.value().candidates.empty());
+    MIRA_CHECK(result.value().quality.vector_degraded && !result.value().quality.vector_leg_ran);
+    query.text = "alpha";
+    auto fallback = index.retrieve(query, RetrievalBudget{});
+    MIRA_CHECK(fallback && fallback.value().candidates.size() == 1);
+    MIRA_CHECK(fallback.value().quality.fts_leg_ran && fallback.value().quality.vector_degraded);
+    MIRA_CHECK(index.attach_embedding(id, ContextEmbedding{{1.0F, 0.0F}, profile}));
+    query.text.clear();
+    query.query_embedding = ContextEmbedding{{0.0F, 0.0F}, profile};
+    auto invalid_query = index.retrieve(query, RetrievalBudget{});
+    MIRA_CHECK(invalid_query && invalid_query.value().candidates.empty());
+    MIRA_CHECK(invalid_query.value().quality.vector_degraded);
+    return 0;
+}
+
 int dimension_and_profile_mismatch_degrade_the_vector_leg() {
     const SessionId session = session_from_seed(4);
     InMemoryContextIndex index;
@@ -467,6 +493,18 @@ int forbidden_markers_never_enter_the_index() {
     MIRA_CHECK(rejected.error().domain_code ==
                static_cast<std::int32_t>(ContextDomainCode::ForbiddenContent));
     MIRA_CHECK(index.size() == 0);
+
+    ContextIndexPolicy custom;
+    custom.forbidden_markers = {"ORG_TOKEN="};
+    InMemoryContextIndex custom_index(custom);
+    for (const auto &text : {std::string{"org_token=fixture"}, std::string{"前缀OrG_ToKeN=fixture"},
+                             std::string{"prefix\0org_token=fixture", 24}}) {
+        const auto refused = custom_index.upsert_asset(conversation_asset(id, session, text, 1));
+        MIRA_CHECK(!refused);
+        MIRA_CHECK(refused.error().domain_code ==
+                   static_cast<std::int32_t>(ContextDomainCode::ForbiddenContent));
+        MIRA_CHECK(custom_index.size() == 0);
+    }
 
     // Injection-shaped user text stays indexable (it is the user's own words);
     // authority stays low at the Layer 0 conversion, never SystemPolicy.
@@ -758,6 +796,9 @@ int supervisor_routes_and_closes_retrieval() {
 } // namespace
 
 int main() {
+    if (zero_vectors_do_not_create_candidates() != 0) {
+        return 1;
+    }
     if (int failures = segmentation_is_deterministic_and_bounded(); failures != 0) {
         return failures;
     }

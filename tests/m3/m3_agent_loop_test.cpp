@@ -1,3 +1,4 @@
+#include "support/action_dispatch_support.hpp"
 #include "support/m3_support.hpp"
 
 #include "support/test.hpp"
@@ -7,6 +8,7 @@
 #include <mira/agent_loop.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_gateway.hpp>
+#include <mira/task_recovery.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -186,6 +188,80 @@ class AndroidLikeEnvironment final : public IEnvironment {
     std::vector<ObservationRequest> requests_;
 };
 
+class ReceiptOverride final : public IEnvironment {
+  public:
+    std::shared_ptr<IEnvironment> inner;
+    ExecutionStatus status = ExecutionStatus::Completed;
+    bool uncertain = false;
+    std::function<void()> after_execute;
+    EnvironmentCapabilities capabilities() const override { return inner->capabilities(); }
+    Result<Observation> observe(const ObservationRequest &request,
+                                const OperationContext &context) override {
+        return inner->observe(request, context);
+    }
+    Result<ExecutionReceipt> execute(const InputSequence &input,
+                                     const OperationContext &context) override {
+        auto result = inner->execute(input, context);
+        if (result) {
+            result.value().status = status;
+            result.value().side_effect_may_have_occurred = uncertain;
+        }
+        if (after_execute) {
+            after_execute();
+        }
+        return result;
+    }
+    Result<void> interrupt(const OperationContext &context) override {
+        return inner->interrupt(context);
+    }
+};
+
+int input_gate_unknown_and_late_results() {
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        LoopFixture fixture;
+        fixture.activate();
+        fixture.spec().profile_id = fixture.profile_->id;
+        for (int index = 0; index < 2; ++index) {
+            fixture.transport_->enqueue_json(
+                200,
+                R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.4,\"y\":0.6,\"reason\":\"first\"}"}]}],"usage":{"input_tokens":8,"output_tokens":3}})");
+        }
+        auto environment = std::make_shared<ReceiptOverride>();
+        environment->inner = fixture.environment_;
+        environment->status = scenario == 2 ? ExecutionStatus::Rejected : ExecutionStatus::Unknown;
+        environment->uncertain = scenario == 2;
+        bool cancelled = false;
+        if (scenario == 3) {
+            environment->status = ExecutionStatus::Completed;
+            environment->after_execute = [&] { cancelled = true; };
+        }
+        AgentLoop loop(environment, *fixture.gateway_, AgentLoopConfig{4, 1});
+        auto events = std::make_shared<MemoryEventStore>();
+        const auto runtime = RuntimeId::generate();
+        loop.set_event_store(events, runtime, fixture.spec().session_id);
+        if (scenario != 0) {
+            wire_scripted_action_dispatch(loop, fixture.spec().session_id, events, runtime);
+        }
+        NeverSatisfied verifier;
+        auto result = loop.run(fixture.spec(), loop_context([&] { return cancelled; }), verifier);
+        MIRA_CHECK(result);
+        MIRA_CHECK(result.value().outcome ==
+                   (scenario == 3 ? LoopOutcome::Cancelled : LoopOutcome::Failed));
+        MIRA_CHECK(fixture.environment_->executed_inputs().size() == (scenario == 0 ? 0U : 1U));
+        MIRA_CHECK(fixture.transport_->recorded().size() == 1);
+        if (scenario == 1 || scenario == 2) {
+            MemoryCheckpointStore checkpoints;
+            RecoveryPlanner planner(*events, checkpoints);
+            auto recovery =
+                planner.plan(fixture.spec().task_id, fixture.spec().session_id, Timestamp::now());
+            MIRA_CHECK(recovery && recovery.value().checkpoint->verification_pending);
+            MIRA_CHECK(recovery.value().pending_side_effects.size() == 1);
+            MIRA_CHECK(recovery.value().action == RecoveryAction::AlreadyTerminal);
+        }
+    }
+    return 0;
+}
+
 int successful_two_step_loop() {
     LoopFixture fixture;
     fixture.activate();
@@ -200,6 +276,7 @@ int successful_two_step_loop() {
         R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{8, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     InputCountVerifier verifier(*fixture.environment_, 1);
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     if (!result.has_value() || result.value().outcome != LoopOutcome::Completed) {
@@ -249,6 +326,7 @@ int verification_observation_declares_components() {
 
     const auto android_like = std::make_shared<AndroidLikeEnvironment>(fixture.environment_);
     AgentLoop loop(android_like, *fixture.gateway_, AgentLoopConfig{8, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     InputCountVerifier verifier(*fixture.environment_, 1);
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     if (!result.has_value() || result.value().outcome != LoopOutcome::Completed) {
@@ -288,6 +366,7 @@ int refused_and_failed_paths() {
             200,
             R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"no"}]}],"usage":{}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.has_value());
@@ -303,6 +382,7 @@ int refused_and_failed_paths() {
             200,
             R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"fail\",\"reason\":\"impossible\"}"}]}],"usage":{}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.value().outcome == LoopOutcome::Failed);
@@ -323,6 +403,7 @@ int refused_and_failed_paths() {
         config.max_steps = 2;
         config.max_recoveries_per_step = 1;
         AgentLoop loop(fixture.environment_, *fixture.gateway_, config);
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.value().outcome == LoopOutcome::Failed);
@@ -344,6 +425,7 @@ int malformed_decision_triggers_bounded_repair() {
         R"({"id":"r2","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"repaired\"}"}]}],"usage":{"input_tokens":5,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     InputCountVerifier verifier(*fixture.environment_, 0);
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     MIRA_CHECK(result.has_value());
@@ -377,6 +459,7 @@ int param_missing_decision_recovers_with_feedback() {
             R"({"id":"r3","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"goal achieved\"}"}]}],"usage":{"input_tokens":8,"output_tokens":2}})");
 
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{6, 1});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         InputCountVerifier verifier(*fixture.environment_, 1);
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.has_value());
@@ -408,6 +491,7 @@ int param_missing_decision_recovers_with_feedback() {
             200,
             R"({"id":"r1","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 0});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.has_value());
@@ -428,6 +512,7 @@ int param_missing_decision_recovers_with_feedback() {
                 R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\": \"swipe\", \"reason\": \"still no coordinates\"}"}]}],"usage":{"input_tokens":8,"output_tokens":4}})");
         }
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         ModelDoneVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.has_value());
@@ -491,6 +576,7 @@ int max_steps_and_verification_disagreement() {
         AgentLoopConfig config;
         config.max_steps = 3;
         AgentLoop loop(fixture.environment_, *fixture.gateway_, config);
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         NeverSatisfied verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.value().outcome == LoopOutcome::MaxSteps);
@@ -526,6 +612,7 @@ int max_steps_and_verification_disagreement() {
             int done_claims_ = 0;
         };
         AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{6, 1});
+        wire_scripted_action_dispatch(loop, fixture.spec().session_id);
         OnceVerifier verifier;
         auto result = loop.run(fixture.spec(), loop_context(), verifier);
         MIRA_CHECK(result.value().outcome == LoopOutcome::Completed);
@@ -565,6 +652,7 @@ int cancellation_stops_before_next_action() {
 
     CancelAfterFirstAction verifier(cancel);
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{6, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     auto context = loop_context([&cancel] { return cancel.load(); });
     auto result = loop.run(fixture.spec(), context, verifier);
     MIRA_CHECK(result.has_value());
@@ -582,6 +670,7 @@ int admission_rejection_prevents_actions() {
         200,
         R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"tap\",\"x\":0.5,\"y\":0.5,\"reason\":\"r\"}"}]}],"usage":{}})");
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     ModelDoneVerifier verifier;
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     MIRA_CHECK(result.has_value());
@@ -608,6 +697,7 @@ int rate_limit_recovery_inside_the_loop() {
         R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"after retry\"}"}]}],"usage":{"input_tokens":3,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 2});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     InputCountVerifier verifier(*fixture.environment_, 0);
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     MIRA_CHECK(result.has_value());
@@ -634,6 +724,7 @@ int retryable_deadline_recovery_inside_the_loop() {
         R"({"id":"r","status":"completed","model":"m","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"action\":\"done\",\"reason\":\"after retry\"}"}]}],"usage":{"input_tokens":3,"output_tokens":2}})");
 
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 2});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     InputCountVerifier verifier(*fixture.environment_, 0);
     auto result = loop.run(fixture.spec(), loop_context(), verifier);
     MIRA_CHECK(result.has_value());
@@ -646,6 +737,9 @@ int retryable_deadline_recovery_inside_the_loop() {
 } // namespace
 
 int main() {
+    if (const int status = input_gate_unknown_and_late_results(); status != 0) {
+        return status;
+    }
     if (const int status = successful_two_step_loop(); status != 0) {
         return status;
     }

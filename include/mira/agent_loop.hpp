@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mira/action_dispatcher.hpp>
+
 #include <mira/context_working_context.hpp>
 #include <mira/environment.hpp>
 #include <mira/event_store.hpp>
@@ -137,6 +139,10 @@ class AgentLoop final {
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
 
+    // Mandatory for input actions. Missing wiring fails closed before execute.
+    // Configure before run(); use the same session/event stream as the loop.
+    void set_action_dispatcher(std::shared_ptr<JournaledActionDispatcher> dispatcher);
+
     // M25 (DEC-045): attaches the optional read-only snapshot supply seam and
     // its rendering bounds. Without a supplier, request assembly stays
     // unchanged byte for byte. With one, each assembled request resolves the
@@ -186,6 +192,7 @@ class AgentLoop final {
     RuntimeId runtime_;
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
+    std::shared_ptr<JournaledActionDispatcher> action_dispatcher_;
     std::mutex pending_mutex_;
     std::deque<std::string> pending_user_messages_;
     WorkingContextSupplier working_context_supplier_;

@@ -42,6 +42,17 @@ Replay 侧 Provider（`model_replay.hpp`）共同保证：回放只返回录制�
 
 ## task_checkpoint.hpp
 
+当前文档 schema 为 2.0，兼容读取旧 1.x。VerifiedFact 的可选 valid_from/valid_until
+必须成对；新事实缓存消费者须检查 valid_at，Builder 在重建时按 now 清除过期事实。
+旧 reader 对 2.0 返回 UnsupportedVersion。字段布局扩展要求下游与库一起重编译；
+SQLite 容器 schema 不变，迁移与回退约束见
+[事实与 Checkpoint 迁移](../compatibility/verified-fact-v1-and-checkpoint-v2.md)。
+
+`checkpoint_trigger_name()` 与 `recovery_action_name()`（task_recovery.hpp）是宿主
+诊断契约，分别解释 checkpoint 触发与恢复下一步；无效枚举返回 `Unknown`。
+它们不发起任务、恢复或真实副作用，保留公开名称不依赖仓库内部是否打印日志。
+保留依据与编号兼容性见[公开契约审计](../compatibility/2026-11-public-contract-audit.md)。
+
 - `TaskCheckpoint`：确定性恢复投影——Goal、`CheckpointConstraint`、`VerifiedFact`、
   `CompletedStep`、`PendingObjective`、`UnresolvedIssue`、`UncertainSideEffect`（未决
   副作用 pinned，恢复后必须先 Observe/Verify）与 `through_event_sequence` 锚点。
@@ -53,6 +64,10 @@ Replay 侧 Provider（`model_replay.hpp`）共同保证：回放只返回录制�
 
 ## task_recovery.hpp
 
+`ActionPrepared` 的合法 pipe 只更新 checkpoint 身份/epoch 元数据，不设置
+`verification_pending`，也不误计为 malformed。journal 与 reducer 的 pipe 解析规则
+共享，尾部含 `|` 的不确定性说明完整保留（DEC-076）。
+
 崩溃恢复规划（M4-08）：
 
 - `RecoveryPlanner(events, checkpoints, policy).plan(task, session, now)` 返回
@@ -60,6 +75,9 @@ Replay 侧 Provider（`model_replay.hpp`）共同保证：回放只返回录制�
 - `RecoveryAction`：`ResumeObserving`（默认非终态恢复点）、`ResumeVerifying`（动作完成
   但验证未跑）、`AlreadyTerminal`（durable 日志已终结，绝不复活）、`NoState`。
 - 恢复语义：非终态任务只恢复到 Observing/Verifying；未决副作用不重发；终态幂等。
+- `RecoveryPolicy::max_events_scanned` 计入所有扫描的会话事件（含其他任务），必须为
+  正数。超限返回 `ResourceExhausted`；跨会话、非递增或无进展的页返回 `DataLoss`，
+  不把部分扫描当作完整恢复（[DEC-076](../decisions/DEC-076-journal-identity-and-bounded-recovery.md)）。
 
 ## state_store.hpp：SQLite 参考后端（`Mira::state_store`）
 
@@ -74,11 +92,15 @@ auto store = mira::SqliteCheckpointStore::open(exec, options);  // Result<unique
 ```
 
 - 单一 dedicated blocking-I/O worker（单 writer、有界准入）；初始化与迁移显式发生在
-  `open()`，失败绝不清库或改写文件。
+  `open()`，失败不清库；初始化/迁移内容与版本标记在同一事务中提交或回滚。
 - `close()` 从宿主（非 worker）线程调用，幂等；Executor 必须活得比 store 长。
 - `StoreDiagnostics` / `pending_requests()` / `set_worker_paused()` 提供有界队列
   可观测性与维护缝隙。
 - schema 迁移按 current/previous 策略；新版本文件可退回只读诊断模式打开。
+- 两个参考后端通过 storage 内部 `open_reference_store` 复用连接、schema 校验、
+  事务和诊断编排，DDL/迁移策略与错误域仍归各后端。版本必须是两个完整 uint16
+  十进制分量，畸形/溢出返回 DataLoss；需要迁移的旧库在只读模式明确返回
+  UnsupportedVersion，不尝试写入（[DEC-078](../decisions/DEC-078-shared-sqlite-store-initialization.md)）。
 
 内存侧对应后端 `SqliteMemoryStore` 见
 [Context 与 Memory 页](context-memory.md)。

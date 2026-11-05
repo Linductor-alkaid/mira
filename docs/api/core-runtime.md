@@ -44,6 +44,22 @@
   加上 `Recovering`、`Pausing/Paused`、`TakeoverSettling/SuspendedForTakeover`、
   `Cancelling` 与终态 `Completed/Failed/Cancelled`。终态自转换幂等，其余终态出边为空。
 
+`task_state_name(TaskState)` 与 `task_state_from_name(string_view)` 共用稳定名称表，
+供宿主诊断、Interaction 和 Checkpoint 恢复使用（DEC-079）。输出为静态生命周期的
+`string_view`；两函数同步、无分配且 `noexcept`，不启动任务、不依赖 Executor。
+解析严格区分大小写，不接受别名或首尾空白；未知名称返回 `nullopt`。非法枚举输出
+`Unknown`，该诊断字符串不能解析成合法状态。既有持久化名称与枚举值保持不变。
+
+```cpp
+#include <mira/core_contracts.hpp>
+
+int main() {
+    const auto state = mira::task_state_from_name("Verifying");
+    if (!state) return 1;  // 拒绝未知持久化名称
+    return mira::task_state_name(*state) == "Verifying" ? 0 : 1;
+}
+```
+
 ### 命令与操作生命周期
 
 - `CommandKind`：串行控制面命令（`OpenSession`、`SubmitTask`、`PauseTask`、
@@ -99,6 +115,37 @@ auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pendi
 - `request_shutdown()` 停止接受新命令；`finish_shutdown()` 返回 `ShutdownReport`，
   未决命令数量与 `clean` 标志必须被检查。
 
+生命周期细则（[DEC-080](../decisions/DEC-080-runtime-lifecycle-transition-boundary.md)）：
+`valid_runtime_transition` 允许 Failed→Stopping 清理资源，Stopping/Stopped 不得返回
+Running。初始化和停止准入串行化；关闭命令被拒绝后准入仍关闭，begin_operation
+也返回 InvalidState。即使 request_shutdown 返回容量错误，外部 owner 仍须执行
+finish_shutdown：它消费已登记 submission future 后至多补交一次关闭命令，成功时
+报告诊断含 `shutdown admission retry`。未初始化/初始化失败的实例不提交任务，
+不会借关闭触发 Executor 懒初始化。
+
+finish_shutdown 等待时不持有命令准入锁，最终关闭必须来自外部 owner。Runtime 自身
+控制回调内调用返回 clean=false，诊断说明 `pending commands not scanned`；该拒绝报告
+的 pending_commands 不表示最终未决数。环境 interrupt 错误/异常经 shutdown 命令
+outcome 暴露；最终报告为 clean=false、Failed，重复收尾返回原报告，不能自动重开实例。
+Adapter 仍须提供有界、幂等的 interrupt；超时不会强制杀死正在运行的平台调用。
+
+```cpp
+#include <mira/runtime.hpp>
+
+int main() {
+    mira::MiraRuntime runtime;
+    if (!runtime.initialize()) {
+        const auto cleanup = runtime.finish_shutdown();
+        return cleanup.clean ? 1 : 2;
+    }
+    const auto requested = runtime.request_shutdown();
+    // A rejected command still requires external finalization.
+    const auto report = runtime.finish_shutdown();
+    if (!report.clean || report.pending_commands != 0) return 2;
+    return requested ? 0 : 1;  // Preserve the initial admission failure for the host.
+}
+```
+
 ## runtime_baseline.hpp：RuntimeBaseline
 
 M0 交付的最小命令循环基线，用于在完整 Runtime 语义就绪前验证 Executor 集成与命令
@@ -114,8 +161,20 @@ M0 交付的最小命令循环基线，用于在完整 Runtime 语义就绪前�
 - 写入路径：`prepare()` -> `dispatch_started()` -> `receipt()`（或
   `execution_uncertain()`）；每一步都是显式事件，崩溃后可由 `recover()` 重建
   `ActionJournalState`。
+- 每次写入要求 `ProcessCrash` 或更强的确认。存储返回较弱或非法的 `achieved`
+  时返回 `DataLoss`，不推进本地 phase；append 错误原样返回。失败不意味着底层
+  没有写入，start 的恢复仍须保守处理。真实宿主必须注入耐久存储，内存替身不能
+  证明崩溃恢复（[DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md)）。
 - 与恢复契约联动：未决副作用（`dispatch_started` 后无 receipt）在恢复时保持 pinned，
   必须先 Observe/Verify，禁止盲目重发（RULE-05）。
+- [DEC-076](../decisions/DEC-076-journal-identity-and-bounded-recovery.md)：ActionId 在本地
+  绑定完整 intent，冲突及 owner runtime 不匹配返回 `InvalidArgument`；目标三字段
+  各 1–1024 字节，禁止分隔符及控制字符；结果尾部至多 4096 字节、允许 `|` 文本。
+  写入回执还必须匹配 event ID 与有效 sequence，存储异常转为固定摘要的 `Internal`。
+- 可选第三个构造参数 `ActionJournal::RecoveryPolicy`：`page_size=1024`、
+  `max_events_scanned=1'000'000`；所有会话事件均计入扫描预算，超限返回
+  `ResourceExhausted`，坏页/坏载荷/持久化身份冲突返回 `DataLoss`，不返回部分恢复。
+  `recover` 为只读状态查询，不重新授权派发，也不使跨进程重发 `prepare` 成为安全操作。
 
 ## 相关文档
 

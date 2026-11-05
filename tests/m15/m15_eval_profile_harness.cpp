@@ -1,3 +1,4 @@
+#include "support/action_dispatch_support.hpp"
 // M15 (MNT-202609-29, DEC-034): the minimal discrete-action + workflow eval
 // profile harness. Implements docs/design/discrete_workflow_eval_profile.md
 // v1.0: four comparison arms driven through public APIs only, the 17-case
@@ -613,7 +614,9 @@ struct AgentScript final {
     record.repeat = repeat;
     Recorder recorder(record);
     AgentLoop loop(fixture.environment_, *fixture.gateway_, script.config);
-    loop.set_event_store(fixture.events_, RuntimeId::generate(), fixture.session_id_);
+    const auto runtime = RuntimeId::generate();
+    loop.set_event_store(fixture.events_, runtime, fixture.session_id_);
+    wire_scripted_action_dispatch(loop, fixture.session_id_, fixture.events_, runtime);
     if (script.user_message.has_value()) {
         const auto queued = loop.enqueue_user_message(*script.user_message);
         if (!queued.has_value()) {
@@ -717,7 +720,9 @@ struct AgentScript final {
         provider->release();
     });
     AgentLoop loop(fixture.environment_, *fixture.gateway_, AgentLoopConfig{4, 1});
-    loop.set_event_store(fixture.events_, RuntimeId::generate(), fixture.session_id_);
+    const auto runtime = RuntimeId::generate();
+    loop.set_event_store(fixture.events_, runtime, fixture.session_id_);
+    wire_scripted_action_dispatch(loop, fixture.session_id_, fixture.events_, runtime);
     AgentLoopSpec spec;
     spec.task_id = TaskId::generate();
     spec.session_id = fixture.session_id_;

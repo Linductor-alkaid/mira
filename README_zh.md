@@ -31,6 +31,10 @@ Observe -> Reason -> Plan -> Act -> Verify
 
 ## 架构
 
+`AgentLoop` 输入动作必须装配宿主提供的 `JournaledActionDispatcher`、耐久事件存储与
+动作租约策略；缺少装配时在派发前失败。迁移方式见[模型层 API](docs/api/model-agent-loop.md)，
+可运行的离线样板见[派发宿主](examples/journaled_action_consumer.cpp)。
+
 ```mermaid
 flowchart TB
     app["宿主应用"]
@@ -206,3 +210,11 @@ SBOM 维护在
 Mira 以 [GNU Affero General Public License v3.0](LICENSE) 发布。
 
 `third_party/` 下的第三方依赖保留其自身许可证（见上表），不受本仓库许可证约束。
+
+显式事实宿主迁移：VerifiedFactPublisher 要求原生证据与受信宿主 lease；Checkpoint
+文档升级为含事实有效区间的 2.0。启用前升级读取器并重编译 C++ 消费者，详见
+[迁移说明](docs/compatibility/verified-fact-v1-and-checkpoint-v2.md) 与
+[离线宿主示例](examples/verified_fact_host_consumer.cpp)。
+
+[离线价格宿主](docs/api/model-price-host.md) 演示 fixture 价格注入、未知费用策略与
+取消后的预算结算；人工数字不代表供应商报价。

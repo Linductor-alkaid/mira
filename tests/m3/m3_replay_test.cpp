@@ -1,3 +1,4 @@
+#include "support/action_dispatch_support.hpp"
 #include "support/m3_support.hpp"
 
 #include "support/test.hpp"
@@ -107,6 +108,7 @@ int offline_replay_runs_without_network_or_input() {
     AgentLoop loop(
         std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment), [](auto *) {}),
         *fixture.gateway_, AgentLoopConfig{4, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     ReplayVerifier verifier;
     OperationContext context;
     context.session = SessionId::generate();
@@ -146,6 +148,7 @@ int replay_is_exhaustion_bounded() {
     AgentLoop loop(
         std::shared_ptr<IEnvironment>(static_cast<IEnvironment *>(&environment), [](auto *) {}),
         *fixture.gateway_, AgentLoopConfig{4, 1});
+    wire_scripted_action_dispatch(loop, fixture.spec().session_id);
     NeverSatisfiedLike verifier;
     OperationContext context;
     context.started_at = Timestamp::now();

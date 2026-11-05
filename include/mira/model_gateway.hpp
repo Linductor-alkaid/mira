@@ -43,6 +43,8 @@ struct ModelCallOutcome final {
     BudgetSettlement settlement;
     Hash wire_request_digest{};
     SseStreamStats sse_stats;
+    // Total provider infer() calls across all candidate profiles in this
+    // gateway invocation. Skipped open circuits do not count.
     std::uint32_t attempts = 1;
     // True when the response was rejected by admission instead of settling.
     bool admitted = true;

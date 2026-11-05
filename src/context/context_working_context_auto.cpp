@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_working_context_auto.hpp>
 
 #include <algorithm>
@@ -11,13 +12,7 @@ namespace {
 
 constexpr const char *kDomain = "mira.context_working_context_auto";
 
-[[nodiscard]] Error auto_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = kDomain;
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory auto_error{kDomain};
 
 [[nodiscard]] bool same_chain(const WorkingContextIdentity &identity, const TaskId &task,
                               std::uint64_t task_epoch, std::uint64_t environment_epoch) {
