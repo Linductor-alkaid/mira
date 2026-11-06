@@ -941,7 +941,7 @@ Result<HttpResponseInfo> SocketHttpTransport::finish_exchange(
         request_text += header.first + ": " + header.second + "\r\n";
     }
     request_text += "Content-Length: " + std::to_string(job.request.body.size()) + "\r\n";
-    request_text += "Connection: close\r\n";
+    request_text += job.request.keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
     request_text += "Accept: application/json, text/event-stream\r\n";
     // Credentials follow redirects only within the original origin.
     if (authorization.has_value() && !cross_origin) {

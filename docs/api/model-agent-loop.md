@@ -94,6 +94,33 @@ Provider 在上传前验证配置，且在传输前检查最终请求（含扩�
   `mira.model.tls` 域、PermissionDenied、retryable=false。后端各自的证书、主机名、
   SNI 与 BIO 语义保持，局部复用边界见
   [DEC-082](../decisions/DEC-082-local-event-tls-reuse-and-public-retention.md)。
+`HttpRequest::keep_alive` 默认 false，SocketHttpTransport 发送唯一的
+`Connection: close`；设置 true 时发送唯一的 `Connection: keep-alive`。该字段不会
+省略 Connection，也不是 TCP SO_KEEPALIVE 或连接复用开关。普通 headers 中的
+Connection 仍是保留头，不分大小写均拒绝。模型 `ProviderInferOptions::stream=true`
+自动使用 keep-alive（三方言共用）；普通非流式模型请求保持 close。
+
+普通 SSE/事件流宿主使用以下配置，并按业务期限设置 `TransportLimits` 和可取消的
+`OperationContext`，通过 `HttpChunkCallback` 增量输入 `SseFramingParser`：
+
+```cpp
+mira::HttpRequest request;
+request.method = "GET";
+request.url = "http://127.0.0.1:3000/_events";
+request.headers.emplace_back("Accept", "text/event-stream");
+request.keep_alive = true;
+```
+
+本地/私网端点仍需显式配置 `TransportLimits::allow_private_endpoints`/allowlist；字段
+不改变 endpoint policy。每个 Exchange 在完整正文、错误、取消、超时或 shutdown 后
+关闭自己的 socket，后续请求新建连接；调用者仍需处理结构化失败和字节上限。重定向、
+正向 HTTP 代理及 TLS 隧道内最终请求保留策略；CONNECT 建隧道策略不变。真实长连接
+的 owner、重连和事件游标由宿主负责，异步任务及 I/O 生命周期需继续受 Executor 管理。
+关闭时先停止生产者、取消活动 context，再调用 transport shutdown 回收 worker，最后
+由非 worker 关闭 Executor；transport shutdown 不是额外的请求取消源。公开结构体
+增加成员，二进制消费者需重编译。依据与验证边界见
+[DEC-091](../decisions/DEC-091-http-stream-connection-policy.md)。
+
 - `ISecretResolver`：凭据解析边界。
 - `model_replay.hpp` 的 `ReplayModelProvider` 回放录制的规范响应，供离线 Replay。
 

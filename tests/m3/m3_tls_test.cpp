@@ -224,6 +224,7 @@ int happy_path_over_tls() {
     auto server_task = ex.submit_auto([&] { (void)server.serve_one(certificate, seen_request); });
 
     HttpRequest request;
+    request.keep_alive = true;
     request.method = "POST";
     request.url = "https://127.0.0.1:" + std::to_string(server.port()) + "/v1/responses";
     request.body = R"({"model":"m"})";
@@ -246,6 +247,8 @@ int happy_path_over_tls() {
     MIRA_CHECK(trace.write_completed);
     MIRA_CHECK(trace.headers_received);
     MIRA_CHECK(seen_request.find("POST /v1/responses") == 0);
+    MIRA_CHECK(seen_request.find("\r\nConnection: keep-alive\r\n") != std::string::npos);
+    MIRA_CHECK(seen_request.find("\r\nConnection: close\r\n") == std::string::npos);
     std::filesystem::remove(ca_path);
     transport.shutdown();
     (void)ex.shutdown(true);
@@ -340,6 +343,7 @@ int https_connect_proxy_then_verified_tls() {
     auto server_task =
         ex.submit_auto([&] { (void)proxy.serve_one(certificate, seen_request, &seen_connect); });
     HttpRequest request;
+    request.keep_alive = true;
     request.method = "POST";
     request.url = "https://127.0.0.1:" + std::to_string(proxy.port()) + "/v1/responses";
     request.body = R"({"model":"m"})";
@@ -365,6 +369,8 @@ int https_connect_proxy_then_verified_tls() {
     MIRA_CHECK(seen_connect.find("CONNECT 127.0.0.1:") == 0);
     MIRA_CHECK(seen_connect.find("Proxy-Authorization: Basic dGVzdDp0ZXN0") != std::string::npos);
     MIRA_CHECK(seen_request.find("POST /v1/responses") == 0);
+    MIRA_CHECK(seen_request.find("\r\nConnection: keep-alive\r\n") != std::string::npos);
+    MIRA_CHECK(seen_request.find("\r\nConnection: close\r\n") == std::string::npos);
     MIRA_CHECK(seen_request.find("Proxy-Authorization") == std::string::npos);
     std::filesystem::remove(ca_path);
     transport.shutdown();

@@ -31,6 +31,11 @@ struct HttpRequest final {
     std::string body;
     std::optional<SecretRef> authorization;
     HttpCredentialScheme credential_scheme = HttpCredentialScheme::Bearer;
+    // Selects the single transport-owned Connection header: keep-alive when
+    // true, close when false. Use true for header-sensitive SSE endpoints.
+    // Does not enable socket reuse or TCP keepalive; each exchange still
+    // closes its socket on completion, failure, cancellation or shutdown.
+    bool keep_alive = false;
 };
 
 // Staged deadlines plus hard caps for one exchange. The final deadline is the

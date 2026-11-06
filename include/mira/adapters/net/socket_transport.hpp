@@ -29,7 +29,9 @@ struct SocketTransportConfig final {
 // IHttpTransport over blocking BSD/Winsock sockets, executed on Executor
 // blocking I/O workers. Cancellation is cooperative: socket waits poll with
 // short timeouts and observe the operation context, so cancel and deadline
-// latency is bounded without cross-thread socket closes.
+// latency is bounded without cross-thread socket closes. HttpRequest::keep_alive
+// selects the wire Connection policy only: no pooling or cross-exchange reuse;
+// each socket is released when its request/response exchange ends.
 class SocketHttpTransport final : public IHttpTransport {
   public:
     SocketHttpTransport(kairo::Executor &executor, std::shared_ptr<ISecretResolver> secrets,

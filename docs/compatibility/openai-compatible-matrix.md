@@ -1,8 +1,8 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.7
-> 更新日期：2026-11-06
+> 版本：1.8
+> 更新日期：2026-11-07
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
 
@@ -45,6 +45,13 @@ profile/wire digest 与 mock provider 发送由 `mira_m3_extra_body_test` 验证
 不提升任何端点能力等级；Qwen/vLLM/SGLang 的模板开关效果及延迟尚未在本轮验证。
 Responses/Messages 的非空扩展会被拒绝。空扩展保留已有 manifest digest 和请求格式；
 公开 `ModelProfile` 布局增加成员，C++ 二进制消费者需重编译。
+
+请求级连接策略见 [DEC-091](../decisions/DEC-091-http-stream-connection-policy.md)：
+`HttpRequest::keep_alive` 默认 close，模型 stream 自动 keep-alive；不提供复用。
+真实 socket 策略敏感 fixture、取消/超时/shutdown/截断/大小上限/代理/重定向和三方言
+provider 接线由 `mira_m3_connection_policy_test` 验证，TLS/CONNECT 由既有 TLS 两后端
+用例验证。范围与实际结果见[维护记录](../plans/maintenance-2026-11-http-stream-connection-policy.md)。
+宿主报告的 NapCat/Express 互操作尚未在仓库复验，此处不提升其证据等级。
 
 ## 4. Provider 证据总表
 

@@ -16,6 +16,7 @@
 namespace mira {
 
 struct ProviderInferOptions final {
+    // Model SSE uses HttpRequest::keep_alive=true; ordinary requests use close.
     bool stream = false;
     // Writes the raw terminal payload to a protected artifact and attaches
     // the reference to the response (design LLM API §13.2/§15).
