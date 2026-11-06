@@ -45,6 +45,12 @@ struct EventPayload final {
     EventClass classification = EventClass::State;
 };
 
+enum class EventTimestampOrigin : std::uint8_t {
+    AppendProcess,     // Both clocks captured by append in this process.
+    PersistedWall,     // Exact stored wall; monotonic is unavailable after recovery.
+    UnavailableLegacy, // Old file record never stored time; timestamp is default-valued.
+};
+
 struct EventEnvelope final {
     EventId event_id;
     RuntimeId runtime_id;
@@ -57,6 +63,7 @@ struct EventEnvelope final {
     SchemaVersion schema_version;
     EventPayload payload;
     Sha256Digest integrity;
+    EventTimestampOrigin timestamp_origin = EventTimestampOrigin::AppendProcess;
 };
 
 struct AppendRequest final {
@@ -127,6 +134,8 @@ class MemoryEventStore final : public IEventStore {
     [[nodiscard]] std::optional<EventEnvelope> find(EventId) const;
 
   private:
+    friend class FileEventStore;
+    Result<AppendReceipt> append_stamped(const AppendRequest &, Timestamp, EventTimestampOrigin);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

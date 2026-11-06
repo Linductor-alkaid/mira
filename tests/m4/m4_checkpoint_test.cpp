@@ -43,6 +43,36 @@ using namespace mira::testing;
     return data;
 }
 
+int canonical_state_names_reach_checkpoint_recovery() {
+    const auto runtime = RuntimeId::generate();
+    const auto session = SessionId::generate();
+    const auto task = TaskId::generate();
+    CheckpointBuilder builder;
+    for (unsigned value = 0; value <= static_cast<unsigned>(TaskState::Cancelled); ++value) {
+        const auto state = static_cast<TaskState>(value);
+        TaskEventLog log(runtime, session, task);
+        log.add("TaskStateChanged", JsonValue::Object{{"to", std::string{task_state_name(state)}}});
+        const auto built = builder.build(std::nullopt, log.envelopes(), Timestamp::now());
+        MIRA_CHECK(built.stats.malformed == 0);
+        MIRA_CHECK(built.stats.applied == 1);
+        MIRA_CHECK(built.checkpoint.terminal_state.has_value() == is_terminal(state));
+        if (is_terminal(state)) {
+            MIRA_CHECK(built.checkpoint.terminal_state == state);
+            auto restored = checkpoint_from_json(checkpoint_to_json(built.checkpoint));
+            MIRA_CHECK(restored.has_value());
+            MIRA_CHECK(restored.value().terminal_state == state);
+        }
+    }
+    for (auto invalid : {"Unknown", "completed", "Completed "}) {
+        TaskEventLog log(runtime, session, task);
+        log.add("TaskStateChanged", JsonValue::Object{{"to", invalid}});
+        const auto built = builder.build(std::nullopt, log.envelopes(), Timestamp::now());
+        MIRA_CHECK(built.stats.malformed == 1);
+        MIRA_CHECK(!built.checkpoint.terminal_state.has_value());
+    }
+    return 0;
+}
+
 int reducer_folds_the_full_vocabulary() {
     const auto runtime = RuntimeId::generate();
     const auto session = SessionId::generate();
@@ -300,6 +330,40 @@ int coordinator_rebuild_validates_and_repairs_projections() {
     return 0;
 }
 
+int loop_envelopes_preserve_identity_and_epoch() {
+    for (int scenario = 0; scenario < 5; ++scenario) {
+        const auto runtime = RuntimeId::generate();
+        const auto session = SessionId::generate();
+        const auto task = TaskId::generate();
+        auto log = seeded_log(runtime, session, task);
+        log.add_pipe("ActionDispatchStarted", pipe_payload(task, ActionId::generate(), 2, 6));
+        const auto frame_task = scenario == 1 ? TaskId::generate() : task;
+        const auto epoch = scenario == 2 ? 1 : (scenario == 3 ? -1 : 2);
+        JsonValue detail = scenario == 4 ? JsonValue("invalid")
+                                         : JsonValue(JsonValue::Object{{"verdict", "satisfied"}});
+        log.add("VerificationResult", JsonValue::Object{{"task_id", frame_task.to_string()},
+                                                        {"task_epoch", epoch},
+                                                        {"detail", detail}});
+        log.add("LoopSettled",
+                JsonValue::Object{{"task_id", frame_task.to_string()},
+                                  {"task_epoch", epoch},
+                                  {"detail", scenario == 4 ? JsonValue("invalid")
+                                                           : JsonValue(JsonValue::Object{
+                                                                 {"outcome", "Completed"}})}});
+        CheckpointBuilder builder;
+        auto built = builder.build(std::nullopt, log.envelopes(), Timestamp::now());
+        MIRA_CHECK(built.checkpoint.verification_pending == (scenario != 0));
+        MIRA_CHECK(built.checkpoint.terminal_state.has_value() == (scenario == 0));
+        MIRA_CHECK(built.checkpoint.task_epoch == 2);
+        if (scenario == 2) {
+            MIRA_CHECK(built.stats.stale_skipped == 2);
+        } else if (scenario != 0) {
+            MIRA_CHECK(built.stats.malformed == 2);
+        }
+    }
+    return 0;
+}
+
 int terminal_tasks_are_not_resurrected() {
     MemoryEventStore events;
     MemoryCheckpointStore store;
@@ -328,6 +392,10 @@ int terminal_tasks_are_not_resurrected() {
 } // namespace
 
 int main() {
+    MIRA_CHECK(canonical_state_names_reach_checkpoint_recovery() == 0);
+    if (loop_envelopes_preserve_identity_and_epoch() != 0) {
+        return 1;
+    }
     if (reducer_folds_the_full_vocabulary() != 0) {
         return 1;
     }

@@ -235,7 +235,6 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
 
         for (std::uint32_t attempt = 1;; ++attempt) {
             outcome.attempts = ++total_attempts;
-            outcome.attempts = attempt;
             ModelRequest attempt_request = request;
             attempt_request.request_id = ModelRequestId::generate();
 
@@ -277,7 +276,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                 }
                 emit(request, "ModelResponseReceived",
                      JsonValue::Object{
-                         {"attempts", static_cast<std::int64_t>(attempt)},
+                         {"attempts", static_cast<std::int64_t>(outcome.attempts)},
                          {"admitted", outcome.admitted},
                          {"parse_outcome", static_cast<std::int64_t>(
                                                static_cast<std::uint8_t>(outcome.parse.outcome))},
@@ -298,7 +297,8 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                                                                  RequestStage::PreWriteFailure
                                                              ? "pre-write"
                                                              : "post-write")},
-                                   {"attempt", static_cast<std::int64_t>(attempt)}},
+                                   {"attempt", static_cast<std::int64_t>(attempt)},
+                                   {"total_attempts", static_cast<std::int64_t>(total_attempts)}},
                  EventClass::Diagnostic);
 
             RetryBudget budget = config_.retry_budget;

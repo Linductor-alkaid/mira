@@ -1,4 +1,5 @@
 #include <mira/context_retrieval.hpp>
+#include <mira/embedding_math.hpp>
 
 #include "context_support.hpp"
 
@@ -26,24 +27,6 @@ using context_support::tokenize;
 constexpr std::string_view kConversationSegmentName = "ConversationSegment";
 constexpr std::string_view kWorkflowEpisodeName = "WorkflowEpisode";
 constexpr std::string_view kRecoveryLessonName = "RecoveryLesson";
-
-[[nodiscard]] double cosine_similarity(const std::vector<float> &lhs,
-                                       const std::vector<float> &rhs) {
-    double dot = 0.0;
-    double lhs_norm = 0.0;
-    double rhs_norm = 0.0;
-    for (std::size_t index = 0; index < lhs.size(); ++index) {
-        const double left = static_cast<double>(lhs[index]);
-        const double right = static_cast<double>(rhs[index]);
-        dot += left * right;
-        lhs_norm += left * left;
-        rhs_norm += right * right;
-    }
-    if (lhs_norm <= 0.0 || rhs_norm <= 0.0) {
-        return 0.0;
-    }
-    return dot / (std::sqrt(lhs_norm) * std::sqrt(rhs_norm));
-}
 
 [[nodiscard]] bool embedding_usable(const ContextEmbedding &embedding,
                                     const ContextIndexPolicy &policy) {
@@ -458,9 +441,12 @@ class InMemoryContextIndex::Impl final {
                     ++vector_errors;
                     continue;
                 }
-                const double similarity = cosine_similarity(entry.embedding->values, query_vector);
-                if (similarity >= 0.0) {
-                    vector_scores[entry.asset.id] = similarity;
+                const auto similarity =
+                    embedding_cosine_similarity(entry.embedding->values, query_vector);
+                if (!similarity) {
+                    ++vector_errors;
+                } else if (*similarity >= 0.0) {
+                    vector_scores[entry.asset.id] = *similarity;
                 }
             }
             if (!vector_scores.empty() || vector_errors == 0) {

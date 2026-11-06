@@ -209,7 +209,7 @@ int checkpoint_json_round_trip_and_degrade() {
     MIRA_CHECK(narrated.projection_digest() == checkpoint.projection_digest());
 
     TaskCheckpoint bad_schema = checkpoint;
-    bad_schema.schema_version = SchemaVersion{2, 0};
+    bad_schema.schema_version = SchemaVersion{3, 0};
     MIRA_CHECK(!bad_schema.validate().has_value());
     MIRA_CHECK(!checkpoint_from_json(checkpoint_to_json(bad_schema)).has_value());
 

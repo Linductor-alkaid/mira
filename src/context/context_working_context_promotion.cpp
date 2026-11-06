@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_working_context_promotion.hpp>
 
 #include <mira/context_retrieval.hpp>
@@ -9,13 +10,7 @@
 namespace mira {
 namespace {
 
-[[nodiscard]] Error promotion_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.context.working_context_promotion";
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory promotion_error{"mira.context.working_context_promotion"};
 
 struct PromotableSection final {
     std::string_view tag; // seed-space section tag

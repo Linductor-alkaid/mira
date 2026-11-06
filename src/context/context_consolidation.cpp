@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_consolidation.hpp>
 
 #include "context_support.hpp"
@@ -22,13 +23,7 @@ using context_support::RawStatement;
 // Error factory
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] Error consolidation_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.context.consolidation";
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory consolidation_error{"mira.context.consolidation"};
 
 // ---------------------------------------------------------------------------
 // Statement JSON (schema "mira.context.checkpoint.v1")

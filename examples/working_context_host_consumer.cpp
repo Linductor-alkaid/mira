@@ -1,3 +1,4 @@
+#include "journaled_simulator_host.hpp"
 // Working Context host integration example (M25, DEC-045): the reference
 // host for the AgentLoop snapshot supply seam. Runnable offline, no model —
 // the model side is a scripted provider. The Loop itself stays context-blind
@@ -311,7 +312,8 @@ int run(const std::filesystem::path &root) {
 
     auto environment = std::make_shared<SimulatorEnvironment>(SimulatorSetup::single_display());
     InMemoryWorkingContextStore store;
-    MemoryEventStore events;
+    FileEventStore events(root / "events");
+    auto input_resource = std::make_shared<std::mutex>();
     const auto runtime_id = RuntimeId::generate();
 
     SqliteMemoryStoreOptions memory_options;
@@ -384,6 +386,9 @@ int run(const std::filesystem::path &root) {
     spec.profile_id = profile->id;
     spec.goal = "finish the quarterly report";
     AgentLoop loop(environment, gateway);
+    loop.set_action_dispatcher(mira::examples::simulator_dispatcher(
+        runtime_id, session_id, task_id, task_epoch, environment,
+        std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events), input_resource));
     loop.set_event_store(std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
                          runtime_id, session_id);
     // The seam: one read-only callback over the committed projection. Any
@@ -513,6 +518,10 @@ int run(const std::filesystem::path &root) {
                         child_spec.profile_id = child_profile->id;
                         child_spec.goal = "gather the login path facts";
                         AgentLoop child_loop(environment, child_gateway);
+                        child_loop.set_action_dispatcher(mira::examples::simulator_dispatcher(
+                            runtime_id, child_session_id, child_task_id, child_epoch, environment,
+                            std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
+                            input_resource));
                         child_loop.set_event_store(
                             std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
                             runtime_id, child_session_id);
@@ -664,7 +673,7 @@ int run(const std::filesystem::path &root) {
             break;
         }
         for (const auto &envelope : page.value().events) {
-            saw_action = saw_action || envelope.payload.type == "ActionDispatched";
+            saw_action = saw_action || envelope.payload.type == "ActionDispatchStarted";
             saw_verification = saw_verification || envelope.payload.type == "VerificationResult";
             saw_settled = saw_settled || envelope.payload.type == "LoopSettled";
         }

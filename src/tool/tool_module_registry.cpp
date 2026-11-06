@@ -1,3 +1,4 @@
+#include "tool_module_error.hpp"
 #include <mira/tool_module_registry.hpp>
 
 #include <kairo/executor.hpp>
@@ -13,13 +14,7 @@ namespace mira {
 namespace {
 
 // Shared error domain for the registry, trust and negotiation layers.
-Error make_module_error(ErrorCode code, std::string safe_message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.tool_module";
-    error.safe_message = std::move(safe_message);
-    return error;
-}
+using tool_module_support::make_module_error;
 
 // Diagnostic reasons travel into events and records; keep them bounded so a
 // hostile or sloppy caller cannot balloon event payloads (RULE-08). Reasons

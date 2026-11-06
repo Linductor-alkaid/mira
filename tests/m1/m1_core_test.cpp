@@ -181,7 +181,7 @@ int main() {
     MIRA_CHECK(!mira::validate_schema_version({3, 0}));
     MIRA_CHECK(!mira::parse_event_class(99));
 
-    mira::MemoryEventStore action_events;
+    mira::FileEventStore action_events(root / "action-journal");
     mira::ActionJournal journal(runtime_id, action_events);
     const mira::ActionIntent intent{mira::ActionId::generate(),     runtime_id, session_id,
                                     mira::TaskId::generate(),       2,          5,
@@ -250,5 +250,6 @@ int main() {
     MIRA_CHECK(replay_execute.error().code == mira::ErrorCode::ExecutionUncertain);
     MIRA_CHECK(replay.interrupt(mira::make_control_context()).has_value());
     MIRA_CHECK(replay.interrupted());
+    std::filesystem::remove_all(root, ignored);
     return 0;
 }

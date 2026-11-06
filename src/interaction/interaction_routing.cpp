@@ -15,43 +15,6 @@ namespace mira::interaction_support {
     return std::string(text.substr(0, limit));
 }
 
-// The task state names of the frozen task state machine.
-[[nodiscard]] std::string_view task_state_name(TaskState state) {
-    switch (state) {
-    case TaskState::Idle:
-        return "Idle";
-    case TaskState::Observing:
-        return "Observing";
-    case TaskState::Reasoning:
-        return "Reasoning";
-    case TaskState::Planning:
-        return "Planning";
-    case TaskState::Acting:
-        return "Acting";
-    case TaskState::Verifying:
-        return "Verifying";
-    case TaskState::Recovering:
-        return "Recovering";
-    case TaskState::Pausing:
-        return "Pausing";
-    case TaskState::Paused:
-        return "Paused";
-    case TaskState::TakeoverSettling:
-        return "TakeoverSettling";
-    case TaskState::SuspendedForTakeover:
-        return "SuspendedForTakeover";
-    case TaskState::Cancelling:
-        return "Cancelling";
-    case TaskState::Completed:
-        return "Completed";
-    case TaskState::Failed:
-        return "Failed";
-    case TaskState::Cancelled:
-        return "Cancelled";
-    }
-    return "Idle";
-}
-
 // The fail-closed capability check of the coordinator (DEC-068 R9). A missing
 // capability, an expired grant or a mismatched identity version rejects the
 // input; the check never defaults to allow.

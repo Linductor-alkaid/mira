@@ -41,9 +41,10 @@ struct ShutdownReport final {
 // Mirror of the Executor's cumulative scheduling counters (kairo 0.7.0
 // `get_scheduling_metrics()`): routing decisions by status/reason, execution
 // deadline misses and scheduler feedback counts. Counters are monotonic from
-// Executor construction; the read is lock-free and safe before initialize()
-// and after shutdown (zeros when nothing was routed). Surfaces queue
-// rejections that must not stay silent (project completion criteria).
+// Executor construction; safe before initialize() and after shutdown. Fields
+// are individually sampled, not a transactional snapshot or queue-depth gauge.
+// Serial command admission and callback failures are not routing decisions:
+// consume command results/ShutdownReport even when these counters are zero.
 struct SchedulingMetricsSnapshot final {
     std::uint64_t accepted = 0;
     std::uint64_t accepted_degraded = 0;
@@ -121,6 +122,8 @@ class MiraRuntime final {
     Result<CommandHandle> request_human_takeover(SessionId session_id);
     Result<CommandHandle> release_human_takeover(SessionId session_id);
     Result<CommandHandle> close_session(SessionId session_id);
+    // Closes business admission even if the shutdown command is rejected.
+    // The external owner must still call finish_shutdown() and inspect its report.
     Result<CommandHandle> request_shutdown();
     Result<OperationKey> begin_operation(TaskId task_id, StepId step_id);
     Result<CommandHandle> admit_operation_completion(const OperationKey &key);
@@ -128,6 +131,10 @@ class MiraRuntime final {
     [[nodiscard]] Result<SessionSnapshot> session_snapshot(SessionId session_id) const;
     [[nodiscard]] RuntimeState state() const noexcept;
     [[nodiscard]] SchedulingMetricsSnapshot scheduling_metrics() const;
+    // External owner only. Consumes registered submission futures, performs at
+    // most one shutdown admission retry, then closes the context and Executor.
+    // Failed environment release yields clean=false/Failed; repeated completed
+    // finalization returns the same report. Own control callbacks are rejected.
     ShutdownReport finish_shutdown();
 
   private:

@@ -1,3 +1,4 @@
+#include "support/action_dispatch_support.hpp"
 // Single-system Working Context host integration (M25 / DEC-045, gate HI-G5):
 // one MiraRuntime session hosts an AgentLoop wired to the Working Context
 // snapshot supply seam, in the agent_harness_test.cpp shape (runtime session
@@ -187,6 +188,9 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
     spec.profile_id = profile->id;
     spec.goal = "finish the quarterly report";
     AgentLoop loop(environment, gateway);
+    wire_scripted_action_dispatch(
+        loop, session_id, std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
+        runtime_id);
     loop.set_event_store(std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
                          runtime_id, session_id);
     loop.set_working_context_supplier(
@@ -291,6 +295,9 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
             child_spec.profile_id = child_profile->id;
             child_spec.goal = "gather the login path facts";
             AgentLoop child_loop(environment, child_gateway);
+            wire_scripted_action_dispatch(
+                child_loop, child_session_id,
+                std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events), runtime_id);
             child_loop.set_event_store(
                 std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events), runtime_id,
                 child_session_id);
@@ -388,7 +395,7 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
     bool saw_verification = false;
     bool saw_settled = false;
     for (const auto &type : types) {
-        saw_action = saw_action || type == "ActionDispatched";
+        saw_action = saw_action || type == "ActionDispatchStarted";
         saw_verification = saw_verification || type == "VerificationResult";
         saw_settled = saw_settled || type == "LoopSettled";
     }
@@ -459,6 +466,9 @@ int seam_degradation_visible_in_closed_loop(MiraRuntime &runtime,
     spec.profile_id = profile->id;
     spec.goal = "send the daily report";
     AgentLoop loop(environment, gateway);
+    wire_scripted_action_dispatch(
+        loop, session_id, std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
+        runtime_id);
     loop.set_event_store(std::shared_ptr<IEventStore>(std::shared_ptr<IEventStore>(), &events),
                          runtime_id, session_id);
     loop.set_working_context_supplier(supplier_harness.supplier());

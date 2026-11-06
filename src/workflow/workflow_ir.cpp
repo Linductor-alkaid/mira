@@ -1,3 +1,4 @@
+#include "workflow_decode.hpp"
 #include <mira/workflow_ir.hpp>
 
 #include <algorithm>
@@ -55,39 +56,15 @@ const WorkflowLimits &clamp_limits(const WorkflowLimits &limits) {
 
 // Exact key-set check: every present key must be declared and (unless
 // optional) required keys must exist. Unknown fields fail closed (DEC-019).
+using workflow_detail::bounded_string;
+
 [[nodiscard]] Result<void> check_keys(const JsonValue &object,
                                       std::span<const std::string_view> required,
                                       std::span<const std::string_view> optional,
                                       std::string_view where) {
-    if (!object.is_object()) {
-        return ir_error(ErrorCode::InvalidArgument, std::string{where} + " must be an object");
-    }
-    for (const auto &member : *object.as_object()) {
-        const bool known = std::any_of(required.begin(), required.end(),
-                                       [&](std::string_view key) { return key == member.first; }) ||
-                           std::any_of(optional.begin(), optional.end(),
-                                       [&](std::string_view key) { return key == member.first; });
-        if (!known) {
-            return ir_error(ErrorCode::UnsupportedVersion,
-                            std::string{where} + ": unknown field '" + member.first + "'");
-        }
-    }
-    for (const auto key : required) {
-        if (object.find(key) == nullptr) {
-            return ir_error(ErrorCode::InvalidArgument,
-                            std::string{where} + ": missing field '" + std::string{key} + "'");
-        }
-    }
-    return Result<void>{};
-}
-
-[[nodiscard]] std::optional<std::string> bounded_string(const JsonValue &value,
-                                                        std::size_t max_bytes) {
-    const auto *text = value.as_string();
-    if (text == nullptr || text->empty() || text->size() > max_bytes) {
-        return std::nullopt;
-    }
-    return *text;
+    return workflow_detail::check_keys(object, required, optional, where,
+                                       ErrorCode::InvalidArgument, ErrorCode::UnsupportedVersion,
+                                       ir_error);
 }
 
 [[nodiscard]] std::optional<Id128> parse_id(const JsonValue &value) {

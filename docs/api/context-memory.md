@@ -2,7 +2,9 @@
 
 > 头文件：`mira/context_contracts.hpp`、`mira/context_manager.hpp`、
 > `mira/context_retrieval.hpp`、`mira/memory_contracts.hpp`、
-> `mira/memory_embedding.hpp`、
+> `mira/content_markers.hpp`、
+> `mira/verified_fact.hpp`、
+> `mira/memory_embedding.hpp`、`mira/embedding_math.hpp`、
 > `mira/sqlite_memory_store.hpp`、`mira/memory_consolidation.hpp`、
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
 > `mira/stateful_replay.hpp`、`mira/context_curator.hpp`、
@@ -144,6 +146,64 @@ Context；以带 scope、来源与有效期的长期 Memory 作为可选增强�
 - 版本是存储侧的事实：读回的记录带的是存储自己的版本号（乐观并发的令牌），不是调用方
   写进来的那个——否则一次读改写会拿着过期版本号去比对，凭空撞上 `VersionConflict`。
 
+## content_markers.hpp
+
+`default_forbidden_content_markers()` / `default_injection_content_markers()` 返回
+ContextIndexPolicy、ConsolidationPolicy、ConsolidationOptions 与 ContextCurationOptions
+使用的默认词表（[DEC-081](../decisions/DEC-081-context-marker-and-error-reuse.md)）。
+每次调用返回独立可修改的 vector，顺序及既有词条不变；修改一份配置不会改变其他
+配置。函数同步、可并发调用，不做 I/O、不启动 Executor 任务，允许标准分配异常传播。
+
+匹配是子串检查：正文与 marker 均只折叠 ASCII A–Z，非 ASCII 字节和嵌入 NUL 原样
+保留，不按 locale 或 Unicode 大小写转换。所有这些 policy 均拒绝空 marker；空
+vector 仍是合法显式配置。Memory 原先漏拦的自定义大写 marker 现在会被匹配，空
+marker 改为 InvalidMutation 配置错误，在模型调用或存储访问前返回。
+
+禁止内容检查覆盖所有 Memory 候选；注入检查仍只覆盖其 model_assisted 候选。
+共享词表不改变 Context 各面自己的语句准入，也不替代 scope/ACL、验证等级或人工审批。
+词表仅是确定性内容过滤的一层，不是完整的敏感信息识别器。
+
+```cpp
+#include <mira/content_markers.hpp>
+#include <mira/memory_consolidation.hpp>
+#include <utility>
+
+int main() {
+    auto markers = mira::default_forbidden_content_markers();
+    markers.emplace_back("ORG_TOKEN=");
+    mira::ConsolidationPolicy policy;
+    policy.forbidden_markers = std::move(markers);
+    const auto valid = policy.validate();
+    if (!valid) return 1;  // Reject invalid configuration before any external work.
+    return 0;
+}
+```
+
+## verified_fact.hpp：宿主显式提交事实
+
+`VerifiedFactPublisher(runtime, session, scope, events, acquire, limits)` 是同步、有界
+协议，由宿主在 Executor 管理的任务中调用 `publish(claim, context)` 并消费 future。
+它不拥有 Executor，不扩展 ILoopVerifier，也不自动将 Satisfied/done 转为事实。
+`VerifiedFactClaim` 必须有稳定 publication_id、task/两级 epoch、非空 key/value、
+ObservationRecorded 引用及载荷 SHA-256、verifier、有效区间（最长一天）。
+
+宿主注入 IVerifiedFactLease：独立验证命题并持有任务、主体权限、scope、epoch 与
+取消/接管的保留门直到 append 完成。Core 验证元数据不能代替语义验证。取消必须
+经同一个 owner 门序列化；并发翻转 probe 不是原子抢占，提交后取消不回滚历史。
+无 store/authority、无事实、错误来源/身份/摘要/时序、过期、cancel/deadline 返回
+明确错误。扫描预算计入所有 session 事件，分页不前进/跨 session 为 DataLoss。
+新事实使用 Critical/ProcessCrash；回执身份、序号和 achieved 均检查。错误可能出现在
+append 后；重试必须复用原 ID 与内容，不能换 ID。异常摘要不带原始异常或 claim 正文。
+
+`parse_published_task_fact` 只读严格 v1，`PublishedTaskFact::valid_at` 检查期限。
+MemoryConsolidator 对新记录要求精确 scope 和当前有效期，仍使用既有审批/ACL；
+无期限旧记录兼容不意味着得到新保证。Checkpoint 2.0 的期限与旧 reader 隔离、
+C++ 消费者重编译要求见[迁移说明](../compatibility/verified-fact-v1-and-checkpoint-v2.md)。
+可编译正向消费路径见[离线原生事实宿主](../../examples/verified_fact_host_consumer.cpp)：
+simulator 实际 screen width → 稳定证据 → lease → durable event → checkpoint →
+SQLite Memory/query，并验证文件重开幂等及取消/接管后的拒绝。生产宿主必须自行
+实现对应语义和权限 authority；M30 自动记忆装配没有由此开启。
+
 ## memory_consolidation.hpp
 
 Verified Event 到 Memory candidate 的确定性管道：
@@ -159,6 +219,15 @@ Verified Event 到 Memory candidate 的确定性管道：
 - 冲突检测（设计 §13.5）：冲突检索用 `MemoryQuery::claim_key` 按归一化主语收窄，同主语
   的不同值判为冲突（Supersede），同主语同值且已存副本验证等级不低于提案判为
   `duplicate-noop`。Core 侧自己复核主语是否相等，不信任后端的过滤。
+
+Checkpoint/检索输入经 StandardContextManager 装配并被 provider 消费的独立参考见
+[Context 离线宿主](offline-composition-hosts.md#context边界由宿主显式传递)。该组合
+不自动安装到两个 Loop，也不改变 M25 seam 或 M30 的装配归属。
+
+FileEventStore v1 恢复出的 UnavailableLegacy flat fact/Completed episode 批次会被
+MemoryConsolidator 明确拒绝，不将缺失时间回填为 now；带持久化验证时间的新事实
+协议仍可消费。时间来源与迁移边界见
+[文件日志 v2](../compatibility/file-event-log-v2.md)。
 
 ## provider_continuation.hpp
 
@@ -204,6 +273,32 @@ Context/Memory 操作的 Executor 监督者（M4-16）：
 - 完整示例见 [`examples/stateful_agent_consumer.cpp`](../../examples/stateful_agent_consumer.cpp)。
 
 ## context_retrieval.hpp：Layer 1 检索召回（M17，DEC-032 Stage B）
+
+共享数值边界 `embedding_math.hpp` 提供纯函数
+`embedding_cosine_similarity(span<const float>, span<const float>) -> optional<double>`。
+空向量、维度不匹配、非有限值或零范数返回 nullopt；有效负相关保留为数值，两个
+检索调用方仍只接受非负候选。零向量不再作为 Context 的 0 分候选，全部比较无效时
+按既有质量语义降级，exact/lexical 或 FTS 回退继续有效。
+SQLite blob 经复用的对齐暂存解码后使用同一函数，不改 ACL、profile、融合或预算规则
+（[DEC-077](../decisions/DEC-077-shared-embedding-similarity.md)）。
+
+输入 span 由调用方持有，调用期间不得并发修改；函数同步、无状态且不创建 Executor
+任务。下面是可编译的最小消费路径，nullopt 表示应撤下向量比较、由宿主选择关键词回退：
+
+```cpp
+#include <mira/embedding_math.hpp>
+#include <array>
+
+int main() {
+    const std::array<float, 2> query{1.0F, 0.0F};
+    const std::array<float, 2> candidate{0.0F, 1.0F};
+    const auto score = mira::embedding_cosine_similarity(query, candidate);
+    if (!score) {
+        return 1; // No valid comparison; choose a non-vector fallback.
+    }
+    return *score >= 0.0 ? 0 : 2; // The caller owns the retrieval threshold.
+}
+```
 
 Cold History 重新进入模型请求的召回通道；只负责候选，排序终局归 Stage C 重排、
 token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入权）：

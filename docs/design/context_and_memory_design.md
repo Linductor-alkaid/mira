@@ -1,8 +1,8 @@
 # Mira Context 与 Memory 架构设计
 
 > 状态：Active  
-> 版本：0.5  
-> 更新日期：2026-09-12  
+> 版本：0.9
+> 更新日期：2026-11-06
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 上下文智能扩展：长会话语义压缩方向（Retrieve/Rerank/Consolidate/Compress 与
 > Hot/Warm/Cold 生命周期）由 [Context Intelligence 设计](context_intelligence_design.md)
@@ -620,7 +620,47 @@ rebuild 从 EventStore 验证投影，避免摘要链累积漂移。
 - 来自网页、OCR 或 Tool 的指令性文本，除非经过明确 policy 转换。
 - 仅因模型声称“请记住”而产生的高权限规则。
 
-### 13.3 Consolidation Pipeline
+默认禁止内容/注入 marker 由 Core 的 `content_markers.hpp` 两个工厂单一来源生成，
+供 Memory、Context index、语义 consolidation 和 Working Context curation 的配置
+使用（[DEC-081](../decisions/DEC-081-context-marker-and-error-reuse.md)）。每份配置
+拥有独立 vector，既有默认词条与顺序保持不变。Context 与 Memory 的扫描共用私有
+ASCII 小写/子串原语：同时折叠正文和 marker 的 A–Z，其他字节及嵌入 NUL 原样保留，
+不依赖 locale。空 marker 在所有配置中失败；空 vector 仍合法。Memory 的自定义
+大写 marker 漏拦与空 marker 全匹配由该配置边界修正，候选 key 的 ASCII 归一化不变，
+不替代 §13.5 claim key 的专用规则。
+
+Memory 的禁止内容过滤所有来源，注入过滤只约束 model_assisted 候选；Context 的
+逐语句过滤保持自己的来源与置信度门槛。共用词表不自动提升权限或改变审批、scope/ACL。
+Context 六处简单 ErrorCode 工厂仅共用私有字段构造，错误 domain 仍由各面绑定；
+既有 make_context_error / make_memory_error 的 domain_code 映射保持独立。
+
+### 13.3 显式事实生产与 Consolidation Pipeline
+
+[DEC-083](../decisions/DEC-083-explicit-verified-fact-publication.md) 的 VerifiedFactPublisher
+由受信宿主显式装配，claim 必须有内容、精确身份/scope、ObservationRecorded 引用、
+载荷摘要、verifier 与有限有效期；可信 lease 独立核验语义并序列化取消/接管/终态。
+Core 不把哈希、模型 done 或无事实内容的 Satisfied 视为语义证明。新事件采用嵌套
+claim 的 v1 schema，旧 flat 事件保持受信宿主兼容语义，不从旧格式推导新保证。
+
+Checkpoint 2.0 保存事实的可选有效区间，并在增量/基底重建按 now 清理；旧 1.x
+读取保持，无期限旧事实不伪造期限。旧 reader 拒绝 2.0，C++ 消费者须重编译。
+Memory 对新记录精确匹配 scope、检查期限，再进入原固化管线，User/Preference 审批
+不变。证据 observed_at 与 claim valid_from 是持久化时间依据；BUG-20261106-001
+由 [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 修复新记录时间，
+旧记录明确缺失，本路径仍不得用信封时间重定验证顺序。
+valid_from 同时作为该证明的记忆记录时间，不宣称它是磁盘 commit 时钟。
+
+File v1 的 UnavailableLegacy flat fact/Completed episode 不可自动固化：该批次
+返回明确错误，不把默认时间补成 now。新事实协议的 payload 时间仍可独立使用，
+旧缓存不自动补造或重写，迁移边界见[文件日志 v2](../compatibility/file-event-log-v2.md)。
+
+同值重放不刷新 TTL；旧或同时间冲突证明不覆盖新证明。带期限证明可以替换无期限
+legacy 行；无期限 legacy 不覆盖带期限事实。该排序只约束非模型 VerifiedEvent，
+HumanCorrection、模型提案和其他原有策略保留。宿主自动提案、主体映射和跨会话
+选择仍由 M30 承接，本入口不启用它们。详细 schema/owner 和回退边界见
+[迁移说明](../compatibility/verified-fact-v1-and-checkpoint-v2.md)。
+
+
 
 ```text
 Verified Event Range
@@ -762,6 +802,10 @@ Safety/System memory 不依赖检索排名，而由 P0 pinned policy 管理。
 - SQLite FTS5：关键词/字段检索。
 - Content-addressed ArtifactStore：截图、UI Tree、模型原始响应。
 - 小数据量使用有界线性 cosine 检索。
+- 数值规则由 Core `embedding_math.hpp` 单一实现：无效（空/维度/非有限/零范数）
+  返回 nullopt，有效负相关保留；检索腿继续按非负门槛选候选，全部比较无效时降级。
+  Context 与 SQLite Memory 共用该规则，正交 0 分不等于无效零向量；SQLite blob
+  先解码到对齐暂存（[DEC-077](../decisions/DEC-077-shared-embedding-similarity.md)）。
 - 数据量达到基准阈值后，引入静态编译的 HNSW/USearch 类索引。
 - 后续可用本地 ONNX embedding model，仍通过 `IEmbeddingProvider` 隔离。
 
@@ -896,7 +940,12 @@ claim key 不是存储列，而是查询时按 statement 现算的过滤条件�
 - Event、Checkpoint、Memory 和 embedding model 分别版本化。
 - Reader 至少支持当前和上一兼容版本。
 - Migration 是显式、可取消、可诊断的 Runtime 初始化任务。
-- 无法迁移时以只读诊断模式打开，不静默清空数据。
+- 无法迁移时拒绝写入并提供诊断，不静默清空数据。参考后端需要先升级的旧库在只读
+  模式返回 UnsupportedVersion，未来版本仍可按只读诊断模式打开。
+- 两个 SQLite 参考后端共用打开/schema/诊断编排，后端保留 DDL 与具体迁移策略。
+  初始化内容、kind/version 与迁移内容/版本更新分别在同一事务中完成，失败回滚；
+  schema 版本严格解析完整 uint16 分量，不截断、不接受尾随文本
+  （[DEC-078](../decisions/DEC-078-shared-sqlite-store-initialization.md)）。
 - Vector index 可删后重建；Event provenance 和 MemoryRecord 不能因索引损坏丢失。
 - 版本比较同时覆盖 major 与 minor：文件带有更新的 minor 版本时按"比本 reader 新"处理，
   写入被拒，不把更新版本当作旧版本接受并盖上自己的版本戳。
@@ -1163,6 +1212,9 @@ Mira 额外测试：
 - [LangGraph Memory](https://docs.langchain.com/oss/python/langgraph/add-memory)
 - [Letta MemFS](https://docs.letta.com/concepts/memfs/index)
 - [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560)
+- [离线组合宿主](../api/offline-composition-hosts.md)：按
+  [DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 从 checkpoint 框架和
+  session ACL 检索显式生成 Layer 0 输入，再由 provider 消费；不自动修改 M25 seam。
 - [Anthropic Context Editing](https://platform.claude.com/docs/en/build-with-claude/context-editing)
 - [Anthropic Memory Tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
 - [Mem0 Memory Types](https://docs.mem0.ai/core-concepts/memory-types)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "context_text.hpp"
+
 // Internal support shared by the context layer's model-backed surfaces
 // (consolidator, curator) and its lexical legs (retrieval, rerank). Not
 // installed and not part of the public API. Single-sources the deterministic
@@ -26,32 +28,8 @@ namespace mira::context_support {
 // Deterministic text utilities
 // ---------------------------------------------------------------------------
 
-// Deterministic ASCII lowercasing shared by the Layer 1 lexical index, the
-// rerank legs and the marker filters: recall and rerank must agree on what a
-// token is, and every surface must agree on what a marker matches.
-[[nodiscard]] inline std::string to_lower_ascii(std::string_view text) {
-    std::string lowered(text);
-    for (char &character : lowered) {
-        if (character >= 'A' && character <= 'Z') {
-            character = static_cast<char>(character - 'A' + 'a');
-        }
-    }
-    return lowered;
-}
-
-// Case-insensitive marker scan with the same semantics as the Layer 1 index
-// and `MemoryConsolidator`: one shared secret-marker vocabulary across every
-// surface model output could reach.
-[[nodiscard]] inline bool carries_marker(std::string_view text,
-                                         const std::vector<std::string> &markers) {
-    const std::string lowered = to_lower_ascii(text);
-    for (const auto &marker : markers) {
-        if (!marker.empty() && lowered.find(to_lower_ascii(marker)) != std::string::npos) {
-            return true;
-        }
-    }
-    return false;
-}
+using context_text::carries_marker;
+using context_text::to_lower_ascii;
 
 // Lexical tokenizer for the in-process lexical legs: lowercase [a-z0-9_] runs.
 [[nodiscard]] inline std::vector<std::string> tokenize(std::string_view text) {
@@ -134,10 +112,10 @@ struct RawStatement final {
 // preconditions): content bounds, secret/injection marker filters and the
 // confidence floor. Returns the clamped confidence, or nullopt when the
 // statement must be dropped.
-[[nodiscard]] inline std::optional<double> gate_statement(
-    const RawStatement &raw, std::size_t max_chars, double min_confidence,
-    const std::vector<std::string> &forbidden_markers,
-    const std::vector<std::string> &injection_markers) {
+[[nodiscard]] inline std::optional<double>
+gate_statement(const RawStatement &raw, std::size_t max_chars, double min_confidence,
+               const std::vector<std::string> &forbidden_markers,
+               const std::vector<std::string> &injection_markers) {
     if (raw.content.empty() || raw.content.size() > max_chars) {
         return std::nullopt;
     }
@@ -220,15 +198,15 @@ template <typename MakeError>
 // everything after is dropped. `make_error` adapts the section-shape failure
 // to the calling surface's domain; `label` prefixes the stable wording.
 template <typename Statement, typename MakeError, typename Bind>
-[[nodiscard]] Result<std::vector<Statement>> parse_statement_section(
-    const JsonValue &root, const char *key, std::string_view label, std::size_t cap,
-    MakeError &&make_error, Bind &&bind) {
+[[nodiscard]] Result<std::vector<Statement>>
+parse_statement_section(const JsonValue &root, const char *key, std::string_view label,
+                        std::size_t cap, MakeError &&make_error, Bind &&bind) {
     std::vector<Statement> bound;
     const auto *section = root.find(key);
     if (section == nullptr || !section->is_array()) {
         return make_error(ErrorCode::InvalidModelOutput,
-                          std::string(label) + " output section must be an array: " +
-                              std::string(key));
+                          std::string(label) +
+                              " output section must be an array: " + std::string(key));
     }
     for (const auto &value : *section->as_array()) {
         if (bound.size() >= cap) {

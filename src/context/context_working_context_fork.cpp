@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_working_context_fork.hpp>
 
 #include <algorithm>
@@ -14,13 +15,7 @@ namespace {
 // Error factory and section plumbing
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] Error fork_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.context.working_context";
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory fork_error{"mira.context.working_context"};
 
 constexpr std::size_t kSectionCount = 8;
 

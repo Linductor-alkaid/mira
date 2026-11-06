@@ -81,6 +81,7 @@ add_library(mira_core
     src/runtime/runtime_baseline.cpp
     src/runtime/runtime.cpp
     src/runtime/task_recovery.cpp
+    src/runtime/verified_fact.cpp
     src/runtime/context_memory_supervisor.cpp
     src/interaction/interaction_events.cpp
     src/interaction/input_ledger.cpp
@@ -110,6 +111,9 @@ add_library(mira_core
     src/replay/replay.cpp
     src/replay/stateful_replay.cpp
     src/support/json.cpp
+    src/support/content_markers.cpp
+    src/support/embedding_math.cpp
+    src/support/task_state.cpp
     src/temporal/temporal_policy.cpp
     src/worldstate/world_state.cpp
     src/worldstate/world_state_wire.cpp
@@ -135,6 +139,7 @@ add_library(mira_core
     src/model/tool_executor.cpp
     src/model/conversation_log.cpp
     src/model/agent_loop.cpp
+    src/model/action_dispatcher.cpp
     src/model/conversation_loop.cpp
     src/tool/tool_module.cpp
     src/tool/tool_module_registry.cpp
@@ -196,6 +201,7 @@ set_target_properties(mira_workflow PROPERTIES
 # public headers in include/mira never expose sqlite3 types.
 add_library(mira_state_store
     src/storage/sqlite_support.cpp
+    src/storage/sqlite_store_open.cpp
     src/storage/sqlite_checkpoint_store.cpp
     src/storage/sqlite_memory_store.cpp
 )
@@ -438,11 +444,67 @@ if(MIRA_BUILD_TESTS)
     set_tests_properties(mira_stateful_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 
+# Independent offline compositions (MNT-202611-06, DEC-086).
+foreach(host IN ITEMS workflow_runtime context_assembly recovery_planner)
+    add_executable(mira_${host}_host_consumer examples/${host}_host_consumer.cpp)
+    target_link_libraries(mira_${host}_host_consumer PRIVATE
+        Mira::core Mira::simulator_adapter Mira::state_store Mira::workflow kairo::kairo)
+    target_include_directories(mira_${host}_host_consumer SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+    mira_enable_warnings(mira_${host}_host_consumer)
+    mira_enable_sanitizers(mira_${host}_host_consumer)
+    if(MIRA_BUILD_TESTS)
+        add_test(NAME mira_${host}_host_consumer_test COMMAND mira_${host}_host_consumer)
+        set_tests_properties(mira_${host}_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+    endif()
+endforeach()
+# Runtime routing metrics and command-result diagnostics (MNT-202611-08, DEC-085).
+add_executable(mira_runtime_scheduling_host_consumer examples/runtime_scheduling_host_consumer.cpp)
+target_link_libraries(mira_runtime_scheduling_host_consumer PRIVATE
+    Mira::core Mira::simulator_adapter kairo::kairo)
+target_include_directories(mira_runtime_scheduling_host_consumer SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+mira_enable_warnings(mira_runtime_scheduling_host_consumer)
+mira_enable_sanitizers(mira_runtime_scheduling_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_runtime_scheduling_host_consumer_test COMMAND mira_runtime_scheduling_host_consumer)
+    set_tests_properties(mira_runtime_scheduling_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+endif()
+# Offline price policy and settlement example (MNT-202611-07, DEC-084).
+add_executable(mira_model_price_host_consumer examples/model_price_host_consumer.cpp)
+target_link_libraries(mira_model_price_host_consumer PRIVATE Mira::core kairo::kairo)
+target_include_directories(mira_model_price_host_consumer SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+mira_enable_warnings(mira_model_price_host_consumer)
+mira_enable_sanitizers(mira_model_price_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_model_price_host_consumer_test COMMAND mira_model_price_host_consumer)
+    set_tests_properties(mira_model_price_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+endif()
 # Working Context host integration example (M25, DEC-045): the reference host
 # for the AgentLoop snapshot supply seam — explicit W3/W4/W5 orchestration
 # (on_signal/flush, promotion submit, fork/merge) around a seam-wired loop
 # with the curation and promotion planes routed through the supervisor.
 add_executable(mira_working_context_host_consumer examples/working_context_host_consumer.cpp)
+add_executable(mira_verified_fact_host_consumer examples/verified_fact_host_consumer.cpp)
+target_link_libraries(mira_verified_fact_host_consumer PRIVATE Mira::core Mira::state_store Mira::simulator_adapter kairo::kairo)
+target_include_directories(mira_verified_fact_host_consumer SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+mira_enable_warnings(mira_verified_fact_host_consumer)
+mira_enable_sanitizers(mira_verified_fact_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_verified_fact_host_consumer_test COMMAND mira_verified_fact_host_consumer)
+    set_tests_properties(mira_verified_fact_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+endif()
+add_executable(mira_journaled_action_consumer examples/journaled_action_consumer.cpp)
+target_link_libraries(mira_journaled_action_consumer PRIVATE Mira::core Mira::simulator_adapter kairo::kairo)
+target_include_directories(mira_journaled_action_consumer SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+mira_enable_warnings(mira_journaled_action_consumer)
+mira_enable_sanitizers(mira_journaled_action_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_journaled_action_consumer_test COMMAND mira_journaled_action_consumer)
+    set_tests_properties(mira_journaled_action_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+endif()
 target_link_libraries(mira_working_context_host_consumer PRIVATE
     Mira::core Mira::simulator_adapter Mira::state_store kairo::kairo)
 target_include_directories(mira_working_context_host_consumer SYSTEM PRIVATE

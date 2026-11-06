@@ -1,0 +1,102 @@
+[
+  {
+    "type": "WorkflowRunStarted",
+    "classification": 0,
+    "data": "{\"schema\":\"mira.workflow.run-started.v1\",\"run_id\":\"01000000000000000000000000000000\",\"workflow_id\":\"01000000000000000000000000000000\",\"ir_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"parameters_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"policy\":\"strict\"}"
+  },
+  {
+    "type": "WorkflowStepStarted",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.step-started.v1\",\"run_id\":\"01000000000000000000000000000000\",\"step_id\":\"01000000000000000000000000000000\",\"kind\":\"tool_call\",\"attempt\":1}"
+  },
+  {
+    "type": "WorkflowStepSettled",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.step-settled.v1\",\"run_id\":\"01000000000000000000000000000000\",\"step_id\":\"01000000000000000000000000000000\",\"disposition\":\"completed\",\"verification\":\"\",\"safe_summary\":\"fixture \\\"quoted\\\" \\\\ path\\nnext\"}"
+  },
+  {
+    "type": "WorkflowRunSettled",
+    "classification": 0,
+    "data": "{\"schema\":\"mira.workflow.run-settled.v1\",\"run_id\":\"01000000000000000000000000000000\",\"terminal_state\":\"failed\",\"run_epoch\":0,\"safe_summary\":\"fixture \\\"quoted\\\" \\\\ path\\nnext\"}"
+  },
+  {
+    "type": "WorkflowPatchProposed",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.patch-proposed.v1\",\"patch_id\":\"01000000000000000000000000000000\",\"run_id\":\"01000000000000000000000000000000\",\"patch_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"target\":\"run_parameters\",\"reason_code\":\"validation-failed\"}"
+  },
+  {
+    "type": "WorkflowPatchApplied",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.patch-applied.v1\",\"patch_id\":\"01000000000000000000000000000000\",\"run_id\":\"01000000000000000000000000000000\",\"run_patch_epoch\":0}"
+  },
+  {
+    "type": "WorkflowPatchRejected",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.patch-rejected.v1\",\"patch_id\":\"01000000000000000000000000000000\",\"run_id\":\"01000000000000000000000000000000\",\"reason_code\":\"validation-failed\"}"
+  },
+  {
+    "type": "WorkflowPolicySwitched",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.policy-switched.v1\",\"run_id\":\"01000000000000000000000000000000\",\"from\":\"strict\",\"to\":\"strict\"}"
+  },
+  {
+    "type": "WorkflowDecisionRaised",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.decision-raised.v1\",\"run_id\":\"01000000000000000000000000000000\",\"decision_id\":\"01000000000000000000000000000000\",\"payload_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\"}"
+  },
+  {
+    "type": "WorkflowDecisionResolved",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.decision-resolved.v1\",\"run_id\":\"01000000000000000000000000000000\",\"decision_id\":\"01000000000000000000000000000000\",\"resolution\":\"accept\"}"
+  },
+  {
+    "type": "WorkflowPublishProposed",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.publish-proposed.v1\",\"workflow_id\":\"01000000000000000000000000000000\",\"ir_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"source_run_id\":null}"
+  },
+  {
+    "type": "WorkflowPublishApplied",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.publish-applied.v1\",\"workflow_id\":\"01000000000000000000000000000000\",\"ir_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"evidence\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"dry_run_id\":\"01000000000000000000000000000000\"}"
+  },
+  {
+    "type": "WorkflowPublishRejected",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.publish-rejected.v1\",\"workflow_id\":\"01000000000000000000000000000000\",\"ir_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"reason_code\":\"validation-failed\"}"
+  },
+  {
+    "type": "WorkflowNavigationPlanned",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.navigation-planned.v1\",\"run_id\":\"01000000000000000000000000000000\",\"step_id\":\"01000000000000000000000000000000\",\"from_state\":\"\",\"to_state\":\"\",\"edge_count\":0,\"plan_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"total_cost\":0,\"guards_blocked\":0,\"guards_unevaluable\":0}"
+  },
+  {
+    "type": "WorkflowNavigationObserved",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.navigation-observed.v1\",\"run_id\":\"01000000000000000000000000000000\",\"step_id\":\"01000000000000000000000000000000\",\"transition_id\":\"\",\"from_state\":\"\",\"to_state\":\"\",\"success\":false,\"confidence\":0}"
+  },
+  {
+    "type": "WorkflowEpisodeRecorded",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.episode-recorded.v1\",\"run_id\":\"01000000000000000000000000000000\",\"workflow_id\":\"01000000000000000000000000000000\",\"episode_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"outcome\":\"\",\"reason_code\":\"validation-failed\"}"
+  },
+  {
+    "type": "WorkflowLessonRecorded",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.lesson-recorded.v1\",\"run_id\":\"01000000000000000000000000000000\",\"workflow_id\":\"01000000000000000000000000000000\",\"lesson_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"outcome\":\"\",\"reason_code\":\"validation-failed\"}"
+  },
+  {
+    "type": "WorkflowRecoveryAttempted",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.recovery-attempted.v1\",\"run_id\":\"01000000000000000000000000000000\",\"workflow_id\":\"01000000000000000000000000000000\",\"ordinal\":0,\"task_id\":\"01000000000000000000000000000000\",\"outcome\":\"aborted\",\"reason_code\":\"validation-failed\",\"decision_digest\":null,\"patch_id\":\"01000000000000000000000000000000\",\"model_request_id\":null,\"lessons_offered\":0,\"lessons_stale\":0,\"lessons_unparseable\":0,\"lessons_kept\":0}"
+  },
+  {
+    "type": "WorkflowToolCompatDegraded",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.tool-compat-degraded.v1\",\"run_id\":\"01000000000000000000000000000000\",\"workflow_id\":\"01000000000000000000000000000000\",\"ir_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"projection\":null}"
+  },
+  {
+    "type": "WorkflowProceduresSynced",
+    "classification": 1,
+    "data": "{\"schema\":\"mira.workflow.procedures-synced.v1\",\"procedure_index_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"published_count\":0}"
+  }
+]

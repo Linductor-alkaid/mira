@@ -24,6 +24,22 @@ Error make_error(ErrorCode code, std::string message, bool retryable = false) {
     return result;
 }
 
+// No caller can bypass the frozen transition table with an unchecked store.
+class RuntimeStateCell final {
+  public:
+    [[nodiscard]] RuntimeState load() const noexcept {
+        return value_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] bool transition(RuntimeState from, RuntimeState to) noexcept {
+        return valid_runtime_transition(from, to) &&
+               value_.compare_exchange_strong(from, to, std::memory_order_acq_rel,
+                                              std::memory_order_acquire);
+    }
+
+  private:
+    std::atomic<RuntimeState> value_{RuntimeState::Constructed};
+};
+
 template <typename T>
 Result<T> wait_result(const std::shared_future<T> &future, std::chrono::milliseconds timeout) {
     if (!future.valid())
@@ -88,6 +104,7 @@ struct CommandHandle::State final {
         : id(command_id), receipt_future(receipt.get_future().share()),
           outcome_future(outcome.get_future().share()) {}
     CommandId id;
+    CommandKind kind = CommandKind::OpenSession;
     std::promise<CommandReceipt> receipt;
     std::promise<CommandOutcome> outcome;
     std::shared_future<CommandReceipt> receipt_future;
@@ -137,13 +154,20 @@ class MiraRuntime::Impl final {
     RuntimeId runtime_id;
     kairo::Executor executor;
     kairo::SerialExecutionContext control_context;
-    std::atomic<RuntimeState> runtime_state{RuntimeState::Constructed};
+    RuntimeStateCell runtime_state;
+    std::mutex admission_mutex;
+    std::mutex finalizer_mutex;
+    bool executor_initialized = false;             // Guarded by admission_mutex.
+    std::optional<CommandHandle> shutdown_command; // Guarded by admission_mutex.
+    std::optional<ShutdownReport> final_report;    // Guarded by finalizer_mutex.
+    inline static thread_local const Impl *active_control = nullptr;
     std::atomic<std::uint64_t> control_sequence{0};
 
     mutable std::mutex records_mutex;
     std::unordered_map<SessionId, SessionRecord, StrongIdHash<SessionId>> sessions;
     std::unordered_map<TaskId, TaskRecord, StrongIdHash<TaskId>> tasks;
     std::unordered_map<OperationId, OperationRecord, StrongIdHash<OperationId>> operations;
+    std::mutex commands_mutex;
     std::vector<std::shared_ptr<CommandHandle::State>> commands;
 
     std::shared_ptr<CommandHandle::State> make_handle() {
@@ -172,14 +196,28 @@ class MiraRuntime::Impl final {
 
     template <typename Callback>
     Result<CommandHandle> enqueue(CommandKind kind, Callback callback) {
-        const auto current = runtime_state.load(std::memory_order_acquire);
+        std::lock_guard admission(admission_mutex);
+        return enqueue_admitted(kind, std::move(callback));
+    }
+
+    // The admission lock spans dispatch AND future registration, so a finalizer
+    // cannot miss an accepted command. Callbacks never hold that lock.
+    template <typename Callback>
+    Result<CommandHandle> enqueue_admitted(CommandKind kind, Callback callback) {
+        const auto current = runtime_state.load();
         if (current != RuntimeState::Running && kind != CommandKind::ShutdownRuntime) {
             return make_error(ErrorCode::InvalidState, "runtime is not accepting this command");
         }
         auto handle_state = make_handle();
+        handle_state->kind = kind;
         try {
             auto submission = executor.submit_on_with_handle(
                 control_context, [this, kind, callback = std::move(callback), handle_state] {
+                    struct ControlScope final {
+                        const Impl *previous = active_control;
+                        explicit ControlScope(const Impl *owner) { active_control = owner; }
+                        ~ControlScope() { active_control = previous; }
+                    } scope(this);
                     const auto sequence = ++control_sequence;
                     try {
                         callback(sequence, *handle_state);
@@ -221,7 +259,7 @@ class MiraRuntime::Impl final {
             }
             handle_state->submission_future = std::move(submission_future);
             {
-                std::lock_guard lock(records_mutex);
+                std::lock_guard lock(commands_mutex);
                 commands.push_back(handle_state);
             }
             return CommandHandle(std::move(handle_state));
@@ -230,6 +268,105 @@ class MiraRuntime::Impl final {
         } catch (...) {
             return make_error(ErrorCode::ResourceExhausted, "runtime command submission rejected",
                               true);
+        }
+    }
+
+    Result<CommandHandle> submit_shutdown_admitted() {
+        auto command =
+            enqueue_admitted(CommandKind::ShutdownRuntime, [this](std::uint64_t sequence,
+                                                                  CommandHandle::State &state) {
+                std::lock_guard lock(records_mutex);
+                const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
+                for (auto &[task_id, task] : tasks) {
+                    if (!is_terminal(task.snapshot.state)) {
+                        task.snapshot.state = TaskState::Cancelled;
+                        ++task.snapshot.epoch;
+                        task.snapshot.terminal_outcome =
+                            TaskOutcome{TaskState::Cancelled, std::nullopt};
+                        task.snapshot.control_sequence = sequence;
+                        task.snapshot.updated_at = Timestamp::now();
+                    }
+                }
+                std::optional<Error> failure;
+                for (auto &[session_id, session] : sessions) {
+                    if (is_terminal(session.state))
+                        continue;
+                    try {
+                        auto released = session.environment->interrupt(make_control_context());
+                        if (!released) {
+                            if (!failure)
+                                failure = released.error();
+                            session.state = SessionState::Failed;
+                        } else {
+                            session.state = SessionState::Closed;
+                        }
+                    } catch (...) {
+                        if (!failure)
+                            failure = make_error(ErrorCode::Internal,
+                                                 "environment interrupt threw during shutdown");
+                        session.state = SessionState::Failed;
+                    }
+                }
+                const auto target = failure ? RuntimeState::Failed : RuntimeState::Quiesced;
+                if (!runtime_state.transition(RuntimeState::Stopping, target)) {
+                    failure = make_error(ErrorCode::InvalidState,
+                                         "runtime shutdown state transition rejected");
+                }
+                set_receipt(handle, CommandKind::ShutdownRuntime, ReceiptStatus::Accepted,
+                            sequence);
+                set_outcome(handle, failure ? SettlementStatus::Failed : SettlementStatus::Applied,
+                            std::move(failure));
+            });
+        if (command)
+            shutdown_command = command.value();
+        return command;
+    }
+
+    Result<CommandHandle> request_shutdown_admitted() {
+        const auto current = runtime_state.load();
+        if (shutdown_command || current == RuntimeState::Stopped ||
+            current == RuntimeState::Quiesced || current == RuntimeState::Stopping) {
+            return make_error(ErrorCode::InvalidState, "runtime shutdown is already in progress");
+        }
+        if (!runtime_state.transition(current, RuntimeState::Stopping)) {
+            return make_error(ErrorCode::InvalidState,
+                              "runtime shutdown state transition rejected");
+        }
+        if (!executor_initialized) {
+            return make_error(ErrorCode::InvalidState, "runtime was not initialized");
+        }
+        return submit_shutdown_admitted();
+    }
+
+    // Called only by the external finalizer after business admission closed.
+    // A late facade rejection must settle handles whose callback never ran.
+    void consume_commands() {
+        std::vector<std::shared_ptr<CommandHandle::State>> pending;
+        {
+            std::lock_guard lock(commands_mutex);
+            pending.swap(commands);
+        }
+        for (const auto &command : pending) {
+            std::optional<Error> failure;
+            try {
+                if (!command->submission_future.valid()) {
+                    failure =
+                        make_error(ErrorCode::Internal, "command submission future is invalid");
+                } else {
+                    command->submission_future.get();
+                }
+            } catch (const kairo::CapacityExhaustedException &) {
+                failure = make_error(ErrorCode::ResourceExhausted,
+                                     "command submission was rejected", true);
+            } catch (const kairo::ExecutorStopping &) {
+                failure = make_error(ErrorCode::Unavailable, "command executor stopped", true);
+            } catch (...) {
+                failure = make_error(ErrorCode::Internal, "command submission failed");
+            }
+            if (failure) {
+                set_receipt(command, command->kind, ReceiptStatus::Rejected, 0, failure);
+                set_outcome(command, SettlementStatus::Failed, failure);
+            }
         }
     }
 
@@ -370,26 +507,39 @@ MiraRuntime::~MiraRuntime() {
 }
 
 Result<void> MiraRuntime::initialize() {
-    auto expected = RuntimeState::Constructed;
-    if (!impl_->runtime_state.compare_exchange_strong(expected, RuntimeState::Initializing)) {
-        return make_error(ErrorCode::InvalidState, "runtime was already initialized");
+    std::lock_guard admission(impl_->admission_mutex);
+    if (!impl_->runtime_state.transition(RuntimeState::Constructed, RuntimeState::Initializing)) {
+        return make_error(ErrorCode::InvalidState, "runtime was already initialized or stopped");
     }
+    std::optional<Error> failure;
     if (impl_->config.worker_threads == 0 || impl_->config.executor_queue_capacity == 0 ||
         impl_->config.max_in_flight == 0) {
-        impl_->runtime_state.store(RuntimeState::Failed, std::memory_order_release);
-        return make_error(ErrorCode::InvalidArgument, "runtime limits must be positive");
+        failure = make_error(ErrorCode::InvalidArgument, "runtime limits must be positive");
+    } else {
+        kairo::ExecutorConfig executor_config;
+        executor_config.min_threads = impl_->config.worker_threads;
+        executor_config.max_threads = impl_->config.worker_threads;
+        executor_config.queue_capacity = impl_->config.executor_queue_capacity;
+        executor_config.task_graph_retention_capacity = impl_->config.max_in_flight;
+        executor_config.max_in_flight_tasks = impl_->config.max_in_flight;
+        try {
+            impl_->executor_initialized =
+                static_cast<bool>(impl_->executor.initialize(executor_config));
+            if (!impl_->executor_initialized) {
+                failure =
+                    make_error(ErrorCode::Unavailable, "executor initialization failed", true);
+            }
+        } catch (...) {
+            failure = make_error(ErrorCode::Unavailable, "executor initialization threw", true);
+        }
     }
-    kairo::ExecutorConfig executor_config;
-    executor_config.min_threads = impl_->config.worker_threads;
-    executor_config.max_threads = impl_->config.worker_threads;
-    executor_config.queue_capacity = impl_->config.executor_queue_capacity;
-    executor_config.task_graph_retention_capacity = impl_->config.max_in_flight;
-    executor_config.max_in_flight_tasks = impl_->config.max_in_flight;
-    if (!impl_->executor.initialize(executor_config)) {
-        impl_->runtime_state.store(RuntimeState::Failed, std::memory_order_release);
-        return make_error(ErrorCode::Unavailable, "executor initialization failed", true);
+    const auto target = failure ? RuntimeState::Failed : RuntimeState::Running;
+    if (!impl_->runtime_state.transition(RuntimeState::Initializing, target)) {
+        return make_error(ErrorCode::InvalidState,
+                          "runtime initialization state transition rejected");
     }
-    impl_->runtime_state.store(RuntimeState::Running, std::memory_order_release);
+    if (failure)
+        return *failure;
     return Result<void>{};
 }
 
@@ -631,43 +781,15 @@ Result<CommandHandle> MiraRuntime::close_session(SessionId session_id) {
 }
 
 Result<CommandHandle> MiraRuntime::request_shutdown() {
-    const auto current = impl_->runtime_state.load(std::memory_order_acquire);
-    if (current == RuntimeState::Stopped || current == RuntimeState::Quiesced ||
-        current == RuntimeState::Stopping) {
-        return make_error(ErrorCode::InvalidState, "runtime shutdown is already in progress");
-    }
-    if (current == RuntimeState::Constructed) {
-        impl_->runtime_state.store(RuntimeState::Stopping, std::memory_order_release);
-        return make_error(ErrorCode::InvalidState, "runtime was not initialized");
-    }
-    impl_->runtime_state.store(RuntimeState::Stopping, std::memory_order_release);
-    return impl_->enqueue(CommandKind::ShutdownRuntime, [this](std::uint64_t sequence,
-                                                               CommandHandle::State &state) {
-        std::lock_guard lock(impl_->records_mutex);
-        for (auto &[task_id, task] : impl_->tasks) {
-            if (!is_terminal(task.snapshot.state)) {
-                task.snapshot.state = TaskState::Cancelled;
-                task.snapshot.epoch++;
-                task.snapshot.terminal_outcome = TaskOutcome{TaskState::Cancelled, std::nullopt};
-                task.snapshot.control_sequence = sequence;
-                task.snapshot.updated_at = Timestamp::now();
-            }
-        }
-        for (auto &[session_id, session] : impl_->sessions) {
-            if (!is_terminal(session.state)) {
-                static_cast<void>(session.environment->interrupt(make_control_context()));
-                session.state = SessionState::Closed;
-            }
-        }
-        impl_->runtime_state.store(RuntimeState::Quiesced, std::memory_order_release);
-        Impl::set_receipt(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                          CommandKind::ShutdownRuntime, ReceiptStatus::Accepted, sequence);
-        Impl::set_outcome(std::shared_ptr<CommandHandle::State>(&state, [](auto *) {}),
-                          SettlementStatus::Applied);
-    });
+    std::lock_guard admission(impl_->admission_mutex);
+    return impl_->request_shutdown_admitted();
 }
 
 Result<OperationKey> MiraRuntime::begin_operation(TaskId task_id, StepId step_id) {
+    std::lock_guard admission(impl_->admission_mutex);
+    if (impl_->runtime_state.load() != RuntimeState::Running) {
+        return make_error(ErrorCode::InvalidState, "runtime is not accepting operations");
+    }
     std::lock_guard lock(impl_->records_mutex);
     const auto found = impl_->tasks.find(task_id);
     if (found == impl_->tasks.end())
@@ -749,9 +871,7 @@ Result<SessionSnapshot> MiraRuntime::session_snapshot(SessionId session_id) cons
                            found->second.principal};
 }
 
-RuntimeState MiraRuntime::state() const noexcept {
-    return impl_->runtime_state.load(std::memory_order_acquire);
-}
+RuntimeState MiraRuntime::state() const noexcept { return impl_->runtime_state.load(); }
 
 SchedulingMetricsSnapshot MiraRuntime::scheduling_metrics() const {
     const auto metrics = impl_->executor.get_scheduling_metrics();
@@ -773,41 +893,78 @@ SchedulingMetricsSnapshot MiraRuntime::scheduling_metrics() const {
 }
 
 ShutdownReport MiraRuntime::finish_shutdown() {
-    auto current = impl_->runtime_state.load(std::memory_order_acquire);
-    if (current == RuntimeState::Constructed) {
-        impl_->control_context.shutdown();
-        impl_->runtime_state.store(RuntimeState::Stopped, std::memory_order_release);
-        return {true, RuntimeState::Stopped, 0, "runtime was never initialized"};
+    // Check before either mutex: callbacks may already own records_mutex and
+    // an external finalizer may be waiting for this very callback.
+    if (Impl::active_control == impl_.get()) {
+        return {false, state(), 0,
+                "finish_shutdown requires an external owner; pending commands not scanned"};
     }
-    if (current == RuntimeState::Running) {
-        auto requested = request_shutdown();
-        if (requested) {
-            auto outcome = requested.value().outcome(std::chrono::seconds(30));
-            static_cast<void>(outcome);
+    std::lock_guard finalizer(impl_->finalizer_mutex);
+    if (impl_->final_report)
+        return *impl_->final_report;
+    std::optional<Error> failure;
+    {
+        std::lock_guard admission(impl_->admission_mutex);
+        const auto current = impl_->runtime_state.load();
+        if (current == RuntimeState::Constructed || current == RuntimeState::Running ||
+            (current == RuntimeState::Failed && !impl_->shutdown_command)) {
+            auto requested = impl_->request_shutdown_admitted();
+            // No executor means no command is needed and no lazy submission.
+            if (!requested && impl_->executor_initialized)
+                failure = requested.error();
+        }
+    }
+    impl_->consume_commands();
+    bool resubmitted = false;
+    {
+        std::lock_guard admission(impl_->admission_mutex);
+        if (impl_->executor_initialized && !impl_->shutdown_command &&
+            impl_->runtime_state.load() == RuntimeState::Stopping) {
+            resubmitted = true;
+            auto barrier = impl_->submit_shutdown_admitted();
+            if (!barrier)
+                failure = barrier.error();
+            else
+                failure.reset();
+        }
+    }
+    impl_->consume_commands();
+    if (impl_->shutdown_command) {
+        auto outcome = impl_->shutdown_command->outcome(std::chrono::milliseconds(0));
+        if (!outcome)
+            failure = outcome.error();
+        else if (outcome.value().status == SettlementStatus::Failed) {
+            failure = outcome.value().error.value_or(
+                make_error(ErrorCode::Internal, "runtime shutdown command failed"));
         }
     }
     impl_->control_context.shutdown();
-    std::vector<std::shared_future<void>> command_futures;
-    {
-        std::lock_guard lock(impl_->records_mutex);
-        command_futures.reserve(impl_->commands.size());
-        for (const auto &command : impl_->commands) {
-            if (command->submission_future.valid())
-                command_futures.push_back(command->submission_future);
-        }
-        impl_->commands.clear();
-    }
-    for (const auto &future : command_futures) {
-        try {
-            future.get();
-        } catch (...) {
+    auto current = impl_->runtime_state.load();
+    if (current == RuntimeState::Stopping) {
+        const auto target = failure ? RuntimeState::Failed : RuntimeState::Quiesced;
+        if (!impl_->runtime_state.transition(current, target)) {
+            failure = make_error(ErrorCode::InvalidState,
+                                 "runtime finalization state transition rejected");
         }
     }
     const auto shutdown_result = impl_->executor.shutdown(true);
-    const auto clean = shutdown_result == kairo::ShutdownResult::Completed;
-    impl_->runtime_state.store(RuntimeState::Stopped, std::memory_order_release);
-    return {clean, RuntimeState::Stopped, 0,
-            clean ? "runtime stopped" : "executor shutdown requested from worker"};
+    if (shutdown_result != kairo::ShutdownResult::Completed) {
+        return {false, state(), 0, "executor requires final shutdown from an external owner"};
+    }
+    current = impl_->runtime_state.load();
+    if (!failure && current == RuntimeState::Quiesced) {
+        if (!impl_->runtime_state.transition(current, RuntimeState::Stopped)) {
+            failure = make_error(ErrorCode::InvalidState, "runtime stopped transition rejected");
+        }
+    }
+    const bool clean = !failure && state() == RuntimeState::Stopped;
+    impl_->final_report = ShutdownReport{
+        clean, state(), 0,
+        failure ? (resubmitted ? "shutdown admission retry failed: " + failure->safe_message
+                               : failure->safe_message)
+                : (resubmitted ? "runtime stopped after shutdown admission retry"
+                               : (clean ? "runtime stopped" : "runtime shutdown failed"))};
+    return *impl_->final_report;
 }
 
 } // namespace mira

@@ -39,6 +39,7 @@ struct RecoveryOutcome final {
 struct RecoveryPolicy final {
     // Newest compatible schema the planner accepts (current major or older).
     SchemaVersion max_supported_schema = checkpoint_schema_current();
+    // All scanned session events count, including events of other tasks.
     std::uint64_t max_events_scanned = 1'000'000;
 };
 

@@ -1,3 +1,4 @@
+#include "tls_support.hpp"
 #include <mira/adapters/net/mbedtls_tls.hpp>
 
 #include <mira/model_contracts.hpp>
@@ -28,14 +29,7 @@
 namespace mira::adapters::net {
 namespace {
 
-[[nodiscard]] Error tls_error(std::string message, bool retryable = false) {
-    Error error;
-    error.code = retryable ? ErrorCode::Unavailable : ErrorCode::PermissionDenied;
-    error.domain = "mira.model.tls";
-    error.safe_message = std::move(message);
-    error.retryable = retryable;
-    return error;
-}
+using tls_support::tls_error;
 
 class MbedTlsChannel final : public ITlsChannel {
   public:
@@ -218,17 +212,9 @@ bool MbedTlsChannelFactory::initialize() {
 Result<std::unique_ptr<ITlsChannel>> MbedTlsChannelFactory::create(std::intptr_t native_handle,
                                                                    const std::string &host,
                                                                    const TlsOptions &options) {
-    if (!initialized_) {
-        return tls_error("tls factory was not initialized");
-    }
-    if (!options.verify_peer) {
-        return tls_error("tls peer verification cannot be disabled");
-    }
-    auto channel = std::make_unique<MbedTlsChannel>(native_handle, host, ca_file_);
-    if (!channel->setup()) {
-        return tls_error("tls channel setup failed");
-    }
-    return std::unique_ptr<ITlsChannel>(std::move(channel));
+    return tls_support::create_verified_channel(initialized_, options, [&] {
+        return std::make_unique<MbedTlsChannel>(native_handle, host, ca_file_);
+    });
 }
 
 } // namespace mira::adapters::net

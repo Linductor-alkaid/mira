@@ -1,3 +1,4 @@
+#include "context_error.hpp"
 #include <mira/context_working_context.hpp>
 
 #include <algorithm>
@@ -12,13 +13,7 @@ namespace {
 // Error factory and serialization helpers
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] Error working_context_error(ErrorCode code, std::string message) {
-    Error error;
-    error.code = code;
-    error.domain = "mira.context.working_context";
-    error.safe_message = std::move(message);
-    return error;
-}
+constexpr context_detail::ErrorFactory working_context_error{"mira.context.working_context"};
 
 [[nodiscard]] JsonValue items_to_json(const std::vector<WorkingContextItem> &items) {
     JsonValue::Array array;

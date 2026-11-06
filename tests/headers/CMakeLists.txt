@@ -15,6 +15,10 @@ foreach(HEADER IN ITEMS
         mira/observation_pipeline.hpp
         mira/event_store.hpp
         mira/action_journal.hpp
+        mira/verified_fact.hpp
+        mira/content_markers.hpp
+        mira/embedding_math.hpp
+        mira/action_dispatcher.hpp
         mira/artifact_store.hpp
         mira/security.hpp
         mira/replay.hpp

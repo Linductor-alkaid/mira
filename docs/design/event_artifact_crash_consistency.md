@@ -1,8 +1,8 @@
 # Mira EventStore、ArtifactStore 与崩溃一致性设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.3
+> 更新日期：2026-11-06
 > 适用范围：事件事实、资产、大载荷、Checkpoint 投影、Replay 和外部副作用恢复  
 > 上位决策：[DEC-003](../decisions/DEC-003-event-sourced-persistence.md)
 
@@ -55,6 +55,7 @@ struct EventEnvelope {
     TraceContext trace;
     EventPayload payload;
     IntegrityMetadata integrity;
+    EventTimestampOrigin timestamp_origin;
 };
 ```
 
@@ -151,6 +152,28 @@ store-root/
 
 路径由 store 内部根据已验证 ID/hash 生成，外部字符串不能直接拼成 filesystem path。
 
+### 4.3 FileEventStore 时间与物理版本
+
+[DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 的文件 v2 在一次
+append 中保存 wall 纳秒并将同一采集值写入内存投影。EventEnvelope 尾部增加
+timestamp_origin：AppendProcess、PersistedWall、UnavailableLegacy；旧行不再被
+赋重开时刻。恢复不复用跨进程的 monotonic，顺序仍以 sequence 为准。
+
+两行防降级标记后使用严格 JSON 记录与覆盖时间/序号的额外 checksum；旧数值行
+可作为原样前缀，新 append 只追加一次格式转换，不重写历史。未知版本、完整
+损坏或语义错误只读拒绝，只有允许的未提交尾部可修复。格式、原请求摘要与记录
+摘要的区别、旧 reader 验证和 C++ 布局重编译见
+[兼容性说明](../compatibility/file-event-log-v2.md)。这不改变 02/03 的设备/断电门禁，
+也不能追回旧记录/缓存的原始时间或提供密码学认证。
+
+[DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md) 校准实际
+确认：MemoryEventStore 仅 Buffered；FileEventStore 完成流刷新与关闭检查后为
+ProcessCrash，拒绝 PowerLoss，非法等级拒绝。重复请求不提升等级，flush 同样
+受只读/串行门禁约束。测试强确认须显式模拟，真实宿主不得用内存替身越过 journal。
+独立 driver 在九个握手窗口外部终止 writer 后由 verifier 重开，补充进程强杀证据；
+不代替设备输入释放、系统级同步和断电实测。
+
+
 ## 5. ArtifactStore
 
 ### 5.1 Descriptor
@@ -222,6 +245,25 @@ Planner produces ExecutableAction
 
 `ActionDispatchStarted` 包含 action digest、target descriptor、Task/Environment epoch、lease ID、
 confirmation ID（如有）和 idempotency metadata。它表示 Mira 即将越过副作用边界，不表示平台已执行。
+
+实现注记（2026-11-05）：`ActionJournal` 每次 append 检查回执 `achieved`，未达到
+`ProcessCrash` 或返回非法等级时以 `DataLoss` 拒绝推进本地阶段；更强的 `PowerLoss`
+可接受。失败不证明记录未写入，恢复保持保守。内存存储仅用于进程内测试，真实宿主
+必须提供耐久实现。此门槛修正不等于 Loop/Workflow 的自动接线已完成，后续归
+[维护计划](../plans/maintenance-2026-11-runtime-wiring-and-reuse.md) 01–03；
+契约澄清见 [DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md)。
+同日第二轮：[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md) 与
+[输入派发设计](journaled_input_dispatch_design.md) 将 AgentLoop 输入路径接到宿主
+lease + JournaledActionDispatcher；未装配即拒绝输入，未知结果不自动重发。
+Loop 的 task/epoch/detail envelope 与旧 flat JSON 都由 checkpoint reducer 消费，
+嵌套身份错误、负 epoch 或旧 epoch 不覆盖有效状态。Workflow/可写工具、连续控制及
+完整崩溃窗口仍属开放范围，不由本批输入接线替代。
+
+同日第三轮：[DEC-076](../decisions/DEC-076-journal-identity-and-bounded-recovery.md)
+收紧 journal 的 intent 绑定、pipe 校验与分页预算，坏回执/坏页不再被当作完整确认。
+journal 与 checkpoint 共用解析器，RecoveryPlanner 扫描预算计入其他任务事件。
+独立 CTest 子进程在提交边界通过 `_Exit` 跳过析构，由另一进程恢复验证，区别于
+正常关闭重开测试；它不等价于断电或目标平台的 watchdog/输入释放取证。
 
 在 durable ack 与真实调用之间仍存在进程崩溃窗口，因此恢复分类为 uncertain，而不是未执行。这是
 有意选择的安全保守性。
@@ -382,6 +424,13 @@ safe context 引用的数据。
 隔离原则。
 
 ## 16. 关联文档
+
+[DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 的
+[离线恢复宿主](../api/offline-composition-hosts.md#recovery规划输出控制下一步行为)
+把 FileEventStore/SQLite cache 的重开规划接到新的只读观察；未证实时保留 pending/pin，
+不发清除状态的 VerificationResult，不重发输入。样板依赖 03 的 Linux 契约证据，
+不能替代 OS 强杀/断电、平台中断门禁。BUG-20261106-001 后续按 DEC-087 修复新
+记录时间，旧时间明确缺失；不从样板的序号重建推导旧历史时间或 TTL 可追回。
 
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [Context 与 Memory](context_and_memory_design.md)

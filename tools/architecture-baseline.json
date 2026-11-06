@@ -3,7 +3,6 @@
   "violations": [
     "max-file-lines:adapters/net/socket_transport.cpp",
     "max-file-lines:src/model/model_contracts.cpp",
-    "max-file-lines:src/storage/checkpoint_store.cpp",
     "max-file-lines:src/storage/sqlite_memory_store.cpp",
     "max-file-lines:src/workflow/workflow_events.cpp",
     "max-file-lines:src/workflow/workflow_ir.cpp",

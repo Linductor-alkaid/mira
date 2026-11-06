@@ -37,9 +37,19 @@ struct ActionJournalState final {
 
 class ActionJournal final {
   public:
+    struct RecoveryPolicy final {
+        std::size_t page_size = 1024;
+        std::size_t max_events_scanned = 1'000'000;
+    };
     ActionJournal(RuntimeId runtime_id, IEventStore &store)
-        : runtime_id_(runtime_id), store_(store) {}
+        : ActionJournal(runtime_id, store, RecoveryPolicy{}) {}
+    ActionJournal(RuntimeId runtime_id, IEventStore &store, RecoveryPolicy policy)
+        : runtime_id_(runtime_id), store_(store), recovery_policy_(policy) {}
 
+    // Requires a store acknowledgement at least as strong as ProcessCrash.
+    // A weaker acknowledgement is DataLoss and never advances local phase.
+    // The host must supply a genuinely durable store for crash recovery;
+    // MemoryEventStore is only a process-local test double.
     [[nodiscard]] Result<AppendReceipt> prepare(const ActionIntent &intent);
     [[nodiscard]] Result<AppendReceipt> dispatch_started(const ActionIntent &intent);
     [[nodiscard]] Result<AppendReceipt> receipt(const ActionIntent &intent,
@@ -49,13 +59,19 @@ class ActionJournal final {
     [[nodiscard]] Result<ActionJournalState> recover(const ActionIntent &intent) const;
 
   private:
+    struct Entry final {
+        std::string binding;
+        ActionJournalState state;
+    };
+    [[nodiscard]] Result<void> validate(const ActionIntent &intent) const;
     [[nodiscard]] Result<AppendReceipt> append(const ActionIntent &, std::string type,
                                                std::string data, EventClass classification,
                                                Durability durability);
     RuntimeId runtime_id_;
     IEventStore &store_;
+    RecoveryPolicy recovery_policy_;
     mutable std::mutex mutex_;
-    std::unordered_map<ActionId, ActionJournalState, StrongIdHash<ActionId>> states_;
+    std::unordered_map<ActionId, Entry, StrongIdHash<ActionId>> states_;
 };
 
 } // namespace mira

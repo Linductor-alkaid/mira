@@ -2,7 +2,10 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
+> 更新日期：2026-11-06（2026-11 维护轮累计完成 11/13 项；文件日志 v2、报告处置、
+> 实际耐久等级、Linux 外部强杀与定向 TSAN 已取证；02/03 及目标平台/断电门禁
+> 保持开放，详见[维护计划第十四轮](maintenance-2026-11-runtime-wiring-and-reuse.md)。）
+> 此前 2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
 > `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
 > 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
 > 通道、上下文归属、`mira.interaction.*.v1` 事件族；本地 119/119、TSAN 118/118，
@@ -1479,3 +1482,145 @@ closed；恢复反馈只指认供应商报告过的原因；终态原因统一�
 过滤/拒绝信号翻译成 `ContentFiltered`/`Refused` 终态——此前被折叠成不完整输出或留成
 「完成但没有文本」，导致循环重试被过滤/被拒绝的回复。实现与 PR 证据由维护计划记录，
 Mirage 消费另验。
+
+2026-11-05：新增[运行时接线、恢复证据与复用治理维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)
+（Planned，`MNT-202611-01`–`12`）：依据架构分析报告与定向源码复核，优先补齐
+DEC-003 动作副作用日志与恢复闭环，随后处理事实生产契约、尝试数、参考宿主、
+价格/度量出口及定向复用。事实自动接入和容量/retention 分别沿用 M30/M31，
+不因仓库无调用点删除公共契约。当前仅完成计划编制，所有实现与运行验收保持未完成。
+
+2026-11-05（首轮实施）：上述维护轮进入 In Progress；
+[DEC-074](../decisions/DEC-074-journal-ack-and-gateway-attempt-accounting.md) 冻结
+`MNT-202611-05` 的跨候选 attempts 与新增 `MNT-202611-13` 的 journal 确认门槛。
+动作派发完整接线 01–03 继续开放，实际测试与平台限制见维护计划 §9。
+
+2026-11-05（第二轮实施）：
+[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md) 冻结宿主 lease 与
+输入 Dispatcher 边界，01 设计冻结完成、02 的 Linux 离线输入实现落地（待 03 完整验收）。AgentLoop 输入
+必须装配 JournaledActionDispatcher，未装配时派发前失败；start durable ack 后重验
+准入，未知结果 Verify 未证实时保留 pin、不自动重发。补齐 Loop 事件 envelope 的
+checkpoint 消费与离线耐久派发样板。03 的完整崩溃/通用 journal 矩阵、可写工具与
+连续控制接线及真实平台验证仍开放，详见维护计划第二轮记录。
+
+2026-11-05（第三轮实施）：
+[DEC-076](../decisions/DEC-076-journal-identity-and-bounded-recovery.md) 冻结 journal
+完整 intent 绑定、严格 pipe 解析与有界分页恢复；RecoveryPlanner 扫描预算同样计入
+其他任务事件。补充独立进程在九个提交窗口突然退出、由第二进程恢复的矩阵与
+ASAN+UBSAN 定向验证。02/03 的目标平台与完整退出条件仍保持开放，实际结果见维护计划。
+
+2026-11-05（复用治理轮）：按维护计划 09/10/11 推进共享边界，
+[DEC-077](../decisions/DEC-077-shared-embedding-similarity.md) 冻结向量有效性与余弦数值规则，
+[DEC-078](../decisions/DEC-078-shared-sqlite-store-initialization.md) 冻结 SQLite 参考后端的
+共享打开/schema/诊断编排与原子迁移。清理局部无行为残留，公共保留接口继续按兼容性
+审计处理；本轮不改变 Executor 生命周期，验收与未执行平台项见维护计划复用治理记录。
+
+2026-11-05（第五轮局部治理）：
+[DEC-079](../decisions/DEC-079-workflow-validation-and-task-state-names.md) 固定 workflow
+解码公共逻辑与各 schema 错误映射的边界，并提供 Core 单一 TaskState 名称表供
+Interaction 与 Checkpoint 使用。合法持久化拼写不变；未知枚举明确诊断、未知文本
+拒绝解析。Linux 全量 127/127、ASAN+UBSAN 定向 6/6，具体命令与首次验证修正见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第五轮记录；11 其他治理
+以及原平台门禁保持未完成。
+
+2026-11-05（第六轮 Runtime 治理）：
+[DEC-080](../decisions/DEC-080-runtime-lifecycle-transition-boundary.md) 将 Runtime 全部
+状态写入收敛到公共转换表校验的 CAS，补齐 Failed 的资源清理出边；串行化初始化、
+停止准入和命令 future 登记，关闭命令容量拒绝后由外部 finalizer 有界补交。
+环境释放失败与回调自等待均显式报告，不以 Executor join 成功覆盖业务收敛失败。
+Linux 全量 128/128、ASAN+UBSAN 定向 3/3，新生命周期契约连续 20 次通过；复现与
+未执行平台项见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第六轮。
+11 的其余局部治理和维护轮其他退出条件保持开放。
+
+2026-11-05（第七轮 Context/Memory 治理）：
+[DEC-081](../decisions/DEC-081-context-marker-and-error-reuse.md) 将四类配置的默认
+禁止内容/注入词表及 ASCII 匹配收敛到共同来源，修复 Memory 自定义大写 marker 漏拦，
+空 marker 在访问模型/存储前作为配置错误返回；审批、scope/ACL 与注入来源边界保持。
+六处 Context 简单 Error 工厂只共享字段构造，保留各错误域与领域码映射。
+Linux 全量 129/129、ASAN+UBSAN 定向 8/8；公共工厂的 API、示例、契约测试及
+安装消费者同步，详见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)
+第七轮。11 的事件封装、TLS 和公共孤儿契约审计等剩余工作继续开放。
+
+2026-11-05（第八轮复用治理收尾）：
+[DEC-082](../decisions/DEC-082-local-event-tls-reuse-and-public-retention.md) 共享 20 个
+Workflow 事件封装尾部、TLS 工厂公共准入/构造与 module 错误工厂；重构前 wire
+fixture 逐字节比较通过，TLS 后端必要差异保留。报告点名公开接口与枚举已逐项
+[审计保留](../compatibility/2026-11-public-contract-audit.md)，补齐直接消费与兼容性
+契约，不按调用数删除。Linux 全量 131/131、ASAN+UBSAN 定向 8/8；结合前轮证据，
+MNT-202611-11 按 Linux 离线复用/审计范围验收。其他维护项和平台门禁保持开放，
+首次预期修正与完整复现见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第八轮。
+
+2026-11-06（第九轮显式事实生产）：
+[DEC-083](../decisions/DEC-083-explicit-verified-fact-publication.md) 冻结宿主显式
+VerifiedFactPublisher、可信语义 lease、证据/身份/有效期与幂等边界。离线宿主将
+simulator 原生观察经 FileEventStore、checkpoint、既有 consolidation 写入 SQLite
+并检索，重开重试、取消及接管拒绝均通过。Checkpoint 升为 2.0，读取器升级与 C++
+重编译要求见[迁移说明](../compatibility/verified-fact-v1-and-checkpoint-v2.md)。
+Linux 全量 133/133、ASAN+UBSAN 定向 8/8；MNT-202611-04 按显式 Linux fixture
+范围完成，累计 7/13。发现的 BUG-20261106-001（文件恢复重建信封时间）仅对新
+事实以持久化载荷时间规避，全局修复由 12 跟踪。M30 自动化、其余维护项和目标
+平台门禁保持开放，失败历史与复现命令见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第九轮。
+
+2026-11-06（第十轮价格与预算宿主）：
+[DEC-084](../decisions/DEC-084-model-price-reference-host.md) 提供显式 fixture
+PriceTable 注入、unknown 拒绝/允许、缺失/partial usage、取消/迟到与模糊完成的
+十二场景 consumer；核算结果、预留余额和事件元数据均实际消费。修正文档中的
+默认价格策略和迟到核算描述，库配置/算法不变。Linux 全量 134/134、ASAN+UBSAN
+定向 3/3，MNT-202611-07 按单 profile/一次调用离线范围完成，累计 8/13。
+累计账单硬限额、多候选重估和耐久审计由 12 登记专项立项，不扩大 M33 范围；
+其余维护项、目标平台与真实计费门禁保持开放，详见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十轮和
+[价格宿主指南](../api/model-price-host.md)。
+
+2026-11-06（第十一轮调度诊断宿主）：
+[DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md) 明确原始路由
+累计值与 Runtime 串行命令结果的观测边界。新增独立 kairo 采样 consumer，同时
+消费 13 项 scheduling_metrics、宿主局部拒绝数和当前未决 handle；证明容量拒绝、
+停止准入与异常可在 routing 为零时仍从结果/关闭报告观察到。控制面外消费输出，
+不改公开布局或 M31 容量算法。Linux 全量 135/135、ASAN+UBSAN 定向 2/2，样板
+连续 20/20 通过；MNT-202611-08 按离线范围完成，累计 9/13。02/03、06、12
+及平台门禁保持开放，首次状态机预期修正与命令见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十一轮，消费口径见
+[调度宿主指南](../api/runtime-scheduling-host.md)。
+
+2026-11-06（第十二轮三个组合宿主）：按用户要求先提交 08 为 `bbd3f1c`，再依据
+[DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 推进 MNT-202611-06。
+Workflow create/start/wait 读取原生只读工具结果、验证并消费终态事件；Context
+从 checkpoint/session ACL 检索经 Layer 0 生成有界请求并由 provider 实际检查；
+Recovery 从重开的 FileEventStore/SQLite cache 规划到新的只读 Observe，保留
+未决验证与副作用，不重发、不复活终态。三个样板还经安装后 SDK 编译运行。
+Linux 全量 138/138、ASAN+UBSAN 定向 7/7；06 按离线组合范围完成，累计 10/13。
+恢复样板只依赖 03 已有 Linux 契约证据，不关闭其真机/强杀/断电门禁，也不修复
+已登记的信封时间问题。02/03、12 与原平台门禁继续开放，首次修正与复现见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十二轮；使用边界见
+[组合宿主指南](../api/offline-composition-hosts.md)。
+
+2026-11-06（第十三轮文件时间与报告收口）：先按用户要求提交 06 为 `4884605`，
+再依据 [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 修复
+BUG-20261106-001 的新记录恢复时间。FileEventStore v2 精确保留 wall 纳秒，旧
+时间明确缺失；新增来源字段要求全部 C++ 消费者重编译，见
+[兼容说明](../compatibility/file-event-log-v2.md)。缺时旧事实自动固化拒绝，
+原 payload 时间事实仍可消费；损坏/未知版本只读保留，真实旧 reader 探针不改文件。
+[报告处置台账](../compatibility/2026-11-report-disposition.md)逐项归属原报告和
+行动清单，12 按分类与文档范围完成，累计 **11/13**。Linux 全量 **139/139**、
+ASAN+UBSAN 定向 **10/10**；失败历史及准确命令见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十三轮。02/03、
+RW-G1–G6 与目标平台/OS 强杀/断电门禁保持开放，不宣称旧时间可追回或费用/隐私
+专项已交付；维护轮保持 In Progress。
+
+2026-11-06（第十四轮实际耐久与外部强杀）：按
+[DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md) 校正
+MemoryEventStore 仅 Buffered、FileEventStore 实际 ProcessCrash，明确拒绝尚未
+实现的 PowerLoss；裸内存 journal 零输入，测试强确认改为显式模拟，Working
+Context 宿主迁移文件日志。新增 marker 握手后外部 SIGKILL 九窗口，独立 verifier
+重开两次、不重发且终态不复活。Linux 全量 **141/141**、ASAN+UBSAN 定向
+**14/14**、TSAN 定向 **13/13**，命令与失败修正见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十四轮。累计仍
+**11/13**；Windows/Android 当前提交与真实平台、系统同步/断电未验证，02/03
+及全局门禁不关闭，可写工具/连续控制仍属原后续范围。
+
+2026-11-06（第十五轮 CI 修正）：PR [#114](https://github.com/Linductor-alkaid/mira/pull/114)
+初始 CI 暴露 Clang 测试参数遮蔽与 Windows 文本流换行转换。参数重命名并固定
+文件日志 binary/LF 写入，补 CRLF 历史前缀、截尾偏移与混合续写回归；本机 GCC
+全量 **141/141**，Clang 18 严格语法检查通过。准确命令、原始失败与发布条件见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十五轮。合并以当前
+head 的全部 CI checks 通过为前置，目标设备/断电门禁仍开放，累计仍 **11/13**。

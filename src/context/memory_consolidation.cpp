@@ -1,6 +1,9 @@
 #include <mira/memory_consolidation.hpp>
 
+#include "context_text.hpp"
+
 #include <mira/json.hpp>
+#include <mira/verified_fact.hpp>
 
 #include <algorithm>
 #include <string>
@@ -9,22 +12,6 @@
 namespace mira {
 
 namespace {
-
-[[nodiscard]] bool contains_any_marker(const std::string &text,
-                                       const std::vector<std::string> &markers) {
-    std::string lower;
-    lower.reserve(text.size());
-    for (const char character : text) {
-        lower += static_cast<char>(character >= 'A' && character <= 'Z' ? character - 'A' + 'a'
-                                                                        : character);
-    }
-    for (const auto &marker : markers) {
-        if (lower.find(marker) != std::string::npos) {
-            return true;
-        }
-    }
-    return false;
-}
 
 [[nodiscard]] std::chrono::system_clock::time_point event_wall(const EventEnvelope &event) {
     return std::chrono::system_clock::time_point(
@@ -47,16 +34,6 @@ parse_verified_fact(const EventEnvelope &event) {
         return std::nullopt;
     }
     return std::make_pair(*key->as_string(), *value->as_string());
-}
-
-[[nodiscard]] std::string lowercase(const std::string &text) {
-    std::string lower;
-    lower.reserve(text.size());
-    for (const char character : text) {
-        lower += static_cast<char>(character >= 'A' && character <= 'Z' ? character - 'A' + 'a'
-                                                                        : character);
-    }
-    return lower;
 }
 
 } // namespace
@@ -84,6 +61,18 @@ Result<void> ConsolidationPolicy::validate() const {
         return make_memory_error(MemoryDomainCode::InvalidMutation,
                                  "candidate bound must be positive");
     }
+    for (const auto &marker : forbidden_markers) {
+        if (marker.empty()) {
+            return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                     "forbidden markers must not be empty");
+        }
+    }
+    for (const auto &marker : injection_markers) {
+        if (marker.empty()) {
+            return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                     "injection markers must not be empty");
+        }
+    }
     return Result<void>{};
 }
 
@@ -99,13 +88,24 @@ MemoryConsolidator::MemoryConsolidator(ConsolidationPolicy policy, IConsolidatio
 
 std::vector<MemoryCandidate>
 MemoryConsolidator::extract_deterministic(std::span<const EventEnvelope> events,
-                                          const MemoryScope &scope) const {
+                                          const MemoryScope &scope, const Timestamp &now) const {
     std::vector<MemoryCandidate> candidates;
     // Verified facts become environment/application facts; a settled loop
     // becomes an episode. Only verified event classes contribute — model
     // guesses and unverified observations never enter on their own.
     for (const auto &event : events) {
-        if (const auto fact = parse_verified_fact(event)) {
+        const auto body = event.payload.type == "TaskFactVerified" ? parse_json(event.payload.data)
+                                                                   : Result<JsonValue>{JsonValue{}};
+        const bool versioned = body && body.value().find("schema") != nullptr;
+        std::optional<PublishedTaskFact> published;
+        if (versioned) {
+            auto decoded = parse_published_task_fact(event);
+            if (!decoded || decoded.value().scope != scope || !decoded.value().valid_at(now.wall))
+                continue;
+            published = std::move(decoded).value();
+        }
+        const auto legacy = versioned ? std::nullopt : parse_verified_fact(event);
+        if (published || legacy) {
             MemoryRecord record;
             record.id = MemoryId::generate();
             record.scope = scope;
@@ -113,16 +113,29 @@ MemoryConsolidator::extract_deterministic(std::span<const EventEnvelope> events,
                               ? MemoryKind::ApplicationFact
                               : (scope.kind == MemoryScopeKind::User ? MemoryKind::Preference
                                                                      : MemoryKind::EnvironmentFact);
-            record.statement = fact->first + "=" + fact->second;
-            record.validity.valid_from = event_wall(event);
-            record.recorded_at = event_wall(event);
+            record.statement = published ? published->claim.key + "=" + published->claim.value
+                                         : legacy->first + "=" + legacy->second;
+            record.validity.valid_from =
+                published ? std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                                published->claim.valid_from)
+                          : event_wall(event);
+            // V1 attestation time is persisted in the payload. A file-store
+            // envelope may be re-timestamped by legacy recovery (BUG-20261106-001).
+            record.recorded_at = published ? record.validity.valid_from : event_wall(event);
             record.provenance = {event.event_id};
+            if (published) {
+                auto until = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                    published->claim.valid_until);
+                record.validity.valid_until = until;
+                record.expires_at = until;
+                record.provenance.push_back(published->claim.evidence_event);
+            }
             record.verification = MemoryVerification::Verified;
             record.confidence = 0.9F;
             record.sensitivity = Sensitivity::Internal;
             MemoryCandidate candidate;
             candidate.proposed = std::move(record);
-            candidate.evidence = {event.event_id};
+            candidate.evidence = candidate.proposed.provenance;
             candidate.reason = MutationReasonCode::VerifiedEvent;
             candidates.push_back(std::move(candidate));
             continue;
@@ -164,7 +177,23 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
     if (!valid_policy) {
         return valid_policy.error();
     }
-    std::vector<MemoryCandidate> candidates = extract_deterministic(events, scope);
+    // Missing v1 file time must not become "now" via the generic default.
+    for (const auto &event : events) {
+        if (event.timestamp_origin != EventTimestampOrigin::UnavailableLegacy)
+            continue;
+        auto body = parse_json(event.payload.data);
+        if (!body || body.value().find("schema"))
+            continue;
+        const bool fact = parse_verified_fact(event).has_value();
+        const auto *outcome = body.value().find("outcome");
+        const bool episode = event.payload.type == "LoopSettled" && outcome &&
+                             outcome->is_string() && *outcome->as_string() == "Completed";
+        if (fact || episode)
+            return make_memory_error(
+                MemoryDomainCode::InvalidMutation,
+                "source event time is unavailable; explicit validation required");
+    }
+    std::vector<MemoryCandidate> candidates = extract_deterministic(events, scope, now);
     if (model_ != nullptr) {
         // Model proposals are untrusted: strip any HumanConfirmed claim and
         // mark them model-assisted so the policy applies stricter checks.
@@ -202,14 +231,14 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             proposed.recorded_at =
                 std::chrono::time_point_cast<std::chrono::system_clock::duration>(now.wall);
         }
-        const std::string key =
-            memory_kind_name(proposed.kind) + ":" + lowercase(proposed.statement);
+        const std::string key = memory_kind_name(proposed.kind) + ":" +
+                                context_text::to_lower_ascii(proposed.statement);
         ConsolidationEntry entry;
         entry.key = key;
         entry.mutation = MutationId::generate();
 
         // 1. Forbidden content never persists.
-        if (contains_any_marker(proposed.statement, policy_.forbidden_markers)) {
+        if (context_text::carries_marker(proposed.statement, policy_.forbidden_markers)) {
             entry.disposition = CandidateDisposition::RejectedForbidden;
             entry.reason_code = "forbidden-content-marker";
             report.entries.push_back(std::move(entry));
@@ -218,7 +247,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         // 2. Untrusted instruction-shaped text is rejected before it can
         // become a persistent prompt injection.
         if (candidate.model_assisted &&
-            contains_any_marker(proposed.statement, policy_.injection_markers)) {
+            context_text::carries_marker(proposed.statement, policy_.injection_markers)) {
             entry.disposition = CandidateDisposition::RejectedInjection;
             entry.reason_code = "instruction-shaped-model-text";
             report.entries.push_back(std::move(entry));
@@ -289,6 +318,21 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             entry.resulting_version = conflict->version;
             report.entries.push_back(std::move(entry));
             continue;
+        }
+
+        if (conflict && !candidate.model_assisted &&
+            candidate.reason == MutationReasonCode::VerifiedEvent) {
+            const bool bounded = proposed.validity.valid_until.has_value();
+            const bool previous_bounded = conflict->validity.valid_until.has_value();
+            if ((!bounded && previous_bounded) ||
+                (bounded == previous_bounded && conflict->recorded_at >= proposed.recorded_at)) {
+                entry.disposition = CandidateDisposition::RejectedConflict;
+                entry.reason_code = !bounded && previous_bounded
+                                        ? "legacy-over-bounded-fact"
+                                        : "stale-or-ambiguous-verified-event";
+                report.entries.push_back(std::move(entry));
+                continue;
+            }
         }
 
         // 5. High-risk kinds wait for human approval before apply().

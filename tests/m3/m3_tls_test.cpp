@@ -168,6 +168,22 @@ class TlsServer final {
     std::unique_ptr<SSL, SslDelete> ssl_;
 };
 
+int factory_admission_errors_keep_their_contract() {
+    TestTlsChannelFactory factory("unused-fixture-ca");
+    for (bool verify_peer : {true, false}) {
+        TlsOptions options;
+        options.verify_peer = verify_peer;
+        auto rejected = factory.create(-1, "localhost", options);
+        MIRA_CHECK(!rejected);
+        MIRA_CHECK(rejected.error().code == ErrorCode::PermissionDenied);
+        MIRA_CHECK(rejected.error().domain == "mira.model.tls");
+        MIRA_CHECK(rejected.error().domain_code == 0 && !rejected.error().retryable);
+        MIRA_CHECK(rejected.error().safe_message == "tls factory was not initialized");
+        MIRA_CHECK(!rejected.error().operation_id && !rejected.error().diagnostic_artifact);
+    }
+    return 0;
+}
+
 int happy_path_over_tls() {
     kairo::Executor ex;
     kairo::ExecutorConfig config;
@@ -194,6 +210,12 @@ int happy_path_over_tls() {
 
     auto factory = std::make_shared<TestTlsChannelFactory>(ca_path.string());
     MIRA_CHECK(factory->initialize());
+    TlsOptions disabled;
+    disabled.verify_peer = false;
+    auto refused = factory->create(-1, "localhost", disabled);
+    MIRA_CHECK(!refused && refused.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(refused.error().domain == "mira.model.tls" && !refused.error().retryable);
+    MIRA_CHECK(refused.error().safe_message == "tls peer verification cannot be disabled");
     auto secrets = std::make_shared<MapSecretResolver>();
     SocketHttpTransport transport(ex, secrets, factory);
     MIRA_CHECK(transport.start());
@@ -602,6 +624,7 @@ int sni_is_skipped_for_ip_literals() {
 } // namespace
 
 int main() {
+    MIRA_CHECK(factory_admission_errors_keep_their_contract() == 0);
     if (const int status = happy_path_over_tls(); status != 0) {
         return status;
     }

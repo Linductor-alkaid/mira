@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.1.0（对应 `Mira 0.1` 安装包）
-> 更新日期：2026-10-29（新增交互协调层页）
+> 更新日期：2026-11-06（文件日志 v2 时间来源、Checkpoint 2.0 与离线宿主）
 > 适用范围：`include/mira/` 全部公共头文件与随包安装的 CMake 目标
 
 本手册按模块描述 Mira 的公共 API。实现细节、设计动机和状态机推导见
@@ -15,16 +15,25 @@
 | --- | --- | --- |
 | [核心契约与 Runtime](core-runtime.md) | `core_contracts.hpp`、`runtime.hpp`、`runtime_baseline.hpp`、`action_journal.hpp` | ID、时间戳、错误模型、三层状态机、命令/操作生命周期、动作日志 |
 | [环境与 Observation](environment-observation.md) | `environment.hpp`、`observation.hpp`、`coordinates.hpp`、`observation_pipeline.hpp`、`adapters/` | `IEnvironment` 契约、Observation 快照、坐标变换、Simulator/Android/Replay 适配器 |
-| [模型层与 Agent Loop](model-agent-loop.md) | `model_*.hpp`、`agent_loop.hpp`、`tool_executor.hpp`、`conversation_loop.hpp`、`conversation_log.hpp` | OpenAI-compatible Provider、路由/重试/熔断/预算网关、决策解析、离散闭环、BuiltIn 工具边界、有限/持续会话循环、会话对话投影 |
+| [模型层与 Agent Loop](model-agent-loop.md) | `model_*.hpp`、`agent_loop.hpp`、`action_dispatcher.hpp`、`tool_executor.hpp`、`conversation_loop.hpp`、`conversation_log.hpp` | OpenAI-compatible Provider、路由/重试/熔断/预算网关、决策解析、离散闭环、Journal 输入派发、BuiltIn 工具边界、有限/持续会话循环、会话对话投影 |
 | [Workflow 契约](workflow-contracts.md) | `workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、`workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、`workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`、`workflow_recovery.hpp` | Workflow IR 序列化与校验、参数绑定、WorkflowRun 状态视图与转换表、资产版本化、事件载荷、操作 Tool 规格、执行/介入/编译/导航/学习/恢复编排各层 |
 | [事件、Checkpoint 与恢复](events-recovery.md) | `event_store.hpp`、`artifact_store.hpp`、`json.hpp`、`replay.hpp`、`task_checkpoint.hpp`、`task_recovery.hpp`、`state_store.hpp` | EventStore 事实源、Artifact 存储、崩溃恢复规划、SQLite 参考后端 |
-| [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |
+| [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`embedding_math.hpp`、`content_markers.hpp`、`verified_fact.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、共享向量数值边界、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |
 | [安全与权限](security.md) | `security.hpp` | Principal、能力授权、风险分级、PolicyEngine、Human Confirmation、脱敏 |
 | [交互协调层](interaction-coordinator.md) | `interaction_coordinator.hpp` | 主体级统一输入入口：输入信封与阶段、幂等台账、确定性路由裁决、Loop 输入汇、上下文归属、`mira.interaction.*.v1` 事件族（M28，DEC-068） |
 | [Temporal Policy](temporal-policy.md) | `temporal_policy.hpp` | `TemporalHistory` 有界观测环、`ReactiveRule` schema v1（`mira.policy.rule.v1`）、`ReactivePolicyRuntime` 确定性评估与宿主显式归纳/采纳/测试/晋升生命周期（M26，DEC-037 Stage T1） |
 | [World State 投影](world-state.md) | `world_state.hpp` | 会话世界状态确定性投影：前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、有界存活实体表与变化环、六类输入 + 八个纯函数算子 + `rebuild_world_state` 重放重建、`mira.worldstate.v1` wire 与 `mira.world_state` 八码错误域（M27，DEC-041/DEC-046） |
 
 ## 通用约定
+
+模型价格的显式注入、known/unknown 与取消结算的可运行参考见
+[价格与预算宿主](model-price-host.md)。
+
+路由累计值、命令拒绝和当前未决数的消费边界见
+[Runtime 调度诊断宿主](runtime-scheduling-host.md)。
+
+Workflow 终态、Layer 0 请求与持久化恢复规划的实际下游消费见
+[三个离线组合宿主](offline-composition-hosts.md)。
 
 ### 错误模型
 

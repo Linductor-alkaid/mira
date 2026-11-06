@@ -20,3 +20,12 @@ if(TARGET Mira::mbedtls_transport)
                 $<TARGET_FILE_DIR:mira_installed_consumer>)
 endif()
 target_compile_features(mira_installed_consumer PRIVATE cxx_std_20)
+
+# Compile the three composition examples strictly against installed targets.
+foreach(host IN ITEMS workflow_runtime context_assembly recovery_planner)
+    add_executable(mira_installed_${host}_host_consumer
+        "${CMAKE_CURRENT_LIST_DIR}/../../examples/${host}_host_consumer.cpp")
+    target_link_libraries(mira_installed_${host}_host_consumer PRIVATE
+        Mira::core Mira::workflow Mira::simulator_adapter Mira::state_store kairo::kairo)
+    target_compile_features(mira_installed_${host}_host_consumer PRIVATE cxx_std_20)
+endforeach()

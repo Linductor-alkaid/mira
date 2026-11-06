@@ -84,6 +84,12 @@ _Avoid_: 确认（Confirmation 是安全授权语义，见第 5 节）
 Session 内托管"步推进 + 工具调用 + 用户介入注入"的离散闭环组件。
 _Avoid_: run loop、主循环（暗示无界循环，违反有界步进）
 
+**Action Dispatch Lease（动作派发租约）**:
+宿主授予一次有界输入的资源预留，`IActionDispatchLease` 的所有权覆盖 durable start、
+最终校验、真实调用和结果记录，析构释放。它不是 Runtime 的 OperationKey，也不是
+模型完成结果的 admission；撤回需要配合取消与环境 interrupt。
+权威来源：[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md)。
+
 ## 4. Tool 模组体系（DEC-009 / DEC-039 / DEC-040）
 
 权威来源：[Tool 模组设计](../design/tool_module_design.md)、[Tool 稳定引用与 Skill 设计](../design/tool_reference_and_skill_design.md)、[MCP 准入设计](../design/mcp_tool_admission_design.md)。

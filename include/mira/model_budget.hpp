@@ -98,7 +98,7 @@ class BudgetLedger final {
     [[nodiscard]] const PriceTable &prices() const noexcept { return prices_; }
     [[nodiscard]] BudgetReservation reserved(const TaskId &task) const;
     [[nodiscard]] std::uint64_t spent_micros(const TaskId &task) const;
-    // Releases reservations for tasks that will issue no further requests.
+    // Closes the account to new reservations; existing balances remain for audit.
     void close(const TaskId &task);
 
   private:

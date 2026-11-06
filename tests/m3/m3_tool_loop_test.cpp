@@ -1,3 +1,4 @@
+#include "support/action_dispatch_support.hpp"
 // AgentLoop tool closure and user-message tests (DEC-015, DEC-016, issue #8).
 // The recording provider serves canonical ModelResponses so the assertions
 // see exactly what the model saw, including tool exposure and fed-back results.
@@ -64,6 +65,7 @@ class ToolLoopFixture final {
                                                        bool with_tools = true) {
         auto loop = std::make_unique<AgentLoop>(environment_, *gateway_, config);
         loop->set_event_store(events_, runtime_, spec_.session_id);
+        wire_scripted_action_dispatch(*loop, spec_.session_id, events_, runtime_);
         if (with_tools) {
             loop->set_tool_registry(registry_);
         }

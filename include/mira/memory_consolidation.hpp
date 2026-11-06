@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mira/content_markers.hpp>
+
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 
@@ -52,13 +54,10 @@ class IConsolidationModel {
 struct ConsolidationPolicy final {
     // High-risk kinds requiring explicit approval before IMemory.apply().
     std::vector<MemoryKind> approval_required_kinds = {MemoryKind::Preference};
-    // Content markers that must never persist into long-term memory.
-    std::vector<std::string> forbidden_markers = {
-        "api_key", "apikey", "authorization:", "bearer ", "password=", "secret="};
-    // Instruction-shaped markers for untrusted/model text.
-    std::vector<std::string> injection_markers = {
-        "ignore previous", "disregard previous", "you are now",
-        "system:",         "new instructions:",  "override policy"};
+    // Nonempty ASCII case-insensitive substrings forbidden in long-term memory.
+    std::vector<std::string> forbidden_markers = default_forbidden_content_markers();
+    // Nonempty instruction-shaped substrings for untrusted/model text only.
+    std::vector<std::string> injection_markers = default_injection_content_markers();
     std::size_t max_candidates_per_run = 64;
 
     [[nodiscard]] Result<void> validate() const;
@@ -115,7 +114,8 @@ class MemoryConsolidator final {
 
   private:
     [[nodiscard]] std::vector<MemoryCandidate>
-    extract_deterministic(std::span<const EventEnvelope> events, const MemoryScope &scope) const;
+    extract_deterministic(std::span<const EventEnvelope> events, const MemoryScope &scope,
+                          const Timestamp &now) const;
 
     ConsolidationPolicy policy_;
     IConsolidationModel *model_ = nullptr;

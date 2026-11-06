@@ -1,5 +1,7 @@
 #pragma once
 
+#include "support/action_dispatch_support.hpp"
+
 // Shared fixtures for the M25 host-integration-round IVA test matrix
 // (DEC-045; plan §4 frozen seam semantics, §6 gates HI-G1..G4). Consumers:
 // tests/m25/*.cpp.
@@ -437,6 +439,7 @@ class SeamLoopHarness final {
     [[nodiscard]] std::unique_ptr<AgentLoop> make_loop() {
         auto loop = std::make_unique<AgentLoop>(environment_, *gateway_);
         loop->set_event_store(events_, runtime_, spec_.session_id);
+        wire_scripted_action_dispatch(*loop, spec_.session_id, events_, runtime_);
         return loop;
     }
 

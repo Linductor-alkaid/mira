@@ -31,6 +31,10 @@ Observe -> Reason -> Plan -> Act -> Verify
 
 ## 架构
 
+`AgentLoop` 输入动作必须装配宿主提供的 `JournaledActionDispatcher`、耐久事件存储与
+动作租约策略；缺少装配时在派发前失败。迁移方式见[模型层 API](docs/api/model-agent-loop.md)，
+可运行的离线样板见[派发宿主](examples/journaled_action_consumer.cpp)。
+
 ```mermaid
 flowchart TB
     app["宿主应用"]
@@ -206,3 +210,20 @@ SBOM 维护在
 Mira 以 [GNU Affero General Public License v3.0](LICENSE) 发布。
 
 `third_party/` 下的第三方依赖保留其自身许可证（见上表），不受本仓库许可证约束。
+
+显式事实宿主迁移：VerifiedFactPublisher 要求原生证据与受信宿主 lease；Checkpoint
+文档升级为含事实有效区间的 2.0。启用前升级读取器并重编译 C++ 消费者，详见
+[迁移说明](docs/compatibility/verified-fact-v1-and-checkpoint-v2.md) 与
+[离线宿主示例](examples/verified_fact_host_consumer.cpp)。
+
+[离线价格宿主](docs/api/model-price-host.md) 演示 fixture 价格注入、未知费用策略与
+取消后的预算结算；人工数字不代表供应商报价。
+
+[调度诊断宿主](docs/api/runtime-scheduling-host.md) 同时消费 Runtime 路由累计值、
+命令拒绝与当前未决数，覆盖过载、异常和关闭。
+
+[三个离线组合宿主](docs/api/offline-composition-hosts.md) 演示 Workflow 终态、
+有界上下文请求与保守恢复，包含安装后编译运行门禁。
+
+[文件日志 v2](docs/compatibility/file-event-log-v2.md) 持久化原始 wall 时间，旧日志
+明确标识时间缺失；EventEnvelope 增加来源字段，C++ 消费者须与库一起重编译。

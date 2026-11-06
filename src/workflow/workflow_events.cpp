@@ -12,6 +12,13 @@ namespace {
 
 constexpr std::size_t kMaxReasonCodeBytes = 128;
 
+// Only the envelope is shared; callers own fields, order and classification.
+[[nodiscard]] EventPayload encode_payload(std::string_view type, JsonValue::Object object,
+                                          EventClass classification) {
+    return EventPayload{std::string{type}, to_json_string(JsonValue{std::move(object)}),
+                        classification};
+}
+
 [[nodiscard]] Error event_error(ErrorCode code, std::string_view detail) {
     Error error;
     error.code = code;
@@ -294,11 +301,7 @@ EventPayload to_event_payload(const WorkflowRunStartedEvent &event) {
     object.emplace_back("ir_digest", digest_text(event.ir_digest));
     object.emplace_back("parameters_digest", digest_text(event.parameters_digest));
     object.emplace_back("policy", workflow_policy_name(event.policy));
-    EventPayload payload;
-    payload.type = "WorkflowRunStarted";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::Critical;
-    return payload;
+    return encode_payload("WorkflowRunStarted", std::move(object), EventClass::Critical);
 }
 
 EventPayload to_event_payload(const WorkflowStepStartedEvent &event) {
@@ -308,11 +311,7 @@ EventPayload to_event_payload(const WorkflowStepStartedEvent &event) {
     object.emplace_back("step_id", event.step_id.to_string());
     object.emplace_back("kind", workflow_step_kind_name(event.kind));
     object.emplace_back("attempt", static_cast<std::int64_t>(event.attempt));
-    EventPayload payload;
-    payload.type = "WorkflowStepStarted";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowStepStarted", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowStepSettledEvent &event) {
@@ -323,11 +322,7 @@ EventPayload to_event_payload(const WorkflowStepSettledEvent &event) {
     object.emplace_back("disposition", workflow_step_disposition_name(event.disposition));
     object.emplace_back("verification", event.verification);
     object.emplace_back("safe_summary", event.safe_summary);
-    EventPayload payload;
-    payload.type = "WorkflowStepSettled";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowStepSettled", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowRunSettledEvent &event) {
@@ -337,11 +332,7 @@ EventPayload to_event_payload(const WorkflowRunSettledEvent &event) {
     object.emplace_back("terminal_state", workflow_run_state_name(event.terminal_state));
     object.emplace_back("run_epoch", static_cast<std::int64_t>(event.run_epoch));
     object.emplace_back("safe_summary", event.safe_summary);
-    EventPayload payload;
-    payload.type = "WorkflowRunSettled";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::Critical;
-    return payload;
+    return encode_payload("WorkflowRunSettled", std::move(object), EventClass::Critical);
 }
 
 EventPayload to_event_payload(const WorkflowPatchProposedEvent &event) {
@@ -352,11 +343,7 @@ EventPayload to_event_payload(const WorkflowPatchProposedEvent &event) {
     object.emplace_back("patch_digest", digest_text(event.patch_digest));
     object.emplace_back("target", workflow_patch_target_name(event.target));
     object.emplace_back("reason_code", event.reason_code);
-    EventPayload payload;
-    payload.type = "WorkflowPatchProposed";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPatchProposed", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowPatchAppliedEvent &event) {
@@ -365,11 +352,7 @@ EventPayload to_event_payload(const WorkflowPatchAppliedEvent &event) {
     object.emplace_back("patch_id", event.patch_id.to_string());
     object.emplace_back("run_id", event.run_id.to_string());
     object.emplace_back("run_patch_epoch", static_cast<std::int64_t>(event.run_patch_epoch));
-    EventPayload payload;
-    payload.type = "WorkflowPatchApplied";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPatchApplied", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowPatchRejectedEvent &event) {
@@ -378,11 +361,7 @@ EventPayload to_event_payload(const WorkflowPatchRejectedEvent &event) {
     object.emplace_back("patch_id", event.patch_id.to_string());
     object.emplace_back("run_id", event.run_id.to_string());
     object.emplace_back("reason_code", event.reason_code);
-    EventPayload payload;
-    payload.type = "WorkflowPatchRejected";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPatchRejected", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowPolicySwitchedEvent &event) {
@@ -391,11 +370,7 @@ EventPayload to_event_payload(const WorkflowPolicySwitchedEvent &event) {
     object.emplace_back("run_id", event.run_id.to_string());
     object.emplace_back("from", workflow_policy_name(event.from));
     object.emplace_back("to", workflow_policy_name(event.to));
-    EventPayload payload;
-    payload.type = "WorkflowPolicySwitched";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPolicySwitched", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowDecisionRaisedEvent &event) {
@@ -404,11 +379,7 @@ EventPayload to_event_payload(const WorkflowDecisionRaisedEvent &event) {
     object.emplace_back("run_id", event.run_id.to_string());
     object.emplace_back("decision_id", event.decision_id.to_string());
     object.emplace_back("payload_digest", digest_text(event.payload_digest));
-    EventPayload payload;
-    payload.type = "WorkflowDecisionRaised";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowDecisionRaised", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowDecisionResolvedEvent &event) {
@@ -417,11 +388,7 @@ EventPayload to_event_payload(const WorkflowDecisionResolvedEvent &event) {
     object.emplace_back("run_id", event.run_id.to_string());
     object.emplace_back("decision_id", event.decision_id.to_string());
     object.emplace_back("resolution", workflow_decision_resolution_name(event.resolution));
-    EventPayload payload;
-    payload.type = "WorkflowDecisionResolved";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowDecisionResolved", std::move(object), EventClass::State);
 }
 
 Result<WorkflowRunStartedEvent> parse_workflow_run_started(const EventPayload &payload) {
@@ -800,11 +767,7 @@ EventPayload to_event_payload(const WorkflowPublishProposedEvent &event) {
     object.emplace_back("source_run_id", event.source_run_id.has_value()
                                              ? JsonValue{event.source_run_id->to_string()}
                                              : JsonValue{nullptr});
-    EventPayload payload;
-    payload.type = "WorkflowPublishProposed";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPublishProposed", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowPublishAppliedEvent &event) {
@@ -814,11 +777,7 @@ EventPayload to_event_payload(const WorkflowPublishAppliedEvent &event) {
     object.emplace_back("ir_digest", digest_text(event.ir_digest));
     object.emplace_back("evidence", digest_text(event.evidence));
     object.emplace_back("dry_run_id", event.dry_run_id.to_string());
-    EventPayload payload;
-    payload.type = "WorkflowPublishApplied";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPublishApplied", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event) {
@@ -827,11 +786,7 @@ EventPayload to_event_payload(const WorkflowPublishRejectedEvent &event) {
     object.emplace_back("workflow_id", event.workflow_id.to_string());
     object.emplace_back("ir_digest", digest_text(event.ir_digest));
     object.emplace_back("reason_code", event.reason_code);
-    EventPayload payload;
-    payload.type = "WorkflowPublishRejected";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowPublishRejected", std::move(object), EventClass::State);
 }
 
 Result<WorkflowPublishProposedEvent> parse_workflow_publish_proposed(const EventPayload &payload) {
@@ -944,11 +899,7 @@ EventPayload to_event_payload(const WorkflowNavigationPlannedEvent &event) {
     object.emplace_back("total_cost", event.total_cost);
     object.emplace_back("guards_blocked", static_cast<std::int64_t>(event.guards_blocked));
     object.emplace_back("guards_unevaluable", static_cast<std::int64_t>(event.guards_unevaluable));
-    EventPayload payload;
-    payload.type = "WorkflowNavigationPlanned";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowNavigationPlanned", std::move(object), EventClass::State);
 }
 
 EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event) {
@@ -961,11 +912,7 @@ EventPayload to_event_payload(const WorkflowNavigationObservedEvent &event) {
     object.emplace_back("to_state", event.to_state);
     object.emplace_back("success", event.success);
     object.emplace_back("confidence", event.confidence);
-    EventPayload payload;
-    payload.type = "WorkflowNavigationObserved";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowNavigationObserved", std::move(object), EventClass::State);
 }
 
 namespace {
@@ -1148,11 +1095,7 @@ EventPayload to_event_payload(const WorkflowEpisodeRecordedEvent &event) {
     object.emplace_back("episode_digest", digest_text(event.episode_digest));
     object.emplace_back("outcome", event.outcome);
     object.emplace_back("reason_code", event.reason_code);
-    EventPayload payload;
-    payload.type = "WorkflowEpisodeRecorded";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowEpisodeRecorded", std::move(object), EventClass::State);
 }
 
 Result<WorkflowEpisodeRecordedEvent> parse_workflow_episode_recorded(const EventPayload &payload) {
@@ -1201,11 +1144,7 @@ EventPayload to_event_payload(const WorkflowLessonRecordedEvent &event) {
     object.emplace_back("lesson_digest", digest_text(event.lesson_digest));
     object.emplace_back("outcome", event.outcome);
     object.emplace_back("reason_code", event.reason_code);
-    EventPayload payload;
-    payload.type = "WorkflowLessonRecorded";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowLessonRecorded", std::move(object), EventClass::State);
 }
 
 Result<WorkflowLessonRecordedEvent> parse_workflow_lesson_recorded(const EventPayload &payload) {
@@ -1304,11 +1243,7 @@ EventPayload to_event_payload(const WorkflowRecoveryAttemptedEvent &event) {
     object.emplace_back("lessons_unparseable",
                         static_cast<std::int64_t>(event.lessons_unparseable));
     object.emplace_back("lessons_kept", static_cast<std::int64_t>(event.lessons_kept));
-    EventPayload payload;
-    payload.type = "WorkflowRecoveryAttempted";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowRecoveryAttempted", std::move(object), EventClass::State);
 }
 
 Result<WorkflowRecoveryAttemptedEvent>
@@ -1431,11 +1366,7 @@ EventPayload to_event_payload(const WorkflowToolCompatDegradedEvent &event) {
     object.emplace_back("workflow_id", event.workflow_id.to_string());
     object.emplace_back("ir_digest", digest_text(event.ir_digest));
     object.emplace_back("projection", event.projection);
-    EventPayload payload;
-    payload.type = "WorkflowToolCompatDegraded";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowToolCompatDegraded", std::move(object), EventClass::State);
 }
 
 Result<WorkflowToolCompatDegradedEvent>
@@ -1486,11 +1417,7 @@ EventPayload to_event_payload(const WorkflowProceduresSyncedEvent &event) {
     object.emplace_back("schema", "mira.workflow.procedures-synced.v1");
     object.emplace_back("procedure_index_digest", digest_text(event.procedure_index_digest));
     object.emplace_back("published_count", static_cast<std::int64_t>(event.published_count));
-    EventPayload payload;
-    payload.type = "WorkflowProceduresSynced";
-    payload.data = to_json_string(JsonValue{std::move(object)});
-    payload.classification = EventClass::State;
-    return payload;
+    return encode_payload("WorkflowProceduresSynced", std::move(object), EventClass::State);
 }
 
 Result<WorkflowProceduresSyncedEvent>
