@@ -1,8 +1,8 @@
 # Mira LLM API 协议设计
 
 > 状态：Active  
-> 版本：1.4
-> 更新日期：2026-11-06
+> 版本：1.5
+> 更新日期：2026-11-07
 > 负责人：Mira Maintainers  
 > 适用范围：远端 LLM/VLM 请求、OpenAI-compatible wire dialect、流式响应、Structured Outputs、
 > Tool Calling、Provider 状态与费用核算  
@@ -469,6 +469,32 @@ EventStore 默认记录 request、stream started、首/末字节时间、termina
 
 Chat Completions SSE 只有在其独立 chunk、`[DONE]`、tool argument 和 usage fixtures 全部通过后才能由
 profile 声明，不复用 Responses 状态机的 wire 事件假设。
+
+### 9.4 HTTP 连接策略
+
+依据 [DEC-091](../decisions/DEC-091-http-stream-connection-policy.md)，公开
+`HttpRequest::keep_alive` 默认 false。SocketHttpTransport 只生成一个自有 Connection
+头：false 为 `close`，true 为 `keep-alive`；普通 headers 中的同名头（不区分大小写）
+继续在出线前拒绝。此字段采用显式头语义，不是“省略 Connection”。
+
+模型 provider 将 `ProviderInferOptions::stream` 直接接到该字段，三方言的 SSE 请求
+自动使用 keep-alive，非流式请求保持 close。普通事件流宿主显式启用。策略保留到
+重定向的每一跳，HTTP 正向代理也使用该策略；HTTPS CONNECT 建隧道的行为不变，
+隧道内最终请求使用字段值。凭据、SSRF、重定向和保留头校验不受此字段放宽。
+
+这只是对服务端声明 wire 连接意图，不提供连接池、跨 Exchange 复用、TCP keepalive、
+心跳或重连，也不承诺对端一定发送正文。每个 Exchange 仍独占一个 socket，明确
+Content-Length/chunked 完成时即关闭，不能为了等待持久连接 EOF 而悬挂；无明确长度
+的响应仍以 EOF 定界。取消、idle/total deadline、正文大小上限、协议失败和 shutdown
+继续收敛到现有结果，并释放 socket；Executor worker 与外部 owner 关闭顺序不变。
+宿主须先停止生产者并取消活动 context，再 shutdown transport；shutdown 不替代
+请求取消，在途交换仍按原 context/deadline 退出。
+SSE 解析与模型 terminal 校验保持原契约，收到 TCP/HTTP 字节不等于模型调用成功。
+
+[RFC 9112 §9.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3) 规定 HTTP/1.1
+默认持久连接，close 表示当前响应结束后不复用；本地 fixture 模拟宿主报告的敏感
+端点，不据此宣称所有 Node/Express SSE 都会因 close 饿死。验证与真实服务补跑条件
+见[维护计划](../plans/maintenance-2026-11-http-stream-connection-policy.md)。
 
 ## 10. 取消、Deadline、重试与模糊完成
 

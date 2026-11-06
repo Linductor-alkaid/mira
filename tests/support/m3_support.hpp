@@ -127,6 +127,7 @@ class MockHttpTransport final : public IHttpTransport {
                                      TransportTrace &trace) override {
         Recorded recorded;
         recorded.url = request.url;
+        recorded.keep_alive = request.keep_alive;
         recorded.body = request.body;
         recorded.headers = request.headers;
         recorded.authorization = request.authorization.has_value()
@@ -201,6 +202,7 @@ class MockHttpTransport final : public IHttpTransport {
         std::vector<std::pair<std::string, std::string>> headers;
         std::string authorization;
         bool cancelled_before_admission = false;
+        bool keep_alive = false;
     };
 
     [[nodiscard]] std::vector<Recorded> recorded() const {

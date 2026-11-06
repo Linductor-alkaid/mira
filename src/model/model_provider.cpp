@@ -183,6 +183,7 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
 
     HttpRequest http;
     http.method = "POST";
+    http.keep_alive = options.stream;
     http.url = profile_->endpoint_url();
     http.body = to_json_string(wire.value());
     if (http.body.size() > profile_->capabilities.limits.max_request_bytes) {

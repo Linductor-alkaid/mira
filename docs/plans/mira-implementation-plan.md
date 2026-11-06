@@ -2,7 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-06（2026-11 维护轮收口关闭：13 项工作项与 RW-G1–G6 完成，
+> 更新日期：2026-11-07（HTTP 流式连接策略本地交付完成：Debug 41/41、ASAN+UBSAN 3/3、TSAN 1/1，
+> 详见 [连接策略维护计划](maintenance-2026-11-http-stream-connection-policy.md)。）
+> 此前 2026-11-06（2026-11 维护轮收口关闭：13 项工作项与 RW-G1–G6 完成，
 > PR #114 合并为 `147403c`（tree 与 CI 最终 head 一致），最终 head CI 24/24
 > 全绿——Linux 141/141、Windows 139/139 含 TerminateProcess 强杀矩阵、Android
 > NDK 构建/链接、ASAN/UBSAN/TSAN；Android 真机动作收敛、断电/系统同步与
@@ -1646,3 +1648,8 @@ Controller 共用 journal 接线保持未执行，负责人与补跑条件见维
 `MNT-202611-EB-01`（Completed，Linux 本地交付：Debug 回归 55/55、ASAN+UBSAN 4/4），依据
 [DEC-090](../decisions/DEC-090-profile-extra-body.md) 提供仅 Chat Completions 的配置级
 `extra_body`；独立于 M29，验收与证据见维护计划。
+
+2026-11-07：新增 [HTTP 流式连接策略维护](maintenance-2026-11-http-stream-connection-policy.md)，
+`MNT-202611-SC-01`（Completed，Linux 本地离线范围），依据
+[DEC-091](../decisions/DEC-091-http-stream-connection-policy.md) 增加请求级 keep-alive
+策略并接线模型流式请求，保持单 Exchange socket 所有权。
