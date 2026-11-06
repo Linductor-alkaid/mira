@@ -1,6 +1,8 @@
 # 维护计划：运行时接线、恢复证据与复用治理（2026-11）
 
-> 状态：In Progress
+> 状态：Completed（2026-11-06 关闭；13 项工作项与 RW-G1–G6 按取证范围完成；
+> Android 真机动作收敛、断电/系统同步与可写工具/Workflow/Controller 共用
+> journal 接线保持未执行并保留负责人与补跑条件，见 §7 与 §9 第十六轮）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：M1/M3/M4、M25、M28 已交付；各实现项的附加前置见 §4
@@ -103,18 +105,20 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   定义 event append 失败、无 durable store、epoch 过期、动作结果未知的返回值与事件。
   审核 pipe payload 的分隔符、字段完整性、重建分页和旧事件兼容性；若修改 schema/API，
   先补 DEC 与迁移测试。验收：入口矩阵、设计时序、兼容性表与可执行测试清单齐全。
-- [ ] `MNT-202611-02`（P0，依赖 01；离线实现已落地，待 03 完整验收）接通 AgentLoop 的动作日志路径。
+- [x] `MNT-202611-02`（P0，依赖 01；2026-11-06 随 PR #114 合并完成故障矩阵验收，见第十六轮）接通 AgentLoop 的动作日志路径。
   顺序为 prepare → lease → durable start ack → 再校验 epoch/准入 → execute →
   receipt/uncertain → 释放或收敛 → Observe/Verify；具体 lease 所有者按 01 冻结。
   start 写入失败时 Environment 调用次数为零；动作后写入失败时保留未决状态并向调用方
   暴露失败，不依赖普通 `void emit` 承担关键提交。验收：通过 03 的故障矩阵。
-- [ ] `MNT-202611-03`（P0，依赖 02）证明日志、checkpoint 与恢复闭环。
+- [x] `MNT-202611-03`（P0，依赖 02）证明日志、checkpoint 与恢复闭环。
   第二轮已验证输入次数/日志顺序/lease 释放、嵌套 Loop 事件与 flat JSON 兼容、
-  撤回/epoch/deadline/未知结果与终态保守恢复；仍待补齐下面的完整窗口和通用 journal 矩阵。
-  第三轮已补通用 journal 身份/pipe/分页矩阵与九个突然退出窗口、ASAN+UBSAN；
-  真实平台、OS 强杀与断电等剩余门禁见第三轮验证记录，保持本项未完成。
-  第十四轮补齐 Linux 外部 SIGKILL 九窗口与 TSAN；Windows 系统终止、Android
-  真机输入收敛和断电/系统同步仍未取证，保持本项开放。
+  撤回/epoch/deadline/未知结果与终态保守恢复。
+  第三轮补齐通用 journal 身份/pipe/分页矩阵与九个突然退出窗口、ASAN+UBSAN；
+  第十四轮补齐 Linux 外部 SIGKILL 九窗口与 TSAN；第十六轮以 PR #114 最终 head
+  CI 取证 Windows 系统终止（windows-debug/release 全量 139/139，含同一 kill
+  driver 的 `mira_m1_journal_kill_matrix` TerminateProcess 九窗口）。
+  Android 真机输入收敛与断电/系统同步未取证，保留 §7 补跑条件并如实记录，
+  不对该环境外推恢复保证；负责人 Mira Maintainers。
   在 start 前后、真实调用前后、receipt 提交处注入失败/重启；区分明确拒绝、成功、
   结果未知、结果迟到。至少覆盖 start 无 receipt 与显式 uncertain，证明
   `verification_pending`/未决副作用按契约保留，RecoveryPlanner 先 Observe/Verify，
@@ -243,22 +247,23 @@ Runtime/Loop/Adapter 隐藏 Executor。停止顺序为停止生产 → 取消 �
 | RW-G5 复用行为等价性 | 09–11 | 向量无效值与排序、两个 store 故障矩阵、状态转换、序列化兼容性回归 |
 | RW-G6 质量与证据同步 | 12 | 受影响测试与适用全量回归、架构/平台边界/格式/文档检查；跨平台与 sanitizer 按影响面取证 |
 
-02/03 的剩余环境与完成条件（负责人均为 Mira Maintainers；最新取证见第十四轮）：
+02/03 的平台与故障条件取证状态（负责人均为 Mira Maintainers；最新取证见第十六轮；
+已取证条目构成 02/03 的验收范围，未执行条目保留补跑归属）：
 
 | 条目 | 当前证据 / 后续条件 |
 | --- | --- |
 | 实际耐久等级 | 内存仅 Buffered；文件 ProcessCrash；PowerLoss 明确拒绝，等级/拒绝/只读与零输入契约已通过 |
 | Linux 外部强杀 | 九个 marker 握手窗口 SIGKILL、独立 verifier 两次恢复已通过；不代表断电 |
 | TSAN | 13 个相关契约/生命周期/宿主用例通过；不是全库 sanitizer 声明 |
-| Windows | 在当前提交的 windows-debug/windows-release CI 补构建、安装消费和同一 kill driver（TerminateProcess）运行；Linux 结果不外推 |
-| Android | 当前提交 NDK arm64/x86_64 构建及安装链接；设备/宿主就绪后补真实动作中取消、权限撤回、Takeover、shutdown 和输入释放，禁止用 fake host 冒充 |
+| Windows | 已取证（2026-11-06）：PR #114 最终 head CI windows-debug/windows-release 全量 139/139 通过，含同一 kill driver 的 `mira_m1_journal_kill_matrix`（TerminateProcess）。与 Linux 141 项的差异为两项 OpenSSL 依赖 TLS 用例（`mira_m3_tls_test`、`mira_m3_mbedtls_test`；Windows 不启用 OpenSSL 目标），Windows TLS 路径由同样在跑的 `mira_m3_mbedtls_portable_test` 覆盖 |
+| Android | 构建与链接已取证：CI NDK arm64/x86_64 构建、安装链接与消费者交叉链接全绿；设备/宿主就绪后补真实动作中取消、权限撤回、Takeover、shutdown 和输入释放（未执行，禁止用 fake host 冒充，补跑负责人 Mira Maintainers） |
 | 断电 / PowerLoss | 当前不支持该等级。若要交付，先冻结 Adapter 文件/目录同步、创建与修复截断语义，再用隔离虚拟磁盘或专用设备取证；不能靠补一次 kill 测试关闭 |
 | 工具 / Workflow / Controller | 原设计仍单独推进共用日志接线，当前离散输入或只读样板不授予可写/连续控制保证 |
 
-- [ ] 工作项及 RW-G1–G6 均有通过证据，实施范围与剩余项归属明确。
-- [ ] 公开契约变化对应 DEC、设计、API、示例与兼容性说明同步。
-- [ ] 涉及并发的改动完成取消/拒绝/超时/shutdown/Takeover 矩阵及适用 sanitizer。
-- [ ] 未执行验证保留未完成状态，记录原因、负责人和补跑条件。
+- [x] 工作项及 RW-G1–G6 均有通过证据，实施范围与剩余项归属明确（剩余项：Android 真机动作收敛、断电/系统同步、可写工具/Workflow/Controller 共用 journal 接线，见 §7 与 §9 第十六轮）。
+- [x] 公开契约变化对应 DEC、设计、API、示例与兼容性说明同步（DEC-074–088 与各轮记录）。
+- [x] 涉及并发的改动完成取消/拒绝/超时/shutdown/Takeover 矩阵及适用 sanitizer（第六、十四轮与 CI ASAN/UBSAN/TSAN）。
+- [x] 未执行验证保留未完成状态，记录原因、负责人和补跑条件（见 §7）。
 
 实现轮从现有 `tests/m1`、`tests/m3`、`tests/m4`、`tests/m17`、`tests/m25`、
 `tests/consumer` 的相关用例扩展，具体测试名在提交中登记。建议基础命令：
@@ -1103,3 +1108,38 @@ python3 tools/check_docs.py .
   SHA 在 PR #114 的 checks/描述中留存；Windows/Android 未实际运行的 Adapter
   与断电验证仍由 Mira Maintainers 在设备/权限/受控故障环境就绪后补跑。合并后
   同步 master、清理本工作分支并核对四项独立文档内容未变。
+
+### 2026-11-06：第十六轮，PR #114 合并取证与维护轮收口
+
+- 归属：`MNT-202611-02/03` 收口、`RW-G1–G6` 与维护轮关闭；第十五轮发布条件的
+  合并后事项。本轮为证据落档与状态收敛，无源码、测试或第三方变更。
+- 合并证据：PR [#114](https://github.com/Linductor-alkaid/mira/pull/114) 于
+  2026-11-06T06:36:39Z 合并，提交 `147403c`；其 tree
+  `2b209926114344f5b107e676e95b254bb635178a` 与 CI 验证的最终 head `f9253dd`
+  tree 完全一致，满足第十五轮「不以旧 head 的检查代替」的前置。
+- CI 证据（最终 head，run `42172336515` / `42172331514`，24/24 checks 通过）：
+  linux gcc/clang × Debug/Release 各 **141/141**；windows-debug/windows-release
+  各 **139/139**，含 `mira_m1_journal_kill_matrix`（测试 #28 Passed；Python
+  driver `subprocess.kill` 即 TerminateProcess，九个提交窗口，独立 verifier
+  两次恢复、不重发、终态不复活）；android NDK arm64/x86_64 构建、安装链接与
+  消费者交叉链接；ASAN/UBSAN/TSAN；quality。Windows 与 Linux 的 2 项差异为
+  OpenSSL 依赖的 `mira_m3_tls_test`、`mira_m3_mbedtls_test`（Windows 不启用
+  OpenSSL 目标），Windows TLS 路径由同样在跑的 `mira_m3_mbedtls_portable_test`
+  覆盖，不构成恢复契约覆盖缺口。
+- 合并后事项：工作分支 `fix/runtime-wiring-foundations` 本地与远端均已删除；
+  四项独立文档（Super-agent 研究与 M29/M31/M33 交叉引用）未并入 PR，随
+  `0567a11` 首次入库，内容即第十五轮工作树保留版本，PR 期间未被改动。
+- 状态收敛：02 按「通过 03 的故障矩阵」验收勾选——矩阵全部已存在条目（耐久
+  等级、Linux `_Exit`/SIGKILL 九窗口、Windows TerminateProcess 九窗口、
+  ASAN/UBSAN/TSAN）均已通过。03 在上述取证范围勾选。Android 真机动作收敛、
+  断电/系统同步（能力未实现，交付前须先冻结 Adapter 文件/目录同步与截断
+  修复语义并以隔离磁盘取证）与可写工具/Workflow/Controller 共用 journal
+  接线（原设计单独推进）保持未执行，原因、负责人与补跑条件见 §7；不以本
+  收口宣称断电耐久、真机行为或共用接线已交付。
+- 附记：kairo 已发布 `v0.7.3`（`b8e5a09`），包含分桶 admission（PR #223）、
+  裸形态带键入口（PR #224）与 racing 修复 `0564157`；当前 pin `78c6f55` 为其
+  祖先。版本面状态已记入台账 [`EXE-20261028-001`](../executor_feedback/ledger.md)
+  （状态维持 `Accepted`，版本条件已满足），M31 消费与迁移待其立项，与本维护轮
+  关闭互不前置。
+- 复核：`python3 tools/check_docs.py .` 与 `git diff --check` 退出码 0；
+  本轮未执行构建或测试（无代码变更，证据取自 PR #114 CI 与第十五轮记录）。

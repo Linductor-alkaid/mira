@@ -2,9 +2,15 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-06（2026-11 维护轮累计完成 11/13 项；文件日志 v2、报告处置、
-> 实际耐久等级、Linux 外部强杀与定向 TSAN 已取证；02/03 及目标平台/断电门禁
-> 保持开放，详见[维护计划第十四轮](maintenance-2026-11-runtime-wiring-and-reuse.md)。）
+> 更新日期：2026-11-06（2026-11 维护轮收口关闭：13 项工作项与 RW-G1–G6 完成，
+> PR #114 合并为 `147403c`（tree 与 CI 最终 head 一致），最终 head CI 24/24
+> 全绿——Linux 141/141、Windows 139/139 含 TerminateProcess 强杀矩阵、Android
+> NDK 构建/链接、ASAN/UBSAN/TSAN；Android 真机动作收敛、断电/系统同步与
+> 可写工具/Workflow/Controller 共用 journal 接线保留补跑条件，详见
+> [维护计划第十六轮](maintenance-2026-11-runtime-wiring-and-reuse.md)。）
+> 此前 2026-11-06（维护轮第十四、十五轮：实际耐久等级、Linux 外部 SIGKILL 与
+> 定向 TSAN 取证；PR #114 修正 Clang 遮蔽与 Windows LF 写入后全绿合并，
+> 当时累计 11/13，详见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)。）
 > 此前 2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
 > `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
 > 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
@@ -38,9 +44,9 @@
 > [M31](m31-capacity-admission-and-archival-recovery.md) 四个里程碑；
 > 确认并登记 Executor 缺口
 > [`EXE-20261028-001`](../executor_feedback/ledger.md)（按主体分桶的份额准入）——
-> **上游已交付**（kairo PR #223 合并入 master 并关闭 #222），但**尚未发布含该修复的
-> tag**，Mira 未消费，台账状态 `Accepted`；M31 须在版本可用后改用原生分桶并迁移
-> 受分桶约束的提交形态。
+> **上游已交付**（kairo PR #223 合并入 master 并关闭 #222）并已随 `v0.7.3` 发布
+> （2026-11-06 确认；当前 pin 快照已含该能力），Mira 未消费，台账状态 `Accepted`；
+> M31 须改用原生分桶并迁移受分桶约束的提交形态。
 > **真实模型语义质量与部署档位数值未验证**，本轮不宣称语义质量、容量达标或
 > 跨平台保证。详见 §4.1 第 21 条。）
 > 此前 2026-09-28（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)
@@ -1624,3 +1630,14 @@ Context 宿主迁移文件日志。新增 marker 握手后外部 SIGKILL 九窗�
 全量 **141/141**，Clang 18 严格语法检查通过。准确命令、原始失败与发布条件见
 [维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十五轮。合并以当前
 head 的全部 CI checks 通过为前置，目标设备/断电门禁仍开放，累计仍 **11/13**。
+
+2026-11-06（第十六轮收口）：PR [#114](https://github.com/Linductor-alkaid/mira/pull/114)
+合并为 `147403c`（tree 与 CI 验证的最终 head 一致），维护轮 02/03 按「Linux
+`_Exit`/SIGKILL 九窗口、Windows CI TerminateProcess 九窗口、ASAN/UBSAN/TSAN、
+CI Linux 141/141 与 Windows 139/139」的取证范围关闭，累计 **13/13**，
+RW-G1–G6 关闭。Android 真机动作收敛、断电/系统同步与可写工具/Workflow/
+Controller 共用 journal 接线保持未执行，负责人与补跑条件见维护计划 §7，
+不以收口宣称断电耐久、真机行为或共用接线已交付。另确认 kairo 发布
+`v0.7.3`（含分桶 admission 与裸形态带键入口；当前 pin 为其祖先），台账
+`EXE-20261028-001` 版本条件已满足、状态维持 `Accepted`，M31 消费与迁移待立项。
+证据与命令见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十六轮。
