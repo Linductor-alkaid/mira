@@ -221,3 +221,6 @@ Mira 以 [GNU Affero General Public License v3.0](LICENSE) 发布。
 
 [调度诊断宿主](docs/api/runtime-scheduling-host.md) 同时消费 Runtime 路由累计值、
 命令拒绝与当前未决数，覆盖过载、异常和关闭。
+
+[三个离线组合宿主](docs/api/offline-composition-hosts.md) 演示 Workflow 终态、
+有界上下文请求与保守恢复，包含安装后编译运行门禁。

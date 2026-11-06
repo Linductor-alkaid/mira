@@ -1,7 +1,7 @@
 # Mira Context 与 Memory 架构设计
 
 > 状态：Active  
-> 版本：0.7
+> 版本：0.8
 > 更新日期：2026-11-06
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 上下文智能扩展：长会话语义压缩方向（Retrieve/Rerank/Consolidate/Compress 与
@@ -1207,6 +1207,9 @@ Mira 额外测试：
 - [LangGraph Memory](https://docs.langchain.com/oss/python/langgraph/add-memory)
 - [Letta MemFS](https://docs.letta.com/concepts/memfs/index)
 - [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560)
+- [离线组合宿主](../api/offline-composition-hosts.md)：按
+  [DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 从 checkpoint 框架和
+  session ACL 检索显式生成 Layer 0 输入，再由 provider 消费；不自动修改 M25 seam。
 - [Anthropic Context Editing](https://platform.claude.com/docs/en/build-with-claude/context-editing)
 - [Anthropic Memory Tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
 - [Mem0 Memory Types](https://docs.mem0.ai/core-concepts/memory-types)

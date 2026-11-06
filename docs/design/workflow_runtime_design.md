@@ -1,8 +1,8 @@
 # Workflow Runtime 设计
 
 > 状态：Active（阶段 F 实施规范；契约层随 M8、执行层随 M9、介入与策略随 M10、编译与归纳随 M11、导航随 M12 交付，接口以代码与 API 手册为准）
-> 版本：0.7
-> 更新日期：2026-11-05（DEC-079：共享解码边界；M14 recovery 契约不变）
+> 版本：0.8
+> 更新日期：2026-11-06（DEC-086：只读离线宿主；M14 recovery 契约不变）
 > 负责人：Mira Maintainers
 > 决策依据：[DEC-014](../decisions/DEC-014-agent-harness-workflow-dual-plane.md)、
 > [DEC-019](../decisions/DEC-019-workflow-ir-contract.md)、
@@ -535,3 +535,6 @@ Model 契约与置信度）、[DEC-028](../decisions/DEC-028-navigation-planner-
   [M13](../plans/m13-memory-and-learning-loop.md)
 - 参考研究：[Agent Harness 参考研究](harness_reference_study.md) §5.3/§6
 - API：[workflow-contracts](../api/workflow-contracts.md)
+- 离线装配：[三个组合宿主](../api/offline-composition-hosts.md)，按
+  [DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 以只读 BuiltIn 结果、
+  Verify step 和终态事件 reader 验证消费链；不外推可写 Workflow 的日志接线。

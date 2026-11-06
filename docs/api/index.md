@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.1.0（对应 `Mira 0.1` 安装包）
-> 更新日期：2026-11-06（显式事实、Checkpoint 2.0、价格与调度宿主）
+> 更新日期：2026-11-06（显式事实、Checkpoint 2.0、价格/调度与离线组合宿主）
 > 适用范围：`include/mira/` 全部公共头文件与随包安装的 CMake 目标
 
 本手册按模块描述 Mira 的公共 API。实现细节、设计动机和状态机推导见
@@ -31,6 +31,9 @@
 
 路由累计值、命令拒绝和当前未决数的消费边界见
 [Runtime 调度诊断宿主](runtime-scheduling-host.md)。
+
+Workflow 终态、Layer 0 请求与持久化恢复规划的实际下游消费见
+[三个离线组合宿主](offline-composition-hosts.md)。
 
 ### 错误模型
 

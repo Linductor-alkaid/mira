@@ -1,5 +1,8 @@
 # Workflow 契约
 
+从 create/start/wait 到只读工具验证与终态事件消费的可运行参考见
+[Workflow 离线宿主](offline-composition-hosts.md#workflow结果和终态都被消费)。
+
 > 适用头文件：`workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、
 > `workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、
 > `workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`、

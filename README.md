@@ -246,3 +246,6 @@ unknown-cost policy and cancellation settlement. Its artificial rates are not su
 
 The [scheduling diagnostics host](docs/api/runtime-scheduling-host.md) reads Runtime routing
 counters alongside command rejections and pending results, including overload and shutdown.
+
+Three [offline composition hosts](docs/api/offline-composition-hosts.md) demonstrate Workflow
+completion, bounded context requests and conservative recovery, including installed-package builds.

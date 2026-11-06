@@ -131,12 +131,15 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   实现契约见 [DEC-083](../decisions/DEC-083-explicit-verified-fact-publication.md)，
   Checkpoint 2.0 与 C++ 消费者迁移见
   [兼容性说明](../compatibility/verified-fact-v1-and-checkpoint-v2.md)；本地取证见第九轮。
-- [ ] `MNT-202611-06`（P1；恢复样板依赖 03）提供三个可构建离线参考宿主。
+- [x] `MNT-202611-06`（P1，Linux 离线组合范围；恢复样板依赖 03 的 Linux 日志/恢复契约证据）提供三个可构建离线参考宿主。
   分别演示 WorkflowRuntime 从创建到终态、StandardContextManager 从 checkpoint/
   检索输入到有界请求、RecoveryPlanner 从耐久存储重建到下一步安全状态。
   使用 scripted provider/simulator，声明样板的持久化等级与能力边界，保留 M25
   Working Context seam。接入 CTest consumer 门禁，断言产物确实被下一跳消费，
   不只展示构造成功；不把 Layer 0 自动接进两个 Loop。变更自动装配另行决策。
+  [DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 明确离线前置和消费边界；
+  本项不关闭 03 的真实平台、OS 强杀/断电等整体门禁。
+  三个 [组合宿主](../api/offline-composition-hosts.md) 及安装后编译运行已通过，证据见第十二轮。
 - [x] `MNT-202611-07`（P1，可独立；Linux 单 profile 离线 fixture 范围）补齐价格与未知费用的宿主装配说明。
   提供确定性 fixture PriceTable 注入样板，验证已知价格的 reserve/reconcile、
   未知价格的拒绝/允许策略、usage 缺失与取消时的预算结算。
@@ -843,3 +846,72 @@ python3 tools/check_docs.py .
   后端，不改变 M31 配额/容量算法。Windows/Android/TSAN、真实平台中断与延迟
   分布本轮未执行；负责人 Mira Maintainers，在相应 CI/设备补跑 consumer 和
   生命周期矩阵后取证，不从本次固定 gate 推导跨平台或实时性保证。
+
+### 2026-11-06：第十二轮，Workflow / Context / Recovery 组合宿主
+
+- 归属：`MNT-202611-06`；依据
+  [DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 与
+  [组合指南](../api/offline-composition-hosts.md)。环境为 Linux x86_64、GNU C++
+  13.3.0，分支 `fix/runtime-wiring-foundations`。本轮先按用户要求提交此前 08 的
+  验收更新为 `bbd3f1c`，随后在该 HEAD 上实施本轮未提交变更；原有四项独立文档
+  变更没有混入提交或覆盖。
+- 前置澄清：恢复样板以第三轮已验收的 Linux journal/身份/扫描/退出窗口契约为
+  前置，只交付离线消费闭环；03 的目标平台和 OS 强杀/断电门禁不属于该样板的
+  保证范围，02/03 复选框保持未完成。没有借本项改写原跨平台或故障证据。
+- Workflow：新增 `workflow_runtime_host_consumer`，外部四 worker Executor、一个
+  async drive、MiraRuntime session、只读 BuiltIn 工具和 MemoryEventStore。
+  create/start/wait 实际驱动 simulator screen-width 读取，再由 Verify step 消费
+  原生 240 宽度的 step_result；断言 Completed、两 step、satisfied、一次读取和
+  零输入。终态事件通过公开 reader 比对 run/状态，终态禁止重启；按 Workflow→
+  MiraRuntime→外部 Executor 顺序收尾。不宣称可写 Workflow 已有 durable gate。
+- Context：新增 `context_assembly_host_consumer`，从事件投影 checkpoint 和 JSON
+  往返读取 Goal/Constraint，宿主显式映射任务框架；带 session grant 的检索只返回
+  本会话候选。会话片段映射 HistoricalPayload/UntrustedExternalData，保留来源，
+  另有 disposable 历史验证 512 window 下的有界选择。相同 digest 稳定，跨 epoch/
+  最小集溢出在 provider 前拒绝。prepared input/tools/profile/epoch/digest 复制给
+  ModelRequest，provider 实际检查 goal 与检索内容且后者仍为 User/Public；费用
+  显式为 UnknownPrice。不自动改两个 Loop、M25 seam 或 M30 装配。
+- Recovery：新增 `recovery_planner_host_consumer`，FileEventStore ProcessCrash
+  日志与 SQLite/WAL checkpoint 先关闭再重开，journal 增量位于 base checkpoint
+  之后。覆盖六种场景：start 无 receipt、显式 uncertain、真实 simulator 动作完成
+  无 Verify、带历史 pin 的取消终态、NoState、无未决动作框架。前三种恢复到新
+  read-only Observe，证据不足保持 AwaitingExternalVerification；不发会清除
+  pending/pin 的 VerificationResult，也不重发。终态/无状态不 observe/execute，
+  干净框架观察后仅交回新规划入口。新观察元数据摘要/水位进入更新 checkpoint，
+  回读 digest 一致，恢复阶段输入数不增。文件重开不是 OS kill，恢复信封时间
+  BUG-20261106-001 仍开放，也未伪造一个运行中的 Runtime task 或复用旧授权。
+- 交付消费门禁：三个样板均用公开 API；除了各自 CTest consumer，还在
+  tests/consumer 中以 find_package(Mira/kairo) 编译同一源文件并逐个执行，确认
+  安装后 SDK 也能支撑消费链。SQLite 在主线程 close、任务 future 消费后才关闭
+  Executor，临时文件在 worker 收尾之后删除；没有新并发设施或第三方改动。
+- 初次定向 **0/3**，0.07 s：样板漏显式请求 screenshot、误写 simulator 640 宽度，
+  并把会话候选套进不匹配 authority 的 RetrievedMemory。修正 screen 请求、原生
+  240 宽度与不受信历史类型后 **2/3**，0.11 s。恢复样板还误将 start 无 receipt
+  等同于显式 uncertain pin；按既有 reducer 区分 verification_pending 与
+  uncertain_side_effects，增加独立场景，不修改 Core。最终三个样板加安装消费者
+  定向 **4/4**，17.15 s。文档 metadata 尾随空白导致一次 diff-check 失败，已清理；
+  保留初次失败记录，不将上述修正归咎于库能力缺口。
+- Linux Debug：`cmake --preset debug`；
+  `cmake --build build/debug --target mira_workflow_runtime_host_consumer mira_context_assembly_host_consumer mira_recovery_planner_host_consumer -j 4`；
+  `ctest --test-dir build/debug -R '^mira_(workflow_runtime_host_consumer|context_assembly_host_consumer|recovery_planner_host_consumer|installed_consumer)_test$' --output-on-failure`；
+  `cmake --build build/debug -j 4` 和
+  `ctest --test-dir build/debug --output-on-failure -j 4` 均成功，最终 **138/138**，
+  37.66 s，含原 M9 控制/取消、M4 Context/恢复及其余全库回归。
+- ASAN+UBSAN：`cmake --preset asan -DMIRA_ENABLE_UBSAN=ON`；
+  `cmake --build build/asan --target mira_workflow_runtime_host_consumer mira_context_assembly_host_consumer mira_recovery_planner_host_consumer mira_m9_execution_test mira_m4_context_manager_test mira_m4_recovery_test mira_m4_sqlite_checkpoint_test -j 2`；
+  `ctest --test-dir build/asan -R '^mira_((workflow_runtime|context_assembly|recovery_planner)_host_consumer|m9_execution|m4_context_manager|m4_recovery|m4_sqlite_checkpoint)_test$' --output-on-failure`
+  **7/7**，1.76 s，无 sanitizer 报告；安装 SDK 的实际编译运行证据为上面的 Debug
+  consumer 门禁，不把专项 sanitizer 冒充安装/全库 sanitizer 验证。
+- 质量：`python3 tools/check_architecture.py .`、`python3 tools/check_docs.py .`、
+  `python3 tools/check_platform_boundary.py .`、
+  `cmake -DROOT_DIR=/home/linductor/mira -P cmake/CheckFormat.cmake`（310 个 C++ 文件）
+  与 `git diff --check` 通过。基线仍为 16 条，无新增/stale；未修改 policy/baseline。
+  DEC、三份相关设计、API/指南/索引、README 中英文入口、总计划同步。临时日志为
+  `/tmp/mira-composition-target-test.log`（初次）、`/tmp/mira-composition-fix-test.log`、
+  `/tmp/mira-composition-final-target-test.log`、`/tmp/mira-composition-full-test.log`、
+  `/tmp/mira-composition-asan-test.log`，复现以源文件/上述命令为准，不依赖临时文件。
+- 验收：06 按三个声明边界内的 Linux 离线组合完成，累计 **10/13**；维护轮仍
+  In Progress，02/03 平台与故障门禁、12 总收口和既有已登记问题继续开放。
+  Windows/Android/TSAN、真实平台中断、真实模型语义、强杀/断电本轮未执行；负责人
+  Mira Maintainers，在对应 CI/设备补跑 SDK/consumer 与生命周期、故障矩阵后取证，
+  不以重开或 fixture 成功替代这些保证。

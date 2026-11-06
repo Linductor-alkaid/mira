@@ -2,9 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-06（2026-11 维护轮累计完成 9/13 项；显式事实、Checkpoint 2.0、
-> 价格与调度宿主已按 Linux 离线范围验收，其他维护项、目标平台和全局门禁保持开放，
-> 详见[维护计划第十一轮](maintenance-2026-11-runtime-wiring-and-reuse.md#2026-11-06第十一轮调度度量与宿主结果诊断)。）
+> 更新日期：2026-11-06（2026-11 维护轮累计完成 10/13 项；三个离线组合宿主与
+> 安装消费者已验收，02/03、12 及目标平台/故障门禁保持开放，详见
+> [维护计划第十二轮](maintenance-2026-11-runtime-wiring-and-reuse.md#2026-11-06第十二轮workflow--context--recovery-组合宿主)。）
 > 此前 2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
 > `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
 > 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
@@ -1581,3 +1581,15 @@ PriceTable 注入、unknown 拒绝/允许、缺失/partial usage、取消/迟到
 及平台门禁保持开放，首次状态机预期修正与命令见
 [维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十一轮，消费口径见
 [调度宿主指南](../api/runtime-scheduling-host.md)。
+
+2026-11-06（第十二轮三个组合宿主）：按用户要求先提交 08 为 `bbd3f1c`，再依据
+[DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 推进 MNT-202611-06。
+Workflow create/start/wait 读取原生只读工具结果、验证并消费终态事件；Context
+从 checkpoint/session ACL 检索经 Layer 0 生成有界请求并由 provider 实际检查；
+Recovery 从重开的 FileEventStore/SQLite cache 规划到新的只读 Observe，保留
+未决验证与副作用，不重发、不复活终态。三个样板还经安装后 SDK 编译运行。
+Linux 全量 138/138、ASAN+UBSAN 定向 7/7；06 按离线组合范围完成，累计 10/13。
+恢复样板只依赖 03 已有 Linux 契约证据，不关闭其真机/强杀/断电门禁，也不修复
+已登记的信封时间问题。02/03、12 与原平台门禁继续开放，首次修正与复现见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十二轮；使用边界见
+[组合宿主指南](../api/offline-composition-hosts.md)。

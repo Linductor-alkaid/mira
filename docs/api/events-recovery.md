@@ -119,6 +119,7 @@ M28 的幂等台账把 `mira.interaction.*.v1` 事件写在 EventStore 的一个
 
 ## 相关文档
 
+- [持久化恢复的离线宿主](offline-composition-hosts.md#recovery规划输出控制下一步行为)
 - [交互协调层](interaction-coordinator.md)
 - [事件、资产与崩溃一致性设计](../design/event_artifact_crash_consistency.md)
 - [Stateful agent beta 发布说明](../releases/stateful-agent-beta.md)

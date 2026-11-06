@@ -1,8 +1,8 @@
 # Mira EventStore、ArtifactStore 与崩溃一致性设计
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1
+> 更新日期：2026-11-06
 > 适用范围：事件事实、资产、大载荷、Checkpoint 投影、Replay 和外部副作用恢复  
 > 上位决策：[DEC-003](../decisions/DEC-003-event-sourced-persistence.md)
 
@@ -401,6 +401,13 @@ safe context 引用的数据。
 隔离原则。
 
 ## 16. 关联文档
+
+[DEC-086](../decisions/DEC-086-offline-composition-hosts.md) 的
+[离线恢复宿主](../api/offline-composition-hosts.md#recovery规划输出控制下一步行为)
+把 FileEventStore/SQLite cache 的重开规划接到新的只读观察；未证实时保留 pending/pin，
+不发清除状态的 VerificationResult，不重发输入。样板依赖 03 的 Linux 契约证据，
+不能替代 OS 强杀/断电、平台中断门禁。BUG-20261106-001 的恢复信封时间问题仍由
+维护项 12 跟踪，不从样板使用的序号重建推导原时间或 TTL 已修复。
 
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [Context 与 Memory](context_and_memory_design.md)

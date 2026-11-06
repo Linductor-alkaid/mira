@@ -444,6 +444,20 @@ if(MIRA_BUILD_TESTS)
     set_tests_properties(mira_stateful_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 
+# Independent offline compositions (MNT-202611-06, DEC-086).
+foreach(host IN ITEMS workflow_runtime context_assembly recovery_planner)
+    add_executable(mira_${host}_host_consumer examples/${host}_host_consumer.cpp)
+    target_link_libraries(mira_${host}_host_consumer PRIVATE
+        Mira::core Mira::simulator_adapter Mira::state_store Mira::workflow kairo::kairo)
+    target_include_directories(mira_${host}_host_consumer SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/kairo/include")
+    mira_enable_warnings(mira_${host}_host_consumer)
+    mira_enable_sanitizers(mira_${host}_host_consumer)
+    if(MIRA_BUILD_TESTS)
+        add_test(NAME mira_${host}_host_consumer_test COMMAND mira_${host}_host_consumer)
+        set_tests_properties(mira_${host}_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
+    endif()
+endforeach()
 # Runtime routing metrics and command-result diagnostics (MNT-202611-08, DEC-085).
 add_executable(mira_runtime_scheduling_host_consumer examples/runtime_scheduling_host_consumer.cpp)
 target_link_libraries(mira_runtime_scheduling_host_consumer PRIVATE

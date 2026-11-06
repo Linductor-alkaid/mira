@@ -220,6 +220,10 @@ Verified Event 到 Memory candidate 的确定性管道：
   的不同值判为冲突（Supersede），同主语同值且已存副本验证等级不低于提案判为
   `duplicate-noop`。Core 侧自己复核主语是否相等，不信任后端的过滤。
 
+Checkpoint/检索输入经 StandardContextManager 装配并被 provider 消费的独立参考见
+[Context 离线宿主](offline-composition-hosts.md#context边界由宿主显式传递)。该组合
+不自动安装到两个 Loop，也不改变 M25 seam 或 M30 的装配归属。
+
 ## provider_continuation.hpp
 
 Provider 专属优化的受限生命周期：`ContinuationCache.store()/lookup()` 以
