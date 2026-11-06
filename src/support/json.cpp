@@ -422,8 +422,8 @@ class Parser final {
 };
 
 void write_number(JsonValue::Number value, std::string &output) {
-    if (value == static_cast<JsonValue::Number>(static_cast<std::int64_t>(value)) &&
-        std::abs(value) < 9.007199254740992e15) {
+    if (std::abs(value) < 9.007199254740992e15 &&
+        value == static_cast<JsonValue::Number>(static_cast<std::int64_t>(value))) {
         output += std::to_string(static_cast<std::int64_t>(value));
         return;
     }

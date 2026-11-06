@@ -1,8 +1,8 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.6
-> 更新日期：2026-10-25
+> 版本：1.7
+> 更新日期：2026-11-06
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
 
@@ -37,6 +37,14 @@
 
 `FixtureVerified` 只证明本地 mock/golden contract suite 通过，不构成对任何真实服务的互操作声明；
 真实 endpoint 的状态见第 4、5 节；未列出的 Provider/model 仍保持 `Unknown`。
+
+配置级 `extra_body` 仅适用于 Chat Completions，同步/SSE wire 注入、保留键拒绝、
+profile/wire digest 与 mock provider 发送由 `mira_m3_extra_body_test` 验证；参见
+[DEC-090](../decisions/DEC-090-profile-extra-body.md) 和
+[维护证据](../plans/maintenance-2026-11-profile-extra-body.md)。这只证明本地扩展通道，
+不提升任何端点能力等级；Qwen/vLLM/SGLang 的模板开关效果及延迟尚未在本轮验证。
+Responses/Messages 的非空扩展会被拒绝。空扩展保留已有 manifest digest 和请求格式；
+公开 `ModelProfile` 布局增加成员，C++ 二进制消费者需重编译。
 
 ## 4. Provider 证据总表
 

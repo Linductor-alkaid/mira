@@ -23,6 +23,10 @@ Result<JsonValue> AnthropicMessagesV1Mapper::encode_request(const ModelRequest &
                                                             const ModelProfile &profile,
                                                             bool stream,
                                                             IArtifactSource &artifacts) const {
+    if (!profile.extra_body.empty()) {
+        return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                "extra_body requires Chat Completions mapper");
+    }
     if (request.output_contract.mode != OutputMode::Text || request.generation.seed ||
         request.generation.service_tier || request.data_policy.organization ||
         request.data_policy.project || !request.generation.max_output_tokens ||

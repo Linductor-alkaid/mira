@@ -137,12 +137,18 @@ struct ModelProfile final {
     std::optional<ModelProxyConfig> proxy;
     std::uint32_t max_redirects = 2;
 
+    // Host configuration only; never populate from model output or request input.
+    // Chat Completions only: root scalar/object values merged after mapper fields.
+    // Reserved/duplicate keys and invalid JSON fail closed in validate(). Values
+    // appear in the manifest/digests: do not put secrets or sensitive input here.
+    JsonValue::Object extra_body;
+
     // Dialect-specific request path; never derived from model output.
     [[nodiscard]] std::string request_path() const;
     [[nodiscard]] std::string endpoint_url() const;
     [[nodiscard]] std::string endpoint_host() const;
     // Versioned manifest digest covering identity, dialect, endpoint and
-    // capabilities; used to bind RouteDecisions and continuations.
+    // capabilities and vendor extensions; used to bind RouteDecisions and continuations.
     [[nodiscard]] Hash profile_digest() const;
     [[nodiscard]] JsonValue manifest_to_json() const;
     [[nodiscard]] Result<void> validate() const;

@@ -1,6 +1,7 @@
 #include <mira/model_digest.hpp>
 #include <mira/model_provider.hpp>
 
+#include "model_profile_internal.hpp"
 #include "model_thinking_preview.hpp"
 
 #include <chrono>
@@ -133,6 +134,13 @@ std::optional<UnvalidatedModelPreview> OpenAiCompatibleProvider::take_last_previ
 Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &request,
                                                       const OperationContext &context,
                                                       const ProviderInferOptions &options) {
+    // Early configuration/encoding rejection must not inherit a prior call's
+    // write trace or Retry-After hint and look like an ambiguous remote outcome.
+    last_trace_ = TransportTrace{};
+    last_headers_.clear();
+    if (auto gate = validate_profile_extra_body(*profile_); !gate) {
+        return gate.error();
+    }
     const IDialectMapper &mapper = profile_->dialect == ProtocolDialect::OpenAIResponsesV1
                                        ? static_cast<const IDialectMapper &>(responses_)
                                    : profile_->dialect == ProtocolDialect::AnthropicMessagesV1
@@ -177,6 +185,10 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     http.method = "POST";
     http.url = profile_->endpoint_url();
     http.body = to_json_string(wire.value());
+    if (http.body.size() > profile_->capabilities.limits.max_request_bytes) {
+        return make_model_error(ModelDomainCode::InvalidModelRequest,
+                                "encoded request exceeds the profile request byte limit");
+    }
     http.headers.emplace_back("Content-Type", "application/json");
     http.headers.emplace_back("Accept", options.stream ? "text/event-stream" : "application/json");
     if (request.data_policy.organization.has_value()) {
@@ -192,8 +204,6 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     }
 
     TransportTrace trace;
-    last_trace_ = TransportTrace{};
-    last_headers_.clear();
 
     if (options.stream) {
         auto consume = [&](auto &parser) -> Result<ModelResponse> {

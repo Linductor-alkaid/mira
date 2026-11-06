@@ -1,7 +1,7 @@
 # Mira LLM API 协议设计
 
 > 状态：Active  
-> 版本：1.3
+> 版本：1.4
 > 更新日期：2026-11-06
 > 负责人：Mira Maintainers  
 > 适用范围：远端 LLM/VLM 请求、OpenAI-compatible wire dialect、流式响应、Structured Outputs、
@@ -307,6 +307,31 @@ Capability 记录必须包含：
 
 Adapter 不静默 clamp、重命名、删除非默认值或同时发送互斥参数。Model alias 和 Provider 返回的
 resolved model 都进入事件；Replay 使用已记录 response，不重新调用 alias。
+
+### 5.4 宿主声明的厂商请求体扩展
+
+依据 [DEC-090](../decisions/DEC-090-profile-extra-body.md)，`ModelProfile::extra_body`
+保存配置级 `JsonValue::Object`，仅 Chat Completions 支持非空扩展。它与端点 origin
+同属固定 profile 快照，不在 `ModelRequest`/Decision 中开放来源；模型及 provider
+响应不得修改它。配置不得携带凭据或敏感输入，manifest 会保留扩展值。
+
+`validate()` 先拒绝空键、重复键、标准 Chat 请求控制字段及 canonical 保留字段，
+无论字段是否在本次 wire 输出。顶层值只允许标量或对象；内部允许 JSON 数组。对
+C++ 直接构造的值也检查非有限数、递归深度，再以严格 JSON parser 校验重复成员、
+UTF-8 及默认 `JsonLimits`。扩展自身超过 profile 请求体字节上限同样拒绝。配置
+错误使用 `CapabilityMismatch`，不回显键或值；其他方言非空配置也失败闭合。
+
+Mapper 校验后，在固定字段构造完成时追加扩展，并再次防御实际 root 冲突；标准
+字段的保留表须随 mapper 演进同步。Provider 在任何文件上传前验证扩展，并在推理
+transport 调用前检查完整 JSON 请求体的 `max_request_bytes`（超限为
+`InvalidModelRequest`）。本通道不改变 canonical generation 能力门控和数据策略。
+
+非空扩展写入 manifest，参与 canonical profile/wire digest，从而复用既有
+RouteDecision/continuation 绑定；对象成员顺序无关。空扩展省略 manifest 字段，保持
+现有 digest。Replay 使用录制结果，不因扩展增加网络或副作用。只增加有界同步工作，
+不新增 Executor 任务或生命周期 owner。示例与错误契约见
+[模型 API](../api/model-agent-loop.md)，本地验证和真实端点证据边界见
+[维护计划](../plans/maintenance-2026-11-profile-extra-body.md)。
 
 ## 6. 请求构造与 Wire Digest
 

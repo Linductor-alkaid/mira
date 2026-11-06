@@ -41,6 +41,38 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 - `ModelRouter::route(RouteQuery)`：在字节出线之前完成能力、数据策略与预算匹配，
   不匹配直接拒绝（`RouteRejection`）；`register_profile()` 注册，`find()` 查询。
 
+`ModelProfile::extra_body` 是宿主固定配置的 `JsonValue::Object`，目前仅用于
+`OpenAIChatCompletionsV1`。以下示例在宿主创建 profile 时设置，调用 `validate()`
+成功后再注册为固定快照（[DEC-090](../decisions/DEC-090-profile-extra-body.md)）：
+
+```cpp
+profile.dialect = mira::ProtocolDialect::OpenAIChatCompletionsV1;
+profile.extra_body = {
+    {"chat_template_kwargs", mira::JsonValue::Object{{"enable_thinking", false}}},
+};
+auto valid = profile.validate(); // 宿主必须处理错误，不能忽略。
+```
+
+这会在 wire root 直接产生 `"chat_template_kwargs":{"enable_thinking":false}`，
+不发送名为 `extra_body` 的包装字段。扩展只来自宿主配置，不从模型输出、请求输入或
+工具结果复制；配置必须排除凭据和敏感输入，因为 manifest 会保留完整值。
+顶层值可为 JSON 标量（含 null）或对象，对象内部允许数组；采用默认 `JsonLimits`
+限制，并拒绝非有限数、重复成员和无效 UTF-8。错误为 `CapabilityMismatch`，且不
+回显配置键值。
+
+标准请求控制字段（包括 `model`、`messages`、`tools`、`tool_choice`、
+`response_format`、`max_tokens`、`max_completion_tokens`、generation/stream/data
+policy 字段）与 canonical 保留字段不能通过扩展设置，即使本次请求没有输出该字段。
+空键、重复键和非 Chat 方言的非空扩展同样被拒绝。canonical `generation.thinking`
+仍仅支持 Messages；扩展不会授予能力或绕过校验。厂商字段的语义及实际效果由宿主
+按部署端点验证，不因成功编码提升 capability 证据等级。
+
+非空扩展参与 manifest、`profile_digest()` 与 `wire_request_digest()`；对象键顺序
+不影响 digest，值变化会改变绑定。空扩展省略 manifest 成员并保留原 digest/线格式。
+Provider 在上传前验证配置，且在传输前检查最终请求（含扩展）的 `max_request_bytes`；
+总大小超限返回 `InvalidModelRequest`，不调用推理 transport。C++ 二进制消费者需
+重新编译以适应公开结构体的新增成员。
+
 ## model_provider.hpp 与 model_transport.hpp
 
 - `IModelProvider`：`profile()` + `infer(request, context, options)`；实现不拥有超出

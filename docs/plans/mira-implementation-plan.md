@@ -1641,3 +1641,8 @@ Controller 共用 journal 接线保持未执行，负责人与补跑条件见维
 `v0.7.3`（含分桶 admission 与裸形态带键入口；当前 pin 为其祖先），台账
 `EXE-20261028-001` 版本条件已满足、状态维持 `Accepted`，M31 消费与迁移待立项。
 证据与命令见[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十六轮。
+
+2026-11-06：新增 [Profile 厂商请求体扩展维护](maintenance-2026-11-profile-extra-body.md)，
+`MNT-202611-EB-01`（Completed，Linux 本地交付：Debug 回归 55/55、ASAN+UBSAN 4/4），依据
+[DEC-090](../decisions/DEC-090-profile-extra-body.md) 提供仅 Chat Completions 的配置级
+`extra_body`；独立于 M29，验收与证据见维护计划。
