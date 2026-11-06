@@ -141,6 +141,58 @@ int legacy_transition_preserves_unknown_time() {
     return 0;
 }
 
+int crlf_history_uses_raw_byte_recovery_offsets() {
+    Fixture f;
+    auto first = f.request();
+    WallTimePoint first_wall;
+    {
+        FileEventStore events(f.root);
+        MIRA_CHECK(events.append(first));
+        first_wall = events.read({f.session, {}, 8}).value().events.front().timestamp.wall;
+    }
+    const auto canonical = f.bytes();
+    MIRA_CHECK(canonical.find('\r') == std::string::npos);
+    std::string crlf;
+    for (char byte : canonical) {
+        if (byte == '\n')
+            crlf += '\r';
+        crlf += byte;
+    }
+    const std::string tail = "E2 {";
+    f.write(crlf + tail);
+    {
+        FileEventStore events(f.root);
+        const auto report = events.recover({});
+        MIRA_CHECK(report && report.value().status == RecoveryStatus::TailTruncated);
+        MIRA_CHECK(report.value().bytes_discarded == tail.size() && f.bytes() == crlf);
+        MIRA_CHECK(events.append(f.request()).value().session_sequence == 2);
+        const auto bytes = f.bytes();
+        MIRA_CHECK(bytes.starts_with(crlf));
+        MIRA_CHECK(bytes.substr(crlf.size()).find('\r') == std::string::npos);
+    }
+    FileEventStore reopened(f.root);
+    MIRA_CHECK(reopened.recover({}).value().events_recovered == 2);
+    MIRA_CHECK(reopened.read({f.session, {}, 8}).value().events.front().timestamp.wall ==
+               first_wall);
+
+    // A pre-v2 Windows file retains its CRLF bytes when extended with LF v2 records.
+    Fixture legacy;
+    const auto prefix = legacy_line(legacy.request()) + "\r\n";
+    legacy.write(prefix);
+    {
+        FileEventStore events(legacy.root);
+        MIRA_CHECK(events.append(legacy.request()).value().session_sequence == 2);
+    }
+    MIRA_CHECK(legacy.bytes().starts_with(prefix + "MIRA_EVENT_LOG 2\nMIRA_EVENT_RECORDS\n"));
+    FileEventStore mixed(legacy.root);
+    MIRA_CHECK(mixed.recover({}).value().events_recovered == 2);
+    const auto page = mixed.read({legacy.session, {}, 8});
+    MIRA_CHECK(page && page.value().events.front().timestamp_origin ==
+                           EventTimestampOrigin::UnavailableLegacy);
+    MIRA_CHECK(page.value().events.back().timestamp_origin == EventTimestampOrigin::PersistedWall);
+    return 0;
+}
+
 int opaque_payload_roundtrips_beyond_model_json_defaults() {
     Fixture f;
     auto request = f.request(std::string(JsonLimits{}.max_string_bytes + 1, '\0'));
@@ -387,6 +439,7 @@ int main(int argc, char **argv) {
     }
     MIRA_CHECK(stable_wall_and_idempotency() == 0);
     MIRA_CHECK(legacy_transition_preserves_unknown_time() == 0);
+    MIRA_CHECK(crlf_history_uses_raw_byte_recovery_offsets() == 0);
     MIRA_CHECK(opaque_payload_roundtrips_beyond_model_json_defaults() == 0);
     MIRA_CHECK(corrupt_and_future_records_do_not_repair() == 0);
     MIRA_CHECK(exact_wire_nanoseconds_and_invalid_appends() == 0);

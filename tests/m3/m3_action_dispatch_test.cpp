@@ -110,13 +110,13 @@ struct Fixture final {
         explicit Lease(Fixture &value) : owner(value) { ++owner.environment.held; }
         ~Lease() override { --owner.environment.held; }
         Result<void> validate(const ActionIntent &intent,
-                              const OperationContext &context) override {
+                              const OperationContext &operation) override {
             ++owner.validations;
             if (owner.throw_validate) {
                 throw std::runtime_error("secret validation exception");
             }
             if (!owner.admitted || owner.epoch != intent.environment_epoch ||
-                context.task_epoch != intent.task_epoch) {
+                operation.task_epoch != intent.task_epoch) {
                 return failure(ErrorCode::InvalidState);
             }
             return {};

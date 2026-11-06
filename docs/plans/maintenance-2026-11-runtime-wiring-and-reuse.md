@@ -1064,3 +1064,42 @@ python3 tools/check_docs.py .
   Takeover/输入释放、隔离断电/系统同步仍未执行；负责人 Mira Maintainers，待
   runner、设备/权限和受控故障环境就绪后补跑。可写工具/Workflow/Controller
   共用 journal 仍按原设计单独推进，不能用只读样板或 Linux 契约代替。
+
+### 2026-11-06：第十五轮，PR #114 的 Clang / Windows CI 修正
+
+- 归属：`MNT-202611-02/03` 的跨编译器/平台回归与 `RW-G6`；依据 DEC-087 的
+  文件格式和 DEC-088 的实际等级。PR [#114](https://github.com/Linductor-alkaid/mira/pull/114)
+  初始 head `f561519`，本轮在其上修正；四项独立研究文档保持原工作区内容，不纳入
+  提交。维护项仍 **11/13**，不以 CI 修正关闭真实 Adapter/断电门禁。
+- 失败证据：PR CI run [42158417349](https://github.com/Linductor-alkaid/mira/actions/runs/42158417349)
+  的 GCC、Android、三种 sanitizer 与 quality 通过；Clang Debug/Release 和 Windows
+  Debug/Release 失败。Clang 在 m3_action_dispatch_test 的嵌套 Lease::validate
+  参数 context 遮蔽外层 Fixture::context 处触发 `-Werror,-Wshadow`；Windows 的
+  file_event_time_test 在 LF 前缀字节断言失败（两配置均为 **138/139**）。同步
+  push run 42158277000 也出现同类失败，未将其当偶发问题重跑掩盖。
+- 修正：将测试参数改为 operation；FileEventStore append/flush 以 binary stream
+  打开，固定写单字节 LF。reader 已按 binary 读取并移除解析用行末 CR，保留兼容。
+  不修改 CI 配置、编译警告或现有断言，不改 schema、摘要或耐久性等级。
+- 回归：保留新文件 LF 字节断言，新增 CRLF v2 日志残缺尾部恢复，验证原始字节
+  偏移/丢弃数、历史前缀不变、续写 LF、两次事件恢复及 wall time；另验证旧 v1
+  CRLF 前缀续写 v2 后来源正确。未生成缺失旧时间，不影响单 owner 约束。
+- 本机：Linux x86_64 / GCC 13.3.0 Debug；`cmake --build build/debug -j 4` 与
+  `ctest --test-dir build/debug --output-on-failure -j 4` **141/141**，41.23 s。
+  日志 `/tmp/mira-pr114-fix-build.log`、`/tmp/mira-pr114-fix-test.log` 为临时诊断；
+  长期复现以仓库和命令为准。
+- Clang：本机没有已安装的 clang++，用 Ubuntu clang-18 / libclang-common-18-dev
+  软件包解压到 `/tmp/mira-pr114-clang`，不修改系统依赖或第三方；18.1.3 对上述
+  测试执行 `-std=c++20 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
+  -Wshadow -Wold-style-cast -Wnon-virtual-dtor -Werror -fsyntax-only`（include、tests、
+  kairo/include 路径与编译数据库一致）通过。完整 Clang 配置/构建与运行另行取证，
+  语法检查不冒充运行或 Windows 证据。
+- 质量：`python3 tools/check_docs.py .`、`python3 tools/check_architecture.py .`、
+  `python3 tools/check_platform_boundary.py .`、
+  `cmake -DROOT_DIR=/home/linductor/mira -P cmake/CheckFormat.cmake`（312 个 C++ 文件）
+  和 `git diff --check` 通过；16 条既有基线、零新增/零 stale，无第三方变更。
+  同步 DEC-087、格式兼容说明与总计划。
+- 发布条件：修正推送后，以 PR 当前 head 的 push / pull_request 全部 checks 通过
+  为合并前置；不以旧 head 的成功检查代替。当前头的 CI 链接、最终结果与合并
+  SHA 在 PR #114 的 checks/描述中留存；Windows/Android 未实际运行的 Adapter
+  与断电验证仍由 Mira Maintainers 在设备/权限/受控故障环境就绪后补跑。合并后
+  同步 master、清理本工作分支并核对四项独立文档内容未变。

@@ -1617,3 +1617,10 @@ Context 宿主迁移文件日志。新增 marker 握手后外部 SIGKILL 九窗�
 [维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十四轮。累计仍
 **11/13**；Windows/Android 当前提交与真实平台、系统同步/断电未验证，02/03
 及全局门禁不关闭，可写工具/连续控制仍属原后续范围。
+
+2026-11-06（第十五轮 CI 修正）：PR [#114](https://github.com/Linductor-alkaid/mira/pull/114)
+初始 CI 暴露 Clang 测试参数遮蔽与 Windows 文本流换行转换。参数重命名并固定
+文件日志 binary/LF 写入，补 CRLF 历史前缀、截尾偏移与混合续写回归；本机 GCC
+全量 **141/141**，Clang 18 严格语法检查通过。准确命令、原始失败与发布条件见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十五轮。合并以当前
+head 的全部 CI checks 通过为前置，目标设备/断电门禁仍开放，累计仍 **11/13**。

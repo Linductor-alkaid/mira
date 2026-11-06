@@ -1,7 +1,7 @@
 # FileEventStore v2：持久化时间与旧日志兼容
 
 > 状态：Active
-> 版本：1.0
+> 版本：1.1
 > 更新日期：2026-11-06
 > 负责人：Mira Maintainers
 > 依据：[DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md)、BUG-20261106-001
@@ -46,6 +46,10 @@ MIRA_EVENT_LOG 2
 MIRA_EVENT_RECORDS
 E2 { ... }
 ```
+
+所有新记录使用 binary stream 写入单字节 LF，避免 Windows 文本流自动转换
+CRLF。读取保持 binary 并在解析前去除行末 CR，兼容旧 Windows CRLF 前缀；
+截尾偏移按原始字节（包括 CR）计算，续写不重写历史前缀。
 
 JSON 严格包含 schema、event/runtime/session/task ID、session/task sequence、cause、
 classification、type/data、wall_ns、integrity、record_digest。sequence/cause 用

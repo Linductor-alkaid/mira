@@ -432,7 +432,7 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
     std::optional<TaskSequence> task_sequence;
     if (request.task_id)
         task_sequence = impl_->next_task[*request.task_id] + 1;
-    std::ofstream output(impl_->log_path, std::ios::app);
+    std::ofstream output(impl_->log_path, std::ios::binary | std::ios::app);
     if (!output)
         return error(ErrorCode::Unavailable, "event log cannot be opened", true);
     const auto timestamp = Timestamp::now();
@@ -643,7 +643,7 @@ Result<void> FileEventStore::flush(Durability required) {
     std::lock_guard lock(impl_->mutex);
     if (impl_->read_only)
         return error(ErrorCode::DataLoss, "event store is read-only after recovery");
-    std::ofstream output(impl_->log_path, std::ios::app);
+    std::ofstream output(impl_->log_path, std::ios::binary | std::ios::app);
     if (!output)
         return error(ErrorCode::Unavailable, "event log cannot be opened", true);
     output.flush();
