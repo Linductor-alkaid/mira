@@ -1,5 +1,7 @@
 #pragma once
 
+#include "simulated_durable_store.hpp"
+
 #include <mira/agent_loop.hpp>
 
 namespace mira::testing {
@@ -17,6 +19,8 @@ inline void wire_scripted_action_dispatch(AgentLoop &loop, const SessionId &sess
     if (!events) {
         events = std::make_shared<MemoryEventStore>();
     }
+    if (auto memory = std::dynamic_pointer_cast<MemoryEventStore>(events))
+        events = std::make_shared<SimulatedDurableStore>(std::move(memory));
     loop.set_action_dispatcher(std::make_shared<JournaledActionDispatcher>(
         runtime, session, std::move(events),
         [](const ActionIntent &,

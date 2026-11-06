@@ -224,6 +224,11 @@ Checkpoint/检索输入经 StandardContextManager 装配并被 provider 消费�
 [Context 离线宿主](offline-composition-hosts.md#context边界由宿主显式传递)。该组合
 不自动安装到两个 Loop，也不改变 M25 seam 或 M30 的装配归属。
 
+FileEventStore v1 恢复出的 UnavailableLegacy flat fact/Completed episode 批次会被
+MemoryConsolidator 明确拒绝，不将缺失时间回填为 now；带持久化验证时间的新事实
+协议仍可消费。时间来源与迁移边界见
+[文件日志 v2](../compatibility/file-event-log-v2.md)。
+
 ## provider_continuation.hpp
 
 Provider 专属优化的受限生命周期：`ContinuationCache.store()/lookup()` 以

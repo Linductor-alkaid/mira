@@ -1,5 +1,7 @@
 #include <mira/event_store.hpp>
 
+#include "event_log_wire.hpp"
+
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -18,6 +20,20 @@ Error error(ErrorCode code, std::string message, bool retryable = false) {
     result.retryable = retryable;
     result.domain = "mira.event_store";
     return result;
+}
+
+bool valid_durability(Durability value) {
+    return value == Durability::Buffered || value == Durability::ProcessCrash ||
+           value == Durability::PowerLoss;
+}
+
+Result<void> file_durability(Durability value) {
+    if (!valid_durability(value))
+        return error(ErrorCode::InvalidArgument, "event durability is invalid");
+    if (value == Durability::PowerLoss)
+        return error(ErrorCode::UnsupportedCapability,
+                     "file store does not support power-loss durability");
+    return {};
 }
 
 class Sha256 final {
@@ -153,6 +169,15 @@ std::string canonical(const AppendRequest &request) {
     return canonical(event);
 }
 
+bool same_request(const EventEnvelope &event, const AppendRequest &request) {
+    return event.event_id == request.event_id && event.runtime_id == request.runtime_id &&
+           event.session_id == request.session_id && event.task_id == request.task_id &&
+           event.cause_control_sequence == request.cause &&
+           event.payload.type == request.payload.type &&
+           event.payload.data == request.payload.data &&
+           event.payload.classification == request.payload.classification;
+}
+
 } // namespace
 
 Result<EventClass> parse_event_class(std::uint8_t value) {
@@ -232,16 +257,24 @@ MemoryEventStore::MemoryEventStore(std::size_t max_events)
 MemoryEventStore::~MemoryEventStore() = default;
 
 Result<AppendReceipt> MemoryEventStore::append(const AppendRequest &request) {
+    return append_stamped(request, Timestamp::now(), EventTimestampOrigin::AppendProcess);
+}
+
+Result<AppendReceipt> MemoryEventStore::append_stamped(const AppendRequest &request,
+                                                       Timestamp timestamp,
+                                                       EventTimestampOrigin origin) {
     std::lock_guard lock(impl_->mutex);
+    if (!valid_durability(request.required))
+        return error(ErrorCode::InvalidArgument, "event durability is invalid");
     if (request.event_id.is_nil() || request.runtime_id.is_nil() || request.session_id.is_nil()) {
         return error(ErrorCode::InvalidArgument, "event, runtime, and session IDs must be non-nil");
     }
     const auto existing = impl_->by_id.find(request.event_id);
     if (existing != impl_->by_id.end()) {
         const auto &event = impl_->events[existing->second];
-        if (event.integrity == digest_string(canonical(request))) {
+        if (same_request(event, request) && event.integrity == digest_string(canonical(request))) {
             return AppendReceipt{event.event_id, event.session_sequence, event.task_sequence,
-                                 impl_->durable_watermark, request.required};
+                                 impl_->durable_watermark, Durability::Buffered};
         }
         return error(ErrorCode::DataLoss, "duplicate event ID has a different payload");
     }
@@ -257,7 +290,8 @@ Result<AppendReceipt> MemoryEventStore::append(const AppendRequest &request) {
     if (request.task_id)
         event.task_sequence = ++impl_->next_task[*request.task_id];
     event.cause_control_sequence = request.cause;
-    event.timestamp = Timestamp::now();
+    event.timestamp = timestamp;
+    event.timestamp_origin = origin;
     event.payload = request.payload;
     event.integrity = digest_string(canonical(request));
     const auto index = impl_->events.size();
@@ -265,7 +299,7 @@ Result<AppendReceipt> MemoryEventStore::append(const AppendRequest &request) {
     impl_->by_id.emplace(event.event_id, index);
     const auto watermark = ++impl_->durable_watermark;
     return AppendReceipt{event.event_id, event.session_sequence, event.task_sequence, watermark,
-                         request.required};
+                         Durability::Buffered};
 }
 
 Result<std::vector<AppendReceipt>>
@@ -303,7 +337,14 @@ Result<StoreRecoveryReport> MemoryEventStore::recover(const RecoveryOptions &) {
                                "memory store is consistent"};
 }
 
-Result<void> MemoryEventStore::flush(Durability) { return Result<void>{}; }
+Result<void> MemoryEventStore::flush(Durability required) {
+    if (!valid_durability(required))
+        return error(ErrorCode::InvalidArgument, "event durability is invalid");
+    if (required != Durability::Buffered)
+        return error(ErrorCode::UnsupportedCapability,
+                     "memory store only supports buffered durability");
+    return {};
+}
 std::size_t MemoryEventStore::size() const noexcept {
     std::lock_guard lock(impl_->mutex);
     return impl_->events.size();
@@ -328,6 +369,8 @@ class FileEventStore::Impl final {
     mutable std::mutex mutex;
     MemoryEventStore memory;
     bool loaded = false;
+    bool v2 = false;
+    bool needs_separator = false;
     bool read_only = false;
     RecoveryStatus recovery_status = RecoveryStatus::Clean;
     std::string recovery_diagnostic;
@@ -341,13 +384,18 @@ FileEventStore::FileEventStore(std::filesystem::path root, std::size_t max_event
 FileEventStore::~FileEventStore() = default;
 
 Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
+    auto supported = file_durability(request.required);
+    if (!supported)
+        return supported.error();
+    bool loaded;
     {
         std::lock_guard lock(impl_->mutex);
+        loaded = impl_->loaded;
         if (impl_->loaded && impl_->read_only) {
             return error(ErrorCode::DataLoss, "event store is read-only after recovery");
         }
     }
-    if (!impl_->loaded) {
+    if (!loaded) {
         auto recovery = recover({});
         if (!recovery)
             return recovery.error();
@@ -362,6 +410,10 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
     if (request.event_id.is_nil() || request.runtime_id.is_nil() || request.session_id.is_nil()) {
         return error(ErrorCode::InvalidArgument, "event, runtime, and session IDs must be non-nil");
     }
+    if ((request.task_id && request.task_id->is_nil()) ||
+        !parse_event_class(static_cast<std::uint8_t>(request.payload.classification))) {
+        return error(ErrorCode::InvalidArgument, "event task or classification is invalid");
+    }
     const auto existing = impl_->integrity_by_id.find(request.event_id);
     const auto requested_integrity = digest_string(canonical(request));
     if (existing != impl_->integrity_by_id.end()) {
@@ -371,8 +423,10 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
         const auto event = impl_->memory.find(request.event_id);
         if (!event)
             return error(ErrorCode::DataLoss, "event index is inconsistent");
+        if (!same_request(*event, request))
+            return error(ErrorCode::DataLoss, "duplicate event ID has different request fields");
         return AppendReceipt{event->event_id, event->session_sequence, event->task_sequence, 0,
-                             request.required};
+                             Durability::ProcessCrash};
     }
     const auto session_sequence = impl_->next_session[request.session_id] + 1;
     std::optional<TaskSequence> task_sequence;
@@ -381,25 +435,39 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
     std::ofstream output(impl_->log_path, std::ios::app);
     if (!output)
         return error(ErrorCode::Unavailable, "event log cannot be opened", true);
-    output << session_sequence << ' ' << request.event_id.to_string() << ' '
-           << request.runtime_id.to_string() << ' ' << request.session_id.to_string() << ' '
-           << (request.task_id ? request.task_id->to_string() : std::string("-")) << ' '
-           << request.cause << ' ' << static_cast<unsigned int>(request.payload.classification)
-           << ' ' << std::quoted(request.payload.type) << ' ' << std::quoted(request.payload.data)
-           << ' ' << requested_integrity.to_string() << '\n';
+    const auto timestamp = Timestamp::now();
+    event_log_wire::Record record{
+        request, session_sequence, task_sequence, requested_integrity, timestamp, true};
+    const auto encoded = event_log_wire::encode(record);
+    if (impl_->needs_separator)
+        output << '\n';
+    if (!impl_->v2)
+        output << event_log_wire::header << '\n' << event_log_wire::records << '\n';
+    output << encoded << '\n';
     output.flush();
-    if (!output)
+    output.close();
+    if (!output) {
+        impl_->read_only = true;
+        impl_->recovery_status = RecoveryStatus::ReadOnlyDiagnostic;
+        impl_->recovery_diagnostic = "event write failed; reopen for recovery";
         return error(ErrorCode::Unavailable, "event log write failed", true);
-    auto result = impl_->memory.append(request);
+    }
+    impl_->v2 = true;
+    impl_->needs_separator = false;
+    auto result =
+        impl_->memory.append_stamped(request, timestamp, EventTimestampOrigin::AppendProcess);
     if (!result || result.value().session_sequence != session_sequence ||
         result.value().task_sequence != task_sequence) {
         impl_->read_only = true;
+        impl_->recovery_status = RecoveryStatus::DataLoss;
+        impl_->recovery_diagnostic = "event index update failed after durable append";
         return error(ErrorCode::DataLoss, "event index update failed after durable append");
     }
     impl_->next_session[request.session_id] = session_sequence;
     if (request.task_id && task_sequence)
         impl_->next_task[*request.task_id] = task_sequence.value();
     impl_->integrity_by_id.emplace(request.event_id, requested_integrity);
+    result.value().achieved = Durability::ProcessCrash;
     return result;
 }
 
@@ -417,15 +485,17 @@ FileEventStore::append_batch(std::span<const AppendRequest> requests) {
 }
 
 Result<EventPage> FileEventStore::read(const EventQuery &query) const {
+    bool loaded;
     {
         std::lock_guard lock(impl_->mutex);
+        loaded = impl_->loaded;
         if (!impl_->loaded) {
             // Recovery performs the one-time file scan outside this lock.
         } else if (impl_->read_only) {
             return error(ErrorCode::DataLoss, "event store is read-only after recovery");
         }
     }
-    if (!impl_->loaded) {
+    if (!loaded) {
         auto recovery = const_cast<FileEventStore *>(this)->recover({});
         if (!recovery)
             return recovery.error();
@@ -443,154 +513,141 @@ Result<StoreRecoveryReport> FileEventStore::recover(const RecoveryOptions &optio
         const auto memory_report = impl_->memory.recover(options);
         if (!memory_report)
             return memory_report.error();
-        return StoreRecoveryReport{
-            impl_->recovery_status, memory_report.value().events_recovered, 0,
-            impl_->recovery_diagnostic.empty() ? memory_report.value().diagnostic
-                                               : impl_->recovery_diagnostic};
+        return StoreRecoveryReport{impl_->recovery_status, memory_report.value().events_recovered,
+                                   0, impl_->recovery_diagnostic};
     }
     std::ifstream input(impl_->log_path, std::ios::binary);
     if (!input) {
         impl_->loaded = true;
-        impl_->recovery_status = RecoveryStatus::Clean;
         impl_->recovery_diagnostic = "new event store";
         return StoreRecoveryReport{RecoveryStatus::Clean, 0, 0, "new event store"};
     }
     std::size_t recovered = 0;
-    std::size_t discarded = 0;
-    std::uintmax_t offset = 0;
-    std::uintmax_t last_good_offset = 0;
+    std::uintmax_t offset = 0, last_good_offset = 0;
+    const auto stop = [&](RecoveryStatus status, std::string message, std::size_t bytes = 0) {
+        impl_->loaded = true;
+        impl_->read_only =
+            status == RecoveryStatus::DataLoss || status == RecoveryStatus::ReadOnlyDiagnostic;
+        impl_->recovery_status = status;
+        impl_->recovery_diagnostic = std::move(message);
+        return StoreRecoveryReport{status, recovered, bytes, impl_->recovery_diagnostic};
+    };
+    const auto malformed = [&](bool has_more) {
+        if (has_more || !options.repair_uncommitted_tail)
+            return stop(RecoveryStatus::ReadOnlyDiagnostic,
+                        "event log contains an incomplete record");
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(impl_->log_path, ec);
+        if (ec || size < last_good_offset)
+            return stop(RecoveryStatus::ReadOnlyDiagnostic,
+                        "event log size could not be determined");
+        const auto discarded = static_cast<std::size_t>(size - last_good_offset);
+        std::filesystem::resize_file(impl_->log_path, last_good_offset, ec);
+        if (ec)
+            return stop(RecoveryStatus::ReadOnlyDiagnostic,
+                        "event log tail could not be truncated");
+        impl_->needs_separator = false;
+        return stop(RecoveryStatus::TailTruncated, "incomplete event log tail truncated",
+                    discarded);
+    };
     std::string line;
     while (std::getline(input, line)) {
-        const auto raw_line_size = line.size();
+        const bool terminated = !input.eof();
+        offset += line.size() + (terminated ? 1U : 0U);
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
-        offset += static_cast<std::uintmax_t>(raw_line_size) + 1;
         if (line.empty()) {
+            last_good_offset = offset;
+            impl_->needs_separator = !terminated;
+            continue;
+        }
+        if (line.starts_with("MIRA_EVENT_")) {
+            if (!impl_->v2 && line != event_log_wire::header &&
+                event_log_wire::header.starts_with(line))
+                return malformed(input.peek() != std::char_traits<char>::eof());
+            if (line != event_log_wire::header)
+                return stop(RecoveryStatus::ReadOnlyDiagnostic, "event log version is unsupported");
+            if (impl_->v2)
+                return stop(RecoveryStatus::DataLoss, "event log repeats a format transition");
+            std::string marker;
+            if (!std::getline(input, marker))
+                return malformed(false);
+            const bool marker_terminated = !input.eof();
+            offset += marker.size() + (marker_terminated ? 1U : 0U);
+            if (!marker.empty() && marker.back() == '\r')
+                marker.pop_back();
+            if (marker != event_log_wire::records) {
+                if (event_log_wire::records.starts_with(marker))
+                    return malformed(marker_terminated ||
+                                     input.peek() != std::char_traits<char>::eof());
+                return stop(RecoveryStatus::ReadOnlyDiagnostic,
+                            "event log format marker is invalid");
+            }
+            impl_->v2 = true;
+            impl_->needs_separator = !marker_terminated;
             last_good_offset = offset;
             continue;
         }
-        std::istringstream stream(line);
-        std::uint64_t sequence = 0;
-        std::string event_text, runtime_text, session_text, task_text;
-        std::uint64_t cause = 0;
-        unsigned int classification = 0;
-        std::string type, data, integrity_text;
-        if (!(stream >> sequence >> event_text >> runtime_text >> session_text >> task_text >>
-              cause >> classification >> std::quoted(type) >> std::quoted(data))) {
-            const bool has_more = input.peek() != std::char_traits<char>::eof();
-            if (has_more || !options.repair_uncommitted_tail) {
-                impl_->read_only = true;
-                impl_->recovery_status = RecoveryStatus::ReadOnlyDiagnostic;
-                impl_->recovery_diagnostic = has_more ? "event log contains malformed middle record"
-                                                      : "event log tail is malformed";
-                return StoreRecoveryReport{RecoveryStatus::ReadOnlyDiagnostic, recovered,
-                                           line.size(), impl_->recovery_diagnostic};
-            }
-            std::error_code size_error;
-            const auto file_size = std::filesystem::file_size(impl_->log_path, size_error);
-            if (size_error || file_size < last_good_offset) {
-                impl_->read_only = true;
-                impl_->recovery_status = RecoveryStatus::ReadOnlyDiagnostic;
-                impl_->recovery_diagnostic = "event log size could not be determined";
-                return StoreRecoveryReport{RecoveryStatus::ReadOnlyDiagnostic, recovered,
-                                           line.size(), "event log size could not be determined"};
-            }
-            discarded = static_cast<std::size_t>(file_size - last_good_offset);
-            std::error_code truncate_error;
-            std::filesystem::resize_file(impl_->log_path, last_good_offset, truncate_error);
-            if (truncate_error) {
-                impl_->read_only = true;
-                impl_->recovery_status = RecoveryStatus::ReadOnlyDiagnostic;
-                impl_->recovery_diagnostic = "event log tail could not be truncated";
-                return StoreRecoveryReport{RecoveryStatus::ReadOnlyDiagnostic, recovered, discarded,
-                                           "event log tail could not be truncated"};
-            }
-            impl_->loaded = true;
-            impl_->recovery_status = RecoveryStatus::TailTruncated;
-            impl_->recovery_diagnostic = "malformed event log tail truncated";
-            return StoreRecoveryReport{RecoveryStatus::TailTruncated, recovered, discarded,
-                                       impl_->recovery_diagnostic};
+        if (!impl_->v2 && line.starts_with("E"))
+            return stop(RecoveryStatus::ReadOnlyDiagnostic,
+                        "event log record has no version marker");
+        auto decoded =
+            impl_->v2 ? event_log_wire::decode_v2(line) : event_log_wire::decode_legacy(line);
+        if (!decoded) {
+            if (decoded.error().code == ErrorCode::InvalidArgument)
+                return malformed((impl_->v2 && terminated) ||
+                                 input.peek() != std::char_traits<char>::eof());
+            return stop(decoded.error().code == ErrorCode::UnsupportedVersion
+                            ? RecoveryStatus::ReadOnlyDiagnostic
+                            : RecoveryStatus::DataLoss,
+                        decoded.error().safe_message);
         }
-        const auto event_id = EventId::parse(event_text);
-        const auto runtime_id = RuntimeId::parse(runtime_text);
-        const auto session_id = SessionId::parse(session_text);
-        const auto event_class = parse_event_class(static_cast<std::uint8_t>(classification));
-        if (!event_id || !runtime_id || !session_id || !event_class) {
-            impl_->read_only = true;
-            impl_->recovery_status = RecoveryStatus::DataLoss;
-            impl_->recovery_diagnostic = "event log contains invalid identity or classification";
-            return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                       "event log contains invalid identity or classification"};
-        }
-        const auto expected_sequence = impl_->next_session[*session_id] + 1;
-        if (sequence != expected_sequence) {
-            impl_->read_only = true;
-            impl_->recovery_status = RecoveryStatus::DataLoss;
-            impl_->recovery_diagnostic = "event log contains a session sequence gap";
-            return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                       "event log contains a session sequence gap"};
-        }
-        AppendRequest request{*event_id,
-                              *runtime_id,
-                              *session_id,
-                              std::nullopt,
-                              EventPayload{type, data, event_class.value()},
-                              cause,
-                              Durability::ProcessCrash};
-        if (task_text != "-") {
-            const auto task_id = TaskId::parse(task_text);
-            if (!task_id) {
-                impl_->read_only = true;
-                impl_->recovery_status = RecoveryStatus::DataLoss;
-                impl_->recovery_diagnostic = "invalid task ID";
-                return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                           "invalid task ID"};
-            }
-            request.task_id = *task_id;
-        }
-        if (!(stream >> integrity_text) ||
-            integrity_text != digest_string(canonical(request)).to_string()) {
-            impl_->read_only = true;
-            impl_->recovery_status = RecoveryStatus::DataLoss;
-            impl_->recovery_diagnostic = "event integrity digest mismatch";
-            return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                       "event integrity digest mismatch"};
-        }
-        std::string extra;
-        if (stream >> extra) {
-            impl_->read_only = true;
-            impl_->recovery_status = RecoveryStatus::DataLoss;
-            impl_->recovery_diagnostic = "event log contains unexpected trailing fields";
-            return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                       "event log contains unexpected trailing fields"};
-        }
-        auto append_result = impl_->memory.append(request);
-        if (!append_result) {
-            impl_->read_only = true;
-            impl_->recovery_status = RecoveryStatus::DataLoss;
-            impl_->recovery_diagnostic = append_result.error().safe_message;
-            return StoreRecoveryReport{RecoveryStatus::DataLoss, recovered, line.size(),
-                                       impl_->recovery_diagnostic};
-        }
-        impl_->next_session[*session_id] = sequence;
-        if (request.task_id && append_result.value().task_sequence) {
-            impl_->next_task[*request.task_id] = append_result.value().task_sequence.value();
-        }
-        impl_->integrity_by_id.emplace(*event_id, digest_string(canonical(request)));
+        const auto &r = decoded.value();
+        const auto &request = r.request;
+        const auto expected_sequence = impl_->next_session[request.session_id] + 1;
+        std::optional<TaskSequence> expected_task_sequence;
+        if (request.task_id)
+            expected_task_sequence = impl_->next_task[*request.task_id] + 1;
+        if (r.sequence != expected_sequence || (r.v2 && r.task_sequence != expected_task_sequence))
+            return stop(RecoveryStatus::DataLoss, "event log contains a sequence gap");
+        if (r.request_digest != digest_string(canonical(request)))
+            return stop(RecoveryStatus::DataLoss, "event request integrity digest mismatch");
+        auto appended = impl_->memory.append_stamped(
+            request, r.timestamp,
+            r.v2 ? EventTimestampOrigin::PersistedWall : EventTimestampOrigin::UnavailableLegacy);
+        if (!appended || appended.value().session_sequence != r.sequence ||
+            appended.value().task_sequence != expected_task_sequence)
+            return stop(RecoveryStatus::DataLoss,
+                        "event recovery index could not be reconstructed");
+        impl_->next_session[request.session_id] = r.sequence;
+        if (request.task_id)
+            impl_->next_task[*request.task_id] = *expected_task_sequence;
+        impl_->integrity_by_id.emplace(request.event_id, r.request_digest);
         last_good_offset = offset;
+        impl_->needs_separator = !terminated;
         ++recovered;
     }
-    impl_->loaded = true;
-    impl_->recovery_status = RecoveryStatus::Clean;
-    impl_->recovery_diagnostic = "event log recovered";
-    return StoreRecoveryReport{RecoveryStatus::Clean, recovered, discarded, "event log recovered"};
+    if (input.bad())
+        return stop(RecoveryStatus::ReadOnlyDiagnostic, "event log read failed");
+    return stop(RecoveryStatus::Clean, "event log recovered");
 }
 
-Result<void> FileEventStore::flush(Durability) {
+Result<void> FileEventStore::flush(Durability required) {
+    auto supported = file_durability(required);
+    if (!supported)
+        return supported;
+    // Recovery is idempotent and acquires the same mutex as append.
+    auto recovered = recover({});
+    if (!recovered)
+        return recovered.error();
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->read_only)
+        return error(ErrorCode::DataLoss, "event store is read-only after recovery");
     std::ofstream output(impl_->log_path, std::ios::app);
     if (!output)
         return error(ErrorCode::Unavailable, "event log cannot be opened", true);
     output.flush();
+    output.close();
     return output ? Result<void>{}
                   : Result<void>(error(ErrorCode::Unavailable, "event log flush failed", true));
 }

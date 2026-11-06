@@ -1,8 +1,8 @@
 # Journaled Input Dispatch 设计
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-11-05
+> 版本：1.1
+> 更新日期：2026-11-06
 > 负责人：Mira Maintainers
 > 依据：[DEC-075](../decisions/DEC-075-agent-loop-journaled-input-dispatch.md)
 
@@ -26,6 +26,10 @@ setters 必须在 run 之前完成，不允许执行中重新装配。
 epoch 一致、许可未撤回。资源撤回同时取消 context 并 interrupt Environment，
 Adapter 最终输入仍检查取消；不在 Runtime records_mutex 内持锁等待平台 I/O。
 测试的 ScriptedActionLease 为无真实授权含义的替身，不是生产样板。
+依 DEC-088，裸 MemoryEventStore 仅报告 Buffered，Dispatcher 在 prepare 的弱确认
+处拒绝，输入次数为零；强确认测试通过显式 test-only 回执替身注入，不改变生产
+准入。Working Context 宿主与 journal 样板使用 FileEventStore 的 ProcessCrash 确认。
+
 
 ## 3. 时序、恢复和事件
 

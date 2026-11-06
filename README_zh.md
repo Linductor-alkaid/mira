@@ -224,3 +224,6 @@ Mira 以 [GNU Affero General Public License v3.0](LICENSE) 发布。
 
 [三个离线组合宿主](docs/api/offline-composition-hosts.md) 演示 Workflow 终态、
 有界上下文请求与保守恢复，包含安装后编译运行门禁。
+
+[文件日志 v2](docs/compatibility/file-event-log-v2.md) 持久化原始 wall 时间，旧日志
+明确标识时间缺失；EventEnvelope 增加来源字段，C++ 消费者须与库一起重编译。

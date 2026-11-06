@@ -29,6 +29,17 @@
 #endif
 
 int main() {
+    mira::MemoryEventStore clock_store;
+    mira::AppendRequest clock_request{mira::EventId::generate(),
+                                      mira::RuntimeId::generate(),
+                                      mira::SessionId::generate(),
+                                      {},
+                                      {"ClockFixture", "metadata"}};
+    if (!clock_store.append(clock_request))
+        return 87;
+    const auto clock_event = clock_store.find(clock_request.event_id);
+    if (!clock_event || clock_event->timestamp_origin != mira::EventTimestampOrigin::AppendProcess)
+        return 87;
     mira::VerifiedFactPublisher missing_authority({}, {}, {}, nullptr, {});
     const auto no_fact = missing_authority.publish({}, mira::make_control_context());
     if (no_fact || no_fact.error().code != mira::ErrorCode::InvalidState ||

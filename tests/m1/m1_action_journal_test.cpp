@@ -33,6 +33,9 @@ class FaultStore final : public IEventStore {
             return error;
         }
         auto result = backing.append(request);
+        // Explicit protocol acknowledgement simulation, not storage durability.
+        if (result)
+            result.value().achieved = request.required;
         if (result && bad_ack) {
             result.value().event_id = EventId::generate();
         }

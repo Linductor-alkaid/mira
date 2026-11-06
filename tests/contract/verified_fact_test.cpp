@@ -33,6 +33,9 @@ class Store final : public IEventStore {
         if (mode == ThrowAppend)
             throw std::runtime_error("private store failure");
         auto receipt = data.append(request);
+        // Explicit protocol acknowledgement simulation, not storage durability.
+        if (receipt)
+            receipt.value().achieved = request.required;
         if (receipt && mode == Weak)
             receipt.value().achieved = Durability::Buffered;
         if (receipt && mode == WrongId)
@@ -292,7 +295,11 @@ int memory_scope_expiry_approval_and_replay_boundaries() {
     } memory;
     Fixture f;
     MIRA_CHECK(f.publisher().publish(f.claim, f.context));
-    const auto events = f.events();
+    auto events = f.events();
+    // A v1 file can contain this newer payload protocol. Its proof time is
+    // still available even though the legacy envelope did not persist time.
+    events.back().timestamp_origin = EventTimestampOrigin::UnavailableLegacy;
+    events.back().timestamp = {};
     MemoryConsolidator consolidator;
     auto applied = consolidator.consolidate(memory, events, f.scope, Timestamp::now());
     MIRA_CHECK(applied && applied.value().count_of(CandidateDisposition::Applied) == 1);
@@ -332,6 +339,8 @@ int memory_scope_expiry_approval_and_replay_boundaries() {
     MIRA_CHECK(stale && stale.value().count_of(CandidateDisposition::RejectedConflict) == 1);
     MIRA_CHECK(memory.writes == 1);
     auto legacy_conflict = events.back();
+    legacy_conflict.timestamp_origin = EventTimestampOrigin::AppendProcess;
+    legacy_conflict.timestamp = Timestamp::now();
     legacy_conflict.payload = {
         "TaskFactVerified",
         to_json_string(JsonValue::Object{{"key", "screen.width"}, {"value", "642"}}),

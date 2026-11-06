@@ -177,6 +177,22 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
     if (!valid_policy) {
         return valid_policy.error();
     }
+    // Missing v1 file time must not become "now" via the generic default.
+    for (const auto &event : events) {
+        if (event.timestamp_origin != EventTimestampOrigin::UnavailableLegacy)
+            continue;
+        auto body = parse_json(event.payload.data);
+        if (!body || body.value().find("schema"))
+            continue;
+        const bool fact = parse_verified_fact(event).has_value();
+        const auto *outcome = body.value().find("outcome");
+        const bool episode = event.payload.type == "LoopSettled" && outcome &&
+                             outcome->is_string() && *outcome->as_string() == "Completed";
+        if (fact || episode)
+            return make_memory_error(
+                MemoryDomainCode::InvalidMutation,
+                "source event time is unavailable; explicit validation required");
+    }
     std::vector<MemoryCandidate> candidates = extract_deterministic(events, scope, now);
     if (model_ != nullptr) {
         // Model proposals are untrusted: strip any HumanConfirmed claim and

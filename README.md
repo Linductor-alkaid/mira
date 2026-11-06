@@ -249,3 +249,6 @@ counters alongside command rejections and pending results, including overload an
 
 Three [offline composition hosts](docs/api/offline-composition-hosts.md) demonstrate Workflow
 completion, bounded context requests and conservative recovery, including installed-package builds.
+
+File event logs now persist wall timestamps in [format v2](docs/compatibility/file-event-log-v2.md).
+Legacy timestamps are explicitly unavailable; rebuild C++ consumers for the new envelope origin field.

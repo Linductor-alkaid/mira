@@ -6,10 +6,26 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 
 namespace {
 using namespace mira;
+bool external_kill = false;
+[[noreturn]] void boundary(const std::filesystem::path &root, const std::string &stage) {
+    if (!external_kill)
+        std::_Exit(0);
+    // CTest's external driver waits for this exact marker, then kills us.
+    // No further side effect is possible before the parent terminates us.
+    std::ofstream ready(root / "kill-ready", std::ios::binary);
+    ready << stage << '\n';
+    ready.close();
+    if (!ready)
+        std::_Exit(95);
+    std::string unexpected;
+    std::getline(std::cin, unexpected);
+    std::_Exit(98); // EOF/input means the driver failed to hold the boundary.
+}
 constexpr RuntimeId runtime{Id128{Id128::Bytes{1}}};
 constexpr SessionId session{Id128{Id128::Bytes{2}}};
 constexpr TaskId task{Id128{Id128::Bytes{3}}};
@@ -25,14 +41,14 @@ class CrashStore final : public IEventStore {
         if ((stage == "before_prepare" && type == "ActionPrepared") ||
             (stage == "before_start" && type == "ActionDispatchStarted") ||
             (stage == "before_receipt" && type == "ActionReceipt")) {
-            std::_Exit(0);
+            boundary(backing.root().parent_path(), stage);
         }
         auto result = backing.append(request);
         if (result && ((stage == "after_prepare" && type == "ActionPrepared") ||
                        (stage == "after_start" && type == "ActionDispatchStarted") ||
                        (stage == "after_receipt" && type == "ActionReceipt") ||
                        (stage == "after_uncertain" && type == "ActionExecutionUncertain"))) {
-            std::_Exit(0);
+            boundary(backing.root().parent_path(), stage);
         }
         return result;
     }
@@ -73,7 +89,7 @@ class ProbeEnvironment final : public IEnvironment {
             std::_Exit(96);
         }
         if (stage == "after_execute") {
-            std::_Exit(0);
+            boundary(root, stage);
         }
         return ExecutionReceipt{stage == "after_uncertain" ? ExecutionStatus::Unknown
                                                            : ExecutionStatus::Completed,
@@ -118,7 +134,7 @@ int write(const std::filesystem::path &root, const std::string &stage) {
                 return 1;
             }
         }
-        std::_Exit(0);
+        boundary(root, stage);
     }
     return 97; // A requested crash boundary was never reached.
 }
@@ -160,5 +176,9 @@ int main(int argc, char **argv) {
     if (argc != 4) {
         return 1;
     }
-    return std::string(argv[1]) == "write" ? write(argv[2], argv[3]) : verify(argv[2], argv[3]);
+    const std::string mode(argv[1]);
+    external_kill = mode == "write-kill";
+    if (mode == "write" || external_kill)
+        return write(argv[2], argv[3]);
+    return mode == "verify" ? verify(argv[2], argv[3]) : 1;
 }

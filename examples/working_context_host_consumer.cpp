@@ -312,7 +312,7 @@ int run(const std::filesystem::path &root) {
 
     auto environment = std::make_shared<SimulatorEnvironment>(SimulatorSetup::single_display());
     InMemoryWorkingContextStore store;
-    MemoryEventStore events;
+    FileEventStore events(root / "events");
     auto input_resource = std::make_shared<std::mutex>();
     const auto runtime_id = RuntimeId::generate();
 

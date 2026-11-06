@@ -57,6 +57,10 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   [M31](m31-capacity-admission-and-archival-recovery.md)：容量、保留及归档恢复。
 - [DEC-043](../decisions/DEC-043-architecture-policy-and-baseline.md) 与
   [架构治理](../project/architecture_governance.md)：共享代码的依赖方向与文件预算。
+- [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md)：文件日志 v2、
+  时间来源、旧记录兼容与消费者重编译；对应 12 的 BUG-20261106-001。
+- [DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md)：实际
+  回执等级、拒绝未实现的 PowerLoss、显式测试替身与外部进程强杀矩阵。
 
 本计划不冻结新的公开接口或持久化格式。实现前若需要改变这些契约，必须在
 `MNT-202611-01` 中补充对应 DEC、设计和兼容性方案，不能以本计划代替决策。
@@ -109,6 +113,8 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   撤回/epoch/deadline/未知结果与终态保守恢复；仍待补齐下面的完整窗口和通用 journal 矩阵。
   第三轮已补通用 journal 身份/pipe/分页矩阵与九个突然退出窗口、ASAN+UBSAN；
   真实平台、OS 强杀与断电等剩余门禁见第三轮验证记录，保持本项未完成。
+  第十四轮补齐 Linux 外部 SIGKILL 九窗口与 TSAN；Windows 系统终止、Android
+  真机输入收敛和断电/系统同步仍未取证，保持本项开放。
   在 start 前后、真实调用前后、receipt 提交处注入失败/重启；区分明确拒绝、成功、
   结果未知、结果迟到。至少覆盖 start 无 receipt 与显式 uncertain，证明
   `verification_pending`/未决副作用按契约保留，RecoveryPlanner 先 Observe/Verify，
@@ -179,10 +185,13 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   契约测试，没有按引用数删除或激活公共词汇。检索选择骨架及其他领域错误/大小写映射
   经审计保留各自策略，不建立跨层通用模板。未执行的目标平台/TSAN 条件仍在记录中
   开放，本项验收不关闭 02/03、12 或维护轮全局门禁。
-- [ ] `MNT-202611-12`（P2，依赖各批证据）关闭报告处置台账与文档同步。
+- [x] `MNT-202611-12`（P2，报告分类与文档同步范围）关闭报告处置台账与文档同步。
   每项登记已修复、原计划承接或待立项的结论，关联 API、设计、示例、决策和测试；
   保持原里程碑的范围与真实未执行项。验收：§5 无无主条目，各实现项有复现证据，
   不用“仓库没调用”证明可以删除，不用 fixture 成功证明真实部署可用。
+  [完整处置台账](../compatibility/2026-11-report-disposition.md)覆盖报告点名项与行动
+  清单；新日志时间缺陷按 DEC-087 修复，旧时间明确不可追回。证据见第十三轮。
+  本项完成不代表所有可选能力已交付，不关闭 02/03 或 RW-G1–G6。
 
 建议 PR 顺序：01 设计冻结 → 02/03 动作日志 → 05 计数修复 → 04 事实参考路径 →
 06 组合根 → 07 价格 → 08 度量 → 09 向量语义 → 10 SQLite → 11 局部治理 → 12 收口。
@@ -190,9 +199,12 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
 
 ## 5. 其余报告条目的归属
 
+逐项修复/保留依据、原计划承接和待立项条件见
+[报告处置台账](../compatibility/2026-11-report-disposition.md)；以下保留维护入口摘要。
+
 | 条目 | 承接位置与进入实现的条件 |
 | --- | --- |
-| BUG-20261106-001：文件事件恢复重建 timestamp | 12 单独冻结日志时间持久化与旧日志兼容；04 用载荷 observed_at/valid_from 避免依赖该时间，但不宣称全局已修复。负责人 Mira Maintainers，决策与格式矩阵就绪后补跑 |
+| BUG-20261106-001：文件事件恢复重建 timestamp | 12 / DEC-087 已修复新 v2 记录；v1 原时间未存下，明确标记 UnavailableLegacy，自动固化敏感路径拒绝，旧缓存不改写。Linux 与旧 reader 证据见第十三轮；C++ 全体消费者须重编译，目标平台与真实故障证据仍归 02/03 |
 | Gateway 多候选价格与累计账单边界 | 07 只验收单 profile/一次 infer；12 登记专项费用约束立项，核查 fallback/重试重估、resolved 缺价、spent+reserved 及审计持久化，不扩大 M33 自主打断/配额范围。负责人 Mira Maintainers，专项设计/矩阵就绪后补跑 |
 | TaskGoalSet/Constraint/Step/Observation 等投影词汇 | 01 审计事件生产者与 schema，04/06 提供端到端样板；逐事件确认必要性，不为凑齐词汇制造事实 |
 | masked_regions / FrameMaskReason | 12 登记为平台供给契约核查；实际遮蔽来源、隐私需求和 Adapter 能力确认后专项立项，不能伪造非空值 |
@@ -230,6 +242,18 @@ Runtime/Loop/Adapter 隐藏 Executor。停止顺序为停止生产 → 取消 �
 | RW-G4 参考宿主与诊断 | 06、08 | 安装后 consumer 编译运行、三条产物消费断言、背压与异常可见、Replay 零真实副作用 |
 | RW-G5 复用行为等价性 | 09–11 | 向量无效值与排序、两个 store 故障矩阵、状态转换、序列化兼容性回归 |
 | RW-G6 质量与证据同步 | 12 | 受影响测试与适用全量回归、架构/平台边界/格式/文档检查；跨平台与 sanitizer 按影响面取证 |
+
+02/03 的剩余环境与完成条件（负责人均为 Mira Maintainers；最新取证见第十四轮）：
+
+| 条目 | 当前证据 / 后续条件 |
+| --- | --- |
+| 实际耐久等级 | 内存仅 Buffered；文件 ProcessCrash；PowerLoss 明确拒绝，等级/拒绝/只读与零输入契约已通过 |
+| Linux 外部强杀 | 九个 marker 握手窗口 SIGKILL、独立 verifier 两次恢复已通过；不代表断电 |
+| TSAN | 13 个相关契约/生命周期/宿主用例通过；不是全库 sanitizer 声明 |
+| Windows | 在当前提交的 windows-debug/windows-release CI 补构建、安装消费和同一 kill driver（TerminateProcess）运行；Linux 结果不外推 |
+| Android | 当前提交 NDK arm64/x86_64 构建及安装链接；设备/宿主就绪后补真实动作中取消、权限撤回、Takeover、shutdown 和输入释放，禁止用 fake host 冒充 |
+| 断电 / PowerLoss | 当前不支持该等级。若要交付，先冻结 Adapter 文件/目录同步、创建与修复截断语义，再用隔离虚拟磁盘或专用设备取证；不能靠补一次 kill 测试关闭 |
+| 工具 / Workflow / Controller | 原设计仍单独推进共用日志接线，当前离散输入或只读样板不授予可写/连续控制保证 |
 
 - [ ] 工作项及 RW-G1–G6 均有通过证据，实施范围与剩余项归属明确。
 - [ ] 公开契约变化对应 DEC、设计、API、示例与兼容性说明同步。
@@ -915,3 +939,128 @@ python3 tools/check_docs.py .
   Windows/Android/TSAN、真实平台中断、真实模型语义、强杀/断电本轮未执行；负责人
   Mira Maintainers，在对应 CI/设备补跑 SDK/consumer 与生命周期、故障矩阵后取证，
   不以重开或 fixture 成功替代这些保证。
+
+### 2026-11-06：第十三轮，文件日志时间恢复与报告处置收口
+
+- 归属：`MNT-202611-12` / `BUG-20261106-001`，依据
+  [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md)。先按用户要求
+  提交上一轮 06 为 `4884605`，随后在其上开发本轮工作树。环境为 Linux x86_64、
+  GNU C++ 13.3.0，分支 `fix/runtime-wiring-foundations`；四项既有独立文档变更未
+  混入上一提交或被覆盖。
+- 时间：FileEventStore 新写入物理 v2，采集一次 wall 纳秒同时用于文件和内存；
+  恢复保持原值，monotonic 不跨进程复用。EventEnvelope 新增来源字段，区分
+  AppendProcess、PersistedWall 和 UnavailableLegacy。旧 v1 未存原时间，明确
+  缺失而不回填 now/mtime；旧缓存不自动改写。公开布局变更要求全部 C++ 消费者
+  与库一同重编译，逻辑信封 schema 与物理格式分开管理，见
+  [升级指南](../compatibility/file-event-log-v2.md)。
+- 兼容与失败：旧前缀原样保留，首次新写入追加双防降级标记；payload 换行/NUL
+  转义，完整记录缺少末尾换行时下次先补分隔符。元数据摘要覆盖 wall/序号，未知
+  版本/非法降级/语义或摘要错误只读保留；已换行的坏 v2 记录不冒充未提交尾部
+  截断。只修复允许范围内未换行的残缺尾部。重复 ID 同时比较实际字段，关闭旧
+  分隔符请求摘要的 type/data 边界歧义，旧摘要字节协议不变。写后内存索引失败
+  也保存诊断，后续 recover 不伪报 Clean；没有新增线程或 Executor owner。
+- 下游：MemoryConsolidator 在模型/查询/写入之前拒绝缺失时间的 legacy flat
+  fact/Completed episode 批次；带 schema/valid_from 的显式事实仍按载荷时间消费。
+  新测试覆盖纳秒正负/零、大整数、重复/冲突、跨 session/task、新旧混合、控制
+  字符、大 opaque payload、未知版本、篡改、截断、只读与旧事实拒绝；安装消费
+  编译运行新 DTO。大 payload 不继承模型 JSON 的默认文档/字符串大小预算。
+- 旧 reader 实测：在改头文件前用 `4884605` 的头文件与 Core 编译
+  `/tmp/mira-legacy-event-reader`，调用 FileEventStore::recover 并要求
+  ReadOnlyDiagnostic；新测试的 `--emit-v2 <新目录>` / `--emit-mixed <新目录>`
+  分别生成纯新/混合文件。两个旧进程返回的 status/events_recovered 为 **2/0**
+  和 **2/1**，前后文件 SHA-256 一致。不是用新 reader 模拟旧实现。复现时须先
+  从 `4884605` 单独构建旧 SDK，再编译该两行 recover/status 检查，不能链接新库；
+  临时探针不作为长期依赖。文件格式仍要求单 owner，禁止并发旧/新 writer。
+- 报告：逐项复核用户原报告（138 行）的 §3/§4 与行动清单，新增
+  [完整处置台账](../compatibility/2026-11-report-disposition.md)。每项关联修复、
+  原计划或待立项条件/负责人；价格硬限额、隐私遮蔽、原始响应捕获等不被误报为
+  新交付。确认 M30-02/03/04、M31-09 仍未勾选，tests 无周期清扫专项直接调用；
+  不重开 M26/M27，不按仓库调用数退役公共能力。
+- 首次定向 **3/4**：verified_fact_test 的 legacy 冲突副本继承了新加的缺时来源，
+  正确触发新拒绝而未到旧冲突断言；修正为有原时间的冲突 fixture 后 **4/4**。
+  首次 sanitizer 构建误选不存在的 `mira_m3_conversation_log_test`，构建失败且
+  没有执行该次测试；改为覆盖会话视图的 `mira_agent_harness_test` 后通过。
+  全量通过后检查发现 opaque payload 可能超过通用 JSON 默认预算，补代码和大
+  NUL payload 回归；随后又补重复摘要边界冲突测试，最终重新跑完以下验收。
+- Linux Debug：`cmake --preset debug`；`cmake --build build/debug -j 4`；
+  `ctest --test-dir build/debug --output-on-failure -j 4`，最终 **139/139**，37.66 s。
+  包含新时间契约、九个进程退出窗口、Checkpoint/Memory/Replay、恢复组合及安装
+  SDK 消费者；ProcessCrash 探针不等于真实 OS kill/断电验证。
+- ASAN+UBSAN：`cmake --preset asan -DMIRA_ENABLE_UBSAN=ON`；
+  `cmake --build build/asan --target mira_file_event_time_test mira_verified_fact_test mira_m1_core_test mira_m1_action_journal_test mira_m1_journal_crash_probe mira_m4_recovery_test mira_m4_consolidation_test mira_m4_checkpoint_test mira_agent_harness_test mira_recovery_planner_host_consumer -j 2`；
+  `ctest --test-dir build/asan -R '^mira_(file_event_time|verified_fact|m1_core|m1_action_journal|m1_journal_crash_matrix|m4_recovery|m4_consolidation|m4_checkpoint|agent_harness|recovery_planner_host_consumer)(_test)?$' --output-on-failure`
+  最终 **10/10**，7.18 s，无 sanitizer 报告；不宣称全库或安装 SDK sanitizer 验收。
+- 质量：`python3 tools/check_architecture.py .`、`python3 tools/check_docs.py .`、
+  `python3 tools/check_platform_boundary.py .`、
+  `cmake -DROOT_DIR=/home/linductor/mira -P cmake/CheckFormat.cmake`（311 个 C++ 文件）、
+  `clang-format --dry-run --Werror src/storage/event_log_wire.hpp` 和 `git diff --check`
+  通过。基线仍为 16 条，无新增/stale，未修改 policy/baseline/第三方。DEC、API、
+  两份设计、兼容性/处置台账、README 中英文入口与总计划同步。最终本机日志为
+  `/tmp/mira-time-acceptance-test.log`、`/tmp/mira-time-asan-acceptance-test.log`，
+  首次失败见 `/tmp/mira-time-target-test.log`、`/tmp/mira-time-asan-build.log`；
+  长期复现以源码和上述命令为准。
+- 验收：12 按报告分类、已声明修复和文档范围完成，累计 **11/13**；02/03 与
+  RW-G1–G6 不因台账收口而关闭，维护轮继续 In Progress。Windows/Android/TSAN、
+  OS 强杀/断电、设备同步语义、真实模型/账单/隐私场景本轮未执行；负责人 Mira
+  Maintainers，待目标 CI/设备、权限与专项契约就绪后补跑对应矩阵。无法追回旧
+  历史时间不作为已恢复声明，也不因 flush/checksum 提升 PowerLoss 保证。
+
+### 2026-11-06：第十四轮，实际耐久等级、外部强杀与 TSAN
+
+- 归属：`MNT-202611-02/03` 的剩余实现与本机验证；依据
+  [DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md)。在
+  `4884605` 加第十三轮未提交工作树上继续，分支不变；Linux x86_64、kernel
+  7.0.0-42-generic、GNU C++ 13.3.0、CMake 3.28.3。四项独立文档改动保留；
+  本轮无提交/推送或第三方变更，不用已有其他提交的 CI 证明当前工作树。
+- 实现：MemoryEventStore（含重复 ID）只返回 Buffered，强 flush 拒绝；
+  FileEventStore 刷新并检查关闭后返回实际 ProcessCrash，即使请求 Buffered
+  也不降低已完成等级。新写入、重复和 flush 的 PowerLoss 请求均写入前明确
+  UnsupportedCapability，非法枚举拒绝；flush 加入同一锁、恢复与只读门禁。
+  尚未实现系统级文件/目录同步，当前不宣称 PowerLoss，不引入平台头到 Core。
+  本轮不扩大 ArtifactStore 或其他后端的耐久性承诺。
+- 测试消费：新增 event_durability_test，覆盖等级、重复请求、未知枚举、拒绝
+  零写入、只读 flush 及底层文件消失时不重建、裸 MemoryEventStore 经 Dispatcher
+  派发零输入。原 Journal/Dispatcher/VerifiedFact fault fixture 明确模拟强确认；
+  AgentLoop 单元测试 helper 只为显式 MemoryEventStore 套 test-only simulator，
+  不提升故障 store 的弱确认，没有生产绕过选项。核心 journal 正例改文件存储。
+  Working Context 宿主改 FileEventStore，动作日志不再使用虚报等级的内存替身。
+- 外部强杀：新增 journal_kill_matrix.py / CTest 入口，复用原 probe 的九个窗口。
+  writer 写独立 marker 后阻塞 stdin，driver 有界等待确切 marker，kill 并 wait，
+  独立 verifier 重开且两次检查恢复；异常路径 kill/wait 收尾，失败目录保留。
+  本机九个返回码均 **-9（SIGKILL）**，输入次数按执行边界为 0/1，恢复不增加
+  输入，未决保留、终态不复活。原 `_Exit` 矩阵仍保留。Python/CTest 仅编排测试
+  子进程；应用未新增 worker、timer、线程、Executor owner 或私有调度路径。
+  Windows 分支复用 subprocess.kill 的系统终止能力，尚未实际执行。
+- 首次编译失败：新测试 lambda 从 unique_ptr<Lease> 到 Result<unique_ptr<base>>
+  需要两次隐式转换，改为显式 base unique_ptr，未改变生产 API。随后首次全量
+  **140/141**（96.29 s）：Working Context 宿主仍用内存 journal，弱确认后早停，
+  宿主仍等待后续 gate 导致原 60 s timeout。迁移真实文件 journal 后全量通过，
+  未放宽超时、跳过用例或将弱确认当成功。
+- Linux Debug：`cmake --preset debug`；`cmake --build build/debug -j 4`；
+  `ctest --test-dir build/debug --output-on-failure -j 4`，最终 **141/141**，37.68 s，
+  包含安装 SDK 消费与两个九窗口矩阵。独立复现强杀可运行
+  `ctest --test-dir build/debug -R '^mira_m1_journal_kill_matrix$' -V`，CTest 详细输出
+  留下每个终止码与恢复结果。测试 driver 要求 Python3；缺失时配置明确失败。
+- ASAN+UBSAN：`cmake --preset asan -DMIRA_ENABLE_UBSAN=ON`；
+  `cmake --build build/asan --target mira_event_durability_test mira_file_event_time_test mira_verified_fact_test mira_runtime_lifecycle_test mira_m1_core_test mira_m1_action_journal_test mira_m1_journal_crash_probe mira_m3_action_dispatch_test mira_m3_agent_loop_test mira_m4_checkpoint_test mira_m4_recovery_test mira_m9_execution_test mira_working_context_host_consumer -j 2`；
+  `ctest --test-dir build/asan -R '^mira_(event_durability|file_event_time|verified_fact|runtime_lifecycle|m1_core|m1_action_journal|m1_journal_crash_matrix|m1_journal_kill_matrix|m3_action_dispatch|m3_agent_loop|m4_checkpoint|m4_recovery|m9_execution|working_context_host_consumer)(_test)?$' --output-on-failure`
+  最终 **14/14**，19.09 s，无 sanitizer 报告。
+- TSAN：`cmake --preset tsan`；
+  `cmake --build build/tsan --target mira_runtime_lifecycle_test mira_event_durability_test mira_file_event_time_test mira_verified_fact_test mira_m1_action_journal_test mira_m1_journal_crash_probe mira_m3_action_dispatch_test mira_m3_agent_loop_test mira_m4_checkpoint_test mira_m4_recovery_test mira_m9_execution_test mira_recovery_planner_host_consumer -j 2`；
+  `setarch x86_64 -R ctest --test-dir build/tsan -R '^mira_(runtime_lifecycle|event_durability|file_event_time|verified_fact|m1_action_journal|m1_journal_crash_matrix|m1_journal_kill_matrix|m3_action_dispatch|m3_agent_loop|m4_checkpoint|m4_recovery|m9_execution|recovery_planner_host_consumer)(_test)?$' --output-on-failure`
+  最终 **13/13**，30.32 s，无 TSAN 报告。ASAN+UBSAN 与 TSAN 分开构建；这些是
+  定向验证，不是全库 sanitizer 或所有设备并发保证。
+- 质量：架构检查 16 条既有基线、零新增/零 stale；平台边界、Markdown 链接与
+  围栏、`git diff --check` 通过。格式命令
+  `cmake -DROOT_DIR=/home/linductor/mira -P cmake/CheckFormat.cmake`（312 个 C++
+  文件）及 `clang-format --dry-run --Werror src/storage/event_log_wire.hpp tests/support/simulated_durable_store.hpp tests/support/action_dispatch_support.hpp`
+  通过。同步 DEC、事件/输入设计、API、兼容说明、处置台账和总计划。最终日志
+  `/tmp/mira-durability-final-test.log`、`/tmp/mira-durability-asan-test.log`、
+  `/tmp/mira-durability-tsan-test.log`，首次失败见
+  `/tmp/mira-durability-build.log`、`/tmp/mira-durability-test.log`；本机临时文件
+  非长期依赖，复现以上源码和命令。
+- 状态：累计仍 **11/13**，02/03、RW-G1–G6 与维护轮整体不关闭。剩余条件见 §7：
+  Windows 当前提交 CI/TerminateProcess、Android 双 ABI 构建与真实 Adapter
+  Takeover/输入释放、隔离断电/系统同步仍未执行；负责人 Mira Maintainers，待
+  runner、设备/权限和受控故障环境就绪后补跑。可写工具/Workflow/Controller
+  共用 journal 仍按原设计单独推进，不能用只读样板或 Linux 契约代替。

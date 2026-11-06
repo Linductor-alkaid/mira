@@ -1,7 +1,7 @@
 # Mira EventStore、ArtifactStore 与崩溃一致性设计
 
 > 状态：Active  
-> 版本：1.1
+> 版本：1.3
 > 更新日期：2026-11-06
 > 适用范围：事件事实、资产、大载荷、Checkpoint 投影、Replay 和外部副作用恢复  
 > 上位决策：[DEC-003](../decisions/DEC-003-event-sourced-persistence.md)
@@ -55,6 +55,7 @@ struct EventEnvelope {
     TraceContext trace;
     EventPayload payload;
     IntegrityMetadata integrity;
+    EventTimestampOrigin timestamp_origin;
 };
 ```
 
@@ -150,6 +151,28 @@ store-root/
 ```
 
 路径由 store 内部根据已验证 ID/hash 生成，外部字符串不能直接拼成 filesystem path。
+
+### 4.3 FileEventStore 时间与物理版本
+
+[DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 的文件 v2 在一次
+append 中保存 wall 纳秒并将同一采集值写入内存投影。EventEnvelope 尾部增加
+timestamp_origin：AppendProcess、PersistedWall、UnavailableLegacy；旧行不再被
+赋重开时刻。恢复不复用跨进程的 monotonic，顺序仍以 sequence 为准。
+
+两行防降级标记后使用严格 JSON 记录与覆盖时间/序号的额外 checksum；旧数值行
+可作为原样前缀，新 append 只追加一次格式转换，不重写历史。未知版本、完整
+损坏或语义错误只读拒绝，只有允许的未提交尾部可修复。格式、原请求摘要与记录
+摘要的区别、旧 reader 验证和 C++ 布局重编译见
+[兼容性说明](../compatibility/file-event-log-v2.md)。这不改变 02/03 的设备/断电门禁，
+也不能追回旧记录/缓存的原始时间或提供密码学认证。
+
+[DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md) 校准实际
+确认：MemoryEventStore 仅 Buffered；FileEventStore 完成流刷新与关闭检查后为
+ProcessCrash，拒绝 PowerLoss，非法等级拒绝。重复请求不提升等级，flush 同样
+受只读/串行门禁约束。测试强确认须显式模拟，真实宿主不得用内存替身越过 journal。
+独立 driver 在九个握手窗口外部终止 writer 后由 verifier 重开，补充进程强杀证据；
+不代替设备输入释放、系统级同步和断电实测。
+
 
 ## 5. ArtifactStore
 
@@ -406,8 +429,8 @@ safe context 引用的数据。
 [离线恢复宿主](../api/offline-composition-hosts.md#recovery规划输出控制下一步行为)
 把 FileEventStore/SQLite cache 的重开规划接到新的只读观察；未证实时保留 pending/pin，
 不发清除状态的 VerificationResult，不重发输入。样板依赖 03 的 Linux 契约证据，
-不能替代 OS 强杀/断电、平台中断门禁。BUG-20261106-001 的恢复信封时间问题仍由
-维护项 12 跟踪，不从样板使用的序号重建推导原时间或 TTL 已修复。
+不能替代 OS 强杀/断电、平台中断门禁。BUG-20261106-001 后续按 DEC-087 修复新
+记录时间，旧时间明确缺失；不从样板的序号重建推导旧历史时间或 TTL 可追回。
 
 - [核心公共契约与状态机](core_contracts_and_state_machine.md)
 - [Context 与 Memory](context_and_memory_design.md)

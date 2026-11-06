@@ -28,6 +28,9 @@ class Store final : public IEventStore {
             return failure(ErrorCode::ResourceExhausted);
         }
         auto result = backing.append(request);
+        // Explicit protocol acknowledgement simulation, not storage durability.
+        if (result)
+            result.value().achieved = request.required;
         if (result && request.payload.type == weak) {
             result.value().achieved = Durability::Buffered;
         }

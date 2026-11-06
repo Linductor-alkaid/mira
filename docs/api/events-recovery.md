@@ -13,11 +13,26 @@ EventStore 是已提交事实的权威记录；Checkpoint、Memory 和索引都�
   `task_sequence`/`control_sequence`/`durable_sequence` 排序锚、`Timestamp` 与
   `EventPayload{type, canonical_json, EventClass}` 的事件信封。
 - `EventClass`：`Critical` / `State` / `Diagnostic`；`Durability`：`Buffered` /
-  `ProcessCrash` / `PowerLoss`，由 `flush(durability)` 显式结算。
+  `ProcessCrash` / `PowerLoss`；append 回执 `achieved` 表示实际等级，不能回显请求。
 - `IEventStore`：`append()` / `append_batch()` / `read(EventQuery)` / `recover()` /
   `flush()`。`MemoryEventStore` 是有界内存参考实现。
 - `Sha256Digest`：事件与工件的规范摘要（`digest_bytes` / `digest_string` /
   `digest_from_hex`）；`canonical_json_digest()` 对规范化 JSON 计算摘要。
+
+`EventEnvelope::timestamp_origin` 区分 AppendProcess、PersistedWall 和
+UnavailableLegacy。FileEventStore 的 v2 行精确持久化 wall 纳秒；恢复后的 monotonic
+不可用，旧行缺失的时间不再重建为 now。物理版本标记、旧前缀续写/降级拒绝、
+损坏修复与 **C++ 消费者重编译**要求见
+[文件日志 v2 兼容性](../compatibility/file-event-log-v2.md)。原 integrity 为请求
+幂等摘要，文件 record_digest 额外覆盖时间和序号，不代表密码学认证或 commit 时钟。
+
+[DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md) 校准参考实现：
+MemoryEventStore append（含重复）总是 Buffered；更强 flush 返回
+UnsupportedCapability。FileEventStore 每次新写入刷新并检查关闭，实际回执为
+ProcessCrash（请求 Buffered 也如此）；PowerLoss 的 append/flush 在写入前拒绝。
+两者都拒绝非法 durability 枚举；File flush 与 append/recover 串行并遵守只读门禁。
+当前无系统级掉电同步，不能把成功回执解释成 PowerLoss。裸内存 store 不能满足
+ActionJournal/VerifiedFactPublisher 的强确认门槛；测试模拟回执不用于真实宿主。
 
 ## artifact_store.hpp
 

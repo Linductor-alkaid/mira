@@ -20,6 +20,8 @@ mira_add_test(mira_runtime_lifecycle_test contract/runtime_lifecycle_test.cpp co
 mira_add_test(mira_context_policy_test contract/context_policy_test.cpp contract)
 mira_add_test(mira_public_contract_retention_test contract/public_contract_retention_test.cpp contract)
 mira_add_test(mira_verified_fact_test contract/verified_fact_test.cpp contract)
+mira_add_test(mira_event_durability_test contract/event_durability_test.cpp contract)
+mira_add_test(mira_file_event_time_test contract/file_event_time_test.cpp contract)
 mira_add_test(mira_contract_test contract/environment_contract_test.cpp contract)
 mira_add_test(mira_executor_integration_test integration/executor_lifecycle_test.cpp integration)
 mira_add_test(mira_replay_test replay/deterministic_replay_test.cpp replay)
@@ -36,6 +38,15 @@ add_test(NAME mira_m1_journal_crash_matrix
         -DROOT=${CMAKE_CURRENT_BINARY_DIR}/journal-crash-matrix
         -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/journal_crash_matrix.cmake")
 set_tests_properties(mira_m1_journal_crash_matrix PROPERTIES LABELS "contract;m1;replay" TIMEOUT 90)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME mira_m1_journal_kill_matrix
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/m1/journal_kill_matrix.py"
+            --probe $<TARGET_FILE:mira_m1_journal_crash_probe>
+            --root "${CMAKE_CURRENT_BINARY_DIR}/journal-kill-matrix")
+    set_tests_properties(mira_m1_journal_kill_matrix PROPERTIES LABELS "contract;m1;replay" TIMEOUT 120)
+else()
+    message(FATAL_ERROR "Python3 is required for the external journal kill matrix")
+endif()
 mira_add_test(mira_m3_action_dispatch_test m3/m3_action_dispatch_test.cpp "contract;m3")
 mira_add_test(mira_m2_observation_test m2/m2_observation_coordinate_test.cpp contract)
 mira_add_test(mira_m2_simulator_test m2/m2_simulator_scenario_test.cpp contract)

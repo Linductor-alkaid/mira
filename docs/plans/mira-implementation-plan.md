@@ -2,9 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-06（2026-11 维护轮累计完成 10/13 项；三个离线组合宿主与
-> 安装消费者已验收，02/03、12 及目标平台/故障门禁保持开放，详见
-> [维护计划第十二轮](maintenance-2026-11-runtime-wiring-and-reuse.md#2026-11-06第十二轮workflow--context--recovery-组合宿主)。）
+> 更新日期：2026-11-06（2026-11 维护轮累计完成 11/13 项；文件日志 v2、报告处置、
+> 实际耐久等级、Linux 外部强杀与定向 TSAN 已取证；02/03 及目标平台/断电门禁
+> 保持开放，详见[维护计划第十四轮](maintenance-2026-11-runtime-wiring-and-reuse.md)。）
 > 此前 2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
 > `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
 > 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
@@ -1593,3 +1593,27 @@ Linux 全量 138/138、ASAN+UBSAN 定向 7/7；06 按离线组合范围完成，
 已登记的信封时间问题。02/03、12 与原平台门禁继续开放，首次修正与复现见
 [维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十二轮；使用边界见
 [组合宿主指南](../api/offline-composition-hosts.md)。
+
+2026-11-06（第十三轮文件时间与报告收口）：先按用户要求提交 06 为 `4884605`，
+再依据 [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 修复
+BUG-20261106-001 的新记录恢复时间。FileEventStore v2 精确保留 wall 纳秒，旧
+时间明确缺失；新增来源字段要求全部 C++ 消费者重编译，见
+[兼容说明](../compatibility/file-event-log-v2.md)。缺时旧事实自动固化拒绝，
+原 payload 时间事实仍可消费；损坏/未知版本只读保留，真实旧 reader 探针不改文件。
+[报告处置台账](../compatibility/2026-11-report-disposition.md)逐项归属原报告和
+行动清单，12 按分类与文档范围完成，累计 **11/13**。Linux 全量 **139/139**、
+ASAN+UBSAN 定向 **10/10**；失败历史及准确命令见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十三轮。02/03、
+RW-G1–G6 与目标平台/OS 强杀/断电门禁保持开放，不宣称旧时间可追回或费用/隐私
+专项已交付；维护轮保持 In Progress。
+
+2026-11-06（第十四轮实际耐久与外部强杀）：按
+[DEC-088](../decisions/DEC-088-event-store-durability-and-external-kill.md) 校正
+MemoryEventStore 仅 Buffered、FileEventStore 实际 ProcessCrash，明确拒绝尚未
+实现的 PowerLoss；裸内存 journal 零输入，测试强确认改为显式模拟，Working
+Context 宿主迁移文件日志。新增 marker 握手后外部 SIGKILL 九窗口，独立 verifier
+重开两次、不重发且终态不复活。Linux 全量 **141/141**、ASAN+UBSAN 定向
+**14/14**、TSAN 定向 **13/13**，命令与失败修正见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md)第十四轮。累计仍
+**11/13**；Windows/Android 当前提交与真实平台、系统同步/断电未验证，02/03
+及全局门禁不关闭，可写工具/连续控制仍属原后续范围。

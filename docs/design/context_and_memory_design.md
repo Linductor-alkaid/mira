@@ -1,7 +1,7 @@
 # Mira Context 与 Memory 架构设计
 
 > 状态：Active  
-> 版本：0.8
+> 版本：0.9
 > 更新日期：2026-11-06
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 上下文智能扩展：长会话语义压缩方向（Retrieve/Rerank/Consolidate/Compress 与
@@ -645,9 +645,14 @@ claim 的 v1 schema，旧 flat 事件保持受信宿主兼容语义，不从旧�
 Checkpoint 2.0 保存事实的可选有效区间，并在增量/基底重建按 now 清理；旧 1.x
 读取保持，无期限旧事实不伪造期限。旧 reader 拒绝 2.0，C++ 消费者须重编译。
 Memory 对新记录精确匹配 scope、检查期限，再进入原固化管线，User/Preference 审批
-不变。证据 observed_at 与 claim valid_from 是持久化时间依据：FileEventStore 当前
-恢复会重建信封 timestamp（BUG-20261106-001），本路径不得依赖它来重定验证顺序。
+不变。证据 observed_at 与 claim valid_from 是持久化时间依据；BUG-20261106-001
+由 [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md) 修复新记录时间，
+旧记录明确缺失，本路径仍不得用信封时间重定验证顺序。
 valid_from 同时作为该证明的记忆记录时间，不宣称它是磁盘 commit 时钟。
+
+File v1 的 UnavailableLegacy flat fact/Completed episode 不可自动固化：该批次
+返回明确错误，不把默认时间补成 now。新事实协议的 payload 时间仍可独立使用，
+旧缓存不自动补造或重写，迁移边界见[文件日志 v2](../compatibility/file-event-log-v2.md)。
 
 同值重放不刷新 TTL；旧或同时间冲突证明不覆盖新证明。带期限证明可以替换无期限
 legacy 行；无期限 legacy 不覆盖带期限事实。该排序只约束非模型 VerifiedEvent，

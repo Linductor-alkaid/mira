@@ -50,9 +50,9 @@ User scope 仍归 Preference 并等待人工批准。新的有效证明不启用
 VerifiedEvent 不覆盖新事实，无期限 legacy 不覆盖有期限事实；HumanCorrection 与
 其他来源仍遵循原审批策略。
 
-## BUG-20261106-001：事件信封时间恢复问题
+## BUG-20261106-001：历史问题与后续文件格式修复
 
-可复现源码：[FileEventStore::recover](../../src/storage/event_store.cpp) 将日志行重建为
+旧实现（截至 `4884605`）的 [FileEventStore::recover](../../src/storage/event_store.cpp) 将日志行重建为
 AppendRequest，再调用 MemoryEventStore::append，后者赋 Timestamp::now；日志行未
 记录原 timestamp。因此仅重开日志也可能改变信封时间。新事实宿主的跨重开重试曾
 因比较 source.timestamp 与原 valid_from 被拒绝，这不是 lease 或 Executor 缺口。
@@ -60,5 +60,8 @@ AppendRequest，再调用 MemoryEventStore::append，后者赋 Timestamp::now；
 本协议使用 payload 的 observed_at 与验证时间，且固化 recorded_at 采用持久化的
 valid_from，保证此路径重放稳定；不把恢复信封时间当作磁盘 commit 时间。其他旧
 事件的时序、审计与回放仍受基础问题影响，不能以本局部方案宣称全局已修复。
-负责人 Mira Maintainers；由维护项 12 跟踪持久化 timestamp 的独立格式决策、旧日志
-兼容及重开/故障矩阵。补跑条件为该决策与实现就绪，未解决前保持开放。
+2026-11-06 后续由 [DEC-087](../decisions/DEC-087-file-event-wall-time-persistence.md)
+修复新写入的 wall 持久化，并将旧行明确标为时间不可用；源时间无法追溯，旧缓存
+不自动改写。格式切换、origin 与 C++ 重编译要求见
+[文件日志 v2](file-event-log-v2.md)。本协议继续使用 payload 验证时间，不把文件
+wall 当作事实验证/磁盘 commit 时刻；新记录修复不补造旧历史时间。
