@@ -14,6 +14,10 @@ namespace mira {
 Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
                                                     const ModelProfile &profile, bool stream,
                                                     IArtifactSource &artifacts) const {
+    if (!profile.extra_body.empty()) {
+        return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                "extra_body requires Chat Completions mapper");
+    }
     for (const auto &item : request.input)
         for (const auto &part : item.content)
             if (std::holds_alternative<ThinkingPart>(part))

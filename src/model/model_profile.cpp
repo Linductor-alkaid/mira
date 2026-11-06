@@ -1,6 +1,10 @@
 #include <mira/model_profile.hpp>
 
+#include "model_profile_internal.hpp"
+
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -15,6 +19,80 @@ namespace {
     error.domain_code = static_cast<std::int32_t>(ModelDomainCode::CapabilityMismatch);
     error.safe_message = std::move(message);
     return error;
+}
+
+// Reserve optional standard controls even when this mapper does not emit them.
+// Adding a mapper-owned root field requires updating this list and its tests.
+constexpr std::array kChatReservedKeys = {
+    "model",
+    "messages",
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "response_format",
+    "max_tokens",
+    "max_completion_tokens",
+    "temperature",
+    "top_p",
+    "seed",
+    "reasoning_effort",
+    "service_tier",
+    "stream",
+    "stream_options",
+    "store",
+    "metadata",
+    "user",
+    "n",
+    "stop",
+    "presence_penalty",
+    "frequency_penalty",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
+    "modalities",
+    "audio",
+    "prediction",
+    "web_search_options",
+    "functions",
+    "function_call",
+    "safety_identifier",
+    "prompt_cache_key",
+    "prompt_cache_retention",
+    "verbosity",
+    // Canonical fields with no Chat representation must not bypass their gates.
+    "max_output_tokens",
+    "thinking",
+    "input",
+    "instructions",
+    "previous_response_id",
+    "conversation",
+    "extra_body",
+};
+
+// JsonValue can be constructed in C++ without the strict parser. Bound recursive
+// serialization first and reject non-finite numbers before its integer conversion.
+[[nodiscard]] bool serializable_extra_value(const JsonValue &value, std::size_t depth) {
+    if (depth >= JsonLimits{}.max_depth) {
+        return false;
+    }
+    if (value.kind() == JsonValue::Kind::Number && !std::isfinite(*value.as_number())) {
+        return false;
+    }
+    if (const auto *object = value.as_object()) {
+        for (const auto &[key, child] : *object) {
+            (void)key;
+            if (!serializable_extra_value(child, depth + 1)) {
+                return false;
+            }
+        }
+    } else if (const auto *array = value.as_array()) {
+        for (const auto &child : *array) {
+            if (!serializable_extra_value(child, depth + 1)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 [[nodiscard]] bool evidence_at_least(CapabilityEvidence provided, CapabilityEvidence required) {
@@ -86,6 +164,38 @@ namespace {
 }
 
 } // namespace
+
+Result<void> validate_profile_extra_body(const ModelProfile &profile) {
+    if (profile.extra_body.empty()) {
+        return Result<void>{};
+    }
+    if (profile.dialect != ProtocolDialect::OpenAIChatCompletionsV1) {
+        return route_error("extra_body requires Chat Completions dialect");
+    }
+    for (const auto &[key, value] : profile.extra_body) {
+        if (key.empty() || std::find(kChatReservedKeys.begin(), kChatReservedKeys.end(), key) !=
+                               kChatReservedKeys.end()) {
+            return route_error("extra_body contains an empty or reserved root key");
+        }
+        if (value.is_array()) {
+            return route_error("extra_body root values must be JSON scalars or objects");
+        }
+    }
+    const JsonValue object(profile.extra_body);
+    if (!serializable_extra_value(object, 0)) {
+        return route_error("extra_body contains a non-finite number or excessive nesting");
+    }
+    const auto encoded = to_json_string(object);
+    if (encoded.size() > profile.capabilities.limits.max_request_bytes) {
+        return route_error("extra_body exceeds the profile request byte limit");
+    }
+    // Reuse the strict parser for duplicate keys (also nested), UTF-8 and the
+    // default JSON resource limits. Do not surface its host-controlled details.
+    if (!parse_json(encoded)) {
+        return route_error("extra_body must contain valid JSON within JsonLimits");
+    }
+    return Result<void>{};
+}
 
 std::string protocol_dialect_name(ProtocolDialect dialect) {
     switch (dialect) {
@@ -235,6 +345,9 @@ JsonValue ModelProfile::manifest_to_json() const {
         }
         root.emplace_back("proxy", std::move(proxy_json));
     }
+    if (!extra_body.empty()) {
+        root.emplace_back("extra_body", extra_body);
+    }
     root.emplace_back("max_redirects", static_cast<std::int64_t>(max_redirects));
     return JsonValue(std::move(root));
 }
@@ -242,6 +355,9 @@ JsonValue ModelProfile::manifest_to_json() const {
 Hash ModelProfile::profile_digest() const { return canonical_json_digest(manifest_to_json()); }
 
 Result<void> ModelProfile::validate() const {
+    if (auto gate = validate_profile_extra_body(*this); !gate) {
+        return gate.error();
+    }
     if (id.value.is_nil() || display_name.empty() || model_selector.empty()) {
         return route_error("profile identity fields must be set");
     }

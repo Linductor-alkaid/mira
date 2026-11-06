@@ -1,6 +1,7 @@
 #include <mira/model_dialect.hpp>
 
 #include "model_dialect_internal.hpp"
+#include "model_profile_internal.hpp"
 #include "model_tool_wire.hpp"
 
 #include <algorithm>
@@ -94,6 +95,9 @@ find_header(const std::vector<std::pair<std::string, std::string>> &headers,
 
 [[nodiscard]] Result<void> gate_generation_options(const ModelProfile &profile,
                                                    const ModelGenerationOptions &generation) {
+    if (auto gate = validate_profile_extra_body(profile); !gate) {
+        return gate.error();
+    }
     if (profile.dialect != ProtocolDialect::AnthropicMessagesV1 && generation.thinking)
         return make_model_error(ModelDomainCode::CapabilityMismatch,
                                 "thinking requires Messages dialect");
@@ -637,6 +641,15 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
     if (stream) {
         root.emplace_back("stream", true);
         root.emplace_back("stream_options", JsonValue::Object{{"include_usage", true}});
+    }
+    for (const auto &[key, value] : profile.extra_body) {
+        // Defense against a future mapper field missing from the reserved list.
+        if (std::any_of(root.begin(), root.end(),
+                        [&](const auto &field) { return field.first == key; })) {
+            return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                    "extra_body collides with a mapper-owned root key");
+        }
+        root.emplace_back(key, value);
     }
     return JsonValue(std::move(root));
 }
