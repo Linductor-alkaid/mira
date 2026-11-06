@@ -1,8 +1,8 @@
 # Mira 核心公共契约与状态机设计
 
 > 状态：Active  
-> 版本：1.2
-> 更新日期：2026-11-05
+> 版本：1.3
+> 更新日期：2026-11-06
 > 适用范围：Mira Core 公共类型、Runtime/Session/Task 生命周期和 Executor 控制面  
 > 上位决策：[DEC-001](../decisions/DEC-001-runtime-executor-ownership.md)、[DEC-002](../decisions/DEC-002-public-contract-versioning.md)
 
@@ -523,6 +523,15 @@ Executor failure snapshot 和 shutdown resource counts。
 
 指标有界聚合，不能为每个高频 trajectory sample 写普通事件。Observer 永远不在串行上下文或
 realtime 线程执行。
+
+`MiraRuntime::scheduling_metrics()` 的现有字段只镜像 Executor 路由/反馈累计计数，
+不是队列深度、全部命令接纳数或业务失败数。当前 submit_on_with_handle 控制路径
+不经过路由决策，即使过载或异常也可能保持零值；结果面和 ShutdownReport 仍须
+独立消费。按 [DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md)，
+参考宿主在独立 kairo 任务中复制有界 handle 视图，零等待检查当前 pending/settled，
+并分开输出宿主范围的提交/拒绝计数。采样不持有 Runtime 记录锁，各字段是弱一致
+观测，不作为授权/同步依据；日志消费者在控制面外消费不可变样本。实现及范围见
+[调度宿主指南](../api/runtime-scheduling-host.md)，不改变 M31 配额/容量算法。
 
 ## 12. 契约测试
 

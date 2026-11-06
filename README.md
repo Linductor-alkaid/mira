@@ -243,3 +243,6 @@ rebuild C++ consumers and upgrade readers before enabling the new producer. See 
 
 The [offline price host](docs/api/model-price-host.md) demonstrates explicit fixture pricing,
 unknown-cost policy and cancellation settlement. Its artificial rates are not supplier quotes.
+
+The [scheduling diagnostics host](docs/api/runtime-scheduling-host.md) reads Runtime routing
+counters alongside command rejections and pending results, including overload and shutdown.

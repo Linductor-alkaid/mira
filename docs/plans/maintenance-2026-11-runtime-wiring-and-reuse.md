@@ -144,11 +144,14 @@ WorldState、Temporal Policy、Security、流式与 continuation 的全面集成
   当前按 [DEC-084](../decisions/DEC-084-model-price-reference-host.md) 实施公开 API
   单 profile fixture；库默认策略、迟到费用与实际预留余额须由宿主显式消费。
   已交付 [价格宿主指南](../api/model-price-host.md) 和十二场景 consumer，证据见第十轮。
-- [ ] `MNT-202611-08`（P2，可独立）兑现调度度量的宿主出口。
+- [x] `MNT-202611-08`（P2，可独立；Linux 离线诊断宿主范围）兑现调度度量的宿主出口。
   在参考宿主读取 `scheduling_metrics` 并展示拒绝/背压的可解释结果，确认累计值与
   当前值的语义及采样边界；采样走 kairo，诊断消费者不得阻塞 Runtime 控制面。
   验收：过载、关闭中提交与异常均能从结果/事件观察到，度量能够辅助解释。
   不因仓库无读取点删除公共 API，不并入 M31 的配额/容量算法。
+  当前按 [DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md) 实施
+  [独立采样宿主](../api/runtime-scheduling-host.md)，路由累计值与串行命令结果分开消费。
+  公开 13 项计数、局部拒绝计数与当前未决数已消费；验收和限制见第十一轮。
 
 ### 4.3 第三批：复用与兼容性治理
 
@@ -782,3 +785,61 @@ python3 tools/check_docs.py .
   Windows/Android/TSAN、真实 transport 取消/供应商账单未执行；负责人 Mira
   Maintainers，在对应 CI/设备补跑 consumer，并具备供应商安全测试账号和账单
   核对条件后验证取消阶段与计费，不用本次 fixture 结果外推跨平台或真实账单保证。
+
+### 2026-11-06：第十一轮，调度度量与宿主结果诊断
+
+- 归属：`MNT-202611-08`；依据
+  [DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md) 与
+  [调度宿主指南](../api/runtime-scheduling-host.md)。环境为 Linux x86_64、
+  GNU C++ 13.3.0，分支 `fix/runtime-wiring-foundations`，HEAD `28470fe` 加本轮
+  未提交工作树；原有 M29/M31/M33 与 Super-agent 文档改动保持独立。
+- 覆盖边界核查：对照 kairo 公开 SchedulingMetrics、API 的调度度量/反馈章节、
+  submit_on_with_handle 公开模板与相关串行接纳测试，确认计数对象是路由决策。
+  当前 Runtime 串行命令不走 submit_auto 路由，容量/停止拒绝和业务异常可与零路由
+  计数并存。修正公共注释中会让人误以为该快照覆盖全部队列拒绝的描述；不改字段
+  布局或 Core 实现，不将应用结果面职责登记成 Executor 缺口。
+- 新增 `runtime_scheduling_host_consumer.cpp` 和 CTest consumer：保留原样的 13
+  项 routing 累计值，另消费入口 Result、CommandHandle outcome、ShutdownReport。
+  HostView 最多保留 16 个 handle，展示本宿主显式提交/拒绝数量与当前保留窗口的
+  pending/settled/failed。内部 finalizer 补交不计入宿主显式提交，不把局部窗口
+  冒充全局审计或队列深度；各字段弱一致，不能用于同步或从重叠分类计算任务数。
+- 场景证据：max_in_flight=4，以有界 interrupt gate 阻塞一个 close，排入
+  pause→resume→pause。超限命令与 shutdown 两次 ResourceExhausted，停止准入后
+  再一次 InvalidState；busy pending=4。1 ms outcome 等待超时没有终止回调。
+  gate 释放后 finalizer 至多一次补交，最终 submitted=12、admitted_handles=9、
+  settled=9、pending=0、任务 Cancelled、report clean=true；无物理队列已满声明。
+  另一实例 interrupt 异常使 takeover/shutdown 两个 outcome Failed，report
+  clean=false/Failed、pending=0。上述各阶段原始 routing 均为零，拒绝/异常仍可见。
+- 采样与消费：独立 kairo Executor 提交有限采样任务并消费 future，复制有界宿主
+  视图，只读 Runtime routing/state 与 outcome(0ms)，不争用记录锁；pending 轮询
+  不误计为执行超时。不变样本在控制收尾后输出，日志消费者不进入控制回调。独立
+  sampler 的路由接受数单独标识，不假冒 Runtime 计数。对象存活覆盖采样 future，
+  外部 owner 最后 shutdown sampler；没有新周期器、worker 或调度设施。
+- 首次定向 **1/2**，0.07 s：样板原先排入三次 pause，却预期全部业务成功；既有
+  转换表不允许 Paused→Paused。改为 pause→resume→pause，不修改 Core 状态机，
+  重建样板后 **2/2**，0.05 s。直接运行已消费五阶段输出与独立 sampler 计数；
+  另以 Python subprocess 连续运行样板 **20/20**（每次 timeout=15 s）验证固定
+  gate 下采样/结算口径稳定。复现循环为对
+  `./build/debug/mira_runtime_scheduling_host_consumer` 进行 20 次同步 subprocess.run，
+  检查每次返回码，stdout/stderr 仅在失败时诊断；没有把首次失败隐藏为通过。
+- Linux Debug：`cmake --preset debug`、`cmake --build build/debug -j 4` 成功；
+  `ctest --test-dir build/debug --output-on-failure -j 4` **135/135**，37.65 s，
+  含公开头、安装消费者、Runtime 生命周期与其余全库回归。
+- ASAN+UBSAN：`cmake --preset asan -DMIRA_ENABLE_UBSAN=ON`，两开关均 ON；
+  `cmake --build build/asan --target mira_runtime_scheduling_host_consumer mira_runtime_lifecycle_test -j 2` 成功；
+  `ctest --test-dir build/asan -R '^mira_(runtime_scheduling_host_consumer|runtime_lifecycle)_test$' --output-on-failure`
+  **2/2**，0.45 s，无 sanitizer 报告。
+- 质量：`python3 tools/check_architecture.py .`、`python3 tools/check_docs.py .`、
+  `python3 tools/check_platform_boundary.py .`、
+  `cmake -DROOT_DIR=/home/linductor/mira -P cmake/CheckFormat.cmake`（307 个 C++ 文件）
+  与 `git diff --check` 通过。基线保持 16 条，无新增或 stale，未调整 policy、
+  baseline 或第三方；DEC、核心设计、API/索引、公开契约审计后续说明、README
+  中英文入口、总计划同步。首次/最终诊断分别在本机
+  `/tmp/mira-metrics-target-test.log`、`/tmp/mira-metrics-fix-test.log`、
+  `/tmp/mira-metrics-full-test.log`、`/tmp/mira-metrics-asan-test.log`，临时文件不作为
+  长期依赖，复现以仓库样板与上述命令为准。
+- 验收：08 按 Linux 离线宿主范围完成，累计 **9/13**；维护轮仍 In Progress，
+  02/03 平台证据、06 组合宿主与 12 总收口保持开放。没有开启周期遥测/Observer
+  后端，不改变 M31 配额/容量算法。Windows/Android/TSAN、真实平台中断与延迟
+  分布本轮未执行；负责人 Mira Maintainers，在相应 CI/设备补跑 consumer 和
+  生命周期矩阵后取证，不从本次固定 gate 推导跨平台或实时性保证。

@@ -2,9 +2,9 @@
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-06（2026-11 维护轮累计完成 8/13 项；显式事实、Checkpoint 2.0
-> 与价格宿主已按 Linux 离线范围验收，其他维护项、目标平台和全局门禁保持开放，
-> 详见[维护计划第十轮](maintenance-2026-11-runtime-wiring-and-reuse.md#2026-11-06第十轮价格策略与预算宿主)。）
+> 更新日期：2026-11-06（2026-11 维护轮累计完成 9/13 项；显式事实、Checkpoint 2.0、
+> 价格与调度宿主已按 Linux 离线范围验收，其他维护项、目标平台和全局门禁保持开放，
+> 详见[维护计划第十一轮](maintenance-2026-11-runtime-wiring-and-reuse.md#2026-11-06第十一轮调度度量与宿主结果诊断)。）
 > 此前 2026-10-29（M28 首阶段实现交付并合并关闭：主体级统一输入入口
 > `include/mira/interaction_coordinator.hpp` + `src/interaction/`；耐久幂等台账、
 > 确定性路由裁决、fail-closed 权限校验、Loop 输入缝与 `ConversationLoop` 对称入队
@@ -1570,3 +1570,14 @@ PriceTable 注入、unknown 拒绝/允许、缺失/partial usage、取消/迟到
 其余维护项、目标平台与真实计费门禁保持开放，详见
 [维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十轮和
 [价格宿主指南](../api/model-price-host.md)。
+
+2026-11-06（第十一轮调度诊断宿主）：
+[DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md) 明确原始路由
+累计值与 Runtime 串行命令结果的观测边界。新增独立 kairo 采样 consumer，同时
+消费 13 项 scheduling_metrics、宿主局部拒绝数和当前未决 handle；证明容量拒绝、
+停止准入与异常可在 routing 为零时仍从结果/关闭报告观察到。控制面外消费输出，
+不改公开布局或 M31 容量算法。Linux 全量 135/135、ASAN+UBSAN 定向 2/2，样板
+连续 20/20 通过；MNT-202611-08 按离线范围完成，累计 9/13。02/03、06、12
+及平台门禁保持开放，首次状态机预期修正与命令见
+[维护计划](maintenance-2026-11-runtime-wiring-and-reuse.md) 第十一轮，消费口径见
+[调度宿主指南](../api/runtime-scheduling-host.md)。

@@ -146,6 +146,19 @@ int main() {
 }
 ```
 
+### scheduling_metrics：路由累计值与命令结果
+
+`runtime.scheduling_metrics()` 返回 SchedulingMetricsSnapshot，镜像内部 Executor
+的 13 个既有路由/反馈累计字段，初始化前与最终关闭后都可读取。accepted 是路由
+接受决策数，不是已完成任务数；按 reason/diagnostics 的分类可交叉。字段采样弱
+一致，不能据此同步或把 accepted-rejected 当作当前队列深度。
+
+Runtime 控制命令走 submit_on_with_handle，当前不经过路由计数。容量拒绝、停止
+准入拒绝或业务回调异常时，这些字段仍可全为零；宿主必须同时消费入口 Result、
+CommandHandle receipt/outcome 和 ShutdownReport。可构建的
+[调度诊断宿主](runtime-scheduling-host.md) 在独立 kairo 任务中采样，展示原始路由
+累计值、宿主范围拒绝计数和有界 handle 的当前未决数；输出不进入控制回调。
+
 ## runtime_baseline.hpp：RuntimeBaseline
 
 M0 交付的最小命令循环基线，用于在完整 Runtime 语义就绪前验证 Executor 集成与命令

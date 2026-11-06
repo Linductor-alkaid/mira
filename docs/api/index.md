@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.1.0（对应 `Mira 0.1` 安装包）
-> 更新日期：2026-11-06（显式事实、Checkpoint 2.0 与价格宿主）
+> 更新日期：2026-11-06（显式事实、Checkpoint 2.0、价格与调度宿主）
 > 适用范围：`include/mira/` 全部公共头文件与随包安装的 CMake 目标
 
 本手册按模块描述 Mira 的公共 API。实现细节、设计动机和状态机推导见
@@ -28,6 +28,9 @@
 
 模型价格的显式注入、known/unknown 与取消结算的可运行参考见
 [价格与预算宿主](model-price-host.md)。
+
+路由累计值、命令拒绝和当前未决数的消费边界见
+[Runtime 调度诊断宿主](runtime-scheduling-host.md)。
 
 ### 错误模型
 

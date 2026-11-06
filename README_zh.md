@@ -218,3 +218,6 @@ Mira 以 [GNU Affero General Public License v3.0](LICENSE) 发布。
 
 [离线价格宿主](docs/api/model-price-host.md) 演示 fixture 价格注入、未知费用策略与
 取消后的预算结算；人工数字不代表供应商报价。
+
+[调度诊断宿主](docs/api/runtime-scheduling-host.md) 同时消费 Runtime 路由累计值、
+命令拒绝与当前未决数，覆盖过载、异常和关闭。

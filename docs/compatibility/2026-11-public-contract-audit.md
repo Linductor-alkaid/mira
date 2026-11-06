@@ -1,14 +1,19 @@
 # 2026-11 公开契约保留与局部复用审计
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-11-05
+> 版本：1.1
+> 更新日期：2026-11-06
 > 负责人：Mira Maintainers
 > 依据：MNT-202611-11、DEC-082
 > 源码范围：HEAD b81df19 加截至第八轮（DEC-082）的工作树；不代表部署或下游调用统计
 
 后续 DEC-083 的新增事实提交与 VerifiedFact/Checkpoint 变更，单独见
 [迁移说明](verified-fact-v1-and-checkpoint-v2.md)，不属于本份局部复用的无接口变更结论。
+
+2026-11-06 后续跟踪：08 按
+[DEC-085](../decisions/DEC-085-runtime-scheduling-diagnostic-host.md) 提供
+[调度诊断宿主](../api/runtime-scheduling-host.md)，分开消费路由累计值和串行命令
+结果。原第八轮审计范围不变，不能从其零路由计数推导无拒绝或异常。
 
 ## 1. 审计原则
 

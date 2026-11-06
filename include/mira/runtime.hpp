@@ -41,9 +41,10 @@ struct ShutdownReport final {
 // Mirror of the Executor's cumulative scheduling counters (kairo 0.7.0
 // `get_scheduling_metrics()`): routing decisions by status/reason, execution
 // deadline misses and scheduler feedback counts. Counters are monotonic from
-// Executor construction; the read is lock-free and safe before initialize()
-// and after shutdown (zeros when nothing was routed). Surfaces queue
-// rejections that must not stay silent (project completion criteria).
+// Executor construction; safe before initialize() and after shutdown. Fields
+// are individually sampled, not a transactional snapshot or queue-depth gauge.
+// Serial command admission and callback failures are not routing decisions:
+// consume command results/ShutdownReport even when these counters are zero.
 struct SchedulingMetricsSnapshot final {
     std::uint64_t accepted = 0;
     std::uint64_t accepted_degraded = 0;
