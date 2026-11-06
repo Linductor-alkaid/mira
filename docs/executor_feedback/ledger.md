@@ -22,7 +22,7 @@
 | `EXE-20260830-002` | 2026-08-30 | Resolved | 多 worker 串行 facade wrapper 可互相饥饿 | 已迁移到直接 `submit_on_with_handle()` | 已删除非阻塞 tracked dispatch 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260830-003` | 2026-08-30 | Resolved | 串行 facade wrapper 的栈同步对象存在竞争 | 已迁移到上游共享状态结算 | 已删除 `post_reserved()` 与独立 business promise 兼容层 | [executor#178](https://github.com/Linductor-alkaid/executor/issues/178)（`4fd8e60`） |
 | `EXE-20260922-001` | 2026-09-22 | Resolved | `blocking_io_executor.cpp` 的 `native_handle` static_cast 阻塞 MinGW-w64 posix 构建 | 已随 pin 升级（`ef821dc`，上游 [kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)）恢复 MinGW 全树可构建 | 已删除（pin 升级后无需子集回避） | [mira#75](https://github.com/Linductor-alkaid/mira/issues/75)、[kairo#215](https://github.com/Linductor-alkaid/kairo/pull/215)（`99a55a0`） |
-| `EXE-20261028-001` | 2026-10-28 | Accepted | 总量有界 admission 缺少按主体分桶的份额准入语义 | 上游已交付（PR #223）但**尚未发布可用 tag**；Mira 侧消费与迁移待版本可用后进行 | 迁移前的等价近似：Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」）；上游可用后**整体移除** | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)、[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)（Closed）、[kairo#223](https://github.com/Linductor-alkaid/kairo/pull/223) |
+| `EXE-20261028-001` | 2026-10-28 | Accepted | 总量有界 admission 缺少按主体分桶的份额准入语义 | 上游已交付（PR #223）并已随 `v0.7.3` 发布（2026-11-06 确认；当前 pin 快照已含该能力）；Mira 侧消费与迁移待 M31 立项进行 | 迁移前的等价近似：Mira 侧分桶账本做嵌套预过滤（见记录正文「临时方案」）；迁移完成后**整体移除** | [mira#111](https://github.com/Linductor-alkaid/mira/issues/111)、[kairo#222](https://github.com/Linductor-alkaid/kairo/issues/222)（Closed）、[kairo#223](https://github.com/Linductor-alkaid/kairo/pull/223) |
 
 新增第一条记录时删除“当前暂无记录”占位行。编号格式为 `EXE-YYYYMMDD-NNN`，其中序号按
 当天记录递增。
@@ -537,7 +537,8 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
 
 #### 临时方案（版本可用前的过渡）
 
-**上游已交付但尚未发布可用 tag**，Mira 侧消费前仍需过渡：
+**上游已交付并发布含该能力的 `v0.7.3`**（2026-11-06 确认；当前 pin `78c6f55`
+为 `v0.7.3` 祖先，快照已含该能力），Mira 完成消费与迁移前仍走以下过渡：
 
 - Mira 侧维护一个分桶账本，在**调用 Executor 提交之前**先做主体份额检查：
   份额不足则由 Mira 直接返回 `ResourceExhausted`，**不进入** Executor 接纳点。
@@ -555,9 +556,9 @@ Executor 应提供**按 key 分桶的份额准入**，语义：
    `ControlIngressId`/任务终态清理）。Executor 侧不受影响。
 3. 该方案**不是** Executor 原生分桶，覆盖路径受限于带键的提交形态（见上）。
 
-**移除条件**：kairo 发布包含 PR #223 的可用版本**且** Mira 完成消费与迁移后，
-Mira 侧账本与预过滤路径**整体删除**，改为直接使用 Executor 原生分桶；
-**不得**与原生能力叠加（否则会出现双重份额判定）。
+**移除条件**：版本条件已满足（kairo `v0.7.3` 已发布，2026-11-06 确认）；
+Mira 完成消费与迁移后，Mira 侧账本与预过滤路径**整体删除**，改为直接使用
+Executor 原生分桶；**不得**与原生能力叠加（否则会出现双重份额判定）。
 
 **测试覆盖**：M31 的容量门禁必须覆盖「A 用满自身份额后 B 仍可接纳」与
 「A+B 合计超过全局上限」两个用例，并断言拒绝原因可区分
@@ -586,3 +587,4 @@ Mira 侧账本与预过滤路径**整体删除**，改为直接使用 Executor �
 | 2026-10-28 | Accepted（已向上游提出后续调整） | 已交付语义满足本条诉求，但发现三处**在真实使用形态下**的后续调整点，已在上游 #222 留评：[A] 裸 `submit_auto(lambda)` 形态不携带分桶键 → 份额对下游全部 11 处实际提交**静默失效**（无错、无告警、计数恒 0），请求上游补带 subject 的裸形态入口或至少补「未携带键的接纳数」诊断面；[B] 分桶键被逐字回显进异常消息与 failure 事件/状态快照，但设计文档与 API §3.12 **无脱敏约定**，请求补「键必须为不可识别派生标识」的明确约定；[C] 代际语义下查询面只反映当代计数，`get_subject_in_flight_submissions()` 在共存窗口内**低报**真实在途（差额 = 旧代残量，上界 = 旧份额），低报方向与配额用途相反，请求暴露残量或在 API 层强化告警并给出上界。另附范围备注：定时/周期路径两维均不覆盖，下游已自行设闸，**本次不请求**。三问均**不阻塞** M31 实施 | kairo#222 评论 |
 | 2026-10-28 | Accepted → Accepted（调整已落实，待版本可用） | 上游 PR [#224](https://github.com/Linductor-alkaid/kairo/pull/224) 落实三点：**R-1** 新增 `submit_auto(SubjectKey, F&&, Args&&...)`（用法 `ex.submit_auto(kairo::subject("key"), fn)`；`SubjectKey` 构造**刻意 explicit**，使 `submit_auto("key", fn)` 编译失败而非静默错绑键为 callable——负编译实证）＋ `SubjectQuotaStatus::admitted_total` 诊断面（**份额已配置但该值停在 0 = 键未流过接纳点**）；**R-2** 键脱敏约定成文（键被逐字复制进拒绝消息、`ExecutorFailureEvent::subject` 与状态快照，必须是不可识别派生标识；键空间清理责任在调用方）；**R-3** 跨代低报提升为 API 层 ⚠ 显式注意事项与监控口径（超额上界 + 自愈时间），**不**暴露 `retired_in_flight`（维持永久 graveyard 的成本取舍）——**低报本身按上游裁定保留**，下游监控口径已对齐。R-1 不改 D-1～D-5 的计数/释放/拒绝语义。仍不带键：公开 `submit()`、`submit_after` 裸形态、`submit_cancellable*`、`submit_on*`、`submit_batch*`。**上游仍未发布含本修复的 tag**（随下一个 release 发布）→ 状态维持 `Accepted`，待版本可用后迁移并关闭 | kairo#224 |
 | 2026-10-28 | Open → Accepted | 上游以 PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 交付并关闭 #222（merge `d493a69ce`，功能提交 `06f11dad9`，设计 `docs/design/subject_bucket_admission.md` D-1–D-5）。逐条核对本条目「上游验收标准」与上游验收 1–10：**全部覆盖**；拒绝面按 D-3 扩展为可区分两维（消息 / `subject_quota_exhausted_count` / 事件 `subject`）。记录三处行为差异：①覆盖路径仅 `submit_auto(TaskBuilder)` 等带键形态，Mira 现有 11 处裸 lambda 调用需迁移；②热更新弱一致（瞬时超额有界自愈）；③代际语义（解除后重配从 0 起计、跨代计数不可观测）。**上游尚未发布含该修复的 tag**（最新 release 仍为 `v0.7.2`），Mira 未迁移 → 状态转 `Accepted` | kairo#223、kairo#222 |
+| 2026-11-06 | Accepted（版本条件已满足） | kairo 发布 `v0.7.3`（`b8e5a09`），包含 PR #223 分桶 admission、PR #224 裸形态带键入口与 racing 修复 `0564157`（deadline-drop 异常分类）；当前 pin `78c6f55`（`v0.7.2-14-g78c6f55`）为 `v0.7.3` 祖先，快照已含前两项能力。Mira 消费、11 处裸 lambda 提交形态迁移与临时方案整体移除仍待 [M31](../plans/m31-capacity-admission-and-archival-recovery.md) 立项 → 状态维持 `Accepted` | kairo v0.7.3 |
