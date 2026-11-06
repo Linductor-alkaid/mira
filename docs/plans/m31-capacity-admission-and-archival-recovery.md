@@ -76,6 +76,10 @@
   （保留期与 Executor 映射表——**本阶段首次让 §17 的 `soft periodic timer` 落地**）。
 - [Core Curator 设计](../design/context_curator_design.md) §13（跨 store 擦除纪律）。
 - Executor 反馈：[`EXE-20261028-001`](../executor_feedback/ledger.md)。
+- [DeepSeek Super-agent 参考研究](../design/superagent_reference_study.md)
+  （`M31-03`/`M31-05` 的机制输入：按 kind 的并发上限与退避、显式拒绝与延期语义、
+  以及"无界 append-only 存储被上游自述为已知限制"的外部佐证；**执行机制不采纳**
+  其自建队列与私有调度器，见该文第 7 节；采纳与否由各决策记录逐条冻结）
 
 ## 4. 冻结的契约语义（跑前冻结待立项）
 

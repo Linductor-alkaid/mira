@@ -79,6 +79,11 @@
 - [安全与权限契约](../design/mira_runtime_design.md) 与
   [`include/mira/security.hpp`](../../include/mira/security.hpp)——
   `PolicyEngine`、`ConfirmationAuthority`、`PrincipalContext`。
+- [DeepSeek Super-agent 参考研究](../design/superagent_reference_study.md)
+  （`M33-03`/`M33-04`/`M33-08` 的机制输入：主动工作的"仅记录不执行"观察模式、
+  订阅路径绕过准入但不产生新授权、外部文本不可提升为授权、以及已结束自主任务的恢复
+  触发者差异；**工单级授权不采纳**，见该文 §6.4 与第 7 节；采纳与否由各决策记录
+  逐条冻结）
 
 ## 4. 冻结的契约语义（跑前冻结，2026-10-28）
 

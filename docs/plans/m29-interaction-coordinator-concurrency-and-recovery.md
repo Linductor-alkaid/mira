@@ -57,6 +57,10 @@
 - [事件与崩溃一致性设计](../design/event_artifact_crash_consistency.md)
   §7（崩溃窗口矩阵）、§8（Recovery）、§6（副作用提交协议）。
 - [Runtime 设计](../design/mira_runtime_design.md) §3.5（副作用默认至多执行一次）。
+- [DeepSeek Super-agent 参考研究](../design/superagent_reference_study.md)
+  （`M29-02`/`M29-04`/`M29-05` 的机制输入：执行中输入投递的三通道分离与保序要求、
+  并发槽位对人工输入的例外、"已送达/已读"区分与重启后重投、被打断工单的恢复顺序；
+  **执行机制不采纳**其自建副作用队列，见该文第 7 节；采纳与否由各决策记录逐条冻结）
 - M28 门禁 `M28-G1`–`M28-G8` 提供的契约面与测试基座。
 
 ## 4. 冻结的契约语义（跑前冻结待立项）
