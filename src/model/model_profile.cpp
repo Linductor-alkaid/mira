@@ -290,6 +290,7 @@ JsonValue ModelProfile::manifest_to_json() const {
     root.emplace_back("version", version_to_json(version));
     root.emplace_back("dialect", protocol_dialect_name(dialect));
     root.emplace_back("endpoint_origin", endpoint_origin);
+    root.emplace_back("allow_private_endpoint", allow_private_endpoint);
     root.emplace_back("api_prefix", api_prefix);
     root.emplace_back("model_selector", model_selector);
     if (model_revision.has_value()) {

@@ -1,8 +1,8 @@
 # Mira 威胁模型与权限确认协议
 
 > 状态：Active  
-> 版本：1.0  
-> 更新日期：2026-08-30  
+> 版本：1.1
+> 更新日期：2026-11-07
 > 适用范围：Runtime、Host、Environment、Model、Tool、Memory、Event/Artifact、训练导出  
 > 上位决策：[DEC-004](../decisions/DEC-004-security-authority-confirmation.md)
 
@@ -240,6 +240,11 @@ Headless/远程部署没有可信确认通道时，`RequireConfirmation` 不能�
 - Model endpoints 由宿主配置 allowlist，不接受网页、模型或 Tool 动态提供的 base URL。
 - URL canonicalization 后检查 scheme、host、port、DNS/IP 范围和 redirect 每一跳；默认拒绝
   loopback、link-local、metadata service 和私网，除非 profile 显式授权。
+- 显式授权入口为 `ModelProfile::allow_private_endpoint`（默认 false），只允许可信宿主
+  配置并纳入 manifest/digest，模型输出不能授权。开启后覆盖既有私网分类及重定向，
+  不限于回环；每跳仍受 endpoint host allowlist 约束。目标与代理分别授权，代理字段
+  `ModelProxyConfig::allow_private_endpoint` 不授权目的地，见
+  [DEC-094](../decisions/DEC-094-profile-private-endpoint-consent.md)。
 - TLS 验证默认开启；自签名需要 pin/显式 profile，产生持续诊断。
 - Proxy、Authorization、API key 和响应 header 在日志中脱敏。
 - Provider fallback 必须满足相同或更严格的数据地域、敏感等级和授权；不能只因 429 自动把数据

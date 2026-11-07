@@ -1,5 +1,21 @@
 # Mira 实施总计划
 
+会话终态投影维护：`BUG-20261107-002` / `MNT-202611-15`，按
+[DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md) 同时支持两类循环
+终态，状态与验收见[维护计划](maintenance-2026-11-conversation-outcomes.md)。
+2026-11-07：按 Linux 离线范围 Completed，Debug 全量 152/152 通过；
+真实桥接宿主回放与 Windows/Android 当前变更验证保持未执行。
+
+私网模型端点授权维护：`BUG-20261107-001` / `MNT-202611-14`，依据
+[DEC-094](../decisions/DEC-094-profile-private-endpoint-consent.md) 修复宿主无法 opt-in 的缺口；
+状态与验收见[维护计划](maintenance-2026-11-private-model-endpoints.md)。
+2026-11-07：该项按 Linux fixture 范围 Completed，Debug 全量 151/151 通过；
+真实服务与 Windows/Android 当前变更验证保持未执行，条件与负责人见维护计划。
+
+提交前两项修复已单独移至最新主干 `4917397`，Linux Debug 全量 **145/145**
+与全仓格式门禁通过；原 M29 工作分支保留。历史 151/152 项结果不用于替代新基线，
+最终跨平台 CI 以关联 PR 的 Checks 为准，全部通过后才合并。
+
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 更新日期：2026-11-07（HTTP 流式连接策略本地交付完成：Debug 41/41、ASAN+UBSAN 3/3、TSAN 1/1，

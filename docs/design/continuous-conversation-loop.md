@@ -1,8 +1,8 @@
 # 持续会话循环
 
 > 状态：Active
-> 版本：1.1
-> 更新日期：2026-10-29
+> 版本：1.2
+> 更新日期：2026-11-07
 > 适用范围：ConversationLoop 的显式 Continuous 模式
 > 依据：[DEC-056](../decisions/DEC-056-continuous-conversation-loop.md)、
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §4.4
@@ -98,6 +98,12 @@ canonical 度量的临时副本；响应与工具桥接本身有单次容量。�
 ConversationSettled 保留终态和累计数（原 turns 仍为保留记录数，新增 total_turns
 为推进尝试数），retained_history_items/bytes 报告最近一次
 请求前存量。事件写入延续既有 best-effort 契约，不能单凭发出事件宣称归档成功。
+
+`build_conversation_view` 将 ConversationSettled 投影为 LoopOutcome，按可用数值字段
+展示 turns/total_turns/recoveries/tool_executions，保留源 EventId、时间戳与会话序列。
+同时继续支持 AgentLoop 的 LoopSettled；无关事件不解析、跳过，已识别事件必需载荷
+损坏返回 DataLoss。视图只重建已成功存储的运行摘要，不替代模型答案，也不改变
+上述 best-effort 写入语义；见 [DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md)。
 
 终态截断原因是结构化事实（DEC-065）：续写额度耗尽时结果对象携带
 `terminal_incomplete_reason`，ConversationSettled 载荷携带 `output_continuations`

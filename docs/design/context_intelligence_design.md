@@ -9,8 +9,8 @@
 > Layer 3 契约与模型供给参考固化器已由 [M19](../plans/m19-context-intelligence-stage-d.md) 交付——
 > [固化管线评估 v1](../benchmarks/context-intelligence-consolidation-v1.md)；
 > Layer 4 契约草案未实现，进入里程碑的门槛见 §12）  
-> 版本：0.3  
-> 更新日期：2026-09-14  
+> 版本：0.4
+> 更新日期：2026-11-07
 > 负责人：Mira Maintainers  
 > 上位设计：[Context 与 Memory 架构设计](context_and_memory_design.md)、  
 > [Agent Harness 与 Workflow 架构设计](agent_harness_and_workflow_architecture.md)  
@@ -54,8 +54,13 @@ Consolidate（语义固化）与可选 Compress（提示压缩）四层能力，
 | Layer 3 Consolidate | 已交付（M19，经 IModelProvider 供给）+ 既有管线不变 | `context_consolidation.hpp`：`ISemanticConsolidator` 契约、`ProviderSemanticConsolidator`（编号转录 + 严格 JSON schema + provenance fail-closed + 标记过滤）、`ConversationCheckpoint` 五元组提交与 store、checkpoint → Layer 0 候选转换、supervisor Deferrable 路由；`MemoryConsolidator`（Event -> 长期记忆）与 Preference 人工审批管线保持不变 |
 | Layer 4 Compress | 缺 | 仅结构化引用/压缩 marker；无提示压缩接口 |
 
-会话侧投影现状：`build_conversation_view`（`UserMessageInjected` + `LoopSettled` 重建，
-DEC-016）与 `TaskCheckpoint`（确定性 reducer，`CheckpointBuilder`）是本设计的直接基座。
+会话侧投影现状：`build_conversation_view`（`UserMessageInjected` + AgentLoop 的
+`LoopSettled` / ConversationLoop 的 `ConversationSettled` 重建，DEC-016）与
+`TaskCheckpoint`（确定性 reducer，`CheckpointBuilder`）是本设计的直接基座。
+2026-11-07 修复遗漏的 ConversationSettled：同样产出带源 ID/序列/时间的 LoopOutcome，
+分段可据此保留运行摘要；旧缓存与派生资产须按宿主策略重建。已识别事件必需载荷损坏
+返回 DataLoss，无关事件继续跳过。证据见
+[维护计划](../plans/maintenance-2026-11-conversation-outcomes.md)。
 
 ## 4. 三级上下文生命周期
 

@@ -68,10 +68,28 @@ policy 字段）与 canonical 保留字段不能通过扩展设置，即使本�
 按部署端点验证，不因成功编码提升 capability 证据等级。
 
 非空扩展参与 manifest、`profile_digest()` 与 `wire_request_digest()`；对象键顺序
-不影响 digest，值变化会改变绑定。空扩展省略 manifest 成员并保留原 digest/线格式。
+不影响 digest，值变化会改变绑定。空扩展省略 manifest 成员；在其余配置相同时，
+不额外改变 digest/线格式。
 Provider 在上传前验证配置，且在传输前检查最终请求（含扩展）的 `max_request_bytes`；
 总大小超限返回 `InvalidModelRequest`，不调用推理 transport。C++ 二进制消费者需
 重新编译以适应公开结构体的新增成员。
+
+`ModelProfile::allow_private_endpoint` 默认 `false`，由宿主显式开启后允许目标解析为
+回环、私网或链路本地等受限地址。适用于 SSH 隧道、本地推理服务、mock 和集群内端点；
+不从模型输出设置。模型推理及 `OpenAiRemoteFileStore` 上传/删除共用该授权。
+每次重定向仍须命中 profile 的 endpoint host allowlist，代理自身
+另由 `ModelProxyConfig::allow_private_endpoint` 授权；两个字段不互相替代。
+例如宿主在注册 profile 前配置：
+
+```cpp
+profile.endpoint_origin = "http://127.0.0.1:8000";
+profile.api_prefix = "/v1";
+profile.allow_private_endpoint = true;
+```
+
+该字段始终进入 manifest 和 `profile_digest()`。升级后默认 profile 摘要也会变化，
+消费者须重编译并重新生成 RouteDecision/continuation 绑定；详见
+[DEC-094](../decisions/DEC-094-profile-private-endpoint-consent.md)。
 
 ## model_provider.hpp 与 model_transport.hpp
 
@@ -572,9 +590,18 @@ auto view = mira::build_conversation_view(event_store, session_id);
 // std::vector<ConversationEntry{kind: UserMessage|LoopOutcome, recorded_at, text, origin}>
 ```
 
-EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected` 与 `LoopSettled` 事件
-按会话顺序重建，不可读载荷 fail closed。完整对话 patch、暂停/恢复语义由 M8-04 冻结，
-本投影不承载它们。
+EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected`、AgentLoop 的
+`LoopSettled` 与 ConversationLoop 的 `ConversationSettled` 按会话顺序重建。
+两种终态均映射为 `LoopOutcome`，保留源 EventId、时间戳与 session_sequence。
+旧事件仍展示 steps；ConversationSettled 展示存在的数值字段 turns、total_turns、
+recoveries、tool_executions（turns 为保留记录数，total_turns 为累计推进尝试数）。
+可选计数缺失或非数值时省略；已识别事件的 detail、用户 text 或终态 outcome 不可读时
+返回 `mira.conversation` / `DataLoss`；其他事件不解析载荷、继续跳过。
+这是运行摘要，不是模型答案。升级后可直接重建旧日志视图，无事件迁移；缓存视图和
+下游分段等派生资产由宿主按需重建。完整对话 patch、暂停/恢复语义由 M8-04 冻结，
+本投影不承载它们。修复依据及证据见
+[DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md) 与
+[维护计划](../plans/maintenance-2026-11-conversation-outcomes.md)。
 
 ## 相关文档
 
