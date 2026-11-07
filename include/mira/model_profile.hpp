@@ -59,6 +59,7 @@ struct ProfileLimits final {
     std::uint64_t max_request_bytes = 8ULL * 1024ULL * 1024ULL;
     std::uint64_t max_response_bytes = 8ULL * 1024ULL * 1024ULL;
     std::size_t max_input_items = 256;
+    // Max newly exposed tools; 0 exposes none. Above kModelMaxToolsPerRequest is invalid.
     std::size_t max_tools_per_request = 64;
     std::size_t max_images_per_request = 16;
     std::uint64_t max_image_bytes = 16ULL * 1024ULL * 1024ULL;
@@ -172,6 +173,8 @@ struct RouteQuery final {
     std::uint64_t required_context_tokens = 0;
     const ModelBudget *budget = nullptr;
     const ModelDataPolicy *data_policy = nullptr;
+    // New tool exposure count; native replay history only needs needs_tools.
+    std::size_t required_tools = 0;
 };
 
 struct RouteRejection final {
@@ -201,6 +204,10 @@ class ModelRouter final {
   private:
     std::vector<std::shared_ptr<const ModelProfile>> profiles_;
 };
+
+// Enforces both the canonical ceiling and the profile tool budget before I/O.
+[[nodiscard]] Result<void> validate_model_tool_limit(const ModelRequest &request,
+                                                     const ModelProfile &profile);
 
 // Checks one profile against one query; shared by routing and by tests.
 [[nodiscard]] std::vector<std::string> profile_mismatches(const ModelProfile &profile,

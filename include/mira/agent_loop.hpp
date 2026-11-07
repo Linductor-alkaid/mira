@@ -102,6 +102,14 @@ struct AgentLoopSpec final {
     ModelProfileId profile_id;
 };
 
+// DEC-097: called once per assembled request on run()'s worker. The request
+// is complete and tools contains the full registry snapshot. Return ordered
+// registered IDs (empty = no tools). Errors, exceptions, unknown/duplicate IDs
+// fail closed before infer. Keep bounded and nonblocking; configure before run.
+// Gateway retries reuse the selection; newly assembled requests resolve again.
+using ToolSelector =
+    std::function<Result<std::vector<ToolId>>(const AgentLoopSpec &, const ModelRequest &)>;
+
 // M25 (DEC-045): rendering bounds for the optional Working Context supply
 // seam (RULE-08, documented defaults). Content beyond a bound is dropped in
 // the fixed Layer 0 conversion order (section declaration order, then entry
@@ -138,6 +146,8 @@ class AgentLoop final {
 
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
+    // Without a selector all registered tools remain exposed; no auto-truncation.
+    void set_tool_selector(ToolSelector selector);
 
     // Mandatory for input actions. Missing wiring fails closed before execute.
     // Configure before run(); use the same session/event stream as the loop.
@@ -192,6 +202,7 @@ class AgentLoop final {
     RuntimeId runtime_;
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
+    ToolSelector tool_selector_;
     std::shared_ptr<JournaledActionDispatcher> action_dispatcher_;
     std::mutex pending_mutex_;
     std::deque<std::string> pending_user_messages_;

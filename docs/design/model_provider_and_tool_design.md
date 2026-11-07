@@ -264,3 +264,25 @@ latency、sandbox/exit、idempotency 和 Verification。敏感 argument/result �
 - [LLM API 协议设计](llm-api-protocol-design.md)
 - [OpenAI-compatible 兼容性矩阵](../compatibility/openai-compatible-matrix.md)
 - [M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)
+
+## 每请求暴露子集与数量边界（2026-11-08）
+
+依据 [DEC-097](../decisions/DEC-097-per-request-tool-selection.md)，注册目录与请求暴露集
+分离。两个 loop 在完成输入、历史及预算组装后，将只读完整 ModelRequest 和运行 spec
+交给 ToolSelector，并把有序 ID 子集解析为来自该次注册表快照的 ExposedToolSpec。
+不修改注册表、不裁剪历史工具结果，也不新增权限。模型输出仍只按请求快照解析，
+因此目录中的未选工具不能被调用。没有 selector 时继续全量暴露，超限显式失败。
+
+回调在 run 所在 Executor worker 同步执行，不拥有线程或任务句柄；宿主需保持有界、
+无阻塞并在 run 前配置。每次新请求组装重新选择，gateway 重试保留选择。错误、异常、
+重复/未知 ID 都终止请求，不退回全量；原始异常/错误文本不进入事件。选择事件带
+request_id、目录/选中数量、选中 ID 与快照摘要（失败为安全 reason），沿用现有
+loop envelope；不复制 schema 或输入。
+取消、Human Takeover 和 shutdown 继续受现有准入边界约束。
+
+canonical 数量上界仍为 128；profile 的 max_tools_per_request 默认 64，允许 0..128。
+Gateway 以 RouteQuery.required_tools 过滤候选（包括 fallback），provider 在上传前
+校验，所有 mapper 同步/SSE 编码再校验。直接 canonical 校验保留独立安全上界。
+超限错误提供实际数量/限额和配置选择器的指引，不暴露工具参数或凭据。
+迁移与公开示例见 [API](../api/model-agent-loop.md)。本轮只验证 Linux 离线链路，
+不声明 NapCat/OneBot 或其他平台互操作结果。

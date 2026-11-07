@@ -81,6 +81,10 @@ void ConversationLoop::set_tool_registry(std::shared_ptr<BuiltinToolRegistry> to
     tools_ = std::move(tools);
 }
 
+void ConversationLoop::set_tool_selector(ToolSelector selector) {
+    tool_selector_ = std::move(selector);
+}
+
 Result<void> ModelInputSupplyOptions::validate() const {
     if (max_items == 0 || max_image_bytes == 0) {
         return conversation_error(ErrorCode::InvalidArgument, "supply bounds must be positive");
@@ -447,6 +451,16 @@ Result<ModelRequest> ConversationLoop::build_request(
     request.data_policy.store = false;
     request.prompt_provenance.system_template_digest =
         digest_string("mira.conversation-loop.system.v1");
+    if (tool_selector_) {
+        const auto available = request.tools.size();
+        auto selected = loop_support::select_tools(spec, request, tool_selector_);
+        emit(spec, selected ? "ModelToolsSelected" : "ModelToolSelectionFailed",
+             loop_support::selection_detail(request, available, selected),
+             selected ? EventClass::State : EventClass::Diagnostic);
+        if (!selected) {
+            return selected.error();
+        }
+    }
     return request;
 }
 

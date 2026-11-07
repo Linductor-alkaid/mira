@@ -6,7 +6,9 @@
 #include <mira/agent_loop.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_contracts.hpp>
+#include <mira/model_digest.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -70,6 +72,71 @@ template <typename ToolRegistry>
         request.tools = tools->exposed_tools();
     }
     return request;
+}
+
+// Resolves IDs against one immutable registry snapshot. Never degrade to full
+// exposure on failure: that would silently broaden the model's authority.
+[[nodiscard]] inline Result<void> select_tools(const AgentLoopSpec &spec, ModelRequest &request,
+                                               const ToolSelector &selector) {
+    if (!selector) {
+        return {};
+    }
+    const auto fail = [](std::string message) -> Result<void> {
+        Error error;
+        error.code = ErrorCode::InvalidArgument;
+        error.domain = "mira.tool_selection";
+        error.safe_message = std::move(message);
+        return error;
+    };
+    try {
+        auto selected = selector(spec, request);
+        if (!selected) {
+            return fail("tool selector returned an error");
+        }
+        if (selected.value().size() > kModelMaxToolsPerRequest) {
+            return fail("tool selection count=" + std::to_string(selected.value().size()) +
+                        " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest));
+        }
+        std::vector<ExposedToolSpec> exposed;
+        exposed.reserve(selected.value().size());
+        for (const auto &id : selected.value()) {
+            const auto found = std::find_if(request.tools.begin(), request.tools.end(),
+                                            [&](const auto &tool) { return tool.tool_id == id; });
+            if (found == request.tools.end()) {
+                return fail("tool selector returned an unregistered id");
+            }
+            if (std::any_of(exposed.begin(), exposed.end(),
+                            [&](const auto &tool) { return tool.tool_id == id; })) {
+                return fail("tool selector returned a duplicate id");
+            }
+            exposed.push_back(*found);
+        }
+        request.tools = std::move(exposed);
+        return {};
+    } catch (...) {
+        return fail("tool selector threw an exception");
+    }
+}
+
+// IDs and a digest permit offline attribution without copying schemas or input.
+[[nodiscard]] inline JsonValue selection_detail(const ModelRequest &request, std::size_t available,
+                                                const Result<void> &selected) {
+    JsonValue::Object detail{
+        {"request_id", request.request_id.to_string()},
+        {"available_count", static_cast<std::int64_t>(available)},
+        {"selected_count", selected ? static_cast<std::int64_t>(request.tools.size()) : 0}};
+    if (selected) {
+        JsonValue::Array ids;
+        for (const auto &tool : request.tools) {
+            ids.emplace_back(tool.tool_id.to_string());
+        }
+        detail.emplace_back("selected_tool_ids", std::move(ids));
+        detail.emplace_back("tool_snapshot_digest",
+                            tool_snapshot_digest(request.tools).to_string());
+    } else {
+        detail.emplace_back("reason", selected.error().safe_message);
+    }
+    return JsonValue{std::move(detail)};
 }
 
 } // namespace mira::loop_support

@@ -7,12 +7,16 @@
 #include <mira/observation.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace mira {
+
+// Canonical request safety ceiling; profile limits may be smaller (DEC-097).
+inline constexpr std::size_t kModelMaxToolsPerRequest = 128;
 
 // Stable content hash used across model contracts, profiles and digests.
 using Hash = Sha256Digest;
