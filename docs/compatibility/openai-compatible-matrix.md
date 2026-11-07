@@ -1,7 +1,7 @@
 # Mira OpenAI-compatible Provider 兼容性矩阵
 
 > 状态：Active  
-> 版本：1.8
+> 版本：1.9
 > 更新日期：2026-11-07
 > 负责人：Mira Maintainers  
 > 适用范围：LLM/VLM Provider profile、wire dialect 和互操作证据
@@ -13,6 +13,12 @@
 
 协议规范见[LLM API 协议设计](../design/llm-api-protocol-design.md)，方言选择见
 [DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md)。
+
+私网端点授权新增 `ModelProfile::allow_private_endpoint=false`，进入 manifest/digest；
+C++ 消费者须重编译，旧 RouteDecision/continuation 摘要绑定须重新生成。历史互操作
+记录保留当时摘要，不视为新摘要已重新互操作。本轮本地 socket fixture 的证据与未验证
+范围见[维护计划](../plans/maintenance-2026-11-private-model-endpoints.md)，不据此宣称
+vLLM、Ollama 或 SSH 隧道真实互操作通过。
 
 ## 2. 证据等级
 

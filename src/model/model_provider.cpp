@@ -68,7 +68,7 @@ class UploadRetirement final {
     if (!host.empty()) {
         limits.allowed_hosts.push_back(host);
     }
-    limits.allow_private_endpoints = false;
+    limits.allow_private_endpoints = profile.allow_private_endpoint;
     if (profile.endpoint_origin.rfind("http://", 0) == 0) {
         // Plain-http origins are a test/dev configuration; production
         // profiles use https.

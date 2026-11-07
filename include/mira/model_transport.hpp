@@ -45,7 +45,7 @@ struct TransportLimits final {
     std::uint64_t max_response_bytes = 8ULL * 1024ULL * 1024ULL;
     std::uint32_t max_redirects = 2;
     // SSRF posture: loopback, private, link-local and metadata addresses are
-    // denied unless the caller explicitly opts in (tests do).
+    // denied unless the caller explicitly opts in (ModelProfile host consent).
     bool allow_private_endpoints = false;
     // When non-empty, every hop (including redirects) must match a host.
     std::vector<std::string> allowed_hosts;

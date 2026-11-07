@@ -240,6 +240,24 @@ int profile_manifest_and_routing() {
     mutated.model_selector = "other-model";
     MIRA_CHECK(mutated.profile_digest() != digest);
 
+    // Host consent is explicit even when false, and route bindings cover it.
+    MIRA_CHECK(!profile->allow_private_endpoint);
+    MIRA_CHECK(
+        to_json_string(profile->manifest_to_json()).find("\"allow_private_endpoint\":false") !=
+        std::string::npos);
+    mutated = *profile;
+    mutated.allow_private_endpoint = true;
+    MIRA_CHECK(mutated.validate().has_value());
+    MIRA_CHECK(mutated.profile_digest() != digest);
+    MIRA_CHECK(to_json_string(mutated.manifest_to_json()).find("\"allow_private_endpoint\":true") !=
+               std::string::npos);
+    ModelRouter local_router;
+    local_router.register_profile(std::make_shared<ModelProfile>(mutated));
+    auto local_route = local_router.route(query);
+    MIRA_CHECK(local_route.has_value());
+    MIRA_CHECK(local_route.value().profile_digest == mutated.profile_digest());
+    MIRA_CHECK(local_route.value().profile_digest != decision.value().profile_digest);
+
     // Proxy policy and credential references are profile-bound, while secret
     // plaintext remains outside the manifest.
     mutated = *profile;

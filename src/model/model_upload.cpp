@@ -49,6 +49,7 @@ constexpr std::size_t kMaxPendingDeletes = 256;
         profile.capabilities.limits.max_response_bytes, 1ULL * 1024ULL * 1024ULL);
     limits.max_redirects = profile.max_redirects;
     limits.proxy = profile.proxy;
+    limits.allow_private_endpoints = profile.allow_private_endpoint;
     const auto host = profile.endpoint_host();
     if (!host.empty()) {
         limits.allowed_hosts.push_back(host);

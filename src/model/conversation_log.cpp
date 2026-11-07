@@ -53,16 +53,30 @@ namespace {
     const auto payload = parse_json(envelope.payload.data);
     const auto *detail = event_detail(payload);
     if (detail == nullptr) {
-        return projection_error("LoopSettled payload is not readable");
+        return projection_error(envelope.payload.type + " payload is not readable");
     }
     const auto *outcome = detail->find("outcome");
     if (outcome == nullptr || !outcome->is_string()) {
-        return projection_error("LoopSettled payload carries no outcome");
+        return projection_error(envelope.payload.type + " payload carries no outcome");
     }
     std::ostringstream text;
     text << "loop settled: " << *outcome->as_string();
-    if (const auto *steps = detail->find("steps"); steps != nullptr && steps->is_number()) {
-        text << " (steps " << static_cast<long long>(steps->as_number().value_or(0.0)) << ")";
+    if (envelope.payload.type == "LoopSettled") {
+        if (const auto *steps = detail->find("steps"); steps != nullptr && steps->is_number()) {
+            text << " (steps " << static_cast<long long>(steps->as_number().value_or(0.0)) << ")";
+        }
+    } else {
+        bool has_counter = false;
+        for (const auto *name : {"turns", "total_turns", "recoveries", "tool_executions"}) {
+            if (const auto *counter = detail->find(name);
+                counter != nullptr && counter->is_number()) {
+                text << (has_counter ? ", " : " (") << name << " " << to_json_string(*counter);
+                has_counter = true;
+            }
+        }
+        if (has_counter) {
+            text << ")";
+        }
     }
     ConversationEntry entry;
     entry.kind = ConversationEntry::Kind::LoopOutcome;
@@ -94,7 +108,8 @@ Result<std::vector<ConversationEntry>> build_conversation_view(const IEventStore
                     return entry.error();
                 }
                 entries.push_back(std::move(entry).value());
-            } else if (envelope.payload.type == "LoopSettled") {
+            } else if (envelope.payload.type == "LoopSettled" ||
+                       envelope.payload.type == "ConversationSettled") {
                 auto entry = loop_outcome_entry(envelope);
                 if (!entry) {
                     return entry.error();

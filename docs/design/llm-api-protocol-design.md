@@ -1,7 +1,7 @@
 # Mira LLM API 协议设计
 
 > 状态：Active  
-> 版本：1.5
+> 版本：1.6
 > 更新日期：2026-11-07
 > 负责人：Mira Maintainers  
 > 适用范围：远端 LLM/VLM 请求、OpenAI-compatible wire dialect、流式响应、Structured Outputs、
@@ -649,6 +649,13 @@ Adapter 遇到这些请求或响应必须返回 `CapabilityMismatch`/`ProtocolVi
 - Secret 只由 `ISecretResolver` 在 transport 边界解析；Authorization、proxy credential、signed URL、
   org/project secret 和完整 header 不进入普通事件。
 - Endpoint、每次 redirect、DNS/IP 和 proxy 均执行 SSRF/TLS policy；模型输出不能修改 endpoint。
+- `ModelProfile::allow_private_endpoint=false` 默认拒绝 transport 分类为私网的解析地址；
+  可信宿主可为 SSH 隧道、本地推理或集群服务显式开启。Provider 将该值传入
+  TransportLimits，OpenAiRemoteFileStore 的 upload/delete 也使用同一授权；每跳 host
+  allowlist 不变，proxy 的同名字段只控制代理自身。
+  manifest 始终记录该值并参与 profile_digest，授权改变须重新路由与建立 continuation
+  绑定；新增字段也会改变旧默认摘要，消费者须重编译。依据
+  [DEC-094](../decisions/DEC-094-profile-private-endpoint-consent.md)。
 - Provider-specific prompt patch 只能存在于版本化 profile mapper，不能提升不可信内容的 authority，
   也不能改变 SafetyPolicy。
 - 原始 payload 默认不持久化。调试开启时写受保护 Artifact，包含访问控制、加密、retention 和删除。

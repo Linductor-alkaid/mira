@@ -143,11 +143,16 @@ struct ModelProfile final {
     // appear in the manifest/digests: do not put secrets or sensitive input here.
     JsonValue::Object extra_body;
 
+    // Host-only consent for resolved loopback/private/link-local endpoints,
+    // including redirects. Never derived from model output; bound into the
+    // profile digest. Proxy consent is configured independently in proxy.
+    bool allow_private_endpoint = false;
+
     // Dialect-specific request path; never derived from model output.
     [[nodiscard]] std::string request_path() const;
     [[nodiscard]] std::string endpoint_url() const;
     [[nodiscard]] std::string endpoint_host() const;
-    // Versioned manifest digest covering identity, dialect, endpoint and
+    // Versioned manifest digest covering identity, dialect, endpoint policy,
     // capabilities and vendor extensions; used to bind RouteDecisions and continuations.
     [[nodiscard]] Hash profile_digest() const;
     [[nodiscard]] JsonValue manifest_to_json() const;

@@ -27,8 +27,9 @@ struct ConversationEntry final {
 };
 
 // Rebuilds the conversation view for one session from `UserMessageInjected`
-// and `LoopSettled` events in session order. Events with unparsable payloads
-// fail closed instead of being silently skipped.
+// and both `LoopSettled` (AgentLoop) and `ConversationSettled` (ConversationLoop)
+// events in session order. Recognized events with unreadable required payloads
+// fail closed; unrelated event types are skipped without parsing their payloads.
 [[nodiscard]] Result<std::vector<ConversationEntry>>
 build_conversation_view(const IEventStore &store, const SessionId &session);
 
