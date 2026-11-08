@@ -388,6 +388,11 @@ Result<void> ModelProfile::validate() const {
             return route_error("profile proxy must not carry a path");
         }
     }
+    if (capabilities.limits.max_tools_per_request > kModelMaxToolsPerRequest) {
+        return route_error("profile max_tools_per_request=" +
+                           std::to_string(capabilities.limits.max_tools_per_request) +
+                           " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest));
+    }
     const auto &limits = capabilities.limits;
     if (limits.max_context_tokens == 0 || limits.max_output_tokens == 0 ||
         limits.max_request_bytes == 0 || limits.max_response_bytes == 0) {
@@ -401,6 +406,22 @@ Result<void> ModelProfile::validate() const {
         return route_error("profiles with remote storage require an explicit retention period");
     }
     return Result<void>{};
+}
+
+Result<void> validate_model_tool_limit(const ModelRequest &request, const ModelProfile &profile) {
+    const auto limit = profile.capabilities.limits.max_tools_per_request;
+    if (limit > kModelMaxToolsPerRequest) {
+        return make_model_error(ModelDomainCode::CapabilityMismatch,
+                                "profile max_tools_per_request=" + std::to_string(limit) +
+                                    " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest));
+    }
+    if (request.tools.size() > limit) {
+        return make_model_error(ModelDomainCode::InvalidModelRequest,
+                                "model request tool count=" + std::to_string(request.tools.size()) +
+                                    " exceeds profile limit=" + std::to_string(limit) +
+                                    "; configure a per-request tool selector");
+    }
+    return {};
 }
 
 std::vector<std::string> profile_mismatches(const ModelProfile &profile, const RouteQuery &query) {
@@ -427,7 +448,18 @@ std::vector<std::string> profile_mismatches(const ModelProfile &profile, const R
     if (query.needs_strict_schema) {
         check("strict_json_schema", capabilities.strict_json_schema);
     }
-    if (query.needs_tools) {
+    if (capabilities.limits.max_tools_per_request > kModelMaxToolsPerRequest) {
+        mismatches.push_back("profile max_tools_per_request=" +
+                             std::to_string(capabilities.limits.max_tools_per_request) +
+                             " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest));
+    }
+    if (query.required_tools > capabilities.limits.max_tools_per_request) {
+        mismatches.push_back(
+            "model request tool count=" + std::to_string(query.required_tools) +
+            " exceeds profile limit=" + std::to_string(capabilities.limits.max_tools_per_request) +
+            "; configure a per-request tool selector");
+    }
+    if (query.needs_tools || query.required_tools != 0) {
         check("function_tools", capabilities.function_tools);
     }
     if (query.needs_sse) {

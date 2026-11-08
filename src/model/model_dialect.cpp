@@ -370,6 +370,9 @@ parse_rate_limit_headers(const std::vector<std::pair<std::string, std::string>> 
 Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &request,
                                                           const ModelProfile &profile, bool stream,
                                                           IArtifactSource &artifacts) const {
+    if (auto gate = validate_model_tool_limit(request, profile); !gate) {
+        return gate.error();
+    }
     for (const auto &item : request.input)
         for (const auto &part : item.content)
             if (std::holds_alternative<ThinkingPart>(part))

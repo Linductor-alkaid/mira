@@ -10,6 +10,57 @@
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
 （[DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md)）。
 
+## 每请求工具选择（DEC-097）
+
+`AgentLoop` 与 `ConversationLoop` 共用 `ToolSelector` 和 `set_tool_selector()`。
+注册表可保留完整目录，选择器只决定本次请求暴露哪些工具。先在注册阶段保存稳定
+`ToolId`，在 `run()` 前接线，例如两类 loop 都适用的最小示例：
+
+```cpp
+loop.set_tool_selector(
+    [lookup_id, send_id] (const mira::AgentLoopSpec &spec,
+                         const mira::ModelRequest &request)
+        -> mira::Result<std::vector<mira::ToolId>> {
+        // request.input 含本次目标、跟进消息、历史结果及已供应的输入。
+        // request.tools 是当前完整目录；宿主在此应用自己的选择策略。
+        if (request.tools.empty()) {
+            return std::vector<mira::ToolId>{};
+        }
+        if (spec.goal.find("发送") != std::string::npos) {
+            return std::vector<mira::ToolId>{lookup_id, send_id};
+        }
+        return std::vector<mira::ToolId>{lookup_id};
+    });
+```
+
+返回值顺序即请求工具顺序；ID 必须来自该次完整目录快照，工具 schema/版本/身份由
+loop 映射，宿主不能通过回调重写。空向量表示零工具；不配置（或传空函数）保留
+全量暴露，不自动截断。无注册表时回调仍会收到空目录，非空选择被拒绝。
+回调同步运行在调用 `run()` 的 Executor worker，须有界且不阻塞，不得在运行中替换。
+每次组装新请求（含 loop 恢复）调用一次；gateway/provider 重试复用选择结果。
+回调看见的 request ID 是组装 ID，gateway 可以为实际 attempt 另生成 ID。
+
+回调 Error、异常、未知/重复 ID、选择数量超过 canonical 上界都在 infer 前失败；
+不退化为全量暴露，返回诊断不含回调错误/异常的原始文本。循环终止为 Failed。
+启用选择器时输出 `ModelToolsSelected` 或 `ModelToolSelectionFailed` 事件，detail 为
+`request_id`、`available_count`、`selected_count`（失败时为 0），使用既有 loop 事件
+envelope。成功还包含 `selected_tool_ids` 与 `tool_snapshot_digest`，失败包含固定安全
+`reason`。选择结果参与 canonical request digest；离线重建应使用已记录的请求快照，
+不能把重新选择结果作为原请求的回放证据。
+先前轮次的 tool call/result 仍参与历史回放，工具可以在下一轮退出暴露集；新调用
+必须通过产生该调用的请求快照解析，未选中的工具即使在注册表中也不会执行。
+
+`ProfileLimits::max_tools_per_request` 现在参与路由、provider 上传前和三个 mapper
+的同步/SSE 编码校验。默认 64；允许 0..128（0 表示不暴露新工具），更大的 profile
+配置无效。`kModelMaxToolsPerRequest` 是 canonical 安全上界 128。超限诊断带实际
+数量与上限。`RouteQuery::required_tools` 为实际数量（直接使用 router 的宿主应填写），
+gateway 自动设置；路由只在容量足够的 profile 中选择，fallback 同样受限。历史
+tool call/result 仍要求 function_tools 协议能力，但不占当前请求的暴露数量。
+
+迁移：原先默认 profile 下发送 65..128 个工具的宿主，需显式配置更大限额，或通过
+选择器暴露子集。目录超过 128 时必须选择子集。公开类布局和 RouteQuery 增加成员，
+C++ 二进制消费者需重新编译。真实服务的工具数量限制仍由宿主按端点验证。
+
 ## model_contracts.hpp：规范请求/响应
 
 - 输入是 `ModelInputItem` 列表，内容为 `TextPart` / `ImagePart`（`ImageDetail` 可选）/

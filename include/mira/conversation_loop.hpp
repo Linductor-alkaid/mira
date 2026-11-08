@@ -210,6 +210,8 @@ class ConversationLoop final {
 
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
+    // DEC-097: same fail-closed per-request selection contract as AgentLoop.
+    void set_tool_selector(ToolSelector selector);
 
     // Attaches the optional supplied-input seam (DEC-053) and its per-request
     // bounds. Without a supplier, request assembly stays unchanged byte for
@@ -317,6 +319,7 @@ class ConversationLoop final {
     RuntimeId runtime_;
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
+    ToolSelector tool_selector_;
     ModelInputSupplier input_supplier_;
     ModelInputIdentityProvider identity_provider_;
     HistoryTransformer history_transformer_;

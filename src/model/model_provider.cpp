@@ -138,6 +138,9 @@ Result<ModelResponse> OpenAiCompatibleProvider::infer(const ModelRequest &reques
     // write trace or Retry-After hint and look like an ambiguous remote outcome.
     last_trace_ = TransportTrace{};
     last_headers_.clear();
+    if (auto gate = validate_model_tool_limit(request, *profile_); !gate) {
+        return gate.error();
+    }
     if (auto gate = validate_profile_extra_body(*profile_); !gate) {
         return gate.error();
     }

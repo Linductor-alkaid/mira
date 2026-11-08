@@ -134,10 +134,16 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             if (std::get_if<FilePart>(&part) != nullptr) {
                 query.needs_file_input = true;
             }
+            // A new selection may be empty while native tool history remains.
+            if (std::holds_alternative<ToolCallPart>(part) ||
+                std::holds_alternative<ToolResultPart>(part)) {
+                query.needs_tools = true;
+            }
         }
     }
     query.needs_strict_schema = request.output_contract.mode != OutputMode::Text;
-    query.needs_tools = !request.tools.empty();
+    query.needs_tools = query.needs_tools || !request.tools.empty();
+    query.required_tools = request.tools.size();
     query.needs_sse = options.stream;
     query.max_sensitivity = max_request_sensitivity(request);
     query.budget = &request.budget;

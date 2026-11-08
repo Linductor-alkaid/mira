@@ -323,3 +323,12 @@ MIRA_INTEROP_MAX_REQUESTS=2 \
 - 验证：只核对官方文档和仓库设计；未实现 mapper，未执行 API 调用。
 - 限制：所有真实互操作状态保持 `Unknown`。
 - 关联：[M3 Model Provider 与 Agent 闭环](../plans/m3-model-provider-agent-loop.md)。
+
+## 2026-11-08 工具暴露数量迁移
+
+[DEC-097](../decisions/DEC-097-per-request-tool-selection.md) 接活 profile 工具限额：
+默认 64，合法范围 0..128，canonical 上界 128。65..128 工具的旧宿主须提高 profile
+配置或设置 ToolSelector；更大目录通过每请求子集暴露。两个 loop 皆支持，公开类与
+RouteQuery 布局变化要求 C++ 消费者重编译。工具历史允许引用前一轮暴露但本轮退出的
+工具；当前新调用只能命中当前快照。本轮验证范围与证据见
+[维护计划](../plans/maintenance-2026-11-tool-selection.md)，不提升真实服务互操作证据。

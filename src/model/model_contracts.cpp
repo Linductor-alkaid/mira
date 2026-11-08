@@ -13,7 +13,6 @@ namespace {
 
 constexpr std::size_t kMaxInputItems = 256;
 constexpr std::size_t kMaxContentPartsPerItem = 64;
-constexpr std::size_t kMaxToolsPerRequest = 128;
 constexpr std::size_t kMaxTextPartBytes = 1024 * 1024;
 constexpr std::size_t kMaxOutputItems = 256;
 constexpr std::size_t kMaxSafeMessageBytes = 2048;
@@ -642,8 +641,10 @@ Result<void> validate_model_request(const ModelRequest &request) {
             return contract_error("schema digest does not match the schema payload");
         }
     }
-    if (request.tools.size() > kMaxToolsPerRequest) {
-        return contract_error("model request exceeds the tool limit");
+    if (request.tools.size() > kModelMaxToolsPerRequest) {
+        return contract_error("model request tool count=" + std::to_string(request.tools.size()) +
+                              " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest) +
+                              "; configure a per-request tool selector");
     }
     for (const auto &tool : request.tools) {
         if (tool.tool_id.value.is_nil() || tool.wire_name.empty() ||
