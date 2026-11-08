@@ -483,6 +483,7 @@ function(mira_add_m15_eval name source)
 endfunction()
 
 mira_add_m15_eval(mira_m15_eval_profile_harness m15/m15_eval_profile_harness.cpp)
+mira_add_test(mira_m15_event_normalization_test m15/m15_event_normalization_test.cpp "contract;m15")
 
 # M16 (DEC-032 Stage A): the long-session Layer 0 baseline harness. A pure
 # deterministic single-threaded driver over StandardContextManager; any

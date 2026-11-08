@@ -1,6 +1,6 @@
 # 每请求工具选择维护
 
-> 状态：Completed
+> 状态：Completed（Linux 本地修复；PR CI 验收证据见本节末尾）
 > 负责人：Mira Maintainers
 > 更新日期：2026-11-08
 > 所属计划：[总计划](mira-implementation-plan.md)
@@ -74,3 +74,45 @@ platform-boundary、format 与 diff 空白检查通过，架构存量 baseline �
 独立基线去除了 M29 的 11 个测试，工具选择新增 1 项；本次差异没有引入 M29 依赖。
 本轮只提交并推送 PR，按维护者要求不检查或等待 CI、不进入合并流程；上述真实宿主、
 目标平台与 sanitizer 验证限制保持有效。
+
+
+## PR #119：ASAN 确定性验收修复
+
+- [x] `MNT-202611-TS-02`：依据 DEC-034 / M15 G4，修复 workflow 并发事件先规范化
+  后排序造成的随机 ID 首次出现序号漂移；补齐顺序交换、关联漂移、缺失/多余事件及
+  不同长度诊断的回归及 ASAN 定向验证；PR CI 验收单独关联下文证据入口。
+
+2026-11-08：PR head `547c617` 的 [PR CI #560](https://github.com/Linductor-alkaid/mira/actions/runs/42393842944)
+只有 ASAN job 失败；`mira_m15_eval_profile_harness` 的 EVP1-F4/recovery-no-memory
+出现 G4 不一致，G1/G2/G5/G6 与预算均通过，无 ASAN 内存错误报告。
+失败根因是 workflow 事件虽在规范化后排序，但随机 ID 的序号已由跨生产者交错顺序
+决定。保持生产者内顺序、事件内容、重复计数与关联等值性，不放宽 G4 或跳过测试；
+测试规范化细节与诊断修复进行中，CI 尚未重新验收。负责人：Mira Maintainers。
+
+
+2026-11-08 修复后本地验收：在相同 Linux x86_64 / GCC 13.3.0 环境，Debug 全量
+**147/147** 通过（37.66 秒，无跳过）。ASAN-only（UBSAN/TSAN 关闭，匹配失败 job）
+的 M15 harness 与新增规范化回归各连续 **5/5** 通过（合计 50.79 秒）；工具选择
+ASAN 专项 **1/1** 通过。类型分组保留类型内顺序，ID 关联等值性仍参与比较，
+原始事件继续用于延迟与 G5 关联检查；多阶段 L1 事件按窗口追加，不覆盖早期阶段。
+新回归明确复现旧的“先规范化再排序”伪差异，并覆盖真关联/计数变化、丢失、重复与
+两侧前缀结束诊断。新增单测不改变 17 个 EvalCase 或 170 个 run-unit 的数据集。
+
+复现命令：
+
+```bash
+cmake --preset debug
+cmake --build build/debug --target mira_m15_eval_profile_harness mira_m15_event_normalization_test -j 4
+ctest --test-dir build/debug --output-on-failure -j 4
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_BUILD_TESTS=ON -DMIRA_WARNINGS_AS_ERRORS=ON -DMIRA_ENABLE_ASAN=ON -DMIRA_ENABLE_UBSAN=OFF -DMIRA_ENABLE_TSAN=OFF
+cmake --build build/asan --target mira_m15_eval_profile_harness mira_m15_event_normalization_test mira_m3_tool_selection_test -j 6
+ctest --test-dir build/asan -R '^mira_m3_tool_selection_test$' --output-on-failure
+ctest --test-dir build/asan -R '^mira_m15_(eval_profile_harness|event_normalization_test)$' --repeat until-fail:5 --output-on-failure
+cmake --build build/debug --target docs-check architecture-check platform-boundary-check format-check
+git diff --check
+```
+
+本地四项静态门禁通过，架构存量 16 项未变。维护者本轮已重新授权 CI 修复与验收，
+修复提交的远端验收结果由 [PR #119](https://github.com/Linductor-alkaid/mira/pull/119)
+说明中的验收记录及对应 head 的 Actions/Checks 承载；上文旧 head 的失败记录保留。
+本地完成仅覆盖所列范围，CI 验收按远端实际结果确认，不由本地通过推定；不执行合并。

@@ -12,6 +12,7 @@
 // tracks VmRSS between rounds on Linux (profile §8: harness-side metering,
 // Linux-only, no runtime counter exists).
 
+#include "support/eval_event_normalization.hpp"
 #include "support/m14_support.hpp"
 
 #include <mira/agent_loop.hpp>
@@ -139,50 +140,6 @@ struct Percentiles final {
         }
     }
     return escaped;
-}
-
-[[nodiscard]] bool is_hex(char character) {
-    return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
-           (character >= 'A' && character <= 'F');
-}
-
-// G4 normalization (profile §9.1): Id128 identifiers are generated through
-// std::random_device and content digests embed those ids (profile digests,
-// for one), so distinct tokens of 32/64 hex digits or the 8-4-4-4-12 UUID
-// shape map to first-occurrence ordinals. Equal inputs still compare equal
-// and unequal ones still diverge; sequence numbers, epochs, enum names and
-// bounded counters compare verbatim.
-[[nodiscard]] std::string normalize_identifiers(const std::string &payload,
-                                                std::map<std::string, int> &ids) {
-    std::string output;
-    output.reserve(payload.size());
-    std::size_t index = 0;
-    while (index < payload.size()) {
-        const char character = payload[index];
-        if (!is_hex(character)) {
-            output.push_back(character);
-            ++index;
-            continue;
-        }
-        std::size_t end = index;
-        while (end < payload.size() && is_hex(payload[end])) {
-            ++end;
-        }
-        const std::size_t length = end - index;
-        const bool token_shape =
-            length == 32 || length == 64 ||
-            (length == 36 && payload[index + 8] == '-' && payload[index + 13] == '-' &&
-             payload[index + 18] == '-' && payload[index + 23] == '-');
-        if (token_shape) {
-            const std::string token = payload.substr(index, length);
-            const auto inserted = ids.emplace(token, static_cast<int>(ids.size()));
-            output += "<id" + std::to_string(inserted.first->second) + ">";
-        } else {
-            output += payload.substr(index, length);
-        }
-        index = end;
-    }
-    return output;
 }
 
 [[nodiscard]] std::vector<EventEnvelope>
@@ -492,17 +449,24 @@ class KnobbedMemory final : public IMemory {
 void collect_workflow_metrics(EvalFixture &fixture, RunRecord &record, std::uint64_t events_before,
                               bool waiting_agent_window = false) {
     const auto envelopes = session_events(*fixture.events_, fixture.session_id_, events_before);
-    std::map<std::string, int> ids;
+    std::vector<EvalEventPayload> payloads;
+    payloads.reserve(envelopes.size());
+    for (const auto &envelope : envelopes) {
+        payloads.emplace_back(envelope.payload.type, envelope.payload.data);
+    }
+    const auto normalized = normalize_eval_events(std::move(payloads), true);
+    record.normalized_events.insert(record.normalized_events.end(), normalized.begin(),
+                                    normalized.end());
+    std::sort(record.normalized_events.begin(), record.normalized_events.end());
+    for (const auto &event : normalized) {
+        if (record.debug_head.size() < 400)
+            record.debug_head += event + "\n";
+    }
     std::map<std::string, double> step_started;
     std::map<std::string, double> run_started;
     std::map<std::string, int> started_runs;
     std::map<std::string, int> settled_runs;
     for (const auto &envelope : envelopes) {
-        record.normalized_events.push_back(envelope.payload.type + "|" +
-                                           normalize_identifiers(envelope.payload.data, ids));
-        if (record.debug_head.size() < 400) {
-            record.debug_head += record.normalized_events.back() + "\n";
-        }
         if (envelope.payload.type == "ModelRequestPrepared") {
             ++record.model_calls;
         }
@@ -1716,8 +1680,9 @@ struct GateSummary final {
     // arms have two concurrent producers (the drive worker and the
     // orchestrator's audit emission after resume_run), whose interleaving
     // order is not a contract — recorded as a baseline-round finding — so
-    // those arms compare the sorted multiset: content drift, missing or
-    // extra events still fail the gate.
+    // those arms assign ID ordinals in stable event-type groups before
+    // comparing the sorted multiset. Content, correlation, missing or extra
+    // events still fail the gate.
     std::map<std::string, const RunRecord *> first_repeat;
     for (const auto &record : records) {
         if (record.seed != 0) {
@@ -1727,32 +1692,12 @@ struct GateSummary final {
         const auto position = first_repeat.emplace(key, &record);
         if (!position.second) {
             const auto &baseline = *position.first->second;
-            bool diverged = baseline.normalized_events != record.normalized_events;
-            std::vector<std::string> mismatch_pair;
-            if (diverged && record.arm != Arm::A) {
-                auto sorted_baseline = baseline.normalized_events;
-                auto sorted_repeat = record.normalized_events;
-                std::sort(sorted_baseline.begin(), sorted_baseline.end());
-                std::sort(sorted_repeat.begin(), sorted_repeat.end());
-                if (sorted_baseline == sorted_repeat) {
-                    diverged = false; // legal cross-producer interleaving
-                }
-            }
-            if (diverged) {
+            if (baseline.normalized_events != record.normalized_events) {
                 gates.g4_determinism = false;
-                std::size_t index = 0;
-                while (index < baseline.normalized_events.size() &&
-                       index < record.normalized_events.size() &&
-                       baseline.normalized_events[index] == record.normalized_events[index]) {
-                    ++index;
-                }
-                const auto clip = [](const std::string &value) { return value.substr(0, 300); };
                 gates.g4_mismatches.push_back(
-                    key + ": event " + std::to_string(index) + " baseline [" +
-                    clip(baseline.normalized_events[index]) + "] repeat [" +
-                    (index < record.normalized_events.size() ? clip(record.normalized_events[index])
-                                                             : std::string("<end>")) +
-                    "]");
+                    key + ": " +
+                    first_eval_event_difference(baseline.normalized_events,
+                                                record.normalized_events));
             }
         }
     }

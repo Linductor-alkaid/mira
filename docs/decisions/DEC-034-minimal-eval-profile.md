@@ -100,3 +100,9 @@ ONNX/realtime 准入要求。
   29 校准）
 - [DEC-030](DEC-030-learning-loop-runtime-semantics.md)（学习契约，C/D 臂对照基础）
 - [DEC-032](DEC-032-context-intelligence-layered-context.md)（Stage A 基线依赖本 profile）
+
+
+2026-11-08 实现修复：PR #119 的 ASAN 发现 workflow G4 在随机 ID 序号已随生产者
+交错变化之后才排序，仍可产生伪差异。类型稳定分组必须先于 ID 规范化，最后比较排序
+多重集；原始事件仍用于延迟/关联检查，Agent 臂严格位序不变。不改阈值或 case 集。
+回归和验收见[工具选择维护的 CI 修复记录](../plans/maintenance-2026-11-tool-selection.md)。

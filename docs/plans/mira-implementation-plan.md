@@ -6,6 +6,8 @@
 2026-11-08：按 Linux 离线范围 Completed；独立迁移至 master `d2533b9` 后，
 Debug 全量 **146/146** 通过（原 M29 工作树 157/157 记录保留在维护计划）；
 真实 NapCat/OneBot 与目标平台验证边界见维护计划。
+PR #119 的 ASAN/M15 G4 首次出现 ID 规范化交错问题已修复：Debug 147/147、
+ASAN 定向连续五轮通过；远端 CI 验收证据入口见同一维护计划。
 
 会话终态投影维护：`BUG-20261107-002` / `MNT-202611-15`，按
 [DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md) 同时支持两类循环
