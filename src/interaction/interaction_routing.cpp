@@ -12,7 +12,10 @@ namespace mira::interaction_support {
     if (text.size() <= limit) {
         return std::string(text);
     }
-    return std::string(text.substr(0, limit));
+    auto end = limit;
+    while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U)
+        --end;
+    return std::string(text.substr(0, end));
 }
 
 // The fail-closed capability check of the coordinator (DEC-068 R9). A missing
@@ -65,7 +68,7 @@ namespace {
 [[nodiscard]] std::vector<const PrincipalTaskEntry *> live_tasks(const PrincipalState &state) {
     std::vector<const PrincipalTaskEntry *> live;
     for (const auto &task : state.tasks) {
-        if (!is_terminal(task.state)) {
+        if (!is_terminal(task.state) && !task.historical) {
             live.push_back(&task);
         }
     }
@@ -82,103 +85,102 @@ namespace {
                                            const std::optional<RouteSuggestion> &suggestion) {
     RoutingDecision decision;
 
-    if (suggestion.has_value()) {
-        const auto &proposal = *suggestion;
-        switch (proposal.intent) {
+    // Explicit host references outrank semantic suggestions (DEC-102). An
+    // unknown reference must never fall back to an unrelated live task.
+    const PrincipalTaskEntry *explicit_task = nullptr;
+    if (envelope.target_task) {
+        explicit_task = find_task(state, *envelope.target_task);
+        if (explicit_task == nullptr) {
+            decision.rationale = "the explicit task is not owned by this principal";
+            return decision;
+        }
+    }
+    if (envelope.reply_to) {
+        const auto *reply_task = task_of_input(state, *envelope.reply_to);
+        if (reply_task == nullptr || (explicit_task && explicit_task != reply_task)) {
+            decision.rationale = "the explicit reply is unknown or conflicts with the task";
+            return decision;
+        }
+        explicit_task = reply_task;
+    }
+    if (envelope.requested_intent == RouteIntent::NewTask) {
+        if (explicit_task) {
+            decision.rationale = "a new-task request cannot also name existing work";
+            return decision;
+        }
+        decision.intent = RouteIntent::NewTask;
+        decision.rationale = "the host explicitly requested a new task";
+        return decision;
+    }
+    const auto select = [&](const PrincipalTaskEntry &target, RouteIntent intent,
+                            std::string rationale) {
+        RoutingDecision selected;
+        selected.session_id = target.session_id;
+        selected.task_id = target.task_id;
+        selected.rationale = std::move(rationale);
+        if (target.historical)
+            selected.session_id.reset(); // A new Runtime must open a fresh session.
+        switch (intent) {
         case RouteIntent::ContinueCurrent:
         case RouteIntent::SupplementTask:
+            selected.intent =
+                (is_terminal(target.state) || target.historical) ? RouteIntent::ResumeTask : intent;
+            break;
+        case RouteIntent::ResumeTask:
+            selected.intent =
+                (is_terminal(target.state) || target.historical) ? intent : RouteIntent::Reject;
+            break;
+        case RouteIntent::CancelTask:
+            selected.intent = intent; // Runtime provides terminal NoOp semantics.
+            break;
         case RouteIntent::PauseTask:
-        case RouteIntent::CancelTask: {
-            if (!proposal.task_id.has_value()) {
-                break;
-            }
-            const auto *target = find_task(state, *proposal.task_id);
-            if (target == nullptr) {
-                break;
-            }
-            if (is_terminal(target->state)) {
-                // A terminal task is never revived. Continuing or correcting
-                // it becomes a new task bound to its summary; pausing or
-                // cancelling it is impossible (DEC-068 R2).
-                if (proposal.intent == RouteIntent::ContinueCurrent ||
-                    proposal.intent == RouteIntent::SupplementTask) {
-                    decision.intent = RouteIntent::ResumeTask;
-                    decision.session_id = target->session_id;
-                    decision.task_id = target->task_id;
-                    decision.rationale =
-                        "the suggested task is terminal; the input resumes it through a new task";
-                    return decision;
-                }
-                break;
-            }
-            decision.intent = proposal.intent;
-            decision.session_id = target->session_id;
-            decision.task_id = target->task_id;
-            decision.rationale =
-                proposal.rationale.empty()
-                    ? std::string("the suggested target is live and owned by the principal")
-                    : proposal.rationale;
-            return decision;
+            selected.intent = is_terminal(target.state) ? RouteIntent::Reject : intent;
+            break;
+        default:
+            selected.intent = RouteIntent::Reject;
+            break;
         }
-        case RouteIntent::ResumeTask: {
-            if (!proposal.task_id.has_value()) {
-                break;
-            }
-            const auto *target = find_task(state, *proposal.task_id);
-            if (target == nullptr || !is_terminal(target->state)) {
-                break;
-            }
-            decision.intent = RouteIntent::ResumeTask;
-            decision.session_id = target->session_id;
-            decision.task_id = target->task_id;
-            decision.rationale =
-                proposal.rationale.empty()
-                    ? std::string("the suggested task is settled; the input resumes it "
-                                  "through a new task")
-                    : proposal.rationale;
-            return decision;
-        }
-        case RouteIntent::NewTask:
-            decision.intent = RouteIntent::NewTask;
-            decision.rationale = proposal.rationale.empty()
-                                     ? std::string("the input starts a new task")
-                                     : proposal.rationale;
-            return decision;
-        case RouteIntent::Clarify:
-            decision.intent = RouteIntent::Clarify;
-            decision.rationale = proposal.rationale.empty()
-                                     ? std::string("the input reference is ambiguous")
-                                     : proposal.rationale;
-            decision.clarification =
-                proposal.clarification.value_or(std::string("Which item should this apply to?"));
-            return decision;
-        case RouteIntent::Reject:
-            decision.intent = RouteIntent::Reject;
-            decision.rationale = proposal.rationale.empty()
-                                     ? std::string("the input was rejected by the host")
-                                     : proposal.rationale;
-            return decision;
-        }
-        // The suggestion did not survive validation: fall through to the
-        // structural rules and say so in the rationale.
+        return selected;
+    };
+    if (explicit_task) {
+        return select(*explicit_task,
+                      envelope.requested_intent.value_or(RouteIntent::ContinueCurrent),
+                      "explicit principal-owned reference takes precedence over suggestions");
+    }
+    if (envelope.requested_intent) {
+        decision.rationale = "the explicit intent requires a principal-owned target";
+        return decision;
     }
 
-    // Structural rule 1: an explicit reply reference names the work item.
-    if (envelope.reply_to.has_value()) {
-        const auto *target = task_of_input(state, *envelope.reply_to);
-        if (target != nullptr && !is_terminal(target->state)) {
-            decision.intent = RouteIntent::ContinueCurrent;
-            decision.session_id = target->session_id;
-            decision.task_id = target->task_id;
-            decision.rationale = "the input replies to a known live task";
+    if (suggestion) {
+        const auto &proposal = *suggestion;
+        if (proposal.task_id) {
+            const auto *target = find_task(state, *proposal.task_id);
+            if (target && (!proposal.session_id || proposal.session_id == target->session_id)) {
+                auto selected =
+                    select(*target, proposal.intent,
+                           proposal.rationale.empty() ? "validated principal-owned route suggestion"
+                                                      : bound_text(proposal.rationale, 512));
+                if (selected.intent != RouteIntent::Reject)
+                    return selected;
+            }
+        } else if (proposal.intent == RouteIntent::NewTask && !proposal.session_id) {
+            decision.intent = RouteIntent::NewTask;
+            decision.rationale = "validated new-task suggestion";
             return decision;
         }
-        if (target != nullptr) {
-            decision.intent = RouteIntent::ResumeTask;
-            decision.session_id = target->session_id;
-            decision.task_id = target->task_id;
-            decision.rationale =
-                "the input replies to a settled task; it resumes it through a new task";
+        if (proposal.intent == RouteIntent::Reject) {
+            decision.rationale = bound_text(proposal.rationale, 512);
+            return decision;
+        }
+        if (proposal.intent == RouteIntent::Clarify) {
+            decision.intent = RouteIntent::Clarify;
+            decision.rationale = "the suggestion requests disambiguation";
+            decision.clarification =
+                bound_text(proposal.clarification.value_or("Which item should this apply to?"),
+                           kMaxClarificationBytes);
+            for (const auto *task : live_tasks(state))
+                decision.candidates.push_back(task->task_id);
             return decision;
         }
     }
@@ -203,6 +205,7 @@ namespace {
     decision.rationale = "the principal has several live tasks; the reference is ambiguous";
     std::string question = "Which item should this apply to?";
     for (const auto *task : live) {
+        decision.candidates.push_back(task->task_id);
         question += "\n- ";
         question += bound_text(task->goal, 120);
     }

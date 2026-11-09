@@ -11,11 +11,11 @@
 > [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)
 > 的价值层；来源需求为
 > [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4）
-> 前置：M28 关闭（**未满足**）；M29 关闭（**未满足**，本阶段依赖上下文归属与并发归属）；
+> 前置：M28 关闭（**已满足**）；M29 关闭（**未满足**，本阶段依赖上下文归属与并发归属）；
 > M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）；
 > DEC-070 契约冻结（已满足，2026-10-28 随 M28 登记一并冻结）
 > 建议发布点：非发布物；M31 价值驱动淘汰的输入侧前提
-> 更新日期：2026-10-28（登记）
+> 更新日期：2026-11-09（研究/实现入口与 M28 前置状态同步）
 
 ## 1. 目标
 
@@ -70,6 +70,12 @@
 - [Context 与 Memory 设计](../design/context_and_memory_design.md)
   §5（记忆层级）、§6.1（MemoryScope）、§13（长期 Memory 写入）、§14（混合检索）。
 - [Context Curator 设计](../design/context_curator_design.md) §13（Stage W4 晋升纪律）。
+- [M36](m36-memory-agent-context-integration.md)交付可复用的受管记忆服务与请求准入；
+  不关闭本里程碑的承诺、完整纠正/删除交互、主体映射授权与恢复依赖。
+  同 scope 删除后重新接纳需另行冻结世代/来源水位协议，不能移除删除屏障后回灌旧事件。
+- [记忆代理与长期上下文参考研究](../design/memory-agent-reference-study.md)
+  （2026-11-09，`MNT-202611-MA-01`；供 `M30-01/03/04/08` 评审：宿主记忆服务、
+  有界记忆代理、既有写入管线、请求装配与删除失效；仅研究输入，未批准新 API 或实现范围）。
 
 ## 4. 冻结的契约语义（2026-10-28 由 DEC-070 冻结）
 
@@ -102,6 +108,9 @@
 - [ ] `M30-06` 价值信号（importance / 使用信号）产出（供 M31 使用）。
 - [ ] `M30-07` IVA 测试矩阵（`tests/m30/`）。
 - [ ] `M30-08` 文档同步。
+- [ ] `M30-09` 冻结并实现删除后的同 scope 新知识接纳：区分新世代与已删除来源，
+      旧事件、摘要和在途提案不得回灌；有新的明确用户输入时可重新记忆。与 M31
+      的屏障保留/回收协同验收，不能直接删除 M36 的屏障来重新开放 scope。
 
 ## 6. 测试与退出条件
 

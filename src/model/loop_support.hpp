@@ -14,6 +14,18 @@
 
 namespace mira::loop_support {
 
+// Close native call/result groups without executing proposals overtaken by
+// a user correction. This is a failure receipt, never an execution receipt.
+[[nodiscard]] inline ToolExecutionRecord superseded_tool_result(const ToolProposal &proposal) {
+    ToolExecutionRecord record;
+    record.provider_call_id = proposal.provider_call_id;
+    record.tool_id = proposal.tool_id;
+    record.failed = true;
+    record.safe_error_summary = "not executed: superseded by new user input";
+    record.result = JsonValue::Object{{"error", "superseded_by_user_input"}, {"executed", false}};
+    return record;
+}
+
 // Rate limits, overload, transport failures and network-stage deadline hints
 // are recoverable within a bounded recovery budget; permission, policy and
 // request-shape failures are not. The deadline code only recovers when the

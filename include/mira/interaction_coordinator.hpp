@@ -1,9 +1,12 @@
 #pragma once
 
+#include <mira/artifact_store.hpp>
 #include <mira/core_contracts.hpp>
+#include <mira/environment.hpp>
 #include <mira/event_store.hpp>
 #include <mira/runtime.hpp>
 #include <mira/security.hpp>
+#include <mira/task_recovery.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -66,6 +69,13 @@ enum class InteractionDomainCode : std::int32_t {
     ExecutorRejected = 11,
     // The coordinator was used before initialize() succeeded.
     NotInitialized = 12,
+    // An id or explicit target belongs to another principal (DEC-102).
+    InputConflict = 13,
+    // A throwing sink may already have accepted the input; do not retry blindly.
+    DeliveryUncertain = 14,
+    RecoveryUnavailable = 15,
+    RecoveryRequired = 16,
+    RecoveryStale = 17,
 };
 
 // Builds an error in the mira.interaction domain with a stable domain code.
@@ -80,12 +90,20 @@ enum class InteractionDomainCode : std::int32_t {
 // authenticated principal; input_id is the host-provided idempotency key and
 // is NOT a content digest: two different inputs with the same content are two
 // different inputs (DEC-068 §4).
+enum class RouteIntent : std::uint8_t;
+
 struct InputEnvelope final {
     PrincipalContext principal;
     std::string input_id;
     std::string content;
     std::vector<std::string> attachment_refs;
     std::optional<std::string> reply_to;
+    // Host-authenticated explicit references, stronger than model suggestions.
+    std::optional<TaskId> target_task;
+    // NewTask needs no target; other executable intents need target_task/reply_to.
+    std::optional<RouteIntent> requested_intent;
+    // Answers a frozen clarification; target_task must be one of its candidates.
+    std::optional<std::string> clarification_for;
 };
 
 // The stage of one accepted input. Receiving an input is not a completed task
@@ -127,6 +145,7 @@ struct RoutingDecision final {
     // Natural-language clarification for RouteIntent::Clarify. A clarification
     // is a normal reply, not an error code (DEC-068 R4).
     std::optional<std::string> clarification;
+    std::vector<TaskId> candidates;
 };
 
 // The disposition of one submitted input.
@@ -144,6 +163,7 @@ struct InputDisposition final {
     std::optional<TaskId> task_id;
     std::optional<Error> error;
     std::optional<std::string> clarification;
+    std::vector<TaskId> candidates;
 };
 
 // ---------------------------------------------------------------------------
@@ -174,6 +194,23 @@ parse_interaction_event_schema(std::string_view schema);
 // Idempotency ledger
 // ---------------------------------------------------------------------------
 
+enum class InputDeliveryState : std::uint8_t {
+    NotDispatched,
+    Dispatching,
+    Delivered,
+    Uncertain,
+    NotRequired
+};
+
+[[nodiscard]] std::string_view input_delivery_state_name(InputDeliveryState state);
+
+enum class RecoveryAvailability : std::uint8_t {
+    Available,
+    MissingOrErased,
+    Expired,
+    Incompatible
+};
+
 // One durable record of an accepted input.
 struct LedgerEntry final {
     std::string input_id;
@@ -201,6 +238,18 @@ struct LedgerEntry final {
     // The error of a rejected input, kept so a duplicate replay reports the
     // same reason instead of a generic one.
     std::optional<Error> error;
+    // Identity binding reconstructed from InputAccepted.principal_ref.
+    TenantId tenant_id;
+    UserId user_id;
+    std::vector<TaskId> candidates;
+    std::optional<ArtifactDescriptor> input_ref;
+    std::optional<ArtifactDescriptor> context_ref;
+    std::optional<std::string> clarification_for;
+    std::optional<std::string> resolved_by;
+    std::optional<RouteIntent> intent;
+    InputDeliveryState delivery = InputDeliveryState::NotDispatched;
+    SessionSequence admitted_sequence = 0;
+    SessionSequence updated_sequence = 0;
 };
 
 // One lifecycle transition of an accepted input.
@@ -214,6 +263,10 @@ struct LedgerTransition final {
     std::string note;
     std::optional<std::string> clarification;
     std::optional<Error> error;
+    std::vector<TaskId> candidates;
+    std::optional<ArtifactDescriptor> context_ref;
+    std::optional<std::string> resolved_by;
+    std::optional<InputDeliveryState> delivery;
 };
 
 // The durable idempotency ledger of the principal-level input entry point.
@@ -223,7 +276,8 @@ class IInputLedger {
   public:
     virtual ~IInputLedger() = default;
 
-    // Atomically admits one input. A repeat of the same input id inside the
+    // Atomically admits one input and binds its tenant/user. Other principals
+    // must receive InputConflict without any stored receipt. A repeat inside the
     // idempotency window returns the existing record with duplicate=true and
     // produces no second dispatch; a repeat outside the window is an explicit
     // expiry rejection.
@@ -234,6 +288,17 @@ class IInputLedger {
     // durable and replayable; the stage never regresses.
     [[nodiscard]] virtual Result<LedgerEntry> advance(std::string_view input_id,
                                                       const LedgerTransition &transition) = 0;
+    [[nodiscard]] virtual Result<void> check_writable() const { return {}; }
+    // Optional recovery extensions. Custom ledgers fail closed until implemented.
+    [[nodiscard]] virtual Result<LedgerEntry> admit_recoverable(const InputEnvelope &,
+                                                                const ArtifactDescriptor &) {
+        return interaction_error(ErrorCode::Unavailable, InteractionDomainCode::RecoveryUnavailable,
+                                 "the input ledger does not support recoverable inputs");
+    }
+    [[nodiscard]] virtual Result<std::vector<LedgerEntry>> records() const {
+        return interaction_error(ErrorCode::Unavailable, InteractionDomainCode::RecoveryUnavailable,
+                                 "the input ledger does not support bounded enumeration");
+    }
 };
 
 struct InputLedgerOptions final {
@@ -246,6 +311,7 @@ struct InputLedgerOptions final {
     // The durable partition the ledger stream is written to. When nil, the
     // Mira-owned constant partition is used.
     std::optional<SessionId> partition{};
+    std::size_t max_events_scanned = 1'000'000;
 };
 
 // The Mira-owned durable partition of the interaction ledger stream. It is a
@@ -269,6 +335,12 @@ class EventStoreInputLedger final : public IInputLedger {
     [[nodiscard]] Result<LedgerEntry> advance(std::string_view input_id,
                                               const LedgerTransition &transition) override;
 
+    [[nodiscard]] Result<LedgerEntry> admit_recoverable(const InputEnvelope &,
+                                                        const ArtifactDescriptor &) override;
+    [[nodiscard]] Result<std::vector<LedgerEntry>> records() const override;
+
+    [[nodiscard]] Result<void> check_writable() const override;
+
     // Rebuilds the index from the durable ledger stream. Called by the
     // coordinator during initialize(); a host that opens a fresh store may
     // call it again after a crash recovery.
@@ -282,6 +354,8 @@ class EventStoreInputLedger final : public IInputLedger {
     [[nodiscard]] std::size_t size() const noexcept;
 
   private:
+    [[nodiscard]] Result<LedgerEntry> admit_impl(const InputEnvelope &,
+                                                 std::optional<ArtifactDescriptor>);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
@@ -320,6 +394,12 @@ struct PrincipalTaskEntry final {
     std::string context_block;
     // The task this one resumed, for a ResumeTask decision.
     std::optional<TaskId> resumed_from;
+    // Historical projection only: never an active Task in the new Runtime.
+    bool historical = false;
+    std::optional<TaskCheckpoint> recovered_checkpoint;
+    // Erasure-aware provenance closure; deleted source bodies invalidate it.
+    std::vector<ArtifactDescriptor> source_artifacts;
+    RecoveryAvailability recovery_availability = RecoveryAvailability::Available;
 };
 
 // The read-only projection of one principal's registry.
@@ -364,8 +444,10 @@ using EnvironmentProvider = std::function<Result<std::shared_ptr<IEnvironment>>(
 class IUserInputSink {
   public:
     virtual ~IUserInputSink() = default;
-    // Delivers one input to the loop of the given task. A failure must be
-    // reported; a delivery is never silently dropped (DEC-068 §4.4).
+    // Success means queue acceptance, not consumption. A failure must mean
+    // nothing was accepted. Do not throw: a throw is delivery-uncertain and
+    // freezes subsequent delivery until host reconciliation (DEC-102).
+    // Keep delivery bounded and do not reenter coordinator mutation methods.
     [[nodiscard]] virtual Result<void> deliver(const InputEnvelope &envelope, TaskId task_id) = 0;
 };
 
@@ -396,6 +478,27 @@ class ConversationLoopInputSink final : public IUserInputSink {
     std::string last_input_id_;
 };
 
+struct InputReplayPage final {
+    std::vector<LedgerEntry> entries;
+    SessionSequence next_sequence = 0;
+    bool has_more = false;
+    bool expired_gap = false;
+    WallTimePoint window_start;
+};
+
+struct WorkRecoveryReport final {
+    TaskId source_task;
+    RecoveryOutcome recovery;
+    std::optional<Observation> observation;
+    bool ready_for_new_task = false;
+    bool input_delivery_uncertain = false;
+};
+
+// true attests that ALL pending effects / pending verification are resolved.
+// A model response alone is not a verification authority. Bounded, non-reentrant.
+using InteractionRecoveryVerifier = std::function<Result<bool>(
+    const WorkRecoveryReport &, const Observation &, const OperationContext &)>;
+
 // ---------------------------------------------------------------------------
 // Coordinator
 // ---------------------------------------------------------------------------
@@ -421,6 +524,13 @@ struct CoordinatorConfig final {
     std::size_t max_sinks = 256;
     // The bounded number of inputs waiting for a sink of their task.
     std::size_t max_pending_deliveries = 256;
+    std::size_t max_inputs_per_task = 4096;
+    std::size_t max_retired_preparations = 16;
+    std::size_t max_recovery_artifact_bytes = 128 * 1024;
+    std::size_t max_replay_page = 64;
+    std::size_t max_recovery_candidate_bytes = 64 * 1024;
+    std::chrono::seconds recovery_permit_ttl{60};
+    RecoveryPolicy recovery_policy{};
 };
 
 class InteractionCoordinator final {
@@ -434,7 +544,8 @@ class InteractionCoordinator final {
     InteractionCoordinator(const InteractionCoordinator &) = delete;
     InteractionCoordinator &operator=(const InteractionCoordinator &) = delete;
 
-    // Binds the durable ledger and rebuilds the registry projection. Must
+    // Binds/rebuilds the durable ledger and, with recovery stores, historical
+    // registry/context projections. Never restores live Runtime tasks. Must
     // succeed before the first submit_input().
     [[nodiscard]] Result<void> initialize();
     // Binds the event store that carries the ledger stream.
@@ -447,9 +558,31 @@ class InteractionCoordinator final {
     // Binds the route suggestion seam.
     void set_route_resolver(RouteResolver resolver);
 
+    // Configure before initialize. Both stores required; bodies remain in
+    // Sensitive artifacts and credentials/grants are never persisted.
+    void set_recovery_stores(std::shared_ptr<IArtifactStore>, std::shared_ptr<ICheckpointStore>);
+
     // The single input entry point. The caller does not need to know the
     // session or the task beforehand.
     [[nodiscard]] Result<InputDisposition> submit_input(const InputEnvelope &envelope);
+
+    // Bounded cache-only P3 proposals for the host's existing context supplier.
+    // No admission authority: merge with memory candidates, then Layer 0 decides.
+    [[nodiscard]] Result<std::vector<ContextItem>> recovered_context_items(const PrincipalContext &,
+                                                                           TaskId) const;
+
+    // Authenticated, bounded, read-only current projection (no redispatch).
+    [[nodiscard]] Result<InputReplayPage> replay_inputs(const PrincipalContext &,
+                                                        SessionSequence after = 0,
+                                                        std::size_t limit = 32) const;
+    // Explicit resume of a recoverable Accepted input or current-runtime
+    // NotDispatched input. Unknown/possibly delivered inputs are never retried.
+    [[nodiscard]] Result<InputDisposition> resume_input(const PrincipalContext &, std::string_view);
+    // Read-only Observe/Verify for historical or settled work, never execute().
+    // A successful permit is process-local, short-lived, and single-use.
+    [[nodiscard]] Result<WorkRecoveryReport>
+    recover_work(const PrincipalContext &, TaskId, std::shared_ptr<IEnvironment>,
+                 const OperationContext &, InteractionRecoveryVerifier verifier = {});
 
     // The deterministic emergency stop: it never depends on a model routing
     // round (DEC-068 R6).
@@ -471,15 +604,21 @@ class InteractionCoordinator final {
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);
 
-    // Read-only projections.
+    // Host-owner read-only projections. input_record() is privileged storage
+    // access; a remote caller must never be given raw id-only access to it.
     [[nodiscard]] Result<PrincipalState> principal_state(const PrincipalContext &principal) const;
     [[nodiscard]] Result<LedgerEntry> input_record(std::string_view input_id) const;
 
     // Stops accepting inputs and releases the coordinator's own state. The
     // host keeps the ownership of the Runtime and the Executor.
     void shutdown();
+    // External-owner close: consumes all finite preparations and reports late
+    // failures. Call before shutting down the injected Executor. shutdown()
+    // and the destructor provide best-effort compatibility cleanup.
+    [[nodiscard]] Result<void> close();
 
   private:
+    [[nodiscard]] Result<InputDisposition> submit_impl(InputEnvelope, bool resume);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

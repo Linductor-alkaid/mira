@@ -1,3 +1,4 @@
+#include <mira/environment.hpp>
 #include <mira/task_recovery.hpp>
 
 #include <algorithm>
@@ -13,6 +14,14 @@ namespace {
     error.domain = "mira.recovery";
     error.safe_message = std::move(message);
     return error;
+}
+
+[[nodiscard]] Result<void> check_context(const OperationContext *context) {
+    if (context && context->cancelled())
+        return recovery_error(ErrorCode::Cancelled, "recovery scan was cancelled");
+    if (context && context->expired(Timestamp::now()))
+        return recovery_error(ErrorCode::DeadlineExceeded, "recovery scan deadline expired");
+    return {};
 }
 
 } // namespace
@@ -36,8 +45,9 @@ RecoveryPlanner::RecoveryPlanner(IEventStore &events, ICheckpointStore &checkpoi
     : events_(events), checkpoints_(checkpoints), policy_(policy),
       builder_(CheckpointBuilder::Config{}) {}
 
-Result<std::vector<EventEnvelope>> RecoveryPlanner::read_task_events(TaskId task,
-                                                                     SessionId session) const {
+Result<std::vector<EventEnvelope>>
+RecoveryPlanner::read_task_events(TaskId task, SessionId session,
+                                  const OperationContext *context) const {
     std::vector<EventEnvelope> collected;
     std::optional<SessionSequence> after;
     std::uint64_t scanned = 0;
@@ -45,12 +55,16 @@ Result<std::vector<EventEnvelope>> RecoveryPlanner::read_task_events(TaskId task
         return recovery_error(ErrorCode::InvalidArgument, "recovery scan bound must be positive");
     }
     while (true) {
+        if (auto active = check_context(context); !active)
+            return active.error();
         EventQuery query;
         query.session_id = session;
         query.after_sequence = after;
         query.limit = static_cast<std::size_t>(
             std::min<std::uint64_t>(1024, policy_.max_events_scanned - scanned));
         auto page = events_.read(query);
+        if (auto active = check_context(context); !active)
+            return active.error();
         if (!page) {
             return page.error();
         }
@@ -82,11 +96,24 @@ Result<std::vector<EventEnvelope>> RecoveryPlanner::read_task_events(TaskId task
 
 Result<RecoveryOutcome> RecoveryPlanner::plan(TaskId task, SessionId session,
                                               const Timestamp &now) const {
+    return plan_impl(task, session, now, nullptr);
+}
+
+Result<RecoveryOutcome> RecoveryPlanner::plan(TaskId task, SessionId session, const Timestamp &now,
+                                              const OperationContext &context) const {
+    return plan_impl(task, session, now, &context);
+}
+
+Result<RecoveryOutcome> RecoveryPlanner::plan_impl(TaskId task, SessionId session,
+                                                   const Timestamp &now,
+                                                   const OperationContext *context) const {
+    if (auto active = check_context(context); !active)
+        return active.error();
     if (task.is_nil() || session.is_nil()) {
         return recovery_error(ErrorCode::InvalidArgument, "recovery requires task and session ids");
     }
 
-    auto events = read_task_events(task, session);
+    auto events = read_task_events(task, session, context);
     if (!events) {
         return events.error();
     }
@@ -97,6 +124,8 @@ Result<RecoveryOutcome> RecoveryPlanner::plan(TaskId task, SessionId session,
     }
 
     auto stored = checkpoints_.latest_at_or_before(task, durable_sequence);
+    if (auto active = check_context(context); !active)
+        return active.error();
     if (!stored) {
         return stored.error();
     }
@@ -122,6 +151,8 @@ Result<RecoveryOutcome> RecoveryPlanner::plan(TaskId task, SessionId session,
     }
 
     auto built = builder_.build(base, events.value(), now);
+    if (auto active = check_context(context); !active)
+        return active.error();
     RecoveryOutcome outcome;
     outcome.checkpoint = built.checkpoint;
     outcome.durable_sequence = durable_sequence;

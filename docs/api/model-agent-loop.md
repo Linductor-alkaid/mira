@@ -12,6 +12,11 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 
 ## 每请求工具选择（DEC-097）
 
+M36/DEC-101 在工具选择后由 Gateway 对完整请求执行 Layer 0 准入。原始角色和协议
+不重写，选中的工具不能被静默裁掉；可选记忆/摘要仅为低权限候选。每个 fallback
+单独按实际 profile 重算，selection_digest 进入 provenance，codec 保持其 round-trip。
+供给、版本、错误和预算估算边界见[记忆代理与最终准入](memory-agent.md)。
+
 `AgentLoop` 与 `ConversationLoop` 共用 `ToolSelector` 和 `set_tool_selector()`。
 注册表可保留完整目录，选择器只决定本次请求暴露哪些工具。先在注册阶段保存稳定
 `ToolId`，在 `run()` 前接线，例如两类 loop 都适用的最小示例：

@@ -185,7 +185,9 @@ bool run_case(kairo::Executor &executor, Scenario scenario, const char *name) {
                 : (scenario == Scenario::AmbiguousCancelled ? ErrorCode::ExecutionUncertain
                                                             : ErrorCode::ResourceExhausted);
         if (!check(!result && result.error().code == code, name) ||
-            !check(provider->calls == (rejected ? 0U : 1U), name) ||
+            !check(provider->calls ==
+                       (rejected || scenario == Scenario::CancelBeforeWrite ? 0U : 1U),
+                   name) ||
             !check(spent == 0 && held.requests == 0 && held.input_tokens == 0 &&
                        held.output_tokens == 0 &&
                        held.cost_micros == (scenario == Scenario::AmbiguousCancelled ? 11U : 0U),
@@ -219,14 +221,24 @@ bool run_case(kairo::Executor &executor, Scenario scenario, const char *name) {
             return false;
         // Consume the same safe event metadata a host can expose to diagnostics.
         auto page = events->read({session, std::nullopt, 16});
-        if (!check(page && page.value().events.size() == 2, name))
+        if (!check(page.has_value(), name))
             return false;
-        auto prepared = parse_json(page.value().events.front().payload.data);
-        auto completed = parse_json(page.value().events.back().payload.data);
+        std::optional<JsonValue> prepared, completed;
+        for (const auto &event : page.value().events) {
+            if (event.payload.type == "ModelRequestPrepared") {
+                auto parsed = parse_json(event.payload.data);
+                if (parsed)
+                    prepared = std::move(parsed).value();
+            } else if (event.payload.type == "ModelResponseReceived") {
+                auto parsed = parse_json(event.payload.data);
+                if (parsed)
+                    completed = std::move(parsed).value();
+            }
+        }
         if (!check(prepared && completed, name))
             return false;
-        const auto *pre = prepared.value().find("detail");
-        const auto *post = completed.value().find("detail");
+        const auto *pre = prepared->find("detail");
+        const auto *post = completed->find("detail");
         if (!check(pre && post && pre->find("priced") && post->find("settlement_quality"), name) ||
             !check(pre->find("priced")->as_boolean() == !unpriced &&
                        post->find("settlement_quality")->as_integer() ==

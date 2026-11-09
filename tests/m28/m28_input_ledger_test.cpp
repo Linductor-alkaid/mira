@@ -154,7 +154,8 @@ int run() {
     // --- the durable record survives a rebuild ----------------------------
     InputLedgerOptions options;
     options.idempotency_window = std::chrono::hours(1);
-    auto store = std::make_shared<MemoryEventStore>();
+    auto store =
+        std::make_shared<testing::SimulatedDurableStore>(std::make_shared<MemoryEventStore>());
     const auto runtime_id = RuntimeId::generate();
     EventStoreInputLedger ledger(store, runtime_id, options);
     InputEnvelope envelope;

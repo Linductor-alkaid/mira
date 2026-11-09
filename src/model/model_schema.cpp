@@ -481,7 +481,10 @@ Result<ModelRequest> build_schema_repair_request(const ModelRequest &original,
                 summary_text;
     part.sensitivity = Sensitivity::Internal;
     repair_item.content.emplace_back(std::move(part));
-    repair.input = {std::move(repair_item)};
+    // Keep the trusted policy, goal, observations and pending tool results.
+    // A standalone User repair item both loses the task frame and fails the
+    // gateway's required System/Developer prompt validation.
+    repair.input.push_back(std::move(repair_item));
     return repair;
 }
 

@@ -2,6 +2,7 @@
 
 #include <mira/event_store.hpp>
 #include <mira/model_budget.hpp>
+#include <mira/model_context_admission.hpp>
 #include <mira/model_contracts.hpp>
 #include <mira/model_profile.hpp>
 #include <mira/model_provider.hpp>
@@ -48,7 +49,10 @@ struct ModelCallOutcome final {
     std::uint32_t attempts = 1;
     // True when the response was rejected by admission instead of settling.
     bool admitted = true;
+    bool context_refreshable = false;
     std::string rejection_reason;
+    // Final complete-request Layer 0 selection for the actual provider.
+    std::optional<PreparedModelContext> context_admission;
 };
 
 struct ModelGatewayConfig final {
@@ -58,6 +62,7 @@ struct ModelGatewayConfig final {
     // When true, a missing price entry rejects the reservation instead of
     // proceeding with an unknown cost.
     bool require_known_price = false;
+    ModelContextAdmissionConfig context_admission;
 };
 
 // Epoch and lifecycle admission for model completions. The coordinator (not
@@ -114,6 +119,8 @@ class ModelGateway final {
     void register_provider(std::shared_ptr<IModelProvider> provider);
     void set_event_store(std::shared_ptr<IEventStore> events, RuntimeId runtime, SessionId session);
     void set_admission_gate(std::shared_ptr<const TaskAdmissionGate> gate);
+    // Configure before infer(); bounded cache read, no blocking/model calls.
+    void set_context_supplier(ModelContextSupplier supplier);
 
     [[nodiscard]] Result<ModelCallOutcome> infer(const ModelRequest &request,
                                                  const OperationContext &context,
@@ -146,6 +153,7 @@ class ModelGateway final {
     RuntimeId runtime_;
     SessionId session_;
     RepairPolicy repair_policy_;
+    ModelContextSupplier context_supplier_;
 };
 
 } // namespace mira

@@ -14,6 +14,14 @@ function(mira_add_test name source label)
 endfunction()
 
 mira_add_test(mira_unit_test unit/baseline_support_test.cpp unit)
+mira_add_test(mira_m36_context_admission_test m36/m36_context_admission_test.cpp "contract;m36")
+mira_add_test(mira_m36_memory_agent_test m36/m36_memory_agent_test.cpp "contract;m36")
+target_link_libraries(mira_m36_context_admission_test PRIVATE Mira::state_store)
+target_link_libraries(mira_m36_memory_agent_test PRIVATE Mira::state_store)
+mira_add_test(mira_m36_memory_agent_lifecycle_test m36/m36_memory_agent_lifecycle_test.cpp "contract;m36")
+mira_add_test(mira_m36_memory_agent_model_test m36/m36_memory_agent_model_test.cpp "contract;m36")
+target_link_libraries(mira_m36_memory_agent_lifecycle_test PRIVATE Mira::state_store)
+target_link_libraries(mira_m36_memory_agent_model_test PRIVATE Mira::state_store)
 mira_add_test(mira_embedding_math_test contract/embedding_math_test.cpp contract)
 mira_add_test(mira_task_state_names_test contract/task_state_names_test.cpp contract)
 mira_add_test(mira_runtime_lifecycle_test contract/runtime_lifecycle_test.cpp contract)
@@ -847,6 +855,25 @@ mira_add_m28_test(mira_m28_routing_test m28/m28_routing_test.cpp)
 mira_add_m28_test(mira_m28_result_association_test m28/m28_result_association_test.cpp)
 mira_add_m28_test(mira_m28_context_ownership_test m28/m28_context_ownership_test.cpp)
 mira_add_m28_test(mira_m28_lifecycle_test m28/m28_lifecycle_test.cpp)
+
+# M29 / DEC-102: deterministic ownership, durable transitions, reliable
+# delivery and user correction at model/action boundaries.
+function(mira_add_m29_test name source)
+    mira_add_m28_test(${name} ${source})
+    set_tests_properties(${name} PROPERTIES LABELS "integration;m29" TIMEOUT 120)
+endfunction()
+mira_add_m29_test(mira_m29_arbitration_test m29/m29_arbitration_test.cpp)
+mira_add_m29_test(mira_m29_ledger_atomicity_test m29/m29_ledger_atomicity_test.cpp)
+mira_add_m29_test(mira_m29_delivery_test m29/m29_delivery_test.cpp)
+mira_add_m29_test(mira_m29_lifecycle_test m29/m29_lifecycle_test.cpp)
+mira_add_m29_test(mira_m29_loop_interruption_test m29/m29_loop_interruption_test.cpp)
+mira_add_m29_test(mira_m29_clarification_recovery_test m29/m29_clarification_recovery_test.cpp)
+mira_add_m29_test(mira_m29_restart_replay_test m29/m29_restart_replay_test.cpp)
+mira_add_m29_test(mira_m29_recovery_verification_test m29/m29_recovery_verification_test.cpp)
+mira_add_m29_test(mira_m29_recovery_faults_test m29/m29_recovery_faults_test.cpp)
+mira_add_m29_test(mira_m29_recovery_lifecycle_test m29/m29_recovery_lifecycle_test.cpp)
+
+
 
 # ---------------------------------------------------------------------------
 # M7 (DEC-009 Stage TM0): the tool module contract layer - governed capability

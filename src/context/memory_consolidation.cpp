@@ -199,12 +199,11 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
         // mark them model-assisted so the policy applies stricter checks.
         for (auto &proposal : model_->propose(events, scope)) {
             proposal.model_assisted = true;
-            if (proposal.proposed.verification == MemoryVerification::HumanConfirmed) {
+            if (proposal.proposed.verification == MemoryVerification::HumanConfirmed ||
+                !policy_.allow_model_import_exemption)
                 proposal.proposed.verification = MemoryVerification::Unverified;
-            }
-            if (!proposal.proposed.source_namespace.has_value()) {
+            if (!proposal.proposed.source_namespace.has_value())
                 proposal.proposed.source_namespace = "consolidation-model";
-            }
             candidates.push_back(std::move(proposal));
         }
     }
@@ -226,6 +225,8 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
 
     for (auto &candidate : candidates) {
         MemoryRecord proposed = std::move(candidate.proposed);
+        if (candidate.model_assisted && !policy_.allow_model_import_exemption)
+            proposed.verification = MemoryVerification::Unverified;
         proposed.scope = scope;
         if (proposed.recorded_at.time_since_epoch().count() == 0) {
             proposed.recorded_at =
@@ -264,7 +265,12 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         // The per-kind policy is a Core gate, not a store detail: a candidate
         // whose kind does not belong in this scope, or whose verification is
         // below that kind's floor, never reaches the store (design §6.2).
-        if (const auto kind_policy = check_memory_kind_policy(proposed); !kind_policy) {
+        auto policy_record = proposed;
+        // Keep the provenance tag, but never let a model manufacture the
+        // trusted-import exemption from per-kind verification/scope floors.
+        if (candidate.model_assisted && !policy_.allow_model_import_exemption)
+            policy_record.source_namespace.reset();
+        if (const auto kind_policy = check_memory_kind_policy(policy_record); !kind_policy) {
             entry.disposition = CandidateDisposition::RejectedInvalid;
             entry.reason_code = "kind-policy";
             report.entries.push_back(std::move(entry));

@@ -14,6 +14,10 @@
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
 
+M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务、独立模型整理、
+纠正/删除失效与历史压缩；入口见[记忆代理 API](memory-agent.md)。旧 consolidation
+调用保持命名空间兼容，新服务强制严格模型候选门，不新增记忆直写路径。
+
 ## context_contracts.hpp 与 context_manager.hpp
 
 - `ContextLimits`：按 `ModelProfile` 的 token 预算与水位；所有水位使用保守上界

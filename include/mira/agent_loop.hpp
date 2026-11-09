@@ -206,6 +206,7 @@ class AgentLoop final {
     std::shared_ptr<JournaledActionDispatcher> action_dispatcher_;
     std::mutex pending_mutex_;
     std::deque<std::string> pending_user_messages_;
+    [[nodiscard]] bool user_input_pending();
     WorkingContextSupplier working_context_supplier_;
     WorkingContextSeamOptions seam_options_;
 };

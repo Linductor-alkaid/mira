@@ -9,6 +9,8 @@
 
 namespace mira {
 
+struct OperationContext;
+
 // ---------------------------------------------------------------------------
 // Crash recovery planning (M4-08)
 // ---------------------------------------------------------------------------
@@ -54,9 +56,16 @@ class RecoveryPlanner final {
     [[nodiscard]] Result<RecoveryOutcome> plan(TaskId task, SessionId session,
                                                const Timestamp &now) const;
 
+    // Cooperative checks before/after each bounded read and checkpoint lookup.
+    // The storage adapter still owns interruption of its synchronous I/O.
+    [[nodiscard]] Result<RecoveryOutcome> plan(TaskId task, SessionId session, const Timestamp &now,
+                                               const OperationContext &) const;
+
   private:
-    [[nodiscard]] Result<std::vector<EventEnvelope>> read_task_events(TaskId task,
-                                                                      SessionId session) const;
+    [[nodiscard]] Result<std::vector<EventEnvelope>>
+    read_task_events(TaskId task, SessionId session, const OperationContext *) const;
+    [[nodiscard]] Result<RecoveryOutcome> plan_impl(TaskId, SessionId, const Timestamp &,
+                                                    const OperationContext *) const;
 
     IEventStore &events_;
     ICheckpointStore &checkpoints_;

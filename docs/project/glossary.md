@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.7
-> 更新日期：2026-10-29
+> 版本：1.10
+> 更新日期：2026-11-09
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -17,6 +17,20 @@
 ## 2. 运行时与生命周期
 
 权威来源：[核心公共契约与状态机设计](../design/core_contracts_and_state_machine.md)、[Runtime 设计](../design/mira_runtime_design.md)。
+
+**投递不确定（Delivery Uncertain）**：输入汇抛异常时，无法证明该输入未入队；协调层
+封闭该任务进一步补投并交给宿主核对，不等于输入已读或已执行。权威来源：
+[DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)。
+_Avoid_: 自动重试成功、恰好执行一次。
+
+**历史工作投影（Historical Work Projection）**：由输入账本及受控 Artifact 重建的主体/
+会话/任务映射，标记 historical，只读。它不代表当前 Runtime 中有活动 Task；续办需
+通过恢复许可创建关联的新 Task。权威来源：[交互恢复契约](../decisions/DEC-106-interaction-durable-recovery.md)。
+_Avoid_: 复活 Task、自动重放、恢复旧授权。
+
+**恢复许可（Recovery Permit）**：Observe/宿主 Verify 通过后生成的进程内有界许可，绑定
+主体、源上下文摘要、账本修订和事件水位，短期有效且单次消费；它不是平台动作授权。
+_Avoid_: 永久确认、模型授权、仅凭截图清除不确定性。
 
 **Runtime（运行时）**:
 进程内 Agent 能力的顶层协调者，拥有 Session 的创建与串行提交语义。
@@ -212,6 +226,17 @@ _Avoid_: 附件（无版本与摘要语义）
 短期、任务导向、可频繁覆盖、可从 Trace Plane 重建的投影；不是第二
 份 Memory。
 _Avoid_: 会话记忆、缓存
+
+**Memory Agent Service（记忆代理服务）**:
+宿主拥有的有界记忆工作编排器，按工作与 scope 隔离，组织检索、事件提取与压缩候选；
+语义处理不具有写库、路由或请求装载的最终裁决权。一次受管工作使用 OperationId，
+不新造 Task 状态机。见[记忆代理设计](../design/memory_agent_design.md)。
+_Avoid_: 永不结束的主会话、第二记忆库、全权路由器
+
+**Model Context Snapshot（模型上下文快照）**:
+一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定
+实际载荷，快照本身不等于已装载请求。见[API](../api/memory-agent.md)。
+_Avoid_: 完整系统提示词、授权快照、供应商 continuation
 
 **Supply Seam（供给缝）**:
 Agent Loop 的可选只读快照供给依赖（DEC-045/M25）：宿主注入回调，请求

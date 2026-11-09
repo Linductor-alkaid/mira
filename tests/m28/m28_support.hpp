@@ -12,6 +12,7 @@
 // closed mira.interaction.*.v1 event family.
 
 #include "../support/fake_environment.hpp"
+#include "../support/simulated_durable_store.hpp"
 #include "../support/test.hpp"
 
 #include <mira/event_store.hpp>
@@ -119,7 +120,8 @@ class CoordinatorFixture final {
     // bound to the fixture so a test can install its own suggestions.
     [[nodiscard]] Result<void> start() {
         coordinator_ = std::make_unique<InteractionCoordinator>(config_, *runtime_, executor_);
-        coordinator_->set_event_store(events_, RuntimeId::generate());
+        coordinator_->set_event_store(std::make_shared<testing::SimulatedDurableStore>(events_),
+                                      RuntimeId::generate());
         coordinator_->set_environment_provider([this]() -> Result<std::shared_ptr<IEnvironment>> {
             return std::shared_ptr<IEnvironment>(environment_);
         });
