@@ -1,14 +1,21 @@
 # Mira Model Provider 与 Tool 扩展设计
 
 > 状态：Active  
-> 版本：1.3  
-> 更新日期：2026-08-31   
+> 版本：1.4
+> 更新日期：2026-11-09
 > 适用范围：外部 LLM/VLM、OpenAI-compatible 协议、路由、预算、Tool registry 与隔离  
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 协议细化：[LLM API 协议设计](llm-api-protocol-design.md)  
 > 决策依据：[DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md)
 
 ## 1. 目标与边界
+
+ConversationLoop 宿主提示与工具暴露分别遵循
+[DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md) 和
+[DEC-097](../decisions/DEC-097-per-request-tool-selection.md)：可信配置可完整替换
+内建 System 文本并声明模板身份/摘要，逐请求选择器可按输入与历史选择已注册工具。
+提示不提升工具权限，工具结果不能成为 system 配置。有限/持续模式的接线和审计契约
+见 [模型 API](../api/model-agent-loop.md) 与[持续会话设计](continuous-conversation-loop.md)。
 
 Model Provider 负责可取消的远端推理传输和供应商能力映射；Tool 负责显式注册的外部功能。两者
 都不能直接修改 Task 状态或平台输入，也不能拥有脱离 Runtime 的生命周期。

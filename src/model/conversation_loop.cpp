@@ -362,15 +362,21 @@ Result<ModelRequest> ConversationLoop::build_request(
 
     ModelInputItem system_item;
     system_item.role = ModelRole::System;
-    system_item.provenance.source = "mira.conversation-loop.system.v1";
+    system_item.provenance.source = config_.system_prompt ? config_.system_prompt->template_id
+                                                          : "mira.conversation-loop.system.v1";
     system_item.authority = Sensitivity::Internal;
     TextPart system_text;
-    system_text.text =
-        "You are Mira, a conversational agent. Answer the user's request directly with "
-        "a final text answer. You may call the exposed tools when they help; tool results "
-        "arrive on your next turn. A text reply without a tool call ends the conversation.";
-    if (!request.tools.empty()) {
-        system_text.text += " Keep using tools until you can answer, then reply with text only.";
+    if (config_.system_prompt) {
+        system_text.text = config_.system_prompt->text;
+    } else {
+        system_text.text =
+            "You are Mira, a conversational agent. Answer the user's request directly with "
+            "a final text answer. You may call the exposed tools when they help; tool results "
+            "arrive on your next turn. A text reply without a tool call ends the conversation.";
+        if (!request.tools.empty()) {
+            system_text.text +=
+                " Keep using tools until you can answer, then reply with text only.";
+        }
     }
     system_text.sensitivity = Sensitivity::Internal;
     system_item.content.emplace_back(std::move(system_text));
@@ -450,7 +456,9 @@ Result<ModelRequest> ConversationLoop::build_request(
     }
     request.data_policy.store = false;
     request.prompt_provenance.system_template_digest =
-        digest_string("mira.conversation-loop.system.v1");
+        config_.system_prompt ? config_.system_prompt->template_digest.value_or(
+                                    digest_string(config_.system_prompt->text))
+                              : digest_string("mira.conversation-loop.system.v1");
     if (tool_selector_) {
         const auto available = request.tools.size();
         auto selected = loop_support::select_tools(spec, request, tool_selector_);
@@ -461,6 +469,15 @@ Result<ModelRequest> ConversationLoop::build_request(
             return selected.error();
         }
     }
+    if (config_.system_prompt) {
+        emit(spec, "ConversationSystemPromptSelected",
+             JsonValue::Object{{"request_id", request.request_id.to_string()},
+                               {"system_template_digest",
+                                request.prompt_provenance.system_template_digest.to_string()},
+                               {"rendered_system_digest",
+                                digest_string(config_.system_prompt->text).to_string()}},
+             EventClass::Diagnostic);
+    }
     return request;
 }
 
@@ -470,6 +487,14 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     if (spec.goal.empty()) {
         return conversation_error(ErrorCode::InvalidArgument,
                                   "conversation goal must not be empty");
+    }
+    if (config_.system_prompt &&
+        (config_.system_prompt->text.find_first_not_of(" \t\r\n\f\v") == std::string::npos ||
+         config_.system_prompt->template_id.find_first_not_of(" \t\r\n\f\v") == std::string::npos ||
+         (config_.system_prompt->template_digest &&
+          *config_.system_prompt->template_digest == Hash{}))) {
+        return conversation_error(ErrorCode::InvalidArgument,
+                                  "invalid conversation system prompt configuration");
     }
     const bool continuous = config_.limit_mode == ConversationLimitMode::Continuous;
     if ((config_.limit_mode != ConversationLimitMode::Finite && !continuous) ||
