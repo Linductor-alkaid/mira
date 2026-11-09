@@ -127,8 +127,33 @@ int correction_skips_unstarted_tools_and_preserves_native_results() {
                     ++results;
         // AgentLoop renders records into the primary envelope; conversation
         // keeps native calls/results. Both must preserve the skipped receipt.
-        if (!device)
+        if (!device) {
             MIRA_CHECK(results == 2);
+            EventQuery query;
+            query.session_id = fixture.spec_.session_id;
+            const auto page = fixture.events_->read(query);
+            MIRA_CHECK(page);
+            bool checked_speech = false;
+            for (const auto &event : page.value().events) {
+                if (event.payload.type != "AssistantSpeech")
+                    continue;
+                const auto parsed = parse_json(event.payload.data);
+                MIRA_CHECK(parsed);
+                const auto *detail = parsed.value().find("detail");
+                MIRA_CHECK(detail);
+                const auto *calls = detail->find("tool_calls");
+                if (!calls)
+                    continue;
+                MIRA_CHECK(calls->is_array() && calls->as_array()->size() == 2);
+                const auto *executed = calls->as_array()->at(0).find("status");
+                const auto *skipped = calls->as_array()->at(1).find("status");
+                MIRA_CHECK(executed && executed->is_string() &&
+                           *executed->as_string() == "executed");
+                MIRA_CHECK(skipped && skipped->is_string() && *skipped->as_string() == "skipped");
+                checked_speech = true;
+            }
+            MIRA_CHECK(checked_speech);
+        }
         MIRA_CHECK(fixture.provider_->request_text(1).find("stop the remaining old operations") !=
                    std::string::npos);
     }

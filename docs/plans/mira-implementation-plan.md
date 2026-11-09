@@ -3,8 +3,9 @@
 [M29](m29-interaction-coordinator-concurrency-and-recovery.md) 已补齐本地澄清/恢复接线：
 [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md) 冻结 Sensitive 正文/工作投影、
 唯一澄清认领、历史映射、只读回补与 Observe/Verify 许可；reducer 前缀守卫防止旧验证
-清除迟到的未决动作，checkpoint 仍作为 Layer 0 的 P3 候选。Linux Debug 全量
-171/171、ASAN+UBSAN 和 TSan 定向各 14/14、严格 clang-tidy 13 单元及质量门禁通过。
+清除迟到的未决动作，checkpoint 仍作为 Layer 0 的 P3 候选。同步主干 #123 后，
+Linux Debug 全量 172/172、ASAN+UBSAN 和 TSan 定向各 20/20 通过；恢复增量
+13 单元及合流后的 ConversationLoop 严格 clang-tidy、相关质量门禁通过。
 CI/平台补跑条件见里程碑记录；M29 保持 In Progress，未自动关闭 M30–M33 前置。
 
 [M36：受管记忆代理与完整请求准入](m36-memory-agent-context-integration.md)（Completed，Linux 离线范围），
@@ -18,6 +19,18 @@ A-MEM、Zep 与压缩设计，核对 M34/M35 委派基础，提出宿主记忆�
 确定性提交边界；见[研究报告](../design/memory-agent-reference-study.md)和
 [调研计划](maintenance-2026-11-memory-agent-study.md)。
 本轮仅交付静态研究；M29–M33 状态不变，未验证真实模型质量、长期稳定性或性能。
+
+桥接宿主真机反馈轮：`BUG-20261109-002` / `MNT-202611-BR-01..03`，依据
+[DEC-103](../decisions/DEC-103-dialect-text-part-separator.md)、
+[DEC-104](../decisions/DEC-104-assistant-speech-events.md) 与
+[DEC-105](../decisions/DEC-105-profile-decoding-defaults.md)，修复 Chat 纯文本
+part 分隔、新增 AssistantSpeech 事件与会话视图助手发言条目（含结算措辞区分）、
+提供 profile 级解码参数默认；状态与验收见
+[维护计划](maintenance-2026-11-bridge-host-feedback.md)。
+2026-11-09：按 Linux 离线范围 Completed，Debug 全量 **156/156**（master 基座）与
+格式/文档/架构/平台边界检查通过；
+[PR #123](https://github.com/Linductor-alkaid/mira/pull/123) 已提交，远端 CI 验收
+入口见同一维护计划；真实端点与桥接回放、Windows/Android 验证保持未执行。
 
 [M35：子代理语义选工具与副作用执行](m35-subagent-semantic-tools.md)（Completed，Linux 本地范围），
 依据 [DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)：父只委派目标，child

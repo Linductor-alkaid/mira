@@ -333,6 +333,33 @@ RouteDecision/continuation 绑定；对象成员顺序无关。空扩展省略 m
 [模型 API](../api/model-agent-loop.md)，本地验证和真实端点证据边界见
 [维护计划](../plans/maintenance-2026-11-profile-extra-body.md)。
 
+### 5.5 Profile 级解码参数默认
+
+依据 [DEC-105](../decisions/DEC-105-profile-decoding-defaults.md)，
+`ModelProfile::decoding`（`ProfileDecodingOptions`）承载 temperature/top_p/seed
+的宿主默认值，是这些标准采样键唯一的宿主侧合法路径——它们在 `extra_body`
+中继续被保留键名单拒绝，两条通道不混用。
+
+语义为**默认而非覆盖**：mapper 通过 `effective_generation_options()` 把
+profile 默认填入 canonical 请求未设置的采样字段，显式请求值永远优先；
+`max_output_tokens`、`reasoning_effort`、`thinking`、`service_tier` 永不由
+profile 默认。`validate()` 在注册期拒绝越界值（temperature 按方言上限
+OpenAI 系 2.0、Messages 1.0；top_p ∈ (0,1]）与 profile 自身
+`GenerationParamPolicy` 声明 `Unsupported` 的参数；合并函数对 `Unsupported`
+字段防御性跳过，Messages mapper 额外显式拒绝 `decoding.seed`（该方言无
+seed 字段）。非空 decoding 进入 manifest 与 `profile_digest()`，绑定既有
+RouteDecision/continuation/replay 语义；空 decoding 省略 manifest 成员，
+线格式与 digest 不变。
+
+### 5.6 纯文本消息的 part 分隔
+
+Chat Completions 方言把无图 input item 的多个 `TextPart` 渲染为单一 JSON
+字符串（wire 形状），相邻**非空** part 之间以恰一个 `\n` 连接，空 part
+不产生输出或孤立分隔符（[DEC-103](../decisions/DEC-103-dialect-text-part-separator.md)）。
+part 是逻辑上的独立块（goal、注入指令、recovery feedback、供给内容），
+宿主不需要也不应该为逻辑块手工补尾分隔符。带 image 的 multipart 分支与
+Responses/Messages 方言继续把每个 `TextPart` 渲染为独立 content 块。
+
 ## 6. 请求构造与 Wire Digest
 
 请求发送流程：

@@ -614,11 +614,22 @@ Result<void> ConversationSegmentationOptions::validate() const {
 
 namespace {
 
-// One deterministic line of segment text: "user: ..." / "loop: ...".
+// One deterministic line of segment text: "user: ..." / "assistant: ..." /
+// "loop: ..." (DEC-104 adds the assistant speech entries).
 [[nodiscard]] std::string entry_line(const ConversationEntry &entry) {
     std::ostringstream line;
-    line << (entry.kind == ConversationEntry::Kind::UserMessage ? "user: " : "loop: ")
-         << entry.text;
+    switch (entry.kind) {
+    case ConversationEntry::Kind::UserMessage:
+        line << "user: ";
+        break;
+    case ConversationEntry::Kind::AssistantSpeech:
+        line << "assistant: ";
+        break;
+    case ConversationEntry::Kind::LoopOutcome:
+        line << "loop: ";
+        break;
+    }
+    line << entry.text;
     return line.str();
 }
 

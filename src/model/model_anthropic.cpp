@@ -35,6 +35,11 @@ Result<JsonValue> AnthropicMessagesV1Mapper::encode_request(const ModelRequest &
         request.data_policy.project || !request.generation.max_output_tokens ||
         *request.generation.max_output_tokens == 0)
         return unsupported();
+    // DEC-105: the Messages dialect has no seed field, so a decoding default
+    // fails closed even when a profile's generation policy claims otherwise;
+    // temperature/top_p defaults flow through the shared Chat translation.
+    if (profile.decoding.seed.has_value())
+        return unsupported();
     for (const auto &item : request.input)
         for (const auto &part : item.content)
             if (const auto *image = std::get_if<ImagePart>(&part);

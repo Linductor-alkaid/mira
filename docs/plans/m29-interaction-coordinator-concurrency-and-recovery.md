@@ -110,7 +110,7 @@
 - [x] `M29-04` 并发归属仲裁与审计（显式 task/intent/reply 优先、未知引用拒绝、权限绑定、实际并发幂等、引用/候选审计；Linux 离线 G1/G4）。
 - [x] `M29-05` 持久化恢复与断线回补（历史映射/正文引用、主体过滤回补、Accepted 恢复、投递状态及写入封锁；Linux 文件重开及故障注入 G5）。
 - [x] `M29-06` 未决副作用的重观测/验证接入（RecoveryPlanner 重载、宿主核验、前缀守卫和单次许可；Linux 离线 G6/G7）。
-- [x] `M29-07` 完整 IVA 测试矩阵（十组 M29 测试和离线宿主，覆盖 G1–G8；Debug 全量 171/171，ASAN+UBSAN 和 TSan 定向各 14/14；平台矩阵仍为独立退出条件）。
+- [x] `M29-07` 完整 IVA 测试矩阵（十组 M29 测试和离线宿主，覆盖 G1–G8；同步 #123 后 Debug 全量 172/172，ASAN+UBSAN 和 TSan 定向各 20/20；平台矩阵仍为独立退出条件）。
 - [x] `M29-08` 完整里程碑文档同步（DEC-106、设计/API/术语/总计划及恢复宿主；严格 clang-tidy 13 单元及质量门禁通过）。
 
 ## 6. 测试与退出条件
@@ -277,3 +277,45 @@ SBOM、平台边界、架构检查和 `git diff --check` 通过；架构 baselin
 | 长期自主运行及资源增长 | 有界接口和局部测试不构成长期稳定性/性能证据 | Mira Maintainers；接入真实宿主并固定运行时长、工作负载及资源统计方法，生命周期和清理策略继续由 M30/M31 承接 |
 
 M29 保持 In Progress；本地工作项通过不替代里程碑 CI 退出条件，也不自动关闭 M30–M33 前置。
+
+### 2026-11-09：PR 前同步主干 #123
+
+恢复增量提交为 `2d27565`，随后合入 `origin/master` 的 `c191e21`（#123）。
+保留两侧总计划记录；主干已发布 DEC-103/104/105，因此将本分支尚未发布的
+交互恢复决策调整为 DEC-106，正文与链接同步，没有复用已发布决策编号。
+对齐两侧 ConversationLoop 行为：插话导致的未开始工具在 AssistantSpeech 中标为
+`skipped`，同时保留原生失败 receipt；m29_loop_interruption_test 检查首个工具
+`executed`、第二个 `skipped`，且原生执行次数仍为 1。
+
+首轮新增断言在旧构建产物上暴露该状态差异（Debug 171/172、TSan 19/20）；重新编译
+ConversationLoop 后最终 Debug **172/172**、ASAN+UBSAN 和 TSan 各 **20/20**，
+无失败/跳过。首次 Sanitizer 构建还遇到 Make 未加载新目标规则，显式 configure 后解决。
+没有修改第三方或放宽断言。合流后的 ConversationLoop 严格 clang-tidy 通过。
+
+沿用上一节的目标数组及 regex，追加主干受影响的六个回归目标；准确复验命令：
+
+```bash
+mira_recovery_targets+=(
+  mira_m3_assistant_speech_test mira_m3_dialect_test mira_m3_extra_body_test
+  mira_m3_conversation_projection_test mira_m34_subagent_test mira_m35_subagent_tools_test
+)
+mira_recovery_regex+='|mira_m3_(assistant_speech|dialect|extra_body|conversation_projection)_test|mira_m34_subagent_test|mira_m35_subagent_tools_test'
+cmake --build build/debug -j 4
+ctest --test-dir build/debug --output-on-failure -j 4
+cmake --preset asan -DMIRA_ENABLE_UBSAN=ON
+cmake --build build/asan --target "${mira_recovery_targets[@]}" -j 2
+ctest --test-dir build/asan -R "$mira_recovery_regex" --output-on-failure -j 2
+cmake --preset tsan
+cmake --build build/tsan --target "${mira_recovery_targets[@]}" -j 2
+setarch x86_64 -R ctest --test-dir build/tsan -R "$mira_recovery_regex" --output-on-failure -j 2
+clang-tidy -p build/debug src/model/conversation_loop.cpp --quiet
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+最终日志：`/tmp/mira-m29-pr-merge-{build,test}.log`、
+`/tmp/mira-m29-pr-merge-{asan,tsan}-{configure,build,test}.log`、
+`/tmp/mira-m29-pr-merge-{tidy,quality}.log`；首轮失败另存
+`/tmp/mira-m29-pr-merge-initial-test.log` 和
+`/tmp/mira-m29-pr-merge-tsan-initial-test.log`。远端 CI 结果由维护者反馈，
+本轮不自动合并；前节平台/真实模型等补跑条件继续有效。

@@ -51,6 +51,47 @@ namespace {
         [](const ModelOutputItem &item) { return std::get_if<ToolCallOutput>(&item) != nullptr; });
 }
 
+// DEC-104: the assistant's own words are first-class events. One bounded
+// payload per turn carries the visible text and the tool calls the model
+// issued, each with the execution status the loop observed. Speech-channel
+// semantics (which tool actually "speaks") belong to the host; the event
+// stays factual.
+constexpr std::size_t kSpeechTextMaxChars = 4096;
+constexpr std::size_t kSpeechArgumentsMaxChars = 1024;
+
+struct SpeechCallRecord final {
+    std::string wire_name;
+    std::string arguments;
+    std::string arguments_digest;
+    std::string status; // "executed", "failed", "skipped" or "not_executed".
+};
+
+[[nodiscard]] JsonValue assistant_speech_payload(std::uint64_t turn, const std::string &text,
+                                                 const std::vector<SpeechCallRecord> &calls) {
+    JsonValue::Object speech{{"turn", continuous_support::event_counter(turn)},
+                             {"sensitivity", std::string("Internal")}};
+    if (!text.empty()) {
+        if (text.size() > kSpeechTextMaxChars) {
+            speech.emplace_back("text_truncated", JsonValue{true});
+        }
+        speech.emplace_back("text",
+                            JsonValue{continuous_support::bounded_text(text, kSpeechTextMaxChars)});
+    }
+    if (!calls.empty()) {
+        JsonValue::Array call_array;
+        for (const auto &call : calls) {
+            call_array.emplace_back(
+                JsonValue::Object{{"wire_name", call.wire_name},
+                                  {"arguments", JsonValue{continuous_support::bounded_text(
+                                                    call.arguments, kSpeechArgumentsMaxChars)}},
+                                  {"arguments_digest", call.arguments_digest},
+                                  {"status", call.status}});
+        }
+        speech.emplace_back("tool_calls", JsonValue{std::move(call_array)});
+    }
+    return JsonValue{std::move(speech)};
+}
+
 } // namespace
 
 std::string conversation_outcome_name(ConversationOutcome outcome) {
@@ -866,6 +907,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             }
             std::optional<ConversationOutcome> abort;
             std::string abort_summary;
+            // DEC-104: every proposal the round processed is recorded with
+            // the status the loop observed, so the replay prefix shows what
+            // the assistant uttered even across a later abort.
+            std::vector<SpeechCallRecord> speech_calls;
             for (const auto &proposal : outcome.tool_proposals->proposals) {
                 if (context.cancelled_or_expired(Timestamp::now())) {
                     abort = context.cancelled() ? ConversationOutcome::Cancelled
@@ -892,6 +937,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                         executed.error().code == ErrorCode::Cancelled
                             ? "tool execution was cancelled"
                             : "tool execution rejected: " + executed.error().safe_message;
+                    speech_calls.push_back(
+                        SpeechCallRecord{proposal.wire_name, to_json_string(proposal.arguments),
+                                         proposal.arguments_digest.to_string(), "not_executed"});
                     break;
                 }
                 if (!superseded)
@@ -903,6 +951,12 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                                        {"failed", executed.value().failed},
                                        {"arguments_digest", proposal.arguments_digest.to_string()}},
                      EventClass::State);
+                speech_calls.push_back(SpeechCallRecord{proposal.wire_name,
+                                                        to_json_string(proposal.arguments),
+                                                        proposal.arguments_digest.to_string(),
+                                                        superseded                ? "skipped"
+                                                        : executed.value().failed ? "failed"
+                                                                                  : "executed"});
                 if (!record.summary.empty()) {
                     record.summary += ";";
                 }
@@ -913,6 +967,12 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     history.push_back(make_tool_call_item(proposal));
                 history.push_back(make_tool_result_item(executed.value()));
             }
+            // DEC-104: one speech event per turn, after the round closed so
+            // the statuses are final.
+            emit(spec, "AssistantSpeech",
+                 assistant_speech_payload(record.turn, assistant_text(outcome.response),
+                                          speech_calls),
+                 EventClass::State);
             if (abort.has_value()) {
                 result.outcome = *abort;
                 result.safe_summary = std::move(abort_summary);
@@ -980,6 +1040,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 continue;
             }
             record.summary = "answer";
+            // DEC-104: the terminal answer is the assistant's own speech;
+            // record it as such before it moves into the run result.
+            emit(spec, "AssistantSpeech", assistant_speech_payload(record.turn, answer, {}),
+                 EventClass::State);
             retain_turn(std::move(record));
             result.outcome = ConversationOutcome::Answered;
             result.answer = std::move(answer);

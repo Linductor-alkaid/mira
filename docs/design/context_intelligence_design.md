@@ -61,6 +61,11 @@ Consolidate（语义固化）与可选 Compress（提示压缩）四层能力，
 分段可据此保留运行摘要；旧缓存与派生资产须按宿主策略重建。已识别事件必需载荷损坏
 返回 DataLoss，无关事件继续跳过。证据见
 [维护计划](../plans/maintenance-2026-11-conversation-outcomes.md)。
+2026-11-09 依据 DEC-104 扩展：ConversationLoop 的 `AssistantSpeech` 事件投影为
+`Kind::AssistantSpeech` 条目（`assistant said: …` / `assistant tool call …` 行），
+分段行前缀增加 `assistant: `，回放前缀由此可表达"个体答了什么"的多轮对话；
+Answered 结算条目措辞按 `tool_executions` 区分发言通道。证据见
+[维护计划](../plans/maintenance-2026-11-bridge-host-feedback.md)。
 
 ## 4. 三级上下文生命周期
 
