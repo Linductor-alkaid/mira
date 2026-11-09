@@ -84,6 +84,10 @@ void ModelGateway::set_admission_gate(std::shared_ptr<const TaskAdmissionGate> g
     admission_ = std::move(gate);
 }
 
+void ModelGateway::set_context_supplier(ModelContextSupplier supplier) {
+    context_supplier_ = std::move(supplier);
+}
+
 CircuitState ModelGateway::circuit_state(const ModelProfileId &profile) const {
     const auto found = circuits_.find(profile);
     return found == circuits_.end() ? CircuitState::Unknown : found->second.state();
@@ -124,6 +128,47 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                                 "request task epoch is not admitted", false, request.operation_id);
     }
 
+    ModelContextSnapshot snapshot;
+    try {
+        if (context_supplier_) {
+            auto supplied = context_supplier_(request, context);
+            if (!supplied)
+                return supplied.error();
+            snapshot = std::move(supplied).value();
+        }
+    } catch (...) {
+        return make_context_error(ContextDomainCode::InvalidItem,
+                                  "context supplier raised an exception");
+    }
+    const auto context_current = [&]() {
+        try {
+            return !snapshot.current || snapshot.current();
+        } catch (...) {
+            return false;
+        }
+    };
+    const auto context_refreshable = [&]() {
+        try {
+            return snapshot.refreshable && snapshot.refreshable() &&
+                   !context.cancelled_or_expired(Timestamp::now()) &&
+                   (!admission_ || admission_->admit(request.task_id, request.task_epoch));
+        } catch (...) {
+            return false;
+        }
+    };
+    if (!context_current()) {
+        if (context_refreshable()) {
+            ModelCallOutcome stale;
+            stale.attempts = 0;
+            stale.admitted = false;
+            stale.context_refreshable = true;
+            stale.rejection_reason = "context revision requires a fresh request";
+            return stale;
+        } else
+            return make_context_error(ContextDomainCode::StaleBuild,
+                                      "context snapshot is no longer current");
+    }
+
     RouteQuery query;
     query.needs_text = true;
     for (const auto &item : request.input) {
@@ -154,6 +199,8 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
     // fallback is a new RouteDecision: only retryable failures may switch,
     // never ambiguous completions, policy or admission rejections.
     std::vector<std::shared_ptr<IModelProvider>> candidates;
+    std::vector<AdmittedModelRequest> prepared_requests;
+    std::optional<Error> context_failure;
     for (const auto &profile : router_.profiles()) {
         if (!profile_mismatches(*profile, query).empty()) {
             continue;
@@ -163,10 +210,25 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                 return candidate->profile().id == profile->id;
             });
         if (provider != providers_.end()) {
+            auto prepared =
+                admit_model_request(request, (*provider)->profile(),
+                                    context.session.is_nil() ? session_ : context.session, snapshot,
+                                    config_.context_admission);
+            if (!prepared) {
+                context_failure = prepared.error();
+                emit(request, "ModelContextRejected",
+                     JsonValue::Object{{"profile_id", profile->id.to_string()},
+                                       {"domain_code", prepared.error().domain_code}},
+                     EventClass::Diagnostic);
+                continue;
+            }
             candidates.push_back(*provider);
+            prepared_requests.push_back(std::move(prepared).value());
         }
     }
     if (candidates.empty()) {
+        if (context_failure)
+            return *context_failure;
         auto route = router_.route(query);
         return route.error();
     }
@@ -174,7 +236,10 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
 
     // Budget reservation with a conservative estimate before any bytes move.
     BudgetEstimate estimate;
-    estimate.input_tokens = estimate_input_tokens(request);
+    estimate.input_tokens = 0;
+    for (const auto &prepared : prepared_requests)
+        estimate.input_tokens =
+            std::max(estimate.input_tokens, estimate_input_tokens(prepared.request));
     std::uint64_t estimated_output = request.generation.max_output_tokens.value_or(
         selected->capabilities.limits.max_output_tokens);
     if (request.budget.max_output_tokens != 0 &&
@@ -238,11 +303,36 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         outcome.route.profile_digest = profile.profile_digest();
         outcome.route.evidence = query.min_evidence;
         outcome.reservation = reservation.value();
+        outcome.context_admission = prepared_requests[candidate_index].context;
 
         for (std::uint32_t attempt = 1;; ++attempt) {
+            if (!context_current() || context.cancelled_or_expired(Timestamp::now())) {
+                (void)ledger_.release(request.task_id, reservation.value());
+                if (context_refreshable()) {
+                    outcome.admitted = false;
+                    outcome.attempts = total_attempts;
+                    outcome.context_refreshable = true;
+                    outcome.rejection_reason = "context revision requires a fresh request";
+                    return outcome;
+                }
+                return make_model_error(ModelDomainCode::ModelCancelled,
+                                        "model context was interrupted before dispatch", false,
+                                        request.operation_id);
+            }
             outcome.attempts = ++total_attempts;
-            ModelRequest attempt_request = request;
+            ModelRequest attempt_request = prepared_requests[candidate_index].request;
             attempt_request.request_id = ModelRequestId::generate();
+
+            emit(attempt_request, "ModelContextAdmitted",
+                 JsonValue::Object{
+                     {"selection_digest", outcome.context_admission->selection_digest.to_string()},
+                     {"estimated_tokens", outcome.context_admission->total_estimate.upper_bound},
+                     {"input_budget", outcome.context_admission->budget.input_budget_tokens},
+                     {"dropped_items",
+                      static_cast<std::int64_t>(outcome.context_admission->budget.dropped_items)},
+                     {"quality",
+                      token_count_quality_name(outcome.context_admission->total_estimate.quality)}},
+                 EventClass::Diagnostic);
 
             ProviderInferOptions provider_options;
             provider_options.stream = options.stream;
@@ -273,17 +363,20 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                         outcome.tool_proposals = std::move(batch).value();
                     }
                 }
-                if (admission_ != nullptr &&
-                    !admission_->admit(request.task_id, request.task_epoch)) {
+                if (!context_current() ||
+                    (admission_ != nullptr &&
+                     !admission_->admit(request.task_id, request.task_epoch))) {
                     // The response settles as a late diagnostic; no decision or
                     // action follows from it.
                     outcome.admitted = false;
+                    outcome.context_refreshable = context_refreshable();
                     outcome.rejection_reason = "task epoch or lifecycle rejected the completion";
                 }
                 emit(request, "ModelResponseReceived",
                      JsonValue::Object{
                          {"attempts", static_cast<std::int64_t>(outcome.attempts)},
                          {"admitted", outcome.admitted},
+                         {"context_refreshable", outcome.context_refreshable},
                          {"parse_outcome", static_cast<std::int64_t>(
                                                static_cast<std::uint8_t>(outcome.parse.outcome))},
                          {"settlement_quality", static_cast<std::int64_t>(static_cast<std::uint8_t>(

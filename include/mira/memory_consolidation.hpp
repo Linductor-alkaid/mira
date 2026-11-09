@@ -59,6 +59,10 @@ struct ConsolidationPolicy final {
     // Nonempty instruction-shaped substrings for untrusted/model text only.
     std::vector<std::string> injection_markers = default_injection_content_markers();
     std::size_t max_candidates_per_run = 64;
+    // DEC-059 legacy namespaced projections remain compatible. DEC-101
+    // memory agents force false: model text cannot mint an import exemption
+    // or claim verification above Unverified, even with a namespace tag.
+    bool allow_model_import_exemption = true;
 
     [[nodiscard]] Result<void> validate() const;
 };

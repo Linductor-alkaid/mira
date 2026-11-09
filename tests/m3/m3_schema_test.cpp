@@ -163,6 +163,10 @@ int repair_policy_is_bounded() {
     auto repair = build_schema_repair_request(request, failure, policy, budget);
     MIRA_CHECK(repair.has_value());
     MIRA_CHECK(repair.value().request_id != request.request_id);
+    MIRA_CHECK(repair.value().input.size() == request.input.size() + 1);
+    auto retained = repair.value().input;
+    retained.pop_back();
+    MIRA_CHECK(prompt_digest(retained) == prompt_digest(request.input));
     // The repair prompt quotes a bounded summary; raw model output never
     // enters the request.
     const auto repair_text = to_json_string(model_request_to_json(repair.value()));

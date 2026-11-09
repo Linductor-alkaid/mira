@@ -302,6 +302,7 @@ class ConversationLoop final {
         std::mutex mutex;
         std::deque<std::string> messages;
     };
+    [[nodiscard]] bool user_input_pending();
 
     struct SuppliedInput final {
         std::vector<ModelContentPart> parts;

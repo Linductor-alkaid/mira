@@ -1508,13 +1508,38 @@ Result<ModelRequest> model_request_from_json(const JsonValue &json) {
 
     const auto *provenance = json.find("prompt_provenance");
     if (provenance != nullptr && provenance->is_object()) {
-        if (const auto *field = provenance->find("system_template_digest");
-            field != nullptr && field->is_string()) {
-            auto parsed = digest_from_hex(*field->as_string());
-            if (!parsed) {
-                return contract_error("prompt provenance digest is malformed");
+        const std::array<std::pair<const char *, Hash *>, 4> digests{
+            {{"system_template_digest", &request.prompt_provenance.system_template_digest},
+             {"decision_schema_digest", &request.prompt_provenance.decision_schema_digest},
+             {"tool_snapshot_digest", &request.prompt_provenance.tool_snapshot_digest},
+             {"context_selection_digest", &request.prompt_provenance.context_selection_digest}}};
+        for (const auto &[name, target] : digests) {
+            if (const auto *field = provenance->find(name); field) {
+                const auto parsed =
+                    field->is_string() ? digest_from_hex(*field->as_string()) : std::nullopt;
+                if (!parsed)
+                    return contract_error("prompt provenance digest is malformed");
+                *target = *parsed;
             }
-            request.prompt_provenance.system_template_digest = *parsed;
+        }
+        for (const auto &[name, target] : std::array<std::pair<const char *, SemanticVersion *>, 2>{
+                 {{"system_template_version", &request.prompt_provenance.system_template_version},
+                  {"redaction_policy_version",
+                   &request.prompt_provenance.redaction_policy_version}}}) {
+            const auto *version = provenance->find(name);
+            if (!version)
+                continue;
+            for (const auto &[part, destination] :
+                 std::array<std::pair<const char *, std::uint16_t *>, 3>{
+                     {{"major", &target->major},
+                      {"minor", &target->minor},
+                      {"patch", &target->patch}}}) {
+                const auto *value = version->find(part);
+                if (!value || !value->is_integer() || *value->as_integer() < 0 ||
+                    *value->as_integer() > 65535)
+                    return contract_error("prompt provenance version is malformed");
+                *destination = static_cast<std::uint16_t>(*value->as_integer());
+            }
         }
     }
     return request;

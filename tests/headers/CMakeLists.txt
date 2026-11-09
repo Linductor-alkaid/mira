@@ -17,6 +17,8 @@ foreach(HEADER IN ITEMS
         mira/action_journal.hpp
         mira/verified_fact.hpp
         mira/content_markers.hpp
+        mira/model_context_admission.hpp
+        mira/memory_agent.hpp
         mira/embedding_math.hpp
         mira/action_dispatcher.hpp
         mira/artifact_store.hpp

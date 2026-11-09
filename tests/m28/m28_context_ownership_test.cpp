@@ -201,8 +201,12 @@ int run() {
         resumed_entry->resumed_from.value() != first_task) {
         return 1;
     }
-    if (resumed_entry->constraints != bounded_task->constraints) {
-        std::cerr << "the resumed task inherits the constraints of the task it resumes\n";
+    auto expected = bounded_task->constraints;
+    expected.push_back("carry on later");
+    while (expected.size() > 8)
+        expected.erase(expected.begin());
+    if (resumed_entry->constraints != expected) {
+        std::cerr << "resumption carries inherited constraints and the new requirement\n";
         return 1;
     }
     // The task created through the runtime carries the constraints of its

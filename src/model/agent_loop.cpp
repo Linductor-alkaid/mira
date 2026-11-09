@@ -200,6 +200,11 @@ Result<void> AgentLoop::enqueue_user_message(std::string message) {
     return Result<void>{};
 }
 
+bool AgentLoop::user_input_pending() {
+    std::lock_guard lock(pending_mutex_);
+    return !pending_user_messages_.empty();
+}
+
 void AgentLoop::drain_user_messages(const AgentLoopSpec &spec,
                                     std::vector<std::string> &user_instructions) {
     std::deque<std::string> drained;
@@ -552,6 +557,20 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
 
         LoopStepRecord record;
         record.step = step;
+        const auto refresh_for_input = [&] {
+            if (!user_input_pending())
+                return false;
+            if (result.recoveries >= config_.max_recoveries_per_step) {
+                result.outcome = LoopOutcome::Failed;
+                result.safe_summary = "user input refresh budget exhausted";
+            } else {
+                ++result.recoveries;
+                record.phase = StepPhase::Recovering;
+                record.note = "new user input; discard old decision and observe again";
+            }
+            result.steps.push_back(std::move(record));
+            return true;
+        };
 
         // --- Observe -----------------------------------------------------
         auto observation = observe_once(spec, context, ObservationMode::Full);
@@ -579,7 +598,6 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             break;
         }
         feedback.clear();
-        tool_results.clear();
         record.model_request = request.value().request_id;
 
         OperationContext model_context = context;
@@ -589,6 +607,12 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 ? std::min(context.deadline.value(),
                            std::chrono::steady_clock::now() + config_.model_call_deadline)
                 : std::chrono::steady_clock::now() + config_.model_call_deadline;
+
+        if (refresh_for_input()) {
+            if (result.outcome == LoopOutcome::Failed)
+                break;
+            continue;
+        }
 
         auto call = gateway_.infer(request.value(), model_context);
         if (!call) {
@@ -610,7 +634,20 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             break;
         }
         auto outcome = std::move(call).value();
+        if (refresh_for_input()) {
+            if (result.outcome == LoopOutcome::Failed)
+                break;
+            continue;
+        }
         if (!outcome.admitted) {
+            if (outcome.context_refreshable &&
+                result.recoveries < config_.max_recoveries_per_step) {
+                ++result.recoveries;
+                record.phase = StepPhase::Recovering;
+                record.note = "context changed; observing again before reasoning";
+                result.steps.push_back(std::move(record));
+                continue;
+            }
             result.outcome = LoopOutcome::Cancelled;
             result.safe_summary = outcome.rejection_reason;
             break;
@@ -634,6 +671,19 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 OperationContext repair_context = model_context;
                 repair_context.operation = repair.value().operation_id;
                 auto repair_call = gateway_.infer(repair.value(), repair_context);
+                if (repair_call && !repair_call.value().admitted) {
+                    if (repair_call.value().context_refreshable &&
+                        result.recoveries < config_.max_recoveries_per_step) {
+                        ++result.recoveries;
+                        record.phase = StepPhase::Recovering;
+                        record.note = "context changed during repair; observing again";
+                        result.steps.push_back(std::move(record));
+                        continue;
+                    }
+                    result.outcome = LoopOutcome::Cancelled;
+                    result.safe_summary = repair_call.value().rejection_reason;
+                    break;
+                }
                 if (repair_call && repair_call.value().admitted &&
                     repair_call.value().parse.outcome == DecisionParseOutcome::Decision) {
                     outcome = std::move(repair_call).value();
@@ -641,6 +691,13 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             }
         }
 
+        // Also covers input accepted during schema repair. The previous
+        // tool results stay available until a current completion is usable.
+        if (refresh_for_input()) {
+            if (result.outcome == LoopOutcome::Failed)
+                break;
+            continue;
+        }
         const auto parse_outcome = outcome.parse.outcome;
         if (parse_outcome == DecisionParseOutcome::Refused ||
             parse_outcome == DecisionParseOutcome::ContentFiltered) {
@@ -674,6 +731,12 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                 result.steps.push_back(std::move(record));
                 break;
             }
+            if (refresh_for_input()) {
+                if (result.outcome == LoopOutcome::Failed)
+                    break;
+                continue;
+            }
+            tool_results.clear();
             std::uint32_t failures = 0;
             std::optional<LoopOutcome> abort;
             std::string abort_summary;
@@ -683,7 +746,11 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                     abort_summary = "cancellation requested during tool execution";
                     break;
                 }
-                auto executed = tools_->execute(proposal, context);
+                const bool superseded = user_input_pending();
+                auto executed =
+                    superseded ? Result<ToolExecutionRecord>{loop_support::superseded_tool_result(
+                                     proposal)}
+                               : tools_->execute(proposal, context);
                 if (!executed) {
                     abort = executed.error().code == ErrorCode::Cancelled ? LoopOutcome::Cancelled
                                                                           : LoopOutcome::Failed;
@@ -693,11 +760,12 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                             : "tool execution rejected: " + executed.error().safe_message;
                     break;
                 }
-                ++tool_executions;
+                if (!superseded)
+                    ++tool_executions;
                 if (executed.value().failed) {
                     ++failures;
                 }
-                emit(spec, "ToolExecuted",
+                emit(spec, superseded ? "ToolSkipped" : "ToolExecuted",
                      JsonValue::Object{{"wire_name", proposal.wire_name},
                                        {"operation_id", proposal.operation_id.to_string()},
                                        {"failed", executed.value().failed},
@@ -763,6 +831,11 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             auto verify_observation = observe_once(spec, context, ObservationMode::Verification);
             if (verify_observation) {
                 const auto verdict = verifier.verify(verify_observation.value(), decision);
+                if (refresh_for_input()) {
+                    if (result.outcome == LoopOutcome::Failed)
+                        break;
+                    continue;
+                }
                 if (context.cancelled_or_expired(Timestamp::now())) {
                     result.outcome =
                         context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
@@ -833,6 +906,11 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             result.steps.push_back(std::move(record));
             break;
         }
+        if (refresh_for_input()) {
+            if (result.outcome == LoopOutcome::Failed)
+                break;
+            continue;
+        }
         auto receipt = action_dispatcher_->dispatch(*environment_, sequence.value(), action_context,
                                                     observation.value().environment_epoch);
         if (!receipt) {
@@ -842,6 +920,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             result.steps.push_back(std::move(record));
             break;
         }
+        tool_results.clear();
         record.phase = StepPhase::Acted;
         const bool execution_uncertain = receipt.value().side_effect_may_have_occurred ||
                                          (receipt.value().status != ExecutionStatus::Completed &&
@@ -879,6 +958,9 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
             break;
         }
         const auto verdict = verifier.verify(verify_observation.value(), decision);
+        // Finish journal verification of an already admitted action, then
+        // reason about new input before claiming the task is complete.
+        const bool interrupted = user_input_pending();
         if (context.cancelled_or_expired(Timestamp::now())) {
             result.outcome = context.cancelled() ? LoopOutcome::Cancelled : LoopOutcome::Failed;
             result.safe_summary = "verification arrived after cancellation or deadline";
@@ -901,7 +983,7 @@ Result<AgentLoopResult> AgentLoop::run(const AgentLoopSpec &spec, const Operatio
                                                ? "satisfied"
                                                : "not-satisfied"}},
              EventClass::State);
-        if (verdict == ILoopVerifier::Verdict::Satisfied) {
+        if (verdict == ILoopVerifier::Verdict::Satisfied && !interrupted) {
             record.verified = true;
             result.steps.push_back(std::move(record));
             result.outcome = LoopOutcome::Completed;

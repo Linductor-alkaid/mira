@@ -60,6 +60,8 @@ StandardContextManager 在 512 window、32 output、32 safety 的界限下选择
 [价格宿主](model-price-host.md)。不调用 AgentLoop/ConversationLoop，也不自动
 安装 IContextManager；M25 Working Context seam 和 M30 自动候选/跨会话选择不变。
 生产宿主还须在提交前重验实时 epoch/authority，样板只验证固定 frame。
+后续 M36 已在 Gateway 补上完整请求准入和版本探针；两工作协调层接线见
+[记忆代理宿主](../../examples/memory_agent_host_consumer.cpp)和[API](memory-agent.md)。
 
 ## Recovery：规划输出控制下一步行为
 

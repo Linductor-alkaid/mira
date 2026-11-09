@@ -87,6 +87,7 @@ add_library(mira_core
     src/interaction/input_ledger.cpp
     src/interaction/interaction_routing.cpp
     src/interaction/interaction_coordinator.cpp
+    src/interaction/interaction_delivery.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/context_retrieval.cpp
@@ -100,6 +101,11 @@ add_library(mira_core
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
     src/context/memory_embedding.cpp
+    src/context/memory_agent.cpp
+    src/context/memory_agent_jobs.cpp
+    src/context/memory_agent_model.cpp
+    src/context/memory_agent_seams.cpp
+    src/context/memory_agent_artifacts.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp
@@ -135,6 +141,7 @@ add_library(mira_core
     src/model/model_provider.cpp
     src/model/model_upload.cpp
     src/model/model_gateway.cpp
+    src/model/model_context_admission.cpp
     src/model/model_replay.cpp
     src/model/tool_executor.cpp
     src/model/conversation_log.cpp
@@ -463,6 +470,16 @@ foreach(host IN ITEMS workflow_runtime context_assembly recovery_planner)
         set_tests_properties(mira_${host}_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
     endif()
 endforeach()
+add_executable(mira_memory_agent_host_consumer examples/memory_agent_host_consumer.cpp)
+target_link_libraries(mira_memory_agent_host_consumer PRIVATE Mira::core Mira::state_store Mira::simulator_adapter kairo::kairo)
+target_include_directories(mira_memory_agent_host_consumer SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_memory_agent_host_consumer)
+mira_enable_sanitizers(mira_memory_agent_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_memory_agent_host_consumer_test COMMAND mira_memory_agent_host_consumer)
+    set_tests_properties(mira_memory_agent_host_consumer_test PROPERTIES LABELS "consumer;m36" TIMEOUT 30)
+endif()
+
 # M35 autonomous directory and verified workspace publication, offline.
 add_executable(mira_subagent_tool_host_consumer examples/subagent_tool_host_consumer.cpp)
 target_link_libraries(mira_subagent_tool_host_consumer PRIVATE Mira::core kairo::kairo)

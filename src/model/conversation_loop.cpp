@@ -118,6 +118,11 @@ Result<void> ConversationLoop::enqueue_user_message(std::string message) {
     return Result<void>{};
 }
 
+bool ConversationLoop::user_input_pending() {
+    std::lock_guard lock(pending_user_messages_->mutex);
+    return !pending_user_messages_->messages.empty();
+}
+
 void ConversationLoop::drain_user_messages(const AgentLoopSpec &spec,
                                            std::vector<std::string> &user_instructions) {
     std::deque<std::string> drained;
@@ -560,6 +565,19 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         continuous_support::add_counter(result.total_turns);
         ConversationTurnRecord record;
         record.turn = result.total_turns;
+        const auto refresh_for_input = [&] {
+            if (!user_input_pending())
+                return false;
+            if (can_recover()) {
+                record_recovery();
+                record.note = "new user input; discard old completion and rebuild";
+            } else {
+                result.outcome = ConversationOutcome::Failed;
+                result.safe_summary = "user input refresh budget exhausted";
+            }
+            retain_turn(std::move(record));
+            return true;
+        };
 
         // The queued user messages are drained at the turn boundary and stay
         // in context for the rest of the run (M28/DEC-068 §4.4).
@@ -634,6 +652,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                                       : "conversation deadline expired";
             break;
         }
+        if (refresh_for_input()) {
+            if (result.outcome == ConversationOutcome::Failed)
+                break;
+            continue;
+        }
         auto call = gateway_.infer(request.value(), model_context, config_.inference);
         if (!call) {
             if (call.error().code == ErrorCode::Cancelled) {
@@ -654,7 +677,19 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         auto outcome = std::move(call).value();
 
         result.last_usage = outcome.response.usage;
+        if (refresh_for_input()) {
+            if (result.outcome == ConversationOutcome::Failed)
+                break;
+            continue;
+        }
+
         if (!outcome.admitted) {
+            if (outcome.context_refreshable && can_recover()) {
+                record_recovery();
+                record.note = "context changed; rebuilding from current state";
+                retain_turn(std::move(record));
+                continue;
+            }
             result.outcome = ConversationOutcome::Cancelled;
             result.safe_summary = outcome.rejection_reason;
             break;
@@ -790,6 +825,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 retain_turn(std::move(record));
                 break;
             }
+            if (refresh_for_input()) {
+                if (result.outcome == ConversationOutcome::Failed)
+                    break;
+                continue;
+            }
             const auto history_start = history.size();
             const bool carries_thinking = std::any_of(
                 outcome.response.output.begin(), outcome.response.output.end(),
@@ -838,8 +878,12 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 // A fresh gateway request derives fresh operation IDs. This
                 // synchronous forward-only traversal owns each proposal once;
                 // historical IDs need no registry tombstones or replay path.
-                auto executed = continuous ? tools_->execute_loop_proposal(proposal, context)
-                                           : tools_->execute(proposal, context);
+                const bool superseded = user_input_pending();
+                auto executed =
+                    superseded   ? Result<ToolExecutionRecord>{loop_support::superseded_tool_result(
+                                     proposal)}
+                    : continuous ? tools_->execute_loop_proposal(proposal, context)
+                                 : tools_->execute(proposal, context);
                 if (!executed) {
                     abort = executed.error().code == ErrorCode::Cancelled
                                 ? ConversationOutcome::Cancelled
@@ -850,9 +894,10 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                             : "tool execution rejected: " + executed.error().safe_message;
                     break;
                 }
-                continuous_support::add_counter(tool_executions);
+                if (!superseded)
+                    continuous_support::add_counter(tool_executions);
                 result.tool_executions = tool_executions;
-                emit(spec, "ToolExecuted",
+                emit(spec, superseded ? "ToolSkipped" : "ToolExecuted",
                      JsonValue::Object{{"wire_name", proposal.wire_name},
                                        {"operation_id", proposal.operation_id.to_string()},
                                        {"failed", executed.value().failed},
@@ -928,6 +973,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                     retain_turn(std::move(record));
                     continue;
                 }
+            }
+            if (refresh_for_input()) {
+                if (result.outcome == ConversationOutcome::Failed)
+                    break;
+                continue;
             }
             record.summary = "answer";
             retain_turn(std::move(record));

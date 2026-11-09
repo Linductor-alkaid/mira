@@ -66,6 +66,10 @@ enum class InteractionDomainCode : std::int32_t {
     ExecutorRejected = 11,
     // The coordinator was used before initialize() succeeded.
     NotInitialized = 12,
+    // An id or explicit target belongs to another principal (DEC-102).
+    InputConflict = 13,
+    // A throwing sink may already have accepted the input; do not retry blindly.
+    DeliveryUncertain = 14,
 };
 
 // Builds an error in the mira.interaction domain with a stable domain code.
@@ -80,12 +84,18 @@ enum class InteractionDomainCode : std::int32_t {
 // authenticated principal; input_id is the host-provided idempotency key and
 // is NOT a content digest: two different inputs with the same content are two
 // different inputs (DEC-068 §4).
+enum class RouteIntent : std::uint8_t;
+
 struct InputEnvelope final {
     PrincipalContext principal;
     std::string input_id;
     std::string content;
     std::vector<std::string> attachment_refs;
     std::optional<std::string> reply_to;
+    // Host-authenticated explicit references, stronger than model suggestions.
+    std::optional<TaskId> target_task;
+    // NewTask needs no target; other executable intents need target_task/reply_to.
+    std::optional<RouteIntent> requested_intent;
 };
 
 // The stage of one accepted input. Receiving an input is not a completed task
@@ -127,6 +137,7 @@ struct RoutingDecision final {
     // Natural-language clarification for RouteIntent::Clarify. A clarification
     // is a normal reply, not an error code (DEC-068 R4).
     std::optional<std::string> clarification;
+    std::vector<TaskId> candidates;
 };
 
 // The disposition of one submitted input.
@@ -144,6 +155,7 @@ struct InputDisposition final {
     std::optional<TaskId> task_id;
     std::optional<Error> error;
     std::optional<std::string> clarification;
+    std::vector<TaskId> candidates;
 };
 
 // ---------------------------------------------------------------------------
@@ -201,6 +213,10 @@ struct LedgerEntry final {
     // The error of a rejected input, kept so a duplicate replay reports the
     // same reason instead of a generic one.
     std::optional<Error> error;
+    // Identity binding reconstructed from InputAccepted.principal_ref.
+    TenantId tenant_id;
+    UserId user_id;
+    std::vector<TaskId> candidates;
 };
 
 // One lifecycle transition of an accepted input.
@@ -214,6 +230,7 @@ struct LedgerTransition final {
     std::string note;
     std::optional<std::string> clarification;
     std::optional<Error> error;
+    std::vector<TaskId> candidates;
 };
 
 // The durable idempotency ledger of the principal-level input entry point.
@@ -223,7 +240,8 @@ class IInputLedger {
   public:
     virtual ~IInputLedger() = default;
 
-    // Atomically admits one input. A repeat of the same input id inside the
+    // Atomically admits one input and binds its tenant/user. Other principals
+    // must receive InputConflict without any stored receipt. A repeat inside the
     // idempotency window returns the existing record with duplicate=true and
     // produces no second dispatch; a repeat outside the window is an explicit
     // expiry rejection.
@@ -364,8 +382,9 @@ using EnvironmentProvider = std::function<Result<std::shared_ptr<IEnvironment>>(
 class IUserInputSink {
   public:
     virtual ~IUserInputSink() = default;
-    // Delivers one input to the loop of the given task. A failure must be
-    // reported; a delivery is never silently dropped (DEC-068 §4.4).
+    // Success means queue acceptance, not consumption. A failure must mean
+    // nothing was accepted. Do not throw: a throw is delivery-uncertain and
+    // freezes subsequent delivery until host reconciliation (DEC-102).
     [[nodiscard]] virtual Result<void> deliver(const InputEnvelope &envelope, TaskId task_id) = 0;
 };
 
@@ -421,6 +440,8 @@ struct CoordinatorConfig final {
     std::size_t max_sinks = 256;
     // The bounded number of inputs waiting for a sink of their task.
     std::size_t max_pending_deliveries = 256;
+    std::size_t max_inputs_per_task = 4096;
+    std::size_t max_retired_preparations = 16;
 };
 
 class InteractionCoordinator final {
@@ -434,7 +455,8 @@ class InteractionCoordinator final {
     InteractionCoordinator(const InteractionCoordinator &) = delete;
     InteractionCoordinator &operator=(const InteractionCoordinator &) = delete;
 
-    // Binds the durable ledger and rebuilds the registry projection. Must
+    // Binds and rebuilds the durable input ledger. Full registry/context
+    // recovery is M29-05, not an implicit Runtime task restoration. Must
     // succeed before the first submit_input().
     [[nodiscard]] Result<void> initialize();
     // Binds the event store that carries the ledger stream.
@@ -471,13 +493,18 @@ class InteractionCoordinator final {
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);
 
-    // Read-only projections.
+    // Host-owner read-only projections. input_record() is privileged storage
+    // access; a remote caller must never be given raw id-only access to it.
     [[nodiscard]] Result<PrincipalState> principal_state(const PrincipalContext &principal) const;
     [[nodiscard]] Result<LedgerEntry> input_record(std::string_view input_id) const;
 
     // Stops accepting inputs and releases the coordinator's own state. The
     // host keeps the ownership of the Runtime and the Executor.
     void shutdown();
+    // External-owner close: consumes all finite preparations and reports late
+    // failures. Call before shutting down the injected Executor. shutdown()
+    // and the destructor provide best-effort compatibility cleanup.
+    [[nodiscard]] Result<void> close();
 
   private:
     class Impl;

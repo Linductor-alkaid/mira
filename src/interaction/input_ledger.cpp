@@ -46,15 +46,23 @@ constexpr std::array<std::uint8_t, 16> kLedgerPartitionBytes{
 }
 
 [[nodiscard]] JsonValue::Object accepted_payload(const LedgerEntry &entry,
-                                                 const PrincipalContext &principal) {
+                                                 const InputEnvelope &envelope) {
     JsonValue::Object object;
     object.emplace_back("schema",
                         std::string(interaction_event_schema(InteractionEventType::InputAccepted)));
     object.emplace_back("input_id", entry.input_id);
     object.emplace_back("ingress_id", entry.ingress_id.to_string());
-    object.emplace_back("principal_ref", principal_ref(principal));
+    object.emplace_back("principal_ref", principal_ref(envelope.principal));
     object.emplace_back("admitted_at", wall_nanos(entry.admitted_at));
     object.emplace_back("window_expires_at", to_nanos(entry.window_expires_at));
+    // References only: input bodies and grants never enter this stream.
+    if (envelope.reply_to)
+        object.emplace_back("reply_to", *envelope.reply_to);
+    if (envelope.target_task)
+        object.emplace_back("target_task", envelope.target_task->to_string());
+    if (envelope.requested_intent)
+        object.emplace_back("requested_intent",
+                            std::string(route_intent_name(*envelope.requested_intent)));
     return object;
 }
 
@@ -73,6 +81,10 @@ constexpr std::array<std::uint8_t, 16> kLedgerPartitionBytes{
     object.emplace_back("task_id",
                         transition.task_id ? transition.task_id->to_string() : std::string(""));
     object.emplace_back("rationale", transition.note);
+    if (transition.error) {
+        object.emplace_back("error_code", static_cast<std::int64_t>(transition.error->domain_code));
+        object.emplace_back("error", transition.error->safe_message);
+    }
     return object;
 }
 
@@ -84,6 +96,11 @@ constexpr std::array<std::uint8_t, 16> kLedgerPartitionBytes{
     object.emplace_back("input_id", entry.input_id);
     object.emplace_back("ingress_id", entry.ingress_id.to_string());
     object.emplace_back("clarification", transition.clarification.value_or(std::string{}));
+    JsonValue::Array candidates;
+    for (const auto &task : transition.candidates)
+        candidates.emplace_back(task.to_string());
+    object.emplace_back("candidates", std::move(candidates));
+    object.emplace_back("rationale", transition.note);
     return object;
 }
 
@@ -176,7 +193,7 @@ class EventStoreInputLedger::Impl final {
         request.payload =
             EventPayload{type, to_json_string(JsonValue(std::move(object))), EventClass::State};
         const auto receipt = events->append(request);
-        if (!receipt) {
+        if (!receipt || receipt.value().achieved < Durability::ProcessCrash) {
             return interaction_error(ErrorCode::Unavailable,
                                      InteractionDomainCode::LedgerUnavailable,
                                      "the interaction ledger could not append its record");
@@ -214,6 +231,13 @@ Result<LedgerEntry> EventStoreInputLedger::admit(const InputEnvelope &envelope) 
     const auto now = now_wall();
     const auto found = impl_->index.find(envelope.input_id);
     if (found != impl_->index.end()) {
+        if (found->second.tenant_id != envelope.principal.tenant_id ||
+            found->second.user_id != envelope.principal.user_id ||
+            found->second.tenant_id.is_nil() || found->second.user_id.is_nil()) {
+            return interaction_error(ErrorCode::PermissionDenied,
+                                     InteractionDomainCode::InputConflict,
+                                     "the input id cannot be reused by this principal");
+        }
         if (now <= found->second.window_expires_at) {
             auto entry = found->second;
             entry.duplicate = true;
@@ -244,13 +268,14 @@ Result<LedgerEntry> EventStoreInputLedger::admit(const InputEnvelope &envelope) 
     }
     LedgerEntry entry;
     entry.input_id = envelope.input_id;
+    entry.tenant_id = envelope.principal.tenant_id;
+    entry.user_id = envelope.principal.user_id;
     entry.ingress_id = ControlIngressId::generate();
     entry.admitted_at = Timestamp::now();
     entry.stage = InputStage::Accepted;
     entry.window_expires_at = now + std::chrono::duration_cast<std::chrono::nanoseconds>(
                                         impl_->options.idempotency_window);
-    const auto appended =
-        impl_->append("InputAccepted", accepted_payload(entry, envelope.principal));
+    const auto appended = impl_->append("InputAccepted", accepted_payload(entry, envelope));
     if (!appended) {
         return appended.error();
     }
@@ -276,10 +301,14 @@ Result<LedgerEntry> EventStoreInputLedger::advance(std::string_view input_id,
         return interaction_error(ErrorCode::NotFound, InteractionDomainCode::InputInvalid,
                                  "the input id is not recorded in the interaction ledger");
     }
-    auto &entry = found->second;
+    auto entry = found->second;
+    if ((entry.task_id && transition.task_id && entry.task_id != transition.task_id) ||
+        (entry.session_id && transition.session_id && entry.session_id != transition.session_id)) {
+        return interaction_error(ErrorCode::InvalidState, InteractionDomainCode::InputConflict,
+                                 "an input cannot be rebound to different work");
+    }
     const bool clarifying = transition.clarification.has_value();
-    if (!clarifying && transition.stage != InputStage::Rejected &&
-        stage_rank(transition.stage) < stage_rank(entry.stage)) {
+    if (stage_rank(transition.stage) < stage_rank(entry.stage)) {
         // The stage never regresses; a late report of an earlier stage is
         // ignored instead of rewinding the record.
         return entry;
@@ -302,6 +331,7 @@ Result<LedgerEntry> EventStoreInputLedger::advance(std::string_view input_id,
     }
     if (transition.clarification.has_value()) {
         entry.clarification = transition.clarification;
+        entry.candidates = transition.candidates;
     }
     if (transition.error.has_value()) {
         entry.error = transition.error;
@@ -332,6 +362,7 @@ Result<LedgerEntry> EventStoreInputLedger::advance(std::string_view input_id,
     if (!appended) {
         return appended.error();
     }
+    found->second = entry; // Publish only after durable ack (DEC-102).
     return entry;
 }
 
@@ -394,6 +425,16 @@ Result<void> EventStoreInputLedger::rebuild() {
                 entry.input_id = input_id;
                 entry.ingress_id = *ingress;
                 entry.stage = InputStage::Accepted;
+                const auto *principal = parsed.value().find("principal_ref");
+                if (principal && principal->is_string()) {
+                    const auto &ref = *principal->as_string();
+                    const auto separator = ref.find(':');
+                    if (separator != std::string::npos) {
+                        entry.tenant_id =
+                            TenantId::parse(ref.substr(0, separator)).value_or(TenantId{});
+                        entry.user_id = UserId::parse(ref.substr(separator + 1)).value_or(UserId{});
+                    }
+                }
                 if (admitted_member != nullptr && admitted_member->is_integer()) {
                     entry.admitted_at =
                         timestamp_from_nanos(admitted_member->as_integer().value(), 0);
@@ -402,6 +443,10 @@ Result<void> EventStoreInputLedger::rebuild() {
                     entry.window_expires_at = from_nanos(expires_member->as_integer().value());
                 }
                 rebuilt[input_id] = entry;
+                if (rebuilt.size() > impl_->options.max_entries)
+                    return interaction_error(ErrorCode::ResourceExhausted,
+                                             InteractionDomainCode::LedgerFull,
+                                             "the recovered input ledger exceeds its index bound");
                 continue;
             }
             const auto found = rebuilt.find(input_id);
@@ -412,6 +457,14 @@ Result<void> EventStoreInputLedger::rebuild() {
             }
             auto &entry = found->second;
             const auto type = parse_interaction_event_schema(schema);
+            const auto next_stage =
+                type == InteractionEventType::InputRouted        ? InputStage::Routed
+                : type == InteractionEventType::InputAnswered    ? InputStage::Answered
+                : type == InteractionEventType::InputTaskSettled ? InputStage::TaskSettled
+                : type == InteractionEventType::InputRejected    ? InputStage::Rejected
+                                                                 : InputStage::Accepted;
+            if (stage_rank(next_stage) < stage_rank(entry.stage))
+                continue;
             if (type == InteractionEventType::InputRouted) {
                 entry.stage = InputStage::Routed;
                 const auto *session_member = parsed.value().find("session_id");
@@ -432,7 +485,24 @@ Result<void> EventStoreInputLedger::rebuild() {
                 if (rationale_member != nullptr && rationale_member->is_string()) {
                     entry.note = *rationale_member->as_string();
                 }
+                const auto *error_code = parsed.value().find("error_code");
+                const auto *error_text = parsed.value().find("error");
+                if (error_code && error_code->is_integer() && error_text && error_text->is_string())
+                    entry.error = interaction_error(
+                        ErrorCode::Unavailable,
+                        static_cast<InteractionDomainCode>(error_code->as_integer().value()),
+                        *error_text->as_string());
             } else if (type == InteractionEventType::InputClarified) {
+                const auto *candidates = parsed.value().find("candidates");
+                entry.candidates.clear();
+                if (candidates && candidates->is_array()) {
+                    for (const auto &candidate : *candidates->as_array()) {
+                        if (candidate.is_string()) {
+                            if (const auto task = TaskId::parse(*candidate.as_string()))
+                                entry.candidates.push_back(*task);
+                        }
+                    }
+                }
                 const auto *clarification_member = parsed.value().find("clarification");
                 if (clarification_member != nullptr && clarification_member->is_string()) {
                     entry.clarification = *clarification_member->as_string();
