@@ -1,11 +1,24 @@
 # Mira 实施总计划
 
+[M34：受管子代理委派](m34-managed-subagent-delegation.md)（Completed，Linux 离线首期），依据
+[DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)补齐模型委派、结果回流与
+父循环继续、权限/预算/取消/关闭，复用 M24 与既有 Harness，不新增设备执行平面。
+2026-11-09：Debug 全量 153/153，ASAN+UBSAN 与 TSAN 定向各 5/5，相关门禁通过；
+目标平台与真实模型补跑条件见 M34，递归/持续消息/跨进程恢复不在首期交付范围。
+
 宿主 system 模板维护：`BUG-20261109-001` / `MNT-202611-SP-01..03`，依据
 [DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md)，提供完整覆盖与
 可审计 digest，复用 DEC-097 动态工具暴露；状态和证据见
 [维护计划](maintenance-2026-11-conversation-host-system.md)。
 2026-11-09：按 Linux 离线范围 Completed，Debug 全量 **148/148** 与格式/文档/
 架构/平台边界检查通过；真实桥侧模型与 Windows/Android 验证保持未执行。
+
+子代理执行与协作调研：`MNT-202611-SA-01`，静态比较 DeepSeek Harness/ZCode，
+区分 M24/M25 的上下文基础与模型可调用的执行闭环；研究和状态见
+[参考报告](../design/subagent-reference-study.md)与[调研计划](maintenance-2026-11-subagent-study.md)。
+研究建议不构成新执行层的 Accepted 决策或实现承诺。
+2026-11-09：静态调研 Completed，源码基线、缺口和建议验收矩阵已记录；未执行
+外部仓库测试或真实模型实验，调研时尚未交付执行与协作；其后实现由上述 M34 跟踪。
 
 每请求工具选择维护：`MNT-202611-TS-01`，依据
 [DEC-097](../decisions/DEC-097-per-request-tool-selection.md)，状态与验收见
@@ -34,7 +47,8 @@ ASAN 定向连续五轮通过；远端 CI 验收证据入口见同一维护计�
 
 > 状态：In Progress
 > 负责人：Mira Maintainers
-> 更新日期：2026-11-07（HTTP 流式连接策略本地交付完成：Debug 41/41、ASAN+UBSAN 3/3、TSAN 1/1，
+> 更新日期：2026-11-09（M34 单层委派本地验收，见对应计划。）
+> 此前 2026-11-07（HTTP 流式连接策略本地交付完成：Debug 41/41、ASAN+UBSAN 3/3、TSAN 1/1，
 > 详见 [连接策略维护计划](maintenance-2026-11-http-stream-connection-policy.md)。）
 > 此前 2026-11-06（2026-11 维护轮收口关闭：13 项工作项与 RW-G1–G6 完成，
 > PR #114 合并为 `147403c`（tree 与 CI 最终 head 一致），最终 head CI 24/24

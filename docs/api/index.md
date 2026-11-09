@@ -11,6 +11,9 @@
 
 ## 模块地图
 
+单层子代理的宿主接线、模型工具、结果回流和关闭契约见
+[受管子代理](subagents.md)（`mira/subagent.hpp`，M34/DEC-099）。
+
 | 页面 | 头文件 | 职责 |
 | --- | --- | --- |
 | [核心契约与 Runtime](core-runtime.md) | `core_contracts.hpp`、`runtime.hpp`、`runtime_baseline.hpp`、`action_journal.hpp` | ID、时间戳、错误模型、三层状态机、命令/操作生命周期、动作日志 |

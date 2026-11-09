@@ -10,6 +10,10 @@
 > 关联计划：[M24](../plans/m24-context-curator-stage-w5.md)（Stage W5）
 > 替代/被替代：无
 
+2026-11-09 补充：第 1 条对通用子代理编排的排除范围由
+[DEC-099](DEC-099-managed-subagent-delegation.md)修订为允许 Harness 层的单层受管
+推理委派。child 仍是独立 Session/Task，M24 的投影、提交和动作边界均保持原契约。
+
 ## 背景与问题
 
 [Context Curator 设计](../design/context_curator_design.md) §13 为 Stage W5

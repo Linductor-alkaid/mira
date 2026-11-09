@@ -434,6 +434,9 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 
 ### 宿主完整 system 模板（DEC-098）
 
+子代理委派使用 [SubagentCoordinator](subagents.md) 与显式 continuation source。
+它能在子结果到达后继续当前 active run；默认 ConversationLoop 文本终态不变。
+
 `ConversationLoopConfig::system_prompt` 可替换整个内建 System 文本，适用于「一切
 发声经工具，文本仅为内部终态」的宿主。不配置时保留内建 v1 文本与旧 digest。
 
