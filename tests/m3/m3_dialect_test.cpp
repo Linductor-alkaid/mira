@@ -697,6 +697,78 @@ int reasoning_maps_to_bounded_thinking() {
     return 0;
 }
 
+int chat_plain_text_parts_join_with_single_newlines() {
+    // DEC-103: the no-image plain-text branch renders one input item's
+    // TextParts as a single JSON string with exactly one '\n' between
+    // adjacent non-empty parts; empty parts contribute nothing and never
+    // leave a stray separator. Single-part bytes are unchanged.
+    ChatCompletionsV1Mapper mapper;
+    const auto profile = make_profile(ProtocolDialect::OpenAIChatCompletionsV1, "https://api.test");
+    NullArtifactSource artifacts;
+    const auto encoded_user_text = [&](const std::vector<std::string> &parts,
+                                       std::string &joined) -> int {
+        auto request = base_request();
+        request.input[1].content.clear();
+        for (const auto &part : parts) {
+            request.input[1].content.emplace_back(TextPart{part});
+        }
+        auto wire = mapper.encode_request(request, profile, false, artifacts);
+        MIRA_CHECK(wire);
+        const auto *messages = wire.value().find("messages");
+        MIRA_CHECK(messages && messages->is_array() && messages->as_array()->size() == 2);
+        const auto &user = messages->as_array()->at(1);
+        const auto *content = user.find("content");
+        MIRA_CHECK(content && content->is_string());
+        joined = *content->as_string();
+        return 0;
+    };
+    const auto user_text = [&](const std::vector<std::string> &parts) {
+        std::string joined;
+        if (const int code = encoded_user_text(parts, joined); code != 0) {
+            return code;
+        }
+        MIRA_CHECK(joined == "a\nb");
+        return 0;
+    };
+
+    MIRA_CHECK(user_text({"a", "b"}) == 0);
+    MIRA_CHECK(user_text({"a", "", "b"}) == 0);
+    MIRA_CHECK(user_text({"", "a", "", "", "b", ""}) == 0);
+    std::string single;
+    MIRA_CHECK(encoded_user_text({""}, single) == 0 && single.empty());
+    MIRA_CHECK(encoded_user_text({}, single) == 0 && single.empty());
+    // Single part: byte-identical to the pre-DEC-103 behavior.
+    MIRA_CHECK(encoded_user_text({"hello"}, single) == 0 && single == "hello");
+
+    // The image-bearing multipart branch is untouched: every TextPart stays
+    // its own content part, in order, around the image.
+    auto request = base_request();
+    request.input[1].content.clear();
+    request.input[1].content.emplace_back(TextPart{"before"});
+    ImagePart image;
+    image.source.id = ArtifactId::generate();
+    image.source.digest = digest_string("pixels");
+    image.source.byte_size = 4;
+    image.source.media_type = "image/png";
+    image.media_type = "image/png";
+    request.input[1].content.emplace_back(std::move(image));
+    request.input[1].content.emplace_back(TextPart{"after"});
+    std::size_t fetches = 0;
+    auto wire = mapper.encode_request(request, profile, false, *image_source(fetches));
+    MIRA_CHECK(wire && fetches == 1);
+    const auto *messages = wire.value().find("messages");
+    MIRA_CHECK(messages && messages->as_array()->size() == 2);
+    const auto &content = *messages->as_array()->at(1).find("content");
+    const auto *parts = content.as_array();
+    MIRA_CHECK(parts && parts->size() == 3);
+    MIRA_CHECK(*parts->at(0).find("type")->as_string() == "text" &&
+               *parts->at(0).find("text")->as_string() == "before");
+    MIRA_CHECK(*parts->at(1).find("type")->as_string() == "image_url");
+    MIRA_CHECK(*parts->at(2).find("type")->as_string() == "text" &&
+               *parts->at(2).find("text")->as_string() == "after");
+    return 0;
+}
+
 int non_image_media_type_fails_closed() {
     // Raw unencoded payloads (e.g. application/octet-stream frames) must
     // fail with a diagnosable CapabilityMismatch before the wire instead of
@@ -756,6 +828,9 @@ int main() {
         return status;
     }
     if (const int status = reasoning_maps_to_bounded_thinking(); status != 0) {
+        return status;
+    }
+    if (const int status = chat_plain_text_parts_join_with_single_newlines(); status != 0) {
         return status;
     }
     if (const int status = image_transport_uses_artifact_bytes(); status != 0) {

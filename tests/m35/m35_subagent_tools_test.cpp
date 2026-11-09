@@ -149,8 +149,19 @@ int child_discovers_executes_and_verifies_without_parent_tool_list() {
     const auto events = s.log->read(query);
     MIRA_CHECK(events);
     std::string operation;
+    // DEC-104: the child's AssistantSpeech events carry the model-produced
+    // publish_release arguments ("private-content", classified Internal);
+    // no other event type may quote them, and the tool result content
+    // ("child-private") never enters the event store at all.
+    bool arguments_in_speech = false;
     for (const auto &event : events.value().events) {
-        MIRA_CHECK(event.payload.data.find("private-content") == std::string::npos);
+        if (event.payload.type == "AssistantSpeech") {
+            if (event.payload.data.find("private-content") != std::string::npos) {
+                arguments_in_speech = true;
+            }
+        } else {
+            MIRA_CHECK(event.payload.data.find("private-content") == std::string::npos);
+        }
         MIRA_CHECK(event.payload.data.find("child-private") == std::string::npos);
         if (event.payload.type.starts_with("SubagentEffect")) {
             const auto data = parse_json(event.payload.data).value();
@@ -160,6 +171,7 @@ int child_discovers_executes_and_verifies_without_parent_tool_list() {
             MIRA_CHECK(data.find("arguments_digest") && data.find("spec_digest"));
         }
     }
+    MIRA_CHECK(arguments_in_speech);
     MIRA_CHECK(!operation.empty());
     return 0;
 }

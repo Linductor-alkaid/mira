@@ -120,6 +120,21 @@ struct ModelProxyConfig final {
     std::vector<std::string> allowed_hosts;
 };
 
+// Host-declared decoding defaults for one profile (DEC-105): the legal seam
+// for sampling parameters that `extra_body` deliberately reserves away. The
+// dialect mappers apply these to the temperature/top_p/seed fields a
+// canonical request leaves unset; explicit request values always win. Host
+// configuration only; never populate from model output or request input.
+// Set values appear in the manifest/profile digest: do not put secrets or
+// sensitive input here.
+struct ProfileDecodingOptions final {
+    std::optional<double> temperature;
+    std::optional<double> top_p;
+    std::optional<std::uint64_t> seed;
+    friend bool operator==(const ProfileDecodingOptions &,
+                           const ProfileDecodingOptions &) = default;
+};
+
 // A fixed provider endpoint profile. The endpoint origin and API prefix are
 // configuration; mappers never accept model- or response-supplied URLs.
 struct ModelProfile final {
@@ -137,6 +152,12 @@ struct ModelProfile final {
     TransportDeadlines deadlines;
     std::optional<ModelProxyConfig> proxy;
     std::uint32_t max_redirects = 2;
+
+    // Host-declared decoding defaults (DEC-105). validate() range-checks the
+    // values for the profile dialect and rejects parameters the profile's own
+    // generation policy declares Unsupported; the sampling keys stay reserved
+    // in extra_body, so this section is their only host-side path.
+    ProfileDecodingOptions decoding;
 
     // Host configuration only; never populate from model output or request input.
     // Chat Completions only: root scalar/object values merged after mapper fields.
@@ -218,5 +239,13 @@ class ModelRouter final {
 [[nodiscard]] std::vector<std::string>
 unsupported_generation_parameters(const GenerationParamPolicy &policy,
                                   const ModelGenerationOptions &generation);
+
+// Merges the profile's decoding defaults (DEC-105) into the canonical
+// request's unset temperature/top_p/seed; explicit request values always
+// win, and a parameter the profile's generation policy declares Unsupported
+// is never filled. max_output_tokens, reasoning_effort, thinking and
+// service_tier are never defaulted: they stay request-owned.
+[[nodiscard]] ModelGenerationOptions
+effective_generation_options(const ModelProfile &profile, const ModelGenerationOptions &generation);
 
 } // namespace mira

@@ -332,6 +332,20 @@ JsonValue ModelProfile::manifest_to_json() const {
 
     root.emplace_back("default_data_policy", data_policy_to_json(default_data_policy));
     root.emplace_back("deadlines", deadlines_to_json(deadlines));
+    if (decoding.temperature.has_value() || decoding.top_p.has_value() ||
+        decoding.seed.has_value()) {
+        JsonValue::Object decoding_json;
+        if (decoding.temperature.has_value()) {
+            decoding_json.emplace_back("temperature", *decoding.temperature);
+        }
+        if (decoding.top_p.has_value()) {
+            decoding_json.emplace_back("top_p", *decoding.top_p);
+        }
+        if (decoding.seed.has_value()) {
+            decoding_json.emplace_back("seed", static_cast<std::int64_t>(*decoding.seed));
+        }
+        root.emplace_back("decoding", std::move(decoding_json));
+    }
     if (proxy.has_value()) {
         JsonValue::Object proxy_json;
         proxy_json.emplace_back("url", proxy->url);
@@ -392,6 +406,32 @@ Result<void> ModelProfile::validate() const {
         return route_error("profile max_tools_per_request=" +
                            std::to_string(capabilities.limits.max_tools_per_request) +
                            " exceeds limit=" + std::to_string(kModelMaxToolsPerRequest));
+    }
+    // Decoding defaults (DEC-105): range-checked for the profile dialect and
+    // rejected when the profile's own generation policy cannot represent the
+    // parameter, so an unsupported default fails at registration instead of
+    // at first dispatch. Messages dialect documents a tighter temperature
+    // range than the OpenAI dialects.
+    if (decoding.temperature.has_value()) {
+        const auto ceiling = dialect == ProtocolDialect::AnthropicMessagesV1 ? 1.0 : 2.0;
+        if (!std::isfinite(*decoding.temperature) || *decoding.temperature < 0.0 ||
+            *decoding.temperature > ceiling) {
+            return route_error("profile decoding temperature is out of range");
+        }
+        if (capabilities.generation.temperature == ParamMapping::Unsupported) {
+            return route_error("profile decoding temperature conflicts with its generation policy");
+        }
+    }
+    if (decoding.top_p.has_value()) {
+        if (!std::isfinite(*decoding.top_p) || *decoding.top_p <= 0.0 || *decoding.top_p > 1.0) {
+            return route_error("profile decoding top_p is out of range");
+        }
+        if (capabilities.generation.top_p == ParamMapping::Unsupported) {
+            return route_error("profile decoding top_p conflicts with its generation policy");
+        }
+    }
+    if (decoding.seed.has_value() && capabilities.generation.seed == ParamMapping::Unsupported) {
+        return route_error("profile decoding seed conflicts with its generation policy");
     }
     const auto &limits = capabilities.limits;
     if (limits.max_context_tokens == 0 || limits.max_output_tokens == 0 ||
@@ -519,6 +559,29 @@ unsupported_generation_parameters(const GenerationParamPolicy &policy,
     check("thinking", policy.thinking, generation.thinking.has_value());
     check("service_tier", policy.service_tier, generation.service_tier.has_value());
     return unsupported;
+}
+
+ModelGenerationOptions effective_generation_options(const ModelProfile &profile,
+                                                    const ModelGenerationOptions &generation) {
+    ModelGenerationOptions effective = generation;
+    const auto &policy = profile.capabilities.generation;
+    const auto &decoding = profile.decoding;
+    // Defense in depth beyond validate(): a parameter the policy cannot
+    // represent is never filled, so a direct unvalidated profile cannot slip
+    // a default past the dialect gates.
+    if (!effective.temperature.has_value() && decoding.temperature.has_value() &&
+        policy.temperature != ParamMapping::Unsupported) {
+        effective.temperature = decoding.temperature;
+    }
+    if (!effective.top_p.has_value() && decoding.top_p.has_value() &&
+        policy.top_p != ParamMapping::Unsupported) {
+        effective.top_p = decoding.top_p;
+    }
+    if (!effective.seed.has_value() && decoding.seed.has_value() &&
+        policy.seed != ParamMapping::Unsupported) {
+        effective.seed = decoding.seed;
+    }
+    return effective;
 }
 
 void ModelRouter::register_profile(std::shared_ptr<const ModelProfile> profile) {

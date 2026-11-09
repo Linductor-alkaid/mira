@@ -104,6 +104,22 @@ profile.extra_body = {
 auto valid = profile.validate(); // 宿主必须处理错误，不能忽略。
 ```
 
+标准采样键（`temperature`、`top_p`、`seed`）的宿主侧合法路径是
+`ModelProfile::decoding`（[DEC-105](../decisions/DEC-105-profile-decoding-defaults.md)），
+它们在 `extra_body` 中继续被拒绝：
+
+```cpp
+profile.decoding.temperature = 0.3; // 可选；同段还可设 top_p、seed。
+```
+
+语义为默认而非覆盖：请求未设置的采样字段套用 profile 默认，显式请求值优先；
+`max_output_tokens`、`reasoning_effort`、`thinking`、`service_tier` 永不由
+profile 默认。`validate()` 拒绝越界值（temperature 按方言上限 OpenAI 系 2.0、
+Messages 1.0；top_p ∈ (0,1]）与 profile 自身 `GenerationParamPolicy` 声明
+`Unsupported` 的参数；Messages 方言额外拒绝 `decoding.seed`。非空 decoding
+参与 manifest 与 `profile_digest()`；空 decoding 省略 manifest 成员，线格式
+不变。
+
 这会在 wire root 直接产生 `"chat_template_kwargs":{"enable_thinking":false}`，
 不发送名为 `extra_body` 的包装字段。扩展只来自宿主配置，不从模型输出、请求输入或
 工具结果复制；配置必须排除凭据和敏感输入，因为 manifest 会保留完整值。
@@ -414,6 +430,14 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 - 复用既有契约：`AgentLoopSpec` 任务帧、`ModelGateway` 的 admission/预算/监督、
   DEC-015 的 `BuiltinToolRegistry` 执行边界与 `IEventStore` 事件面
   （`ToolExecuted`、终态 `ConversationSettled`）。
+- **AssistantSpeech 事件**（DEC-104）：每轮对模型实际产出的话语发射一条——
+  工具轮提案批处理完毕后一条、终文本回答一条。载荷含 `turn`、
+  `sensitivity: "Internal"`、可选 `text`（有界 4096 字符，截断置
+  `text_truncated`）与可选 `tool_calls` 数组（每项 `wire_name`、
+  `arguments` 有界 1024 字符、`arguments_digest`、`status` ∈
+  `executed`/`failed`/`skipped`/`not_executed`）。rejected/ambiguous/截断
+  丢弃等未实际发声的输出不记录。宿主回放与视图消费见
+  [conversation_log.hpp](#conversation_loghpp会话对话投影)。
 - 工具往返以规范 `ToolCallPart`/`ToolResultPart` 进入后续每轮请求（call 回显 + 结果
   成对追加），供应商侧保持原生 function_call/function_call_output 语义。
 - 默认 `ConversationLimitMode::Finite` 保留 `max_turns`（耗尽为 `MaxTurns`）、
@@ -693,21 +717,30 @@ loop.set_history_transformer(compact_history);  // run() 前接线一次
 
 ```cpp
 auto view = mira::build_conversation_view(event_store, session_id);
-// std::vector<ConversationEntry{kind: UserMessage|LoopOutcome, recorded_at, text, origin}>
+// std::vector<ConversationEntry{kind: UserMessage|AssistantSpeech|LoopOutcome,
+//                               recorded_at, text, origin}>
 ```
 
-EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected`、AgentLoop 的
-`LoopSettled` 与 ConversationLoop 的 `ConversationSettled` 按会话顺序重建。
+EventStore 是唯一事实源（RULE-07）；投影从 `UserMessageInjected`、
+`AssistantSpeech`（两者 ConversationLoop）、AgentLoop 的 `LoopSettled` 与
+ConversationLoop 的 `ConversationSettled` 按会话顺序重建。
 两种终态均映射为 `LoopOutcome`，保留源 EventId、时间戳与 session_sequence。
 旧事件仍展示 steps；ConversationSettled 展示存在的数值字段 turns、total_turns、
 recoveries、tool_executions（turns 为保留记录数，total_turns 为累计推进尝试数）。
-可选计数缺失或非数值时省略；已识别事件的 detail、用户 text 或终态 outcome 不可读时
-返回 `mira.conversation` / `DataLoss`；其他事件不解析载荷、继续跳过。
+`outcome == "Answered"` 的条目按 `tool_executions` 区分措辞：
+`(terminal text + N tool call(s))` 或 `(terminal text only)`（DEC-104）。
+AssistantSpeech 条目渲染 `assistant said: <text>` 与逐调用
+`assistant tool call <name> <arguments> (<status>)` 行；宿主可按 Kind 映射
+assistant 角色，不必全部折叠进 User。
+可选计数缺失或非数值时省略；已识别事件的 detail、用户 text、发言内容或终态
+outcome 不可读时返回 `mira.conversation` / `DataLoss`；其他事件不解析载荷、
+继续跳过。
 这是运行摘要，不是模型答案。升级后可直接重建旧日志视图，无事件迁移；缓存视图和
 下游分段等派生资产由宿主按需重建。完整对话 patch、暂停/恢复语义由 M8-04 冻结，
 本投影不承载它们。修复依据及证据见
-[DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md) 与
-[维护计划](../plans/maintenance-2026-11-conversation-outcomes.md)。
+[DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md)、
+[DEC-104](../decisions/DEC-104-assistant-speech-events.md) 与
+[维护计划](../plans/maintenance-2026-11-bridge-host-feedback.md)。
 
 ## 相关文档
 
