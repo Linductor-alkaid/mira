@@ -1,5 +1,12 @@
 # Mira 实施总计划
 
+宿主 system 模板维护：`BUG-20261109-001` / `MNT-202611-SP-01..03`，依据
+[DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md)，提供完整覆盖与
+可审计 digest，复用 DEC-097 动态工具暴露；状态和证据见
+[维护计划](maintenance-2026-11-conversation-host-system.md)。
+2026-11-09：按 Linux 离线范围 Completed，Debug 全量 **148/148** 与格式/文档/
+架构/平台边界检查通过；真实桥侧模型与 Windows/Android 验证保持未执行。
+
 每请求工具选择维护：`MNT-202611-TS-01`，依据
 [DEC-097](../decisions/DEC-097-per-request-tool-selection.md)，状态与验收见
 [维护计划](maintenance-2026-11-tool-selection.md)。

@@ -24,6 +24,19 @@ namespace mira {
 // turn/tool cutoff. Zero finite limits keep their original meaning.
 enum class ConversationLimitMode : std::uint8_t { Finite, Continuous };
 
+// DEC-098: trusted host configuration, replacing the entire built-in System
+// text (including its tool-use suffix). Never populate from model/tool input.
+// Both text and template_id must contain non-whitespace. The ID becomes the
+// System item's provenance.source; role and Internal authority stay fixed.
+struct ConversationSystemPrompt final {
+    std::string text;
+    std::string template_id;
+    // Host-declared template identity; if absent, SHA-256 of text is used.
+    // An explicit all-zero digest is invalid. The rendered text digest is
+    // recorded separately so template identity need not equal content hash.
+    std::optional<Hash> template_digest{};
+};
+
 struct ConversationLoopConfig final {
     // Whole-run bound on model turns; exhausting it settles as MaxTurns.
     std::uint32_t max_turns = 12;
@@ -58,6 +71,10 @@ struct ConversationLoopConfig final {
     // counterpart of AgentLoop::max_pending_user_messages. Overflow rejects
     // the enqueue with ResourceExhausted instead of dropping the message.
     std::size_t max_pending_user_messages = 16;
+    // Empty optional preserves the built-in v1 prompt and its legacy digest.
+    // Present configuration is validated before callbacks or request assembly;
+    // invalid values fail run() with InvalidArgument, never fall back.
+    std::optional<ConversationSystemPrompt> system_prompt{};
 };
 
 enum class ConversationOutcome : std::uint8_t {

@@ -1,8 +1,8 @@
 # 持续会话循环
 
 > 状态：Active
-> 版本：1.2
-> 更新日期：2026-11-07
+> 版本：1.3
+> 更新日期：2026-11-09
 > 适用范围：ConversationLoop 的显式 Continuous 模式
 > 依据：[DEC-056](../decisions/DEC-056-continuous-conversation-loop.md)、
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §4.4
@@ -25,6 +25,17 @@ OperationContext 的取消探针映射 StopToken，模型 context 的 deadline �
 取消和期限。关闭顺序仍为停止生产、协作取消、消费结果、外部 shutdown(true)。
 
 ## 请求预算与兼容
+
+Finite 与 Continuous 均支持 [DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md)
+的可信宿主完整 system 配置：替换唯一 System 文本与模板来源，权限仍为 Internal；
+未配置保留 v1 文本/digest。模板摘要可由宿主声明，省略则计算文本 SHA-256；实际
+文本摘要单独以元数据事件记录，不复制提示原文。无效配置在宿主回调前拒绝，不降级。
+这不改变文本终态，工具发声宿主自行处理终态文本与发送结果。
+
+动态工具暴露复用 DEC-097 的 `set_tool_selector()`，每次成功组装都能看到完整
+宿主 system、输入/历史与注册目录；宿主按本轮状态返回有序子集，gateway 重试复用。
+工具退出暴露集不删除历史，也不能再被本轮模型调用。所有回调在既有 worker 有界
+执行，配置在 run 前完成，不新增线程或调度器。示例见 [API](../api/model-agent-loop.md)。
 
 Continuous 产生 model contract 2.0 请求，附带 Request scope、单 infer 预约及
 有限输出预算。旧 reader 拒绝 major 2，不能把请求级预算误作累计预算。

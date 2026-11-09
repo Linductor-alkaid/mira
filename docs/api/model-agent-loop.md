@@ -432,6 +432,58 @@ auto result = loop.run(AgentLoopSpec{task, session, epoch, goal, profile_id}, co
 - `Answered` 只代表模型给出了终态文本；它不做也不需要设备验证。需要环境副作用验证的
   设备任务仍由 `AgentLoop` 承载。
 
+### 宿主完整 system 模板（DEC-098）
+
+`ConversationLoopConfig::system_prompt` 可替换整个内建 System 文本，适用于「一切
+发声经工具，文本仅为内部终态」的宿主。不配置时保留内建 v1 文本与旧 digest。
+
+```cpp
+mira::ConversationLoopConfig config;
+config.system_prompt = mira::ConversationSystemPrompt{
+    "Replying with text does not reach anyone. Speech happens only through send tools. "
+    "Tool results arrive on your next turn. Terminal text must be exactly 无事.",
+    "bridge.speech.system.v1"
+};
+// 可选：声明模板资源摘要；不设置则使用完整 text 的 SHA-256。
+config.system_prompt->template_digest = mira::digest_string("bridge.speech.template.v1");
+mira::ConversationLoop loop(gateway, config);
+loop.set_tool_registry(registry);
+loop.set_tool_selector(
+    [send_id] (const mira::AgentLoopSpec &, const mira::ModelRequest &request)
+        -> mira::Result<std::vector<mira::ToolId>> {
+        // 每轮读取完整请求与工具历史，也可查询有界宿主状态来调整子集。
+        // 此处仅示范：发声工具执行前暴露，收到结果后本轮不再暴露。
+        for (const auto &item : request.input) {
+            for (const auto &part : item.content) {
+                if (std::holds_alternative<mira::ToolResultPart>(part)) {
+                    return std::vector<mira::ToolId>{};
+                }
+            }
+        }
+        return std::vector<mira::ToolId>{send_id};
+    });
+```
+
+配置在构造时复制，运行中不替换。`text` 逐字成为唯一 System 项，不附加任何内建
+作答/工具句子；`template_id` 成为该项 `provenance.source`，authority 与 TextPart
+sensitivity 均固定为 Internal。只接受可信宿主配置；goal、用户队列、供应输入与
+工具结果仍按原有角色和权限处理，不能经这些路径升级为 System。
+
+`text`/`template_id` 为空或仅含 ASCII 空白，或显式 digest 全零时，`run()` 在请求
+组装及宿主回调前返回 `InvalidArgument`，无 infer/工具执行，不回退内建模板。
+`prompt_provenance.system_template_digest` 取宿主摘要或自动计算值；显式摘要代表
+模板身份，不要求等于渲染文本的摘要。现有模板版本字段保持默认，身份的版本由宿主
+`template_id` 与摘要表达。每次成功组装自定义请求产生
+`ConversationSystemPromptSelected`：detail 包含组装 `request_id`、
+`system_template_digest` 与 `rendered_system_digest`（实际文本 SHA-256），不含
+文本或模板 ID 原文。事件沿用 best-effort 语义，组装事件不代表 infer 已派发。
+
+动态暴露复用 [DEC-097](../decisions/DEC-097-per-request-tool-selection.md)：选择器
+看见完整自定义 system 与目录，返回本轮有序子集，历史继续保留；空集、未知/重复 ID、
+回调失败、重试复用及未选工具拒绝语义不变。无需在运行中替换回调或修改注册表。
+覆盖提示不强制模型遵从，也不改变无工具文本结束为 `Answered` 的解析规则。
+`answer` 是否外发由宿主决定，工具送达/副作用仍须宿主验证。C++ 消费者须重编译。
+
 ### 终态截断原因（DEC-065 / DEC-066，mira#100）
 
 终态失败若由**不完整输出**造成，携带结构化的终态原因，宿主不必解析 `safe_summary`
