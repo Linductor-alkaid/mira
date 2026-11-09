@@ -96,7 +96,10 @@
 总计划文档同步，Debug 全量构建通过后交独立验证代理执行测试环节。
 
 2026-11-09：独立验证完成，三个工作项按 Linux 离线范围关闭 `BUG-20261109-002`。
-
+交付分支基于最新 master 重放（`62ad918`）：
+[PR #123](https://github.com/Linductor-alkaid/mira/pull/123)，基座 Debug 全量
+**156/156** 通过（M36 分支树的 166/166 记录保留于上方，含该树新增的 m29/m36
+目标）；远端 CI 验收以本 PR 的 Checks 为准。
 - 环境：`feat/interaction-concurrency-recovery` 未提交工作树，Linux x86_64、
   GCC 13、C++20、Debug、warnings-as-errors 开启；仅脚本化模型与
   MemoryEventStore，无真实网络请求或平台输入。

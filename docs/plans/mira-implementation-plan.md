@@ -7,8 +7,10 @@
 part 分隔、新增 AssistantSpeech 事件与会话视图助手发言条目（含结算措辞区分）、
 提供 profile 级解码参数默认；状态与验收见
 [维护计划](maintenance-2026-11-bridge-host-feedback.md)。
-2026-11-09：按 Linux 离线范围 Completed，Debug 全量 **166/166** 与格式/文档/
-架构/平台边界检查通过；真实端点与桥接回放、Windows/Android 验证保持未执行。
+2026-11-09：按 Linux 离线范围 Completed，Debug 全量 **156/156**（master 基座）与
+格式/文档/架构/平台边界检查通过；
+[PR #123](https://github.com/Linductor-alkaid/mira/pull/123) 已提交，远端 CI 验收
+入口见同一维护计划；真实端点与桥接回放、Windows/Android 验证保持未执行。
 
 [M35：子代理语义选工具与副作用执行](m35-subagent-semantic-tools.md)（Completed，Linux 本地范围），
 依据 [DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)：父只委派目标，child
