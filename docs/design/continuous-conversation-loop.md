@@ -119,9 +119,24 @@ ConversationSettled 保留终态和累计数（原 turns 仍为保留记录数�
 
 `build_conversation_view` 将 ConversationSettled 投影为 LoopOutcome，按可用数值字段
 展示 turns/total_turns/recoveries/tool_executions，保留源 EventId、时间戳与会话序列。
-同时继续支持 AgentLoop 的 LoopSettled；无关事件不解析、跳过，已识别事件必需载荷
-损坏返回 DataLoss。视图只重建已成功存储的运行摘要，不替代模型答案，也不改变
-上述 best-effort 写入语义；见 [DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md)。
+`outcome == "Answered"` 的结算条目按 `tool_executions` 区分措辞：有工具执行渲染
+`(terminal text + N tool call(s))`，否则渲染 `(terminal text only)`——在工具发声
+宿主下后者意味着发言通道没有携带任何内容（DEC-104）；loop 不知道哪些工具"发声"，
+措辞保持事实性。同时继续支持 AgentLoop 的 LoopSettled；无关事件不解析、跳过，
+已识别事件必需载荷损坏返回 DataLoss。视图只重建已成功存储的运行摘要，不替代
+模型答案，也不改变上述 best-effort 写入语义；见
+[DEC-016 补充](../decisions/DEC-016-conversation-events-and-user-messages.md)。
+
+跨 burst 记忆的"个体说过什么"由 `AssistantSpeech` 一等事件承载（DEC-104）：
+ConversationLoop 在工具轮提案批处理完毕后与终文本回答时各发射一条，载荷含轮号、
+有界可见文本（`text`，超限置 `text_truncated`）、逐工具调用的
+`wire_name`/`arguments`（有界）/`arguments_digest`/`status`
+（`executed`/`failed`/`skipped`/`not_executed`）与 `sensitivity: "Internal"`。
+rejected/ambiguous/截断丢弃等未实际发声的输出不记录；MaxOutputTokens 的续写
+片段不单独记录，其完成文本由终文本条目承载。视图新增
+`ConversationEntry::Kind::AssistantSpeech` 条目（`assistant said: …` 与
+`assistant tool call … (status)` 行），宿主回放由此可拼出真正的多轮对话前缀并
+按 Kind 映射 assistant 角色；M17 分段为该类条目渲染 `assistant: ` 行前缀。
 
 终态截断原因是结构化事实（DEC-065）：续写额度耗尽时结果对象携带
 `terminal_incomplete_reason`，ConversationSettled 载荷携带 `output_continuations`

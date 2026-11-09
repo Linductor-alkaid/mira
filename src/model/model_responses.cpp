@@ -224,11 +224,14 @@ Result<JsonValue> ResponsesV1Mapper::encode_request(const ModelRequest &request,
         root.emplace_back("max_output_tokens",
                           static_cast<std::int64_t>(*request.generation.max_output_tokens));
     }
-    if (request.generation.temperature.has_value()) {
-        root.emplace_back("temperature", *request.generation.temperature);
+    // DEC-105: the profile's decoding defaults fill the sampling parameters
+    // the canonical request left unset; explicit request values always win.
+    const auto generation = effective_generation_options(profile, request.generation);
+    if (generation.temperature.has_value()) {
+        root.emplace_back("temperature", *generation.temperature);
     }
-    if (request.generation.top_p.has_value()) {
-        root.emplace_back("top_p", *request.generation.top_p);
+    if (generation.top_p.has_value()) {
+        root.emplace_back("top_p", *generation.top_p);
     }
 
     // `store` is always explicit; the provider default is never relied upon.

@@ -49,6 +49,63 @@ namespace {
     return entry;
 }
 
+[[nodiscard]] Result<ConversationEntry> assistant_speech_entry(const EventEnvelope &envelope) {
+    const auto payload = parse_json(envelope.payload.data);
+    const auto *detail = event_detail(payload);
+    if (detail == nullptr) {
+        return projection_error("AssistantSpeech payload is not readable");
+    }
+    std::ostringstream text;
+    bool has_content = false;
+    if (const auto *speech = detail->find("text"); speech != nullptr) {
+        if (!speech->is_string()) {
+            return projection_error("AssistantSpeech payload text is not a string");
+        }
+        const auto &spoken = *speech->as_string();
+        if (!spoken.empty()) {
+            text << "assistant said: " << spoken;
+            has_content = true;
+        }
+    }
+    if (const auto *calls = detail->find("tool_calls"); calls != nullptr) {
+        if (!calls->is_array()) {
+            return projection_error("AssistantSpeech payload tool_calls is not an array");
+        }
+        for (const auto &call : *calls->as_array()) {
+            if (!call.is_object()) {
+                return projection_error("AssistantSpeech tool call is not an object");
+            }
+            const auto *name = call.find("wire_name");
+            const auto *status = call.find("status");
+            if (name == nullptr || !name->is_string() || status == nullptr ||
+                !status->is_string()) {
+                return projection_error("AssistantSpeech tool call is not readable");
+            }
+            if (has_content) {
+                text << '\n';
+            }
+            text << "assistant tool call " << *name->as_string();
+            if (const auto *arguments = call.find("arguments"); arguments != nullptr &&
+                                                                arguments->is_string() &&
+                                                                !arguments->as_string()->empty()) {
+                text << ' ' << *arguments->as_string();
+            }
+            text << " (" << *status->as_string() << ")";
+            has_content = true;
+        }
+    }
+    if (!has_content) {
+        return projection_error("AssistantSpeech payload carries no speech");
+    }
+    ConversationEntry entry;
+    entry.kind = ConversationEntry::Kind::AssistantSpeech;
+    entry.recorded_at = envelope.timestamp;
+    entry.text = text.str();
+    entry.origin = envelope.event_id;
+    entry.session_sequence = envelope.session_sequence;
+    return entry;
+}
+
 [[nodiscard]] Result<ConversationEntry> loop_outcome_entry(const EventEnvelope &envelope) {
     const auto payload = parse_json(envelope.payload.data);
     const auto *detail = event_detail(payload);
@@ -66,6 +123,29 @@ namespace {
             text << " (steps " << static_cast<long long>(steps->as_number().value_or(0.0)) << ")";
         }
     } else {
+        // DEC-104: an Answered through executed tool calls reads differently
+        // from an Answered with nothing but the terminal text - in a host
+        // whose speech channel is a tool, the latter means the speech channel
+        // never carried anything. The loop cannot know which tools speak, so
+        // the wording stays factual over the recorded counter.
+        if (*outcome->as_string() == "Answered") {
+            std::uint64_t executed_calls = 0;
+            bool counted = false;
+            if (const auto *counter = detail->find("tool_executions");
+                counter != nullptr && counter->is_number()) {
+                const auto value = counter->as_number().value_or(0.0);
+                if (value >= 0.0 && value <= 18446744073709551615.0) {
+                    executed_calls = static_cast<std::uint64_t>(value);
+                    counted = true;
+                }
+            }
+            if (counted && executed_calls > 0) {
+                text << " (terminal text + " << executed_calls
+                     << (executed_calls == 1 ? " tool call" : " tool calls") << ")";
+            } else {
+                text << " (terminal text only)";
+            }
+        }
         bool has_counter = false;
         for (const auto *name : {"turns", "total_turns", "recoveries", "tool_executions"}) {
             if (const auto *counter = detail->find(name);
@@ -104,6 +184,12 @@ Result<std::vector<ConversationEntry>> build_conversation_view(const IEventStore
         for (const auto &envelope : page.value().events) {
             if (envelope.payload.type == "UserMessageInjected") {
                 auto entry = user_message_entry(envelope);
+                if (!entry) {
+                    return entry.error();
+                }
+                entries.push_back(std::move(entry).value());
+            } else if (envelope.payload.type == "AssistantSpeech") {
+                auto entry = assistant_speech_entry(envelope);
                 if (!entry) {
                     return entry.error();
                 }

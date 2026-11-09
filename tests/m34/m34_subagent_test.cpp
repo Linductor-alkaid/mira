@@ -54,10 +54,22 @@ int child_result_wakes_parent_and_preserves_history() {
     query.session_id = fixture.spec_.session_id;
     const auto page = log->read(query);
     MIRA_CHECK(page);
+    // DEC-104: the parent's AssistantSpeech events carry the model-produced
+    // tool call arguments (spawn prompt included, classified Internal); no
+    // other event type may quote them, and the child's own answer text never
+    // reaches the parent session's events at all.
+    bool spawn_prompt_in_speech = false;
     for (const auto &event : page.value().events) {
-        MIRA_CHECK(event.payload.data.find("private child prompt") == std::string::npos);
+        if (event.payload.type == "AssistantSpeech") {
+            if (event.payload.data.find("private child prompt") != std::string::npos) {
+                spawn_prompt_in_speech = true;
+            }
+        } else {
+            MIRA_CHECK(event.payload.data.find("private child prompt") == std::string::npos);
+        }
         MIRA_CHECK(event.payload.data.find("child finding") == std::string::npos);
     }
+    MIRA_CHECK(spawn_prompt_in_speech);
     MIRA_CHECK(owner.close());
     MIRA_CHECK(owner.close());
     return 0;

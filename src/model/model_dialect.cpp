@@ -457,10 +457,19 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
             }
         }
         if (!has_image) {
-            // Plain text content stays a simple string on the wire.
+            // Plain text content stays a simple string on the wire. Parts are
+            // logically independent blocks (goal, injected instructions,
+            // recovery feedback, supplied content), so their boundaries
+            // survive as line breaks (DEC-103) instead of gluing into one
+            // unreadable run. Empty parts contribute nothing and never emit
+            // a stray separator.
             std::string text;
             for (const auto &part : item.content) {
-                if (const auto *text_part = std::get_if<TextPart>(&part)) {
+                if (const auto *text_part = std::get_if<TextPart>(&part);
+                    text_part != nullptr && !text_part->text.empty()) {
+                    if (!text.empty()) {
+                        text += '\n';
+                    }
                     text += text_part->text;
                 }
             }
@@ -591,15 +600,18 @@ Result<JsonValue> ChatCompletionsV1Mapper::encode_request(const ModelRequest &re
         root.emplace_back("max_completion_tokens",
                           static_cast<std::int64_t>(*request.generation.max_output_tokens));
     }
-    if (request.generation.temperature.has_value()) {
-        root.emplace_back("temperature", *request.generation.temperature);
+    // DEC-105: the profile's decoding defaults fill the sampling parameters
+    // the canonical request left unset; explicit request values always win.
+    const auto generation = effective_generation_options(profile, request.generation);
+    if (generation.temperature.has_value()) {
+        root.emplace_back("temperature", *generation.temperature);
     }
-    if (request.generation.top_p.has_value()) {
-        root.emplace_back("top_p", *request.generation.top_p);
+    if (generation.top_p.has_value()) {
+        root.emplace_back("top_p", *generation.top_p);
     }
-    if (request.generation.seed.has_value() &&
+    if (generation.seed.has_value() &&
         profile.capabilities.generation.seed != ParamMapping::Unsupported) {
-        root.emplace_back("seed", static_cast<std::int64_t>(*request.generation.seed));
+        root.emplace_back("seed", static_cast<std::int64_t>(*generation.seed));
     }
     if (request.generation.reasoning_effort.has_value() &&
         profile.capabilities.generation.reasoning_effort != ParamMapping::Unsupported) {
