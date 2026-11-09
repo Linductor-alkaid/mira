@@ -1,8 +1,10 @@
 # Mira 实施总计划
 
-[M35：子代理语义选工具与副作用执行](m35-subagent-semantic-tools.md)（本地验收通过，PR 提交中），
+[M35：子代理语义选工具与副作用执行](m35-subagent-semantic-tools.md)（Completed，Linux 本地范围），
 依据 [DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)：父只委派目标，child
 自主发现、加载、执行并验证写工具；保留 M34 默认只读兼容模式。
+Debug 155/155、ASAN+UBSAN 与 TSAN 各 7/7、严格 clang-tidy 和相关门禁通过。
+[PR #122](https://github.com/Linductor-alkaid/mira/pull/122) 已提交，远端 CI 待维护者验收。
 
 [M34：受管子代理委派](m34-managed-subagent-delegation.md)（Completed，Linux 离线首期），依据
 [DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)补齐模型委派、结果回流与

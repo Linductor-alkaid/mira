@@ -1,6 +1,6 @@
 # M35：子代理语义选工具与副作用执行
 
-> 状态：In Progress
+> 状态：Completed（Linux 本地范围；PR 远端 CI 待维护者验收）
 > 日期：2026-11-09
 > 负责人：Mira Maintainers
 > 所属计划：[总计划](mira-implementation-plan.md)
@@ -12,7 +12,7 @@
 - [x] M35-02：原生工具动态暴露、可执行副作用、失败封闭审计与父结果元数据。
 - [x] M35-03：目标委派到发现/选择/执行/验证/回流集成测试；拒绝、异常、取消、
   deadline、接管、shutdown 与日志失败回归。
-- [ ] M35-04：设计/API/示例同步、完整本地检查与 PR 提交。
+- [x] M35-04：设计/API/示例同步、完整本地检查与 PR 提交。
 
 ## 验证记录
 
@@ -59,7 +59,10 @@ cmake --build build/debug --target format-check docs-check sbom-check platform-b
 git diff --check
 ```
 
-本地代码、示例和验证就绪，PR 发布与远端 CI 由下一步完成/验收。
+2026-11-09：实现提交 `7e20e8c` 已发布为
+[PR #122](https://github.com/Linductor-alkaid/mira/pull/122)，基线 master `8d7a4f9`。
+本地 M35-01..04 完成，远端 CI 由维护者验收；未自动合并，不将待验收 CI 记作通过。
+本次最后的状态同步仅修改文档，运行 docs-check 与 diff 检查。
 
 ## 未执行验证
 
