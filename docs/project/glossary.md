@@ -225,6 +225,14 @@ Review 等，[DEC-044](../decisions/DEC-044-multi-agent-context-fork-boundary.md
 无专属执行面，环境动作（如需）在其自身会话按既有租约纪律执行。
 _Avoid_: 子线程、插件、第二 Runtime
 
+[DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)允许由 Harness
+`SubagentCoordinator` 管理单层推理子会话，保持上述身份和执行平面约束。
+
+**Subagent Execution（子代理执行）**:
+由准确的 SessionId/TaskId/execution_id 标识的一次受管运行；句柄的取消和关闭
+只作用于该次执行。结果 claim 表示领取入父历史，不表示模型已消费或副作用恰好一次。
+_Avoid_: 会话（Session 可承载多次执行）、线程（由 Executor 管理的实现资源）
+
 **Snapshot Fork（快照分叉）**:
 从父会话已提交快照确定性派生子会话只读基线的投影操作，副本携带 fork
 溯源（父快照 id、父会话、fork 点水位）；不复用 epoch 的「作废」语义。

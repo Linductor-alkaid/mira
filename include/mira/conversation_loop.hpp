@@ -208,6 +208,15 @@ using ModelInputIdentityProvider =
 using HistoryTransformer =
     std::function<Result<std::vector<ModelInputItem>>(const std::vector<ModelInputItem> &history)>;
 
+// DEC-099: explicit owner-supplied continuation, not user-authored input.
+// Called before each request (wait=false) and before accepting terminal text
+// (wait=true). The latter may wait cooperatively on the caller's managed I/O
+// worker for outstanding work. Empty means no continuation. Errors/exceptions
+// fail closed. At most 16 nonempty strings / 64 KiB per call; the loop fixes
+// User role, Internal authority and provenance. Configure before run().
+using ConversationContinuationSource = std::function<Result<std::vector<std::string>>(
+    const AgentLoopSpec &, const OperationContext &, bool wait)>;
+
 // The no-observation conversational loop (DEC-047): model -> tool proposal ->
 // execute -> result -> model, driven over the same ModelGateway, admission and
 // budget contracts as the device agent loop. There is no environment, no
@@ -271,6 +280,8 @@ class ConversationLoop final {
     // history remains; exceeding its active capacity fails visibly.
     void set_history_transformer(HistoryTransformer transformer);
 
+    void set_continuation_source(ConversationContinuationSource source);
+
     // Queues one user message for injection at the next turn boundary
     // (M28/DEC-068 §4.4). This is the symmetric counterpart of
     // AgentLoop::enqueue_user_message: the queue is bounded, the overflow
@@ -327,6 +338,8 @@ class ConversationLoop final {
     [[nodiscard]] std::optional<std::vector<ModelInputItem>>
     apply_history_transform(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
                             ConversationLoopResult &result, std::size_t protected_items);
+    [[nodiscard]] Result<std::vector<ModelInputItem>>
+    collect_continuation(const AgentLoopSpec &spec, const OperationContext &context, bool wait);
     void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
               EventClass classification) const;
 
@@ -340,6 +353,7 @@ class ConversationLoop final {
     ModelInputSupplier input_supplier_;
     ModelInputIdentityProvider identity_provider_;
     HistoryTransformer history_transformer_;
+    ConversationContinuationSource continuation_source_;
     ModelInputSupplyOptions supply_options_{};
     std::shared_ptr<PendingUserMessages> pending_user_messages_ =
         std::make_shared<PendingUserMessages>();

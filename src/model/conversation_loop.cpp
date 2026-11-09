@@ -565,6 +565,19 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
         // in context for the rest of the run (M28/DEC-068 §4.4).
         drain_user_messages(spec, user_instructions);
 
+        if (continuation_source_) {
+            auto input = collect_continuation(spec, context, false);
+            if (!input) {
+                result.outcome = input.error().code == ErrorCode::Cancelled
+                                     ? ConversationOutcome::Cancelled
+                                     : ConversationOutcome::Failed;
+                result.safe_summary = input.error().safe_message;
+                break;
+            }
+            protected_items += input.value().size();
+            history.insert(history.end(), input.value().begin(), input.value().end());
+        }
+
         // Supplied-input seam (DEC-053): resolved exactly once per assembled
         // request, after tool rounds complete and before the model call.
         const SuppliedInput supplied = resolve_supplied_input(spec);
@@ -585,7 +598,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 replay = &*transformed;
             }
         }
-        if (continuous) {
+        if (continuous || continuation_source_) {
             result.retained_history_items = history.size();
             result.retained_history_bytes =
                 to_json_string(continuous_support::input_json(history)).size();
@@ -882,6 +895,40 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                           ? std::string{}
                           : assistant_text(outcome.response);
         if (!answer.empty()) {
+            if (continuation_source_) {
+                auto input = collect_continuation(spec, context, true);
+                if (!input) {
+                    result.outcome = input.error().code == ErrorCode::Cancelled
+                                         ? ConversationOutcome::Cancelled
+                                         : ConversationOutcome::Failed;
+                    result.safe_summary = input.error().safe_message;
+                    retain_turn(std::move(record));
+                    break;
+                }
+                if (!input.value().empty()) {
+                    ModelInputItem provisional;
+                    provisional.role = ModelRole::Assistant;
+                    provisional.authority = Sensitivity::Internal;
+                    provisional.provenance.source = "mira.conversation-loop.yield.v1";
+                    if (const auto profile = gateway_.router().find(outcome.response.profile_id);
+                        profile && dialect_accepts_thinking_replay(profile->dialect)) {
+                        for (const auto &item : outcome.response.output) {
+                            if (const auto *thinking = std::get_if<ThinkingPart>(&item))
+                                provisional.content.emplace_back(*thinking);
+                        }
+                    }
+                    TextPart part;
+                    part.text = std::move(answer);
+                    part.sensitivity = Sensitivity::Internal;
+                    provisional.content.emplace_back(std::move(part));
+                    history.push_back(std::move(provisional));
+                    history.insert(history.end(), input.value().begin(), input.value().end());
+                    protected_items = 1 + input.value().size();
+                    record.summary = "continuation";
+                    retain_turn(std::move(record));
+                    continue;
+                }
+            }
             record.summary = "answer";
             retain_turn(std::move(record));
             result.outcome = ConversationOutcome::Answered;

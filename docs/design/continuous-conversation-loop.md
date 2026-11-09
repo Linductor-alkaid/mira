@@ -18,6 +18,13 @@
 
 ## 所有权与执行
 
+M34/[DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)增加可选
+`ConversationContinuationSource`：每轮请求前收取结果，拟接受文本终态时允许 owner
+在可取消的受管 worker 上等待已接收 child。结果只成为有界 User/Text 任务数据，
+错误 fail closed；父 Task 在等待期间仍 active，未复活终态。原工具历史和临时
+Assistant 文本保留，有限轮数也继续生效；无 source 时保持本设计原终态语义。
+接线、资源和恢复边界见[子代理 API](../api/subagents.md)。
+
 外部 Runtime owner 初始化 kairo，把 run 放入受管 worker，持有并消费 future。
 OperationContext 的取消探针映射 StopToken，模型 context 的 deadline 取宿主期限
 与单次 model_call_deadline 的最小值。loop 不拥有线程或并发调度。供给和压缩回调
