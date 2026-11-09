@@ -357,7 +357,7 @@ SubagentCoordinator::start_parent(std::unique_ptr<ConversationLoop> loop,
     if (!s->parent_worker || !s->parent_worker->started()) {
         s->accepting = false;
         s->parent_done = true;
-        const auto failure = error(ErrorCode::ResourceExhausted, "Executor rejected parent worker");
+        auto failure = error(ErrorCode::ResourceExhausted, "Executor rejected parent worker");
         if (auto stored = s->emit("SubagentParentRejected", nullptr, "submission-rejected");
             !stored)
             s->audit_error = stored.error();

@@ -5,6 +5,8 @@
 父循环继续、权限/预算/取消/关闭，复用 M24 与既有 Harness，不新增设备执行平面。
 2026-11-09：Debug 全量 153/153，ASAN+UBSAN 与 TSAN 定向各 5/5，相关门禁通过；
 目标平台与真实模型补跑条件见 M34，递归/持续消息/跨进程恢复不在首期交付范围。
+PR #121 首次 quality 的返回值 const 诊断已本地复现并修复；五个编译单元严格
+clang-tidy、定向 6/6 和 quality 后续门禁通过，新 head 的远端 CI 待验收，见 M34。
 
 宿主 system 模板维护：`BUG-20261109-001` / `MNT-202611-SP-01..03`，依据
 [DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md)，提供完整覆盖与

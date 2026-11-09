@@ -1,6 +1,6 @@
 # M34：受管子代理委派
 
-> 状态：Completed（Linux 离线首期范围）
+> 状态：Completed（Linux 离线首期范围，quality 修复已本地验证）
 > 负责人：Mira Maintainers
 > 更新日期：2026-11-09
 > 所属计划：[总计划](mira-implementation-plan.md)
@@ -92,3 +92,31 @@ DEC-044 修订、DEC-099、设计/API/术语、研究入口、示例与总计划
 2026-11-09 发布准备：PR #120 已合并为 `4befd54`，与原依赖 `eb2448d` 的源码树
 完全一致。本次分支转到该最新主干独立提交，保留上述验收，rebase 前后检查 feature
 源码树一致；远端 CI 的最终 head 验收由维护者完成，不自动合并。
+
+2026-11-09：PR #121 的 push/PR 两次 quality 作业均在 `subagent.cpp:365` 失败，
+`const auto failure` 阻止返回值自动移动，触发启用 warnings-as-errors 的
+`performance-no-automatic-move`。此前本地格式/架构等检查不代表已运行 clang-tidy，
+保留原验证记录并重新打开 M34-05，补齐本次变更编译单元的静态分析与定向回归。
+失败证据：[push quality](https://github.com/Linductor-alkaid/mira/actions/runs/42550955441/job/128946191690)、
+[PR quality](https://github.com/Linductor-alkaid/mira/actions/runs/42550976786/job/128946260290)。
+
+2026-11-09 quality 修复验收：基于 `570cd99` 的工作树，clang-tidy 18.1.8 使用仓库
+`.clang-tidy` 与 `--warnings-as-errors='*'`，本地先复现同一行失败，再将局部错误对象
+改为非 const，保持 promise 保存错误与调用者返回错误的语义。未禁用检查或改动
+并发/取消/关闭路径。五个受影响模型层编译单元全部通过严格分析（公共头同时被检查），
+随后相关构建成功，M34 四项、宿主示例和文档回归 **6/6**（1.37 秒）通过，包括
+Executor 拒绝父 worker 的错误返回路径。
+
+```bash
+for source in src/model/{conversation_loop,conversation_continuation,subagent,subagent_child,subagent_tools}.cpp; do
+  clang-tidy -p build/debug "$source" --warnings-as-errors='*'
+done
+cmake --build build/debug --target mira_m34_subagent_test mira_m34_continuation_test mira_m34_subagent_lifecycle_test mira_m34_subagent_bounds_test mira_subagent_host_consumer -j 6
+ctest --test-dir build/debug -R '^mira_m34_|^mira_subagent_host_consumer_test$|^mira_docs_test$' --output-on-failure
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+quality 后续五项门禁均通过：329 文件格式、文档、SBOM、平台边界、架构；存量
+baseline 16 项不变。本轮仅修复返回对象 const 限定，未重复全量或 sanitizer；原记录
+继续保留，新 head 的完整远端 CI 尚待维护者验收，不把定向通过当作远端已全绿。
