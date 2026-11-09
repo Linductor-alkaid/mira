@@ -1,11 +1,11 @@
 # 受管子代理委派设计
 
 > 状态：Active
-> 版本：1.0
+> 版本：1.1
 > 更新日期：2026-11-09
 > 负责人：Mira Maintainers
-> 决策：[DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)
-> 实施：[M34](../plans/m34-managed-subagent-delegation.md)
+> 决策：[DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)、[DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)
+> 实施：[M34](../plans/m34-managed-subagent-delegation.md)、[M35](../plans/m35-subagent-semantic-tools.md)
 
 ## 目标与范围
 
@@ -68,9 +68,14 @@ sequenceDiagram
 ## 输入、权限与资源界限
 
 profile 目录在 tools() 快照时冻结，模型只选已注册名称；描述和 schema enum 说明
-角色，不允许模型构造 endpoint、凭据或权限。child 工具集合必须来自显式白名单，
-拒绝未知/重复 ID、声明的写操作及委派控制工具，每请求复核。权限由确定性代码
-控制，system 提示只说明角色；它不授予权能。共享设备写路径不在首期范围。
+角色，不允许模型构造 endpoint、凭据或权限。默认 StaticReadOnly 模式仍使用只读
+白名单。[DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)扩展 Discover 模式：
+可信 factory 按目标供应目录，child 自行发现、按任务语义选择并动态加载原生 schema，
+包括副作用工具。父不枚举工具，目录和工具往返只在子上下文中。模型决定具体选型；
+能力范围由目录执行闭包与可选自动执行策略约束，system 文本本身不授予 host 权能。
+写操作需要派发前耐久记录与独立 Verify，未知效果停止后续调用并保留对账标志。
+共享设备互斥/租约仍由 Adapter/宿主提供，不从子会话身份推导写权限。
+详见 [API](../api/subagents.md)与 [M35](../plans/m35-subagent-semantic-tools.md)。
 
 child 启动预占活跃、累计创建、待回流槽和有限轮次资源额度。输入按请求估算核对，
 输出按生成上限，失败不退累计额度。账单未知/partial usage 不被重解释为免费。

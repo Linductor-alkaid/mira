@@ -22,8 +22,12 @@ class SubagentTestLog final : public IEventStore {
             return error;
         }
         auto result = store.append(request);
-        if (result)
+        if (result) {
             ++counts[request.payload.type];
+            // Explicit durable-store test double, never a MemoryEventStore guarantee.
+            if (acknowledge_durability)
+                result.value().achieved = request.required;
+        }
         cv.notify_all();
         return result;
     }
@@ -48,6 +52,7 @@ class SubagentTestLog final : public IEventStore {
         const std::lock_guard lock(mutex);
         fail_type = std::move(type);
     }
+    bool acknowledge_durability = false;
     MemoryEventStore store;
     std::function<void(const AppendRequest &)> on_append;
 
@@ -67,6 +72,7 @@ struct SubagentProbe final {
     bool entered = false;
     bool throws = false;
     bool fails = false;
+    bool resolve_tool_names = false;
     std::vector<ModelRequest> requests;
     std::vector<AgentLoopSpec> specs;
     std::vector<ModelResponse> script;
@@ -112,6 +118,15 @@ class SubagentProbeProvider final : public IModelProvider {
         const auto index = cursor_++;
         auto response =
             index < probe_->script.size() ? probe_->script[index] : text_response("child finding");
+        if (probe_->resolve_tool_names) {
+            for (auto &item : response.output) {
+                if (auto *call = std::get_if<ToolCallOutput>(&item)) {
+                    for (const auto &tool : request.tools)
+                        if (tool.wire_name == call->provider_name)
+                            call->tool_id = tool.tool_id;
+                }
+            }
+        }
         response.request_id = request.request_id;
         response.operation_id = request.operation_id;
         response.profile_id = request.profile_id;

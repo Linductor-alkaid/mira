@@ -144,6 +144,7 @@ add_library(mira_core
     src/model/conversation_continuation.cpp
     src/model/subagent.cpp
     src/model/subagent_child.cpp
+    src/model/subagent_tool_session.cpp
     src/model/subagent_tools.cpp
     src/tool/tool_module.cpp
     src/tool/tool_module_registry.cpp
@@ -462,6 +463,18 @@ foreach(host IN ITEMS workflow_runtime context_assembly recovery_planner)
         set_tests_properties(mira_${host}_host_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 30)
     endif()
 endforeach()
+# M35 autonomous directory and verified workspace publication, offline.
+add_executable(mira_subagent_tool_host_consumer examples/subagent_tool_host_consumer.cpp)
+target_link_libraries(mira_subagent_tool_host_consumer PRIVATE Mira::core kairo::kairo)
+target_include_directories(mira_subagent_tool_host_consumer SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_subagent_tool_host_consumer)
+mira_enable_sanitizers(mira_subagent_tool_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_subagent_tool_host_consumer_test COMMAND mira_subagent_tool_host_consumer)
+    set_tests_properties(mira_subagent_tool_host_consumer_test PROPERTIES LABELS "consumer;m35" TIMEOUT 30)
+endif()
+
 # M34 managed delegation consumer; no network or device input.
 add_executable(mira_subagent_host_consumer examples/subagent_host_consumer.cpp)
 target_link_libraries(mira_subagent_host_consumer PRIVATE Mira::core kairo::kairo)

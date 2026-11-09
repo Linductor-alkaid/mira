@@ -1,4 +1,5 @@
 #include "subagent_support.hpp"
+#include "subagent_tool_session.hpp"
 
 #include <mira/model_digest.hpp>
 
@@ -70,6 +71,8 @@ void SubagentCoordinator::State::settle(const std::shared_ptr<Child> &child, Sub
         answer.clear();
         summary = "child deadline expired";
     }
+    child->snapshot.verified_effects = child->verified_effects;
+    child->snapshot.effects_uncertain = child->effects_uncertain;
     child->snapshot.status = status;
     child->snapshot.answer = std::move(answer);
     child->snapshot.safe_summary = std::move(summary);
@@ -105,104 +108,82 @@ void SubagentCoordinator::State::run_child(const std::shared_ptr<Child> &child,
     SubagentStatus status = SubagentStatus::Failed;
     std::string answer;
     std::string summary = "child execution failed";
-    try {
-        // All setup and resource destruction happen before settlement becomes visible.
-        if (context.cancelled_or_expired(Timestamp::now())) {
-            status = context.cancelled() ? SubagentStatus::Cancelled : SubagentStatus::TimedOut;
-        } else {
-            auto made = child->profile->create_resources(child->spec, context);
-            if (!made) {
-                summary = "child resource factory failed";
-            } else if (context.cancelled_or_expired(Timestamp::now())) {
+    {
+        subagent_support::ToolSession tools;
+        try {
+            // All setup and resource destruction happen before settlement becomes visible.
+            if (context.cancelled_or_expired(Timestamp::now())) {
                 status = context.cancelled() ? SubagentStatus::Cancelled : SubagentStatus::TimedOut;
             } else {
-                auto resources = std::move(made).value();
-                const auto &profile = *child->profile;
-                if (!resources.provider || resources.provider->profile().profile_digest() !=
-                                               profile.model.profile_digest()) {
-                    summary = "child provider does not match the registered profile";
+                auto made = child->profile->create_resources(child->spec, context);
+                if (!made) {
+                    summary = "child resource factory failed";
+                } else if (context.cancelled_or_expired(Timestamp::now())) {
+                    status =
+                        context.cancelled() ? SubagentStatus::Cancelled : SubagentStatus::TimedOut;
                 } else {
-                    const auto catalog = resources.tools ? resources.tools->exposed_tools()
-                                                         : std::vector<ExposedToolSpec>{};
-                    bool allowed = true;
-                    std::vector<ToolId> seen;
-                    for (const auto &id : profile.allowed_tools) {
-                        const auto found =
-                            std::find_if(catalog.begin(), catalog.end(),
-                                         [&](const auto &tool) { return tool.tool_id == id; });
-                        if (found == catalog.end() || found->has_side_effects ||
-                            found->wire_name == "spawn_agent" || found->wire_name == "get_agent" ||
-                            found->wire_name == "cancel_agent" ||
-                            std::find(seen.begin(), seen.end(), id) != seen.end()) {
-                            allowed = false;
-                            break;
-                        }
-                        seen.push_back(id);
-                    }
-                    if (!allowed) {
-                        summary = "child tool authorization rejected the requested tool set";
+                    auto resources = std::move(made).value();
+                    const auto &profile = *child->profile;
+                    if (!resources.provider || resources.provider->profile().profile_digest() !=
+                                                   profile.model.profile_digest()) {
+                        summary = "child provider does not match the registered profile";
                     } else {
-                        ModelRouter router;
-                        router.register_profile(
-                            std::make_shared<const ModelProfile>(profile.model));
-                        ModelGatewayConfig gateway_config;
-                        gateway_config.retry_budget.max_attempts = 1;
-                        ModelGateway gateway(executor, std::move(router), resources.artifacts,
-                                             PriceTable{}, gateway_config);
-                        gateway.register_provider(
-                            std::shared_ptr<IModelProvider>(std::move(resources.provider)));
-                        gateway.set_event_store(events, runtime, child->spec.session_id);
-                        auto admission = std::make_shared<SimpleAdmissionGate>();
-                        admission->activate(child->spec.task_id, child->spec.task_epoch);
-                        gateway.set_admission_gate(admission);
-                        ConversationLoop loop(gateway, profile.conversation);
-                        loop.set_event_store(events, runtime, child->spec.session_id);
-                        loop.set_tool_registry(resources.tools);
-                        loop.set_model_input_supplier(std::move(resources.input_supplier));
-                        loop.set_tool_selector(
-                            [&profile](const AgentLoopSpec &,
-                                       const ModelRequest &request) -> Result<std::vector<ToolId>> {
-                                if (estimate_input_tokens(request) >
-                                    profile.max_input_tokens_per_request) {
-                                    return error(ErrorCode::ResourceExhausted,
-                                                 "child input estimate exceeds its request quota");
-                                }
-                                for (const auto &id : profile.allowed_tools) {
-                                    const auto found = std::find_if(
-                                        request.tools.begin(), request.tools.end(),
-                                        [&](const auto &tool) { return tool.tool_id == id; });
-                                    if (found == request.tools.end() || found->has_side_effects) {
-                                        return error(ErrorCode::PermissionDenied,
-                                                     "child tool authorization changed");
-                                    }
-                                }
-                                return profile.allowed_tools;
-                            });
-                        auto result = loop.run(child->spec, context);
-                        if (result) {
-                            switch (result.value().outcome) {
-                            case ConversationOutcome::Answered:
-                                status = SubagentStatus::Answered;
-                                answer = std::move(result.value().answer);
-                                summary = "child answered";
-                                break;
-                            case ConversationOutcome::Cancelled:
-                                status = SubagentStatus::Cancelled;
-                                summary = "child execution was cancelled";
-                                break;
-                            default:
-                                summary = "child conversation did not complete";
-                                break;
-                            }
+                        auto prepared =
+                            tools.initialize(profile, resources, child->spec, events, runtime);
+                        if (!prepared) {
+                            summary = "child tool authorization or catalog rejected";
                         } else {
-                            summary = "child conversation failed";
+                            ModelRouter router;
+                            router.register_profile(
+                                std::make_shared<const ModelProfile>(profile.model));
+                            ModelGatewayConfig gateway_config;
+                            gateway_config.retry_budget.max_attempts = 1;
+                            ModelGateway gateway(executor, std::move(router), resources.artifacts,
+                                                 PriceTable{}, gateway_config);
+                            gateway.register_provider(
+                                std::shared_ptr<IModelProvider>(std::move(resources.provider)));
+                            gateway.set_event_store(events, runtime, child->spec.session_id);
+                            auto admission = std::make_shared<SimpleAdmissionGate>();
+                            admission->activate(child->spec.task_id, child->spec.task_epoch);
+                            gateway.set_admission_gate(admission);
+                            ConversationLoop loop(gateway, profile.conversation);
+                            loop.set_event_store(events, runtime, child->spec.session_id);
+                            loop.set_tool_registry(tools.registry);
+                            loop.set_model_input_supplier(std::move(resources.input_supplier));
+                            loop.set_tool_selector([&profile, &tools](const AgentLoopSpec &,
+                                                                      const ModelRequest &request) {
+                                return tools.select(request, profile.max_input_tokens_per_request);
+                            });
+                            auto result = loop.run(child->spec, context);
+                            if (tools.fatal) {
+                                summary = tools.fatal->safe_message;
+                            } else if (result) {
+                                switch (result.value().outcome) {
+                                case ConversationOutcome::Answered:
+                                    status = SubagentStatus::Answered;
+                                    answer = std::move(result.value().answer);
+                                    summary = "child answered";
+                                    break;
+                                case ConversationOutcome::Cancelled:
+                                    status = SubagentStatus::Cancelled;
+                                    summary = "child execution was cancelled";
+                                    break;
+                                default:
+                                    summary = "child conversation did not complete";
+                                    break;
+                                }
+                            } else {
+                                summary = "child conversation failed";
+                            }
                         }
                     }
                 }
             }
+        } catch (...) {
+            summary = "child execution raised an exception";
         }
-    } catch (...) {
-        summary = "child execution raised an exception";
+        child->verified_effects = tools.verified_effects;
+        child->effects_uncertain = tools.effects_uncertain;
     }
     // The provider/factory may finish late after an Executor stop request.
     if (context.cancelled())
@@ -250,16 +231,18 @@ SubagentCoordinator::State::collect(const AgentLoopSpec &spec, const OperationCo
         if (!child->done || child->snapshot.claimed)
             continue;
         const auto &snapshot = child->snapshot;
-        const auto text = to_json_string(JsonValue{
-            JsonValue::Object{{"kind", "subagent-result"},
-                              {"schema_version", 1},
-                              {"child_session_id", snapshot.handle.session_id.to_string()},
-                              {"child_task_id", snapshot.handle.task_id.to_string()},
-                              {"execution_id", snapshot.handle.execution_id.to_string()},
-                              {"status", subagent_status_name(snapshot.status)},
-                              {"answer", snapshot.structured ? std::string{} : snapshot.answer},
-                              {"safe_summary", snapshot.safe_summary},
-                              {"structured", snapshot.structured.value_or(JsonValue{})}}});
+        const auto text = to_json_string(JsonValue{JsonValue::Object{
+            {"kind", "subagent-result"},
+            {"schema_version", 1},
+            {"child_session_id", snapshot.handle.session_id.to_string()},
+            {"child_task_id", snapshot.handle.task_id.to_string()},
+            {"execution_id", snapshot.handle.execution_id.to_string()},
+            {"status", subagent_status_name(snapshot.status)},
+            {"answer", snapshot.structured ? std::string{} : snapshot.answer},
+            {"safe_summary", snapshot.safe_summary},
+            {"verified_effects", static_cast<std::int64_t>(snapshot.verified_effects)},
+            {"effects_uncertain", snapshot.effects_uncertain},
+            {"structured", snapshot.structured.value_or(JsonValue{})}}});
         if (text.size() > 48 * 1024) {
             return error(ErrorCode::ResourceExhausted,
                          "child result encoding exceeds continuation capacity");

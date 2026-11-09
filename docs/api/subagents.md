@@ -84,10 +84,50 @@ profile 的 `model` 在注册时复制。factory 的 provider 必须匹配该 pr
 continuations 最大 8；timeout 为正且不超过 10 分钟。子角色使用完整 system 模板，
 不会从父复制未结束工具轮，也不假设共享模型 KV cache。
 
-`allowed_tools` 为空表示零工具。每个 ID 必须存在、唯一且声明 has_side_effects=false；
-spawn_agent/get_agent/cancel_agent 不可授权给 child。每请求再次核对工具快照与输入
-估算配额。模型不可指定新的工具白名单、endpoint、凭据或提升权限；宿主对工具的
-副作用声明必须准确，默认不允许设备输入、对外发送或工作区写操作。
+默认 `tool_access=StaticReadOnly`：`allowed_tools` 为空表示零工具，每个 ID 必须存在、
+唯一且声明 has_side_effects=false。模型不能修改 host profile、endpoint 或凭据。
+
+`tool_access=Discover`（[DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)）：
+`allowed_tools` 留空，factory 不设置 `resources.tools`，而供应 `tool_catalog`。父代理
+只选角色、委派目标，无需了解目录或逐项授权。child 自己根据任务含义选择工具，
+目录可以含写入、发布、任务执行等副作用。目录由可信 factory 按 child goal/context
+提供受限执行闭包，属于宿主能力边界；模型选择不创建新的宿主身份或资源权限。
+
+子模型初始只看到 `discover_tools` / `load_tools`。发现结果每页最多 16 个名称、
+描述和副作用标志，不带 schema；`offset` 翻页，`query` 可接 factory 的 `search_tools`
+语义检索回调。未接检索时 `search_applied=false`，返回目录分页供模型按含义选择，
+不会使用关键字匹配冒充语义授权。检索返回最多 256 个目录内唯一 ID。
+`load_tools({names:[...]})` 替换活动集，下一次请求暴露所选原生工具的真实 schema。
+已卸载工具不可在新请求调用，同批先卸载再调用也被拒绝。父上下文不接收目录、schema
+和执行历史；最终摘要仍可能包含模型主动总结的内容，不是信息流隔离保证。
+
+目录最多 4096 项、编码元数据总计 8 MiB，名称最多 128 字节、描述 2048 字节、单项
+schema 32 KiB。禁止重复身份/名称和 spawn_agent/get_agent/cancel_agent/directory 控制名。
+`max_active_tools` 为 1..64，实际上限还取模型工具上限减 2（目录工具占两个名额）；
+Discover profile 要求模型工具上限至少 3。输入估算只计算所选 schema 和真实历史。
+
+可选 `resources.authorize_tool(child,spec,args,context)` 在每次原生调用前运行自动策略，
+可据目标语义、资源和参数判定，拒绝/异常不会执行 handler；不要求用户或父代理逐项
+确认。缺省允许目录内的所选调用。需要既有 PolicyEngine/能力 grant 的宿主应在此接线，
+模型文本不替代 host grant。工具须准确声明副作用，工厂负责外部资源互斥与适配。
+
+每个副作用目录项必须提供 `SubagentTool::verify`：在 handler 返回/抛异常后，独立检查
+外部后置条件，返回 Applied、NotApplied 或 Uncertain。回调收到精确参数、原始
+`Result<JsonValue>` receipt，以及同一个执行 context；不能在 verifier 中重发动作。
+Applied 记录已验证效果；NotApplied 给模型失败工具结果，允许重新规划；Uncertain、
+验证错误/异常或记录失败封住后续工具并使 child 失败。handler 报错但 Verify 确认
+Applied 时也停止并要求对账，避免模型盲目重发。未知结果不是“没有执行”。
+
+存在 Discover profile 时，父的 `spawn_agent` 保守声明 has_side_effects=true；只含默认
+只读 profile 时保持 false。委派本身可以启动写任务，不能用只读标记隐藏这一事实。
+
+派发前要求 EventStore 的 ProcessCrash/PowerLoss 确认，Buffered store 不可执行写工具。
+派发和 Verify 事件使用同一个独立 operation ID，handler 可用作幂等键。只有模型已解析
+的有效调用才进入 handler；框架不自动重试或 replay。资源工厂、搜索、策略、handler
+和 verifier 均在既有 child worker 内同步运行，必须合作取消、有界等待。取消不是回滚，
+`snapshot.verified_effects` 和 `snapshot.effects_uncertain` 在取消/超时后仍回流给父代理。
+若取消阻止外部验证，应返回 Uncertain；不得把本地取消伪装成外部未应用。
+
 
 `SubagentResources::input_supplier` 可显式提供 M24 快照的渲染内容或其他任务输入，
 仍遵循 DEC-053 的 User 输入纪律和供给容量；不会自动 fork/merge Working Context。
@@ -163,3 +203,28 @@ parent 会话，child loop/model 事件在 child 会话。事件不复制 prompt
 持久部署应注入现有 FileEventStore/FileArtifactStore 并按其耐久等级理解证据；
 Memory store 仅适用于离线 fixture。跨进程继续、通知 outbox 和长期 child 复用归
 后续扩展，不以本 API 宣称已交付。
+
+## Discover 工厂接线示意
+
+```cpp
+profile.tool_access = mira::SubagentToolAccess::Discover;
+profile.create_resources = [model] (const mira::AgentLoopSpec &child,
+                                   const mira::OperationContext &context)
+    -> mira::Result<mira::SubagentResources> {
+    mira::SubagentResources resources;
+    resources.provider = make_provider(model);
+    // 按目标提供工作区/发布端点内的目录，不向父模型发送目录。
+    resources.tool_catalog = workspace_directory(child.goal, context);
+    // 每个写工具在目录中绑定真实外部后置条件检查 verify。
+    resources.search_tools = workspace_semantic_search(child); // 可选
+    resources.authorize_tool = workspace_execution_policy(child); // 可选自动策略
+    return resources;
+};
+```
+
+事件 `SubagentToolDenied`、`SubagentEffectDispatchStarted/Verified/NotApplied/Uncertain`
+存入 child Session，schema_version=1，仅记录 operation/tool/version/spec_digest/参数摘要。
+缺少终结记录的 DispatchStarted 需要宿主对账；恢复只读检查，不自动派发。若效果已经
+发生但终态日志写失败，父收到 effects_uncertain=true，不能据 Failed/Cancelled 重发。
+
+完整可运行示例：[自主发布宿主](../../examples/subagent_tool_host_consumer.cpp)，通过独立文件读取验证写入，使用 FileEventStore 保存派发证据。

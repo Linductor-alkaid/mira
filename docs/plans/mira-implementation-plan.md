@@ -1,12 +1,18 @@
 # Mira 实施总计划
 
+[M35：子代理语义选工具与副作用执行](m35-subagent-semantic-tools.md)（Completed，Linux 本地范围），
+依据 [DEC-100](../decisions/DEC-100-subagent-semantic-tools.md)：父只委派目标，child
+自主发现、加载、执行并验证写工具；保留 M34 默认只读兼容模式。
+Debug 155/155、ASAN+UBSAN 与 TSAN 各 7/7、严格 clang-tidy 和相关门禁通过。
+[PR #122](https://github.com/Linductor-alkaid/mira/pull/122) 已提交，远端 CI 待维护者验收。
+
 [M34：受管子代理委派](m34-managed-subagent-delegation.md)（Completed，Linux 离线首期），依据
 [DEC-099](../decisions/DEC-099-managed-subagent-delegation.md)补齐模型委派、结果回流与
 父循环继续、权限/预算/取消/关闭，复用 M24 与既有 Harness，不新增设备执行平面。
 2026-11-09：Debug 全量 153/153，ASAN+UBSAN 与 TSAN 定向各 5/5，相关门禁通过；
 目标平台与真实模型补跑条件见 M34，递归/持续消息/跨进程恢复不在首期交付范围。
 PR #121 首次 quality 的返回值 const 诊断已本地复现并修复；五个编译单元严格
-clang-tidy、定向 6/6 和 quality 后续门禁通过，新 head 的远端 CI 待验收，见 M34。
+clang-tidy、定向 6/6 和 quality 后续门禁通过；PR #121 已通过 CI 并合并为 `8d7a4f9`。
 
 宿主 system 模板维护：`BUG-20261109-001` / `MNT-202611-SP-01..03`，依据
 [DEC-098](../decisions/DEC-098-conversation-host-system-prompt.md)，提供完整覆盖与
