@@ -44,6 +44,8 @@ struct SubagentCoordinator::State final : std::enable_shared_from_this<State> {
         std::string prompt;
         std::atomic<bool> cancelled{false};
         bool done = false;
+        std::size_t verified_effects = 0;
+        bool effects_uncertain = false;
         std::thread::id worker_id;
         std::optional<kairo::WorkerHandle> worker;
     };

@@ -6,6 +6,9 @@
 > 冻结里程碑：M34
 > 替代/被替代：补充并修订 DEC-044 第 1 条的编排范围，投影契约不变
 
+后续修订：[DEC-100](DEC-100-subagent-semantic-tools.md)增加自主工具发现和经过验证的
+副作用执行；下述只读限制保留为 M34 默认模式，不再是全部子代理的能力上限。
+
 ## 背景与问题
 
 用户在完成 [DSH/ZCode 调研](../design/subagent-reference-study.md)后明确要求补齐缺口。

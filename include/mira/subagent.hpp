@@ -48,7 +48,32 @@ struct SubagentSnapshot final {
     std::optional<ArtifactDescriptor> result_artifact;
     // Claim into the active parent history; does not assert model consumption.
     bool claimed = false;
+    // Cancellation is not rollback. These survive all terminal outcomes.
+    std::size_t verified_effects = 0;
+    bool effects_uncertain = false;
 };
+
+enum class SubagentToolAccess : std::uint8_t { StaticReadOnly, Discover };
+enum class SubagentEffectStatus : std::uint8_t { Applied, NotApplied, Uncertain };
+
+// Verify the external postcondition, including when dispatch failed/threw.
+// Runs inline on the child worker, with the same cancellation/deadline.
+using SubagentEffectVerifier = std::function<Result<SubagentEffectStatus>(
+    const JsonValue &arguments, const Result<JsonValue> &receipt, const OperationContext &context)>;
+struct SubagentTool final {
+    BuiltinToolRegistration registration;
+    // Required for every side-effecting catalog tool. Not a second dispatch.
+    SubagentEffectVerifier verify;
+};
+// Optional automated policy, evaluated for every selected tool invocation.
+// Goal/arguments are untrusted task data, not host grants. No parent ID list.
+using SubagentToolAuthorizer =
+    std::function<Result<void>(const AgentLoopSpec &child, const BuiltinToolSpec &tool,
+                               const JsonValue &arguments, const OperationContext &context)>;
+// Optional semantic directory search. Return <=256 IDs from the pinned catalog.
+// Empty query bypasses search for deterministic paginated browsing.
+using SubagentToolSearch = std::function<Result<std::vector<ToolId>>(
+    const std::string &query, const OperationContext &context)>;
 
 // Each factory invocation transfers an exclusive provider to one child.
 // Shared transports/registries remain the host's thread-safety responsibility.
@@ -58,6 +83,12 @@ struct SubagentResources final {
     std::shared_ptr<IArtifactSource> artifacts;
     // Optional explicit supply, e.g. a host-rendered M24 snapshot baseline.
     ModelInputSupplier input_supplier;
+    // Discover mode only: trusted, goal-scoped directory, never sent to parent.
+    // Max 4096 entries; descriptions <=2048 bytes. Tools/verify own their
+    // resource boundaries, idempotency and cross-child serialization.
+    std::vector<SubagentTool> tool_catalog;
+    SubagentToolAuthorizer authorize_tool;
+    SubagentToolSearch search_tools;
 };
 using SubagentResourceFactory = std::function<Result<SubagentResources>(
     const AgentLoopSpec &child, const OperationContext &context)>;
@@ -67,8 +98,12 @@ struct SubagentProfile final {
     std::string description;
     ModelProfile model;
     ConversationLoopConfig conversation;
-    // Empty = no tools. Unknown IDs, side effects and delegation tools reject.
+    // StaticReadOnly: empty = none, unknown/effect/delegation tools reject.
     std::vector<ToolId> allowed_tools;
+    // Discover: no allowed_tools or resources.tools; the child discovers and
+    // selects from resources.tool_catalog, including verified side effects.
+    SubagentToolAccess tool_access = SubagentToolAccess::StaticReadOnly;
+    std::size_t max_active_tools = 16; // Discover: 1..64, plus two directory tools.
     SubagentResourceFactory create_resources;
     std::optional<JsonSchema> output_schema;
     std::chrono::milliseconds timeout{60'000};

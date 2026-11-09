@@ -12,7 +12,7 @@
 ## 模块地图
 
 单层子代理的宿主接线、模型工具、结果回流和关闭契约见
-[受管子代理](subagents.md)（`mira/subagent.hpp`，M34/DEC-099）。
+[受管子代理](subagents.md)（`mira/subagent.hpp`，M34–M35/DEC-099、DEC-100）。
 
 | 页面 | 头文件 | 职责 |
 | --- | --- | --- |

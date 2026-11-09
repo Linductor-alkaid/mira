@@ -52,6 +52,8 @@ Result<void> SubagentCoordinator::State::emit(const char *type, const SubagentSn
         detail.emplace_back("execution_id", child->handle.execution_id.to_string());
         detail.emplace_back("status", subagent_status_name(child->status));
         detail.emplace_back("claimed", child->claimed);
+        detail.emplace_back("verified_effects", static_cast<std::int64_t>(child->verified_effects));
+        detail.emplace_back("effects_uncertain", child->effects_uncertain);
         detail.emplace_back("answer_bytes", static_cast<std::int64_t>(child->answer.size()));
         if (child->result_artifact) {
             detail.emplace_back("artifact_id", child->result_artifact->id.to_string());
@@ -99,7 +101,13 @@ Result<void> SubagentCoordinator::register_profile(SubagentProfile profile) {
         c.max_output_tokens_per_turn == 0 || c.max_output_tokens_per_turn > 16 * 1024 ||
         c.max_recoveries > 8 || c.max_output_continuations > 8 || profile.timeout.count() <= 0 ||
         profile.timeout > std::chrono::minutes(10) || profile.max_input_tokens_per_request == 0 ||
-        profile.max_input_tokens_per_request > 1024 * 1024 || profile.allowed_tools.size() > 128) {
+        profile.max_input_tokens_per_request > 1024 * 1024 || profile.allowed_tools.size() > 128 ||
+        profile.max_active_tools == 0 || profile.max_active_tools > 64 ||
+        (profile.tool_access != SubagentToolAccess::StaticReadOnly &&
+         profile.tool_access != SubagentToolAccess::Discover) ||
+        (profile.tool_access == SubagentToolAccess::Discover &&
+         (!profile.allowed_tools.empty() ||
+          profile.model.capabilities.limits.max_tools_per_request < 3))) {
         return error(ErrorCode::InvalidArgument, "invalid subagent profile");
     }
     if (profile.output_schema &&

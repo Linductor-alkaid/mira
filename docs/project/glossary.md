@@ -486,3 +486,10 @@ _Avoid_: 风险分级（ActionRisk 是动作维度，这是发起维度）、能
 这是把宿主 UX 意图提升为 Core 不变量的一条规则。
 _Avoid_: 降频（降频只影响频率，禁用是硬拒绝）、
 模型判断（否决不是模型裁量）
+
+### 子代理自主工具发现（Subagent Tool Discovery）
+
+[DEC-100](../decisions/DEC-100-subagent-semantic-tools.md) 的 Discover 模式：父代理只委派
+目标，子代理在自身上下文中发现目录、按任务语义选择并加载原生 schema，可执行目录
+内的副作用工具。宿主提供资源能力边界与独立效果验证；不要求父/用户预知工具名。
+语义选择由模型完成，不构成确定性的安全保证。见 [API](../api/subagents.md)。
