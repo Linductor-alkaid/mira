@@ -91,8 +91,7 @@ Result<void> InteractionCoordinator::initialize() {
         impl_->ledger =
             std::make_shared<EventStoreInputLedger>(impl_->events, impl_->runtime_id, options);
     }
-    // Rebuild only the input ledger. Registry/context recovery remains M29-05;
-    // this must not be advertised as restoration of live Runtime tasks.
+    // Historical projections are restored separately; never recreate live Tasks.
     if (auto *ledger = dynamic_cast<EventStoreInputLedger *>(impl_->ledger.get());
         ledger != nullptr) {
         const auto rebuilt = ledger->rebuild();
@@ -100,11 +99,24 @@ Result<void> InteractionCoordinator::initialize() {
             return rebuilt.error();
         }
     }
+    if (static_cast<bool>(impl_->artifacts) != static_cast<bool>(impl_->checkpoints) ||
+        (impl_->artifacts && (!impl_->events || impl_->config.max_recovery_artifact_bytes == 0)))
+        return make_error(ErrorCode::InvalidArgument, InteractionDomainCode::RecoveryUnavailable,
+                          "recovery requires event, artifact and checkpoint stores");
+    if (impl_->artifacts) {
+        const auto restored = impl_->restore_registry();
+        if (!restored)
+            return restored.error();
+    }
     impl_->initialized = true;
     return Result<void>{};
 }
 
 Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelope &envelope) {
+    return submit_impl(envelope, false);
+}
+
+Result<InputDisposition> InteractionCoordinator::submit_impl(InputEnvelope envelope, bool resume) {
     std::lock_guard submit_lock(impl_->submit_mutex);
     if (impl_->stopping.load(std::memory_order_acquire))
         return make_error(ErrorCode::Unavailable, InteractionDomainCode::RouteRejected,
@@ -118,7 +130,7 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
 
     InputDisposition disposition;
     disposition.input_id = envelope.input_id;
-    const auto admitted = impl_->ledger->admit(envelope);
+    const auto admitted = impl_->admit_input(envelope);
     if (!admitted) {
         disposition.stage = InputStage::Rejected;
         disposition.error =
@@ -128,7 +140,8 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
                              "the principal lacks the required capability");
         return disposition;
     }
-    const auto &entry = admitted.value();
+    auto entry = admitted.value();
+    const auto response_entry = entry;
     disposition.ingress_id = entry.ingress_id;
     // Fresh permission denials retain M28's durable rejection. A denied
     // retry cannot reveal or change an earlier record, even of its own id.
@@ -149,7 +162,60 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         }
         return disposition;
     }
-    if (entry.duplicate) {
+    if (entry.duplicate && entry.clarification_for) {
+        const auto original = impl_->ledger->lookup(*entry.clarification_for);
+        if (original && original.value().resolved_by == entry.input_id) {
+            const auto repaired = impl_->finish_clarification(entry, original.value());
+            if (!repaired)
+                return repaired.error();
+            entry = repaired.value();
+            entry.duplicate = true;
+        }
+    }
+    if (entry.duplicate && resume && entry.stage == InputStage::Routed &&
+        entry.delivery == InputDeliveryState::NotDispatched) {
+        std::optional<PrincipalTaskEntry> task;
+        {
+            std::lock_guard lock(impl_->mutex);
+            const auto state = impl_->snapshot(envelope.principal);
+            if (entry.task_id) {
+                const auto *found = find_task(state, *entry.task_id);
+                if (found)
+                    task = *found;
+            }
+        }
+        if (!task || task->historical)
+            return make_error(ErrorCode::InvalidState, InteractionDomainCode::RecoveryRequired,
+                              "historical work requires recovery and a new task");
+        if (entry.resolved_by) {
+            const auto answer = impl_->ledger->lookup(*entry.resolved_by);
+            if (!answer)
+                return answer.error();
+            const auto body = impl_->load_input(answer.value());
+            if (!body)
+                return body.error();
+            envelope.content += "\nClarification: " + body.value().content;
+        }
+        auto &queue = impl_->pending[task->task_id];
+        const auto found = std::find_if(queue.begin(), queue.end(), [&](const auto &item) {
+            return item.input_id == entry.input_id;
+        });
+        if (found == queue.end()) {
+            if (queue.size() >= impl_->config.max_pending_deliveries)
+                return make_error(ErrorCode::ResourceExhausted,
+                                  InteractionDomainCode::SinkUnavailable,
+                                  "the task input queue is full");
+            queue.push_back(envelope);
+        }
+        const auto sink = impl_->sinks.find(task->task_id);
+        if (sink != impl_->sinks.end()) {
+            const auto flushed = impl_->flush_pending(task->task_id, sink->second);
+            if (!flushed)
+                return flushed.error();
+        }
+    }
+    if (entry.duplicate &&
+        !(resume && entry.stage == InputStage::Accepted && !entry.clarification)) {
         disposition.stage = entry.stage;
         disposition.duplicate = true;
         disposition.session_id = entry.session_id;
@@ -164,7 +230,15 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         transition.stage = InputStage::Rejected;
         transition.error = reason;
         transition.note = reason.safe_message;
-        const auto rejected = impl_->ledger->advance(entry.input_id, transition);
+        if (entry.input_id != response_entry.input_id) {
+            const auto original = impl_->ledger->lookup(entry.input_id);
+            if (original && original.value().stage == InputStage::Routed) {
+                const auto rejected_original = impl_->ledger->advance(entry.input_id, transition);
+                if (!rejected_original)
+                    return rejected_original.error();
+            }
+        }
+        const auto rejected = impl_->ledger->advance(response_entry.input_id, transition);
         if (!rejected)
             return rejected.error();
         disposition.stage = InputStage::Rejected;
@@ -184,11 +258,57 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         return Result<void>{};
     };
 
+    std::optional<LedgerEntry> clarification_answer;
+    if (envelope.clarification_for) {
+        const auto original = impl_->ledger->lookup(*envelope.clarification_for);
+        const auto now = std::chrono::time_point_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now());
+        if (!original || original.value().tenant_id != envelope.principal.tenant_id ||
+            original.value().user_id != envelope.principal.user_id ||
+            original.value().stage != InputStage::Accepted || !original.value().clarification ||
+            original.value().resolved_by || !envelope.target_task || envelope.reply_to ||
+            now > original.value().window_expires_at ||
+            std::find(original.value().candidates.begin(), original.value().candidates.end(),
+                      *envelope.target_task) == original.value().candidates.end())
+            return reject(
+                make_error(ErrorCode::InvalidArgument, InteractionDomainCode::InputConflict,
+                           "the clarification reference or selected candidate is invalid"));
+        const auto body = impl_->load_input(original.value());
+        if (!body)
+            return reject(body.error());
+        auto effective = body.value();
+        effective.principal = envelope.principal;
+        effective.target_task = envelope.target_task;
+        effective.requested_intent =
+            envelope.requested_intent ? envelope.requested_intent : effective.requested_intent;
+        effective.content += "\nClarification: " + envelope.content;
+        effective.reply_to.reset();
+        effective.clarification_for.reset();
+        if (effective.content.size() > impl_->config.max_recovery_artifact_bytes)
+            return reject(make_error(ErrorCode::ResourceExhausted,
+                                     InteractionDomainCode::InputInvalid,
+                                     "combined clarification input exceeds its bound"));
+        clarification_answer = entry;
+        entry = original.value();
+        envelope = std::move(effective);
+    }
     impl_->refresh_task_states();
     PrincipalState state;
     {
         std::lock_guard lock(impl_->mutex);
         state = impl_->snapshot(envelope.principal);
+    }
+    if (envelope.reply_to && !interaction_support::task_of_input(state, *envelope.reply_to)) {
+        // Controls retain their durable association even if the hot list is full.
+        const auto referenced = impl_->ledger->lookup(*envelope.reply_to);
+        if (referenced && referenced.value().tenant_id == envelope.principal.tenant_id &&
+            referenced.value().user_id == envelope.principal.user_id &&
+            referenced.value().task_id && referenced.value().stage != InputStage::Accepted &&
+            referenced.value().stage != InputStage::Rejected) {
+            for (auto &task : state.tasks)
+                if (task.task_id == *referenced.value().task_id)
+                    task.input_ids.push_back(*envelope.reply_to);
+        }
     }
     std::optional<RouteSuggestion> suggestion;
     if (!envelope.target_task && !envelope.reply_to && !envelope.requested_intent &&
@@ -206,6 +326,14 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         return reject(
             make_error(ErrorCode::SafetyRejected, InteractionDomainCode::RouteRejected, rationale));
     if (decision.intent == RouteIntent::Clarify) {
+        if (!impl_->artifacts) {
+            if (!impl_->clarification_inputs.contains(entry.input_id) &&
+                impl_->clarification_inputs.size() >= impl_->config.max_ledger_entries)
+                return reject(make_error(ErrorCode::ResourceExhausted,
+                                         InteractionDomainCode::LedgerFull,
+                                         "pending clarification capacity exhausted"));
+            impl_->clarification_inputs[entry.input_id] = envelope;
+        }
         LedgerTransition transition;
         transition.clarification = decision.clarification;
         transition.candidates = decision.candidates;
@@ -219,6 +347,11 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
     }
 
     if (decision.intent == RouteIntent::PauseTask || decision.intent == RouteIntent::CancelTask) {
+        const auto *target = find_task(state, *decision.task_id);
+        if (!target || target->historical)
+            return reject(make_error(ErrorCode::InvalidState,
+                                     InteractionDomainCode::RecoveryRequired,
+                                     "historical tasks have no active Runtime control target"));
         const auto command = decision.intent == RouteIntent::PauseTask
                                  ? impl_->runtime.pause_task(*decision.task_id)
                                  : impl_->runtime.cancel_task(*decision.task_id);
@@ -229,15 +362,51 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         const auto applied = wait_applied(command.value());
         if (!applied)
             return reject(applied.error());
+        if (impl_->artifacts) {
+            const auto snapshot = impl_->runtime.task_snapshot(*decision.task_id);
+            if (!snapshot)
+                return reject(snapshot.error());
+            const auto epoch = impl_->append_task_event(
+                *decision.task_id, *decision.session_id, "TaskEpochAdvanced",
+                JsonValue::Object{{"epoch", snapshot.value().epoch}});
+            if (!epoch)
+                return epoch.error();
+            const auto state_event = impl_->append_task_event(
+                *decision.task_id, *decision.session_id, "TaskStateChanged",
+                JsonValue::Object{{"to", std::string(task_state_name(snapshot.value().state))}});
+            if (!state_event)
+                return state_event.error();
+        }
         LedgerTransition transition;
         transition.stage = InputStage::Routed;
         transition.session_id = decision.session_id;
         transition.task_id = decision.task_id;
         transition.intent = decision.intent;
         transition.note = rationale;
+        transition.delivery = InputDeliveryState::NotRequired;
+        if (clarification_answer)
+            transition.resolved_by = clarification_answer->input_id;
         const auto routed = impl_->ledger->advance(entry.input_id, transition);
         if (!routed)
             return routed.error();
+        {
+            std::lock_guard lock(impl_->mutex);
+            auto &owner = impl_->registry[impl_->key_of(envelope.principal)];
+            if (auto *task = impl_->task_of(owner, *decision.task_id)) {
+                if (task->input_ids.size() < impl_->config.max_inputs_per_task)
+                    task->input_ids.push_back(entry.input_id);
+                if (clarification_answer &&
+                    task->input_ids.size() < impl_->config.max_inputs_per_task)
+                    task->input_ids.push_back(clarification_answer->input_id);
+            }
+        }
+        if (clarification_answer) {
+            const auto completed =
+                impl_->finish_clarification(*clarification_answer, routed.value());
+            if (!completed)
+                return completed.error();
+            impl_->clarification_inputs.erase(entry.input_id);
+        }
         disposition.stage = InputStage::Routed;
         disposition.session_id = decision.session_id;
         disposition.task_id = decision.task_id;
@@ -247,6 +416,7 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
     const bool new_task =
         decision.intent == RouteIntent::NewTask || decision.intent == RouteIntent::ResumeTask;
     PrincipalTaskEntry candidate;
+    std::shared_ptr<IEnvironment> recovered_environment;
     if (new_task) {
         // Check all tracked bounds before opening runtime objects.
         if (state.tasks.size() >= impl_->config.max_tasks_per_principal)
@@ -258,13 +428,28 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
             const auto *previous = find_task(state, *decision.task_id);
             candidate.goal = previous->goal;
             candidate.constraints = previous->constraints;
+            candidate.source_artifacts = previous->source_artifacts;
             candidate.resumed_from = previous->task_id;
+            if (previous->historical || impl_->artifacts) {
+                if (previous->recovery_availability != RecoveryAvailability::Available)
+                    return reject(make_error(ErrorCode::NotFound,
+                                             InteractionDomainCode::RecoveryUnavailable,
+                                             "historical work context is unavailable"));
+                const auto recovered =
+                    impl_->recovery_environment(envelope.principal, previous->task_id);
+                if (!recovered)
+                    return reject(recovered.error());
+                recovered_environment = recovered.value();
+                candidate.recovered_checkpoint =
+                    impl_->recovery_permits.at(previous->task_id).checkpoint;
+            }
             // Resumption must carry the new requirement as well as old context.
             Impl::append_constraint(candidate, bound_text(envelope.content, kMaxConstraintBytes));
         }
     } else {
         candidate = *find_task(state, *decision.task_id);
-        if (candidate.input_ids.size() >= impl_->config.max_inputs_per_task)
+        if (candidate.input_ids.size() + (clarification_answer ? 2U : 1U) >
+            impl_->config.max_inputs_per_task)
             return reject(make_error(ErrorCode::ResourceExhausted,
                                      InteractionDomainCode::RouteRejected,
                                      "the task has too many associated inputs"));
@@ -278,23 +463,34 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
                                      "the task input queue is full"));
         Impl::append_constraint(candidate, bound_text(envelope.content, kMaxConstraintBytes));
     }
-    if (impl_->config.max_pending_deliveries == 0 || impl_->config.max_inputs_per_task == 0)
+    if (impl_->config.max_pending_deliveries == 0 ||
+        impl_->config.max_inputs_per_task < (clarification_answer ? 2U : 1U))
         return reject(make_error(ErrorCode::ResourceExhausted,
                                  InteractionDomainCode::SinkUnavailable,
                                  "task input capacity is zero"));
+    if (impl_->artifacts) {
+        if (entry.input_ref)
+            candidate.source_artifacts.push_back(*entry.input_ref);
+        if (clarification_answer && clarification_answer->input_ref)
+            candidate.source_artifacts.push_back(*clarification_answer->input_ref);
+        if (candidate.source_artifacts.size() > impl_->config.max_inputs_per_task)
+            return reject(make_error(ErrorCode::ResourceExhausted,
+                                     InteractionDomainCode::InputInvalid,
+                                     "work provenance exceeds its bound"));
+    }
     const auto prepared = impl_->prepare_context(candidate);
     if (!prepared)
         return reject(prepared.error());
     candidate.context_block = prepared.value();
 
     if (new_task) {
-        auto session = decision.session_id;
+        auto session = recovered_environment ? std::optional<SessionId>{} : decision.session_id;
         if (!session) {
             if (state.sessions.size() >= impl_->config.max_sessions_per_principal)
                 return reject(make_error(ErrorCode::ResourceExhausted,
                                          InteractionDomainCode::RouteRejected,
                                          "the principal has too many tracked sessions"));
-            if (!impl_->environment_provider)
+            if (!recovered_environment && !impl_->environment_provider)
                 return reject(make_error(ErrorCode::Unavailable,
                                          InteractionDomainCode::NoSessionAvailable,
                                          "no environment provider is bound"));
@@ -302,7 +498,9 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
                 make_error(ErrorCode::Unavailable, InteractionDomainCode::NoSessionAvailable,
                            "the environment provider failed");
             try {
-                environment = impl_->environment_provider();
+                environment = recovered_environment
+                                  ? Result<std::shared_ptr<IEnvironment>>{recovered_environment}
+                                  : impl_->environment_provider();
             } catch (...) {
                 return reject(environment.error());
             }
@@ -335,12 +533,47 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         candidate.session_id = *session;
     }
 
+    std::optional<ArtifactDescriptor> context_ref;
+    if (impl_->artifacts) {
+        Result<SessionSequence> anchor{SessionSequence{0}};
+        if (new_task)
+            anchor = impl_->append_task_event(candidate.task_id, candidate.session_id,
+                                              "TaskEpochAdvanced",
+                                              JsonValue::Object{{"epoch", std::int64_t{0}}});
+        auto stored = anchor ? impl_->store_context(candidate, envelope.principal)
+                             : Result<ArtifactDescriptor>{anchor.error()};
+        if (!stored) {
+            if (new_task) {
+                const auto cleanup = impl_->runtime.cancel_task(candidate.task_id);
+                if (!cleanup || !wait_applied(cleanup.value()))
+                    return make_error(ErrorCode::DataLoss,
+                                      InteractionDomainCode::RuntimeCommandFailed,
+                                      "recovery persistence failed; new task cleanup is uncertain");
+            }
+            return reject(stored.error());
+        }
+        context_ref = stored.value();
+    }
     LedgerTransition transition;
     transition.stage = InputStage::Routed;
     transition.session_id = candidate.session_id;
     transition.task_id = candidate.task_id;
     transition.intent = decision.intent;
     transition.note = rationale;
+    transition.context_ref = context_ref;
+    if (clarification_answer)
+        transition.resolved_by = clarification_answer->input_id;
+    if (recovered_environment && candidate.resumed_from) {
+        const auto current =
+            impl_->recovery_environment(envelope.principal, *candidate.resumed_from);
+        if (!current) {
+            const auto cleanup = impl_->runtime.cancel_task(candidate.task_id);
+            if (!cleanup || !wait_applied(cleanup.value()))
+                return make_error(ErrorCode::DataLoss, InteractionDomainCode::RuntimeCommandFailed,
+                                  "recovery became stale; task cleanup is uncertain");
+            return reject(current.error());
+        }
+    }
     const auto routed = impl_->ledger->advance(entry.input_id, transition);
     if (!routed) {
         if (new_task) {
@@ -353,6 +586,8 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         return routed.error(); // Nothing has reached the loop.
     }
     candidate.input_ids.push_back(entry.input_id);
+    if (clarification_answer)
+        candidate.input_ids.push_back(clarification_answer->input_id);
     {
         std::lock_guard lock(impl_->mutex);
         auto &principal = impl_->registry[impl_->key_of(envelope.principal)];
@@ -361,12 +596,26 @@ Result<InputDisposition> InteractionCoordinator::submit_input(const InputEnvelop
         else
             *impl_->task_of(principal, candidate.task_id) = candidate;
     }
+    if (recovered_environment && candidate.resumed_from)
+        impl_->recovery_permits.erase(*candidate.resumed_from);
+    if (clarification_answer) {
+        const auto completed = impl_->finish_clarification(*clarification_answer, routed.value());
+        if (!completed)
+            return completed.error();
+        impl_->clarification_inputs.erase(entry.input_id);
+    }
     disposition.stage = InputStage::Routed;
     disposition.session_id = candidate.session_id;
     disposition.task_id = candidate.task_id;
 
     auto &queue = impl_->pending[candidate.task_id];
     const bool already_waiting = !queue.empty();
+    if (new_task && candidate.resumed_from && !candidate.constraints.empty()) {
+        std::string constraints = "[Previously committed user constraints]";
+        for (const auto &constraint : candidate.constraints)
+            constraints += "\n- " + constraint;
+        envelope.content = constraints + "\n[Current user input]\n" + envelope.content;
+    }
     queue.push_back(envelope);
     const auto sink = impl_->sinks.find(candidate.task_id);
     if (!already_waiting && sink != impl_->sinks.end()) {

@@ -12,7 +12,10 @@ namespace mira::interaction_support {
     if (text.size() <= limit) {
         return std::string(text);
     }
-    return std::string(text.substr(0, limit));
+    auto end = limit;
+    while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U)
+        --end;
+    return std::string(text.substr(0, end));
 }
 
 // The fail-closed capability check of the coordinator (DEC-068 R9). A missing
@@ -65,7 +68,7 @@ namespace {
 [[nodiscard]] std::vector<const PrincipalTaskEntry *> live_tasks(const PrincipalState &state) {
     std::vector<const PrincipalTaskEntry *> live;
     for (const auto &task : state.tasks) {
-        if (!is_terminal(task.state)) {
+        if (!is_terminal(task.state) && !task.historical) {
             live.push_back(&task);
         }
     }
@@ -115,13 +118,17 @@ namespace {
         selected.session_id = target.session_id;
         selected.task_id = target.task_id;
         selected.rationale = std::move(rationale);
+        if (target.historical)
+            selected.session_id.reset(); // A new Runtime must open a fresh session.
         switch (intent) {
         case RouteIntent::ContinueCurrent:
         case RouteIntent::SupplementTask:
-            selected.intent = is_terminal(target.state) ? RouteIntent::ResumeTask : intent;
+            selected.intent =
+                (is_terminal(target.state) || target.historical) ? RouteIntent::ResumeTask : intent;
             break;
         case RouteIntent::ResumeTask:
-            selected.intent = is_terminal(target.state) ? intent : RouteIntent::Reject;
+            selected.intent =
+                (is_terminal(target.state) || target.historical) ? intent : RouteIntent::Reject;
             break;
         case RouteIntent::CancelTask:
             selected.intent = intent; // Runtime provides terminal NoOp semantics.

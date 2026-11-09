@@ -88,6 +88,11 @@ add_library(mira_core
     src/interaction/interaction_routing.cpp
     src/interaction/interaction_coordinator.cpp
     src/interaction/interaction_delivery.cpp
+    src/interaction/interaction_artifacts.cpp
+    src/interaction/interaction_restore.cpp
+    src/interaction/interaction_recovery.cpp
+    src/interaction/interaction_clarification.cpp
+    src/interaction/interaction_context.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/context_retrieval.cpp
@@ -478,6 +483,17 @@ mira_enable_sanitizers(mira_memory_agent_host_consumer)
 if(MIRA_BUILD_TESTS)
     add_test(NAME mira_memory_agent_host_consumer_test COMMAND mira_memory_agent_host_consumer)
     set_tests_properties(mira_memory_agent_host_consumer_test PROPERTIES LABELS "consumer;m36" TIMEOUT 30)
+endif()
+
+# M29 durable interaction recovery and read-only backfill, offline.
+add_executable(mira_interaction_recovery_host_consumer examples/interaction_recovery_host_consumer.cpp)
+target_link_libraries(mira_interaction_recovery_host_consumer PRIVATE Mira::core Mira::simulator_adapter kairo::kairo)
+target_include_directories(mira_interaction_recovery_host_consumer SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_interaction_recovery_host_consumer)
+mira_enable_sanitizers(mira_interaction_recovery_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_interaction_recovery_host_consumer_test COMMAND mira_interaction_recovery_host_consumer)
+    set_tests_properties(mira_interaction_recovery_host_consumer_test PROPERTIES LABELS "consumer;m29" TIMEOUT 30)
 endif()
 
 # M35 autonomous directory and verified workspace publication, offline.

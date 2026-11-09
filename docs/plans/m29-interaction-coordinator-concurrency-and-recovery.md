@@ -1,6 +1,6 @@
 # M29：交互协调层第二阶段——执行中插话、并发归属、持久化与断线回补
 
-> 状态：In Progress（2026-11-09 按用户要求立项，分增量交付；完整恢复未完成）
+> 状态：In Progress（本地工作项已验收，远端 CI/平台退出条件待补跑）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -8,7 +8,7 @@
 > [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5）
 > 前置：M28 关闭（**已满足**——2026-10-29 已合并关闭，按总计划同步修正旧说明）
 > 建议发布点：非发布物；M30 长期记忆接入的接线前提
-> 更新日期：2026-11-09（DEC-102 跑前冻结与首批并发/投递实现）
+> 更新日期：2026-11-09（DEC-106 澄清/恢复/只读回补与 reducer 提交校验）
 
 ## 1. 目标
 
@@ -49,7 +49,8 @@
 
 ## 3. 设计与决策依据
 
-- [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md) 与
+- [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)、
+  [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md) 与
   [交互输入设计](../design/interaction-input-delivery.md)：本轮跑前冻结和实现边界。
 
 - [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -94,23 +95,23 @@
 | --- | --- | --- |
 | M29-G1 | 多工作显式归属、模型冲突与未知引用 | m29_arbitration_test：显式引用/未知引用/并发重复提交通过（Linux） |
 | M29-G2 | 插话使旧模型结果失效、动作边界与 repair | m29_loop_interruption_test：两类 Loop、repair、工具组、已准入动作 Verify 通过（Linux） |
-| M29-G3 | 候选冻结、原输入与澄清答案幂等回收 | 候选先交付，完整回收待实现 |
+| M29-G3 | 候选冻结、原输入与澄清答案幂等回收 | m29_clarification_recovery_test / recovery_faults_test：原文、唯一答案、文件重开及认领中断修复 |
 | M29-G4 | 原子账本、权限绑定、补投保序与背压 | m29_ledger_atomicity_test / delivery_test / lifecycle_test 通过（Linux） |
-| M29-G5 | 注册表/正文引用跨进程恢复、断线只读回补 | 待实现 |
-| M29-G6 | journal 未决副作用只重观测/验证 | 待实现 |
+| M29-G5 | 注册表/正文引用持久化恢复、断线只读回补 | m29_restart_replay_test / recovery_faults_test：文件重开、主体过滤、窗口、擦除、Accepted 恢复和丢失回执；OS 强杀未执行 |
+| M29-G6 | journal 未决副作用只重观测/验证 | m29_recovery_verification_test / recovery_lifecycle_test / recovery_faults_test：pending 不清除、终态不复活、reducer 窄窗口守卫 |
 | M29-G7 | 取消/超时/拒绝/异常/关闭/接管 | M28/M36 回归 + M29 超时/拒绝/异常/关闭/取消/接管通过（Linux）；平台 CI 未执行 |
-| M29-G8 | API/设计/决策/计划与质量门禁 | 本增量文档/架构/平台边界/SBOM/格式与严格 clang-tidy 通过；完整退出仍待后续工作 |
+| M29-G8 | API/设计/决策/计划与质量门禁 | 本增量文档/架构/平台边界/SBOM/格式与严格 clang-tidy 通过；远端 CI 退出待补跑 |
 
 ## 5. 工作项
 
 - [x] `M29-01` 立项与跑前冻结（DEC-102、必答八问、G1–G8；其余勾选以实际验收为准）。
 - [x] `M29-02` 执行中输入投递与在途动作收敛（DEC-102 的单动作/工具边界、两类 Loop、repair、取消/接管；Linux 离线 G2/G7）。
-- [ ] `M29-03` 指代消解与澄清回路（候选冻结/回执已交付；原输入引用与答案回收未交付）。
+- [x] `M29-03` 指代消解与澄清回路（原输入 Sensitive Artifact、冻结候选、唯一答案认领和中断修复；宿主提供 typed target，Linux 离线 G3，真实模型语义质量待补跑）。
 - [x] `M29-04` 并发归属仲裁与审计（显式 task/intent/reply 优先、未知引用拒绝、权限绑定、实际并发幂等、引用/候选审计；Linux 离线 G1/G4）。
-- [ ] `M29-05` 持久化恢复与断线回补（已补账本失败原子性与绑定重建；主体注册表/受控正文引用/只读有界回补未交付）。
-- [ ] `M29-06` 未决副作用的重观测/验证接入。
-- [ ] `M29-07` 完整 IVA 测试矩阵（已有 `tests/m29/` 五组测试；G3/G5/G6 尚缺）。
-- [ ] `M29-08` 完整里程碑文档同步（本增量 DEC/设计/API/术语/总计划已同步，其余随 M29-03/05/06 补齐）。
+- [x] `M29-05` 持久化恢复与断线回补（历史映射/正文引用、主体过滤回补、Accepted 恢复、投递状态及写入封锁；Linux 文件重开及故障注入 G5）。
+- [x] `M29-06` 未决副作用的重观测/验证接入（RecoveryPlanner 重载、宿主核验、前缀守卫和单次许可；Linux 离线 G6/G7）。
+- [x] `M29-07` 完整 IVA 测试矩阵（十组 M29 测试和离线宿主，覆盖 G1–G8；Debug 全量 171/171，ASAN+UBSAN 和 TSan 定向各 14/14；平台矩阵仍为独立退出条件）。
+- [x] `M29-08` 完整里程碑文档同步（DEC-106、设计/API/术语/总计划及恢复宿主；严格 clang-tidy 13 单元及质量门禁通过）。
 
 ## 6. 测试与退出条件
 
@@ -122,7 +123,7 @@
 
 ## 7. 风险与阻塞
 
-- **依赖 M28**：已满足；M29 完整恢复仍需正文受控引用和旧 Task 只读投影。
+- **依赖 M28**：已满足；恢复能力需宿主显式配置三个存储及真实环境映射，旧 Task 保持只读。
 - **恢复语义与副作用安全耦合**：恢复路径的重复执行风险由
   [事件与崩溃一致性设计 §6–§8](../design/event_artifact_crash_consistency.md) 承担，
   本阶段必须复用既有 durable ack 与 journal，**不得**新建第二套副作用提交协议。
@@ -184,7 +185,7 @@ git diff --check
 `/tmp/mira-m29-quality.log`。调试中暴露的 fixture 配置问题（未激活 admission、工具缺少
 描述）已修正后重跑；以上最终结果没有测试 skip，不使用旧分支的 M29 日志代替本轮结果。
 
-### 未完成与补跑
+### 首批增量当时的未完成项（后续记录见下）
 
 | 项目 | 状态/原因 | 负责人及补跑条件 |
 | --- | --- | --- |
@@ -193,3 +194,86 @@ git diff --check
 | M29-06 未决副作用恢复接线 | 尚未接入协调层恢复流程 | Mira Maintainers；复用 RecoveryPlanner + journal，先 Observe/Verify，不重派发动作 |
 | Windows/MSVC、Android/NDK 与远端 CI 全矩阵 | 本轮只执行 Linux 本地门禁，未提交/触发远端 CI | Mira Maintainers；在最终 M29 变更上运行仓库 CI 全矩阵及目标平台适用测试 |
 | 真实模型、真实设备、长期运行 | 本轮使用脚本 Provider，未配置模型凭据与设备 | Mira Maintainers；用受控主体和设备接线，记录模型版本、语义指标及资源增长，不据离线测试声明长期稳定性 |
+
+### 2026-11-09：M29-03/05/06 恢复增量（Linux 本地验收通过）
+
+基线 `3f3fb5a`，分支 `feat/interaction-concurrency-recovery` 的未提交工作树。
+本轮交付 DEC-106；没有修改 third_party，没有新建线程池、自动重投 worker 或第二套
+动作协议。复用注入 Executor、IEventStore、ArtifactStore、CheckpointStore 与 RecoveryPlanner。
+
+实现范围：
+
+- 主体/输入/工作快照用 Sensitive Artifact 持久化，账本保存摘要引用。来源 Artifact 闭包
+  防止在删除正文后从旧摘要恢复内容。输入窗口、条数、字节、页数和扫描都有界。
+- 澄清保留原文和答案，以原 input_id 投递。resolved_by 单次认领，答案 NotRequired；
+  两条归属之间中断可修复回执，不重复投递。控制输入关联也可继续回复。
+- 初始化恢复只读 historical 映射，不复活 Runtime Task。replay_inputs 主体过滤只读
+  翻页；resume_input 显式恢复 Accepted 或当前 Runtime 的 NotDispatched 输入。
+- 派发前持久化 Dispatching，成功后持久化 Delivered；异常/回执不明禁止重投。追加
+  失败封锁后续写入至 rebuild，接纳不确定时保留正文，避免丢失已提交输入或重新绑定任务。
+- recover_work 只 Observe/宿主 Verify。缺任务历史明确失败；未决 action、缺 Verify 或
+  不明投递都保守等待核验。已结算的同进程工作同样不能绕过恢复门。
+- RecoveryObservationRecorded/RecoveryVerificationResult 使用版本化 payload、期望
+  前缀、观察摘要和 action 引用；CheckpointBuilder 在推进水位前机械校验。窄窗口
+  插入迟到记录也不能清除新 pin，接受见证持久化在 checkpoint 的可选字段中。
+- 许可绑定主体/源摘要/账本修订/事件水位、60 秒及单次消费；续办新建 session/task。
+  旧目标和用户约束留在执行集，历史 checkpoint 由 recovered_context_items 供给可裁剪
+  P3 候选，真实 Gateway 测试证明预算不足时可丢弃，不粘进保护的主 User 项。
+- 新 RecoveryPlanner::plan 重载在页、cache 及 reducer 边界检查取消/deadline；既有
+  三参数接口保留。TaskCheckpoint 新字段追加在结构末尾，0 值不改变旧 JSON/digest。
+  用户文本 byte bound 同时保持有效 UTF-8 字符边界。
+
+新增五组恢复测试（M29 总计十组）与 interaction_recovery_host_consumer：关闭/重开、
+隔离和翻页、失效/擦除、认领中断、接纳/路由/投递丢失回执、取消/超时/异常/接管/关闭、
+许可过期/单次消费、验证水位竞争及 P3 裁剪。示例用受控外部文件结果核验，原生输入为 0。
+
+环境：Linux 7.0.0-42-generic、x86_64、GCC 13.3.0，C++20/Debug，
+WarningsAsErrors；使用离线 fixture，不调用真实模型或设备。最终代码含 checkpoint
+字段末尾追加的源兼容调整。复验命令：
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 4
+ctest --test-dir build/debug --output-on-failure -j 4
+
+mira_recovery_targets=(
+  mira_m29_arbitration_test mira_m29_ledger_atomicity_test
+  mira_m29_delivery_test mira_m29_lifecycle_test mira_m29_loop_interruption_test
+  mira_m29_clarification_recovery_test mira_m29_restart_replay_test
+  mira_m29_recovery_verification_test mira_m29_recovery_faults_test
+  mira_m29_recovery_lifecycle_test mira_interaction_recovery_host_consumer
+  mira_m28_lifecycle_test mira_m36_memory_agent_model_test mira_m4_recovery_test
+)
+mira_recovery_regex='mira_m29_|mira_interaction_recovery_host_consumer_test|mira_m28_lifecycle_test|mira_m36_memory_agent_model_test|mira_m4_recovery_test'
+cmake --preset asan -DMIRA_ENABLE_UBSAN=ON
+cmake --build build/asan --target "${mira_recovery_targets[@]}" -j 2
+ctest --test-dir build/asan -R "$mira_recovery_regex" --output-on-failure -j 2
+cmake --preset tsan
+cmake --build build/tsan --target "${mira_recovery_targets[@]}" -j 2
+setarch x86_64 -R ctest --test-dir build/tsan -R "$mira_recovery_regex" --output-on-failure -j 2
+
+for mira_unit in src/interaction/{input_ledger,interaction_coordinator,interaction_delivery,interaction_events,interaction_routing,interaction_artifacts,interaction_clarification,interaction_context,interaction_recovery,interaction_restore}.cpp src/runtime/task_recovery.cpp src/storage/checkpoint_store.cpp examples/interaction_recovery_host_consumer.cpp; do
+  clang-tidy -p build/debug "$mira_unit" --quiet || exit 1
+done
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+最终结果：Debug 全量 **171/171**，ASAN+UBSAN 和 TSan 定向各 **14/14**，
+没有 skip；严格 clang-tidy **13 个编译单元**无 warning/error。格式、文档链接、
+SBOM、平台边界、架构检查和 `git diff --check` 通过；架构 baseline 仍为 16，
+没有新增或刷新豁免。工作项按 Linux 离线范围验收，以下未运行项不据此标记完成。
+
+日志：`/tmp/mira-m29-recovery-full-{build,test}.log`、
+`/tmp/mira-m29-recovery-{asan,tsan}-{build,test}.log`、
+`/tmp/mira-m29-recovery-tidy-*.log`、`/tmp/mira-m29-recovery-quality.log`。
+本记录不替代 CI 或真实平台验收，后续条件如下：
+
+| 未执行项 | 原因/声明边界 | 负责人及补跑条件 |
+| --- | --- | --- |
+| 远端 CI 全矩阵、Windows/MSVC、Android/NDK | 本轮为 Linux 本地工作树，未触发远端 CI，未配置目标平台工具链/设备 | Mira Maintainers；在最终变更上执行仓库 CI 全矩阵和目标平台适用测试，补充 run 链接 |
+| 真实模型指代、路由和澄清质量 | fixture 验证的是冻结候选及提交机制；自然语言到 typed target 由宿主/主 agent 提供 | Mira Maintainers；配置受控模型端点，记录模型版本、路由准确率、必要澄清率及错误样本 |
+| OS 强杀、断电和真实外部副作用恢复 | 本轮为 FileEventStore/FileArtifactStore 关闭重开与故障注入；示例无原生输入 | Mira Maintainers；在受控平台执行崩溃/重启实验，检查外部结果与 journal 一致，不重复派发 |
+| 长期自主运行及资源增长 | 有界接口和局部测试不构成长期稳定性/性能证据 | Mira Maintainers；接入真实宿主并固定运行时长、工作负载及资源统计方法，生命周期和清理策略继续由 M30/M31 承接 |
+
+M29 保持 In Progress；本地工作项通过不替代里程碑 CI 退出条件，也不自动关闭 M30–M33 前置。

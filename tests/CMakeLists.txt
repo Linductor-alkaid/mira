@@ -866,6 +866,12 @@ mira_add_m29_test(mira_m29_ledger_atomicity_test m29/m29_ledger_atomicity_test.c
 mira_add_m29_test(mira_m29_delivery_test m29/m29_delivery_test.cpp)
 mira_add_m29_test(mira_m29_lifecycle_test m29/m29_lifecycle_test.cpp)
 mira_add_m29_test(mira_m29_loop_interruption_test m29/m29_loop_interruption_test.cpp)
+mira_add_m29_test(mira_m29_clarification_recovery_test m29/m29_clarification_recovery_test.cpp)
+mira_add_m29_test(mira_m29_restart_replay_test m29/m29_restart_replay_test.cpp)
+mira_add_m29_test(mira_m29_recovery_verification_test m29/m29_recovery_verification_test.cpp)
+mira_add_m29_test(mira_m29_recovery_faults_test m29/m29_recovery_faults_test.cpp)
+mira_add_m29_test(mira_m29_recovery_lifecycle_test m29/m29_recovery_lifecycle_test.cpp)
+
 
 
 # ---------------------------------------------------------------------------

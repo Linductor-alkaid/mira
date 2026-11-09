@@ -1,10 +1,11 @@
 # Workflow、Context 与 Recovery 离线宿主
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-11-06
+> 版本：1.1
+> 更新日期：2026-11-09
 > 负责人：Mira Maintainers
-> 依据：[DEC-086](../decisions/DEC-086-offline-composition-hosts.md)、MNT-202611-06
+> 依据：[DEC-086](../decisions/DEC-086-offline-composition-hosts.md)、
+> [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md)、MNT-202611-06
 
 ## 构建和验收
 
@@ -94,3 +95,21 @@ journal/恢复证据，02/03 的真机、强杀/断电门禁继续开放；BUG-2
 专用 worker 由 store 管理，主线程先 close store，再 shutdown 外部 Executor。
 Recovery 临时文件在 worker 收尾之后移除。没有新线程池、私有 timer、模型网络或
 真实设备副作用；不从 fixture 成功推导跨平台、实时性、语义质量或崩溃耐久保证。
+
+## M29：交互恢复宿主
+
+[interaction_recovery_host_consumer.cpp](../../examples/interaction_recovery_host_consumer.cpp)
+演示两个工作、冻结澄清、原文与答案绑定、FileEventStore/FileArtifactStore 关闭/重开、
+主体过滤回补、RecoveryPlanner + 只读 Observe/宿主文件核验，以及关联新 Task。
+MemoryCheckpointStore 可丢失重建，EventStore 始终为事实源。完整 checkpoint 不粘入
+主 User 项，通过 recovered_context_items 作为不受保护的 P3 候选，最终仍需 Layer 0。
+
+```bash
+cmake --build build/debug --target mira_interaction_recovery_host_consumer -j 4
+ctest --test-dir build/debug -R '^mira_interaction_recovery_host_consumer_test$' --output-on-failure
+```
+
+示例核验的文件由受控外部结果 fixture 生成，不是模型判断；原生输入调用为 0。
+验证运行于注入 Executor 的有限任务并消费 future。外部 owner 先停止输入/Loop、close
+协调层，再停止 Runtime，最后 shutdown Executor。只证明离线关闭/重开行为，没有
+OS 强杀、断电、真实平台或模型质量声明。

@@ -28,6 +28,22 @@ constexpr std::size_t kInteractionEventCount =
 
 } // namespace
 
+std::string_view input_delivery_state_name(InputDeliveryState state) {
+    switch (state) {
+    case InputDeliveryState::NotDispatched:
+        return "NotDispatched";
+    case InputDeliveryState::Dispatching:
+        return "Dispatching";
+    case InputDeliveryState::Delivered:
+        return "Delivered";
+    case InputDeliveryState::Uncertain:
+        return "Uncertain";
+    case InputDeliveryState::NotRequired:
+        return "NotRequired";
+    }
+    return "Uncertain";
+}
+
 std::string_view input_stage_name(InputStage stage) {
     switch (stage) {
     case InputStage::Accepted:

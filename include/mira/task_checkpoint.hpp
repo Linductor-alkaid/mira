@@ -110,6 +110,9 @@ struct TaskCheckpoint final {
     // constraints or side-effect facts and excluded from the projection digest.
     std::optional<std::string> narrative_summary;
     SchemaVersion schema_version = checkpoint_schema_current();
+    // Durable witness of an accepted guarded recovery verification. Zero is
+    // legacy/no witness and is omitted from JSON/digests for compatibility.
+    std::uint64_t recovery_verification_sequence = 0;
 
     [[nodiscard]] Result<void> validate() const;
     // Canonical digest over authoritative fields; excludes id and created_at so
@@ -151,7 +154,8 @@ struct CheckpointReducerConfig final {
 // TaskConstraintAdded/Removed, TaskFactVerified, TaskStepCompleted,
 // TaskObjectiveAdded/Completed, TaskIssueRaised/Resolved, TaskStateChanged,
 // TaskEpochAdvanced, EnvironmentEpochChanged, ObservationRecorded,
-// ActionDispatched, VerificationResult, LoopSettled. ActionJournal pipe
+// ActionDispatched, VerificationResult, LoopSettled, and versioned guarded
+// RecoveryObservationRecorded/RecoveryVerificationResult. ActionJournal pipe
 // payloads: ActionPrepared, ActionDispatchStarted, ActionReceipt,
 // ActionExecutionUncertain. Preparation never marks verification pending.
 class CheckpointBuilder final {

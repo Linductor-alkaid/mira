@@ -23,6 +23,10 @@ int main() {
     auto entry = ledger.lookup(envelope.input_id);
     MIRA_CHECK(entry && entry.value().stage == InputStage::Accepted && !entry.value().task_id);
     store->fail = false;
+    // A failed append may have committed despite the failed response. Fence
+    // mutation until durable history has been reconciled.
+    MIRA_CHECK(!ledger.advance(envelope.input_id, transition));
+    MIRA_CHECK(ledger.rebuild());
     MIRA_CHECK(ledger.advance(envelope.input_id, transition));
     auto conflicting = transition;
     conflicting.task_id = TaskId::generate();

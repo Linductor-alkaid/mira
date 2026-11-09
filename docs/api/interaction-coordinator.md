@@ -2,8 +2,9 @@
 
 > 头文件：`mira/interaction_coordinator.hpp`
 > 里程碑：M28 / M29（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
-> [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)）
-> 状态：Active（M29 并发/投递增量；完整澄清回收、恢复仍在实施）
+> [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)、
+> [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md)）
+> 状态：Active（M29 并发、澄清与恢复增量；平台/CI 状态见里程碑验收）
 
 设计依据见[交互输入归属与投递](../design/interaction-input-delivery.md)。
 
@@ -45,7 +46,10 @@ MiraRuntime（Session/Task/Action，唯一状态机 owner）
 同一分区的 `input_id` 绑定接纳时的 `(tenant_id,user_id)`；其他主体复用时返回
 `InputConflict`，不返回原回执。重复回执前重验能力；撤销授权后不能通过重试读到旧结果。
 `advance()` 在 ProcessCrash ack 后才发布内存状态，追加失败不提前变更阶段或归属。
-已绑定输入不能重新绑定其他任务；迟到澄清不能倒退阶段。旧 accepted 记录从
+已绑定输入不能重新绑定其他任务；迟到澄清不能倒退阶段。追加失败可能已提交而丢失
+回执，因此参考账本会封锁后续写入，`check_writable()` 返回 LedgerUnavailable；宿主需
+停止生产者、关闭并重开协调层。读取仍是最后确认的投影，不能据此盲目重试。
+EventStoreInputLedger::rebuild() 成功后解除封锁；恢复存储下的队列也应一并重建。旧 accepted 记录从
 `principal_ref` 恢复绑定；缺失绑定时不可通过重复提交获取回执。
 
 去重键是宿主提供的 `input_id`，**不是内容哈希**：内容相同但 `input_id` 不同的
@@ -72,6 +76,7 @@ struct InputEnvelope final {
     std::optional<std::string> reply_to;     // 关联另一次输入（如追问链）
     std::optional<TaskId> target_task;        // 宿主明确的任务引用
     std::optional<RouteIntent> requested_intent; // 明确新建/纠正/取消等意图
+    std::optional<std::string> clarification_for; // 选定冻结候选时引用原输入
 };
 ```
 
@@ -118,8 +123,11 @@ using RouteResolver =
 命令结果只有 Applied/NoOp 视为成功，不能把拿到 CommandOutcome 当作成功。
 
 回调运行在提交串行化边界内，必须有界、无阻塞、不重入写接口。模型建议不能覆盖
-用户显式归属。完整澄清答案回收仍需绑定原输入正文，后续单独向候选发送文字不算
-完成该能力，见 M29-03。
+用户显式归属。澄清答案提供 clarification_for 和候选中的 target_task，协调层保留
+原输入并追加答案，以原 input_id 投递；resolved_by 唯一认领答案，答案本身不再次入队。
+宿主/主代理可把自然语言答案解析为候选引用；Mira 重新验证主体、窗口、候选及当前状态，
+不据此声明模型语义准确率。两条归属记录之间崩溃时，重试可从认领修复答案回执，
+不会自动补投原输入。
 
 ## 权限校验（fail-closed）
 
@@ -153,10 +161,82 @@ class IUserInputSink {
   绑定；`register_sink()` 时补投，只移除成功前缀。失败项及整个后缀原序保留；
   新输入不能通过已绑定汇越过它们，需宿主显式再次 register 补投。
 - sink 只可绑定注册表内的活动任务；关闭、未知任务或终态任务的迟到注册拒绝。
-  队列上限默认每任务 256，任务关联输入上限默认 4096，满时显式拒绝。
+  队列上限默认每任务 256，任务关联输入上限默认 4096，满时显式拒绝。控制输入的
+  耐久关联可用于后续 reply_to，不因 Hot 输入 ID 列表达到上限而丢失引用。
+
+## 持久化、回补与恢复
+
+初始化前调用 `set_recovery_stores(artifacts, checkpoints)` 开启恢复。两个 store 都必须
+提供，同时要有 EventStore。未配置时保留原显式运行模式，进程内澄清可回收，跨重启
+正文恢复明确不可用；只绑定一个 store 不会静默降级。建议消费
+[完整离线宿主示例](../../examples/interaction_recovery_host_consumer.cpp)。
+
+正文和工作快照为 Sensitive、版本化 JSON Artifact，账本只保存引用、摘要与关联。
+默认单个 Artifact 128 KiB、输入 ID/回复引用 256 字节、附件引用至多 64 个；恢复扫描
+还受 InputLedgerOptions::max_events_scanned 和 RecoveryPolicy 限制。快照保存有界
+来源闭包，任一来源正文缺失/擦除时不从摘要补造。接纳结果不确定时保留正文供重建；
+已确认未接纳的参数/配额拒绝才立即清理。长期孤立产物清理及跨主体容量归 M31。
+
+`initialize()` 枚举账本重建主体映射和必要上下文，旧工作标记 historical。上下文可用性
+为 Available / MissingOrErased / Expired / Incompatible；这是上下文可用性，不能作为
+动作许可。旧 Task 不注册为新 Runtime 的活动 Task，也不自动绑定汇。旧记录没有正文/
+快照引用时明确不可恢复。当前活动状态仍由 Runtime 掌握。
+
+投递状态独立于 InputStage：
+
+| InputDeliveryState | 含义及恢复行为 |
+| --- | --- |
+| NotDispatched | 尚未调用汇；当前 Runtime 内可显式 resume_input 补投 |
+| Dispatching | 调用汇之前已耐久记录；崩溃后不能判断是否入队，不自动重投 |
+| Delivered | 汇已接收，尚不证明已读/已执行；不重投 |
+| Uncertain | 异常或回执不确定；封闭进一步投递，交给宿主核对 |
+| NotRequired | 控制输入或澄清答案，无第二次数据投递 |
+
+`replay_inputs(principal, after_sequence, limit)` 是有界只读当前投影，按稳定接纳序号
+翻页，默认页上限 64；返回 next_sequence/has_more/window_start/expired_gap。每页
+重新校验权限与主体，只返回该主体记录，不调用 resolver、模型、Runtime 或汇。
+它不是跨页事务快照，也不承诺超过输入窗口的历史回补。
+
+`resume_input(principal, input_id)` 只显式恢复有正文的 Accepted 输入，或当前 Runtime
+中 NotDispatched 的已路由输入。等待澄清时返回原候选；已投递/派发中/不确定/已结算
+输入不重投。历史工作需要下述恢复许可，随后由新的用户输入关联新 Task。
+
+`recover_work(principal, task, environment, context, verifier)` 对历史或当前已结算工作
+执行 RecoveryPlanner → 新 Observe → 可选宿主 Verify。context 必须有 deadline，
+取消探针应覆盖宿主停止/接管；环境必须是该工作的真实资源映射。宿主先停止旧生产者、
+安全收敛在途控制。verifier 返回 true 是宿主对全部未决副作用及不明投递的核验声明，
+模型文本不能直接授予它。没有核验时 report.ready_for_new_task=false，pin 保留。
+
+恢复观察与验证使用任务流中的 RecoveryObservationRecorded / RecoveryVerificationResult，
+各有 v1 schema 和 expected_through_event_sequence。CheckpointBuilder 在推进水位前
+机械校验源前缀；验证还需引用当前观察及所有未决 ActionId。过期提案不能清掉后来出现的
+不确定动作。TaskCheckpoint.recovery_verification_sequence 是接受见证；默认 0 兼容旧
+JSON/digest，旧 reducer 保守忽略新事件。观察本身不会清除 pin。
+
+成功许可绑定主体、上下文摘要、账本修订及源事件水位，默认 60 秒并单次消费，进程重启
+不恢复该许可。续办重新验证来源、打开对应的新 session/task，resumed_from 关联旧工作；
+同进程终态续办也不能绕过恢复门。动作仍受后续新观察、Runtime epoch 和资源 lease 约束。
+
+`recovered_context_items(principal, task)` 只读有界缓存，提供不 pinned 的 P3
+CheckpointSummary / UntrustedExternalData 候选。宿主将其与 MemoryAgentService 的候选
+融合后交给原 ModelContextSupplier/Layer 0，不能把 checkpoint 粘到受保护的主 User/System
+项。候选保留至多 16 个近期步骤、事实和动作，记录总数；默认 64 KiB，超额明确要求进一步
+压缩。原目标及有界用户约束留在执行集，历史 checkpoint 可由 Layer 0 丢弃。
+
+```cpp
+coordinator.set_event_store(events, runtime_id);
+coordinator.set_recovery_stores(artifacts, checkpoints); // initialize 前
+const auto started = coordinator.initialize();
+const auto page = coordinator.replay_inputs(principal, 0, 32);
+const auto recovered = coordinator.recover_work(principal, old_task, environment, context, verifier);
+// ready 后，新的 InputEnvelope.target_task=old_task 将创建关联的新 Task。
+// Gateway supplier 合并 recovered_context_items 与既有记忆候选，不自行准入。
+```
 
 ## 执行中插话
 
+纠正从投递进入 Loop 队列后生效；Accepted/Routed 不表示本轮已经采用。需要立即停止
+自主执行时，宿主使用确定性 cancel_work/Runtime 控制并等待安全收敛。
 两类 Loop 无需 MemoryAgentService 也会检测新输入：轮边界 drain；请求派发、模型完成、
 schema repair 完成及下一次 action/tool/答案准入前检查队列。旧完成被丢弃，按既有恢复
 预算重建；设备循环先重新 Observe，预算耗尽显式失败，不发布旧答案或旧动作。
@@ -199,7 +279,8 @@ schema repair 完成及下一次 action/tool/答案准入前检查队列。旧�
 `InteractionDomainCode`（`InputInvalid`、`InputExpired`、`LedgerUnavailable`、
 `LedgerFull`、`PermissionDenied`、`NoSessionAvailable`、`RuntimeCommandFailed`、
 `RuntimeCommandTimeout`、`RouteRejected`、`SinkUnavailable`、`ExecutorRejected`、
-`NotInitialized`、`InputConflict`、`DeliveryUncertain`；新值追加为 13/14）。
+`NotInitialized`、`InputConflict`、`DeliveryUncertain`、`RecoveryUnavailable`、
+`RecoveryRequired`、`RecoveryStale`；新增值依次追加至 17）。
 
 ## Executor 与生命周期
 
@@ -221,11 +302,8 @@ const auto disposition = coordinator.submit_input(envelope);
 const auto closed = coordinator.close();            // 消费 finite futures，检查错误
 ```
 
-## 本阶段不交付
+## 验证边界
 
-- **完整澄清回收**（M29-03）；本增量已提供显式归属及候选冻结。
-- **跨重启的恢复执行路径**（M29）：M28 的实现只提供输入台账事件耐久与索引 rebuild，
-  本增量只重建账本，尚未恢复注册表、原输入正文与活动 Runtime Task。重启后的重新路由、
-  只读回补与未决副作用的重观测/验证归 M29-05/06，不能自动重投旧 Routed 输入。
-- **容量准入、归档与遗忘**（M31）：M28 只保证台账索引有界且**不引入新的无界层**。
-- **真实模型的路由准确率与澄清率**：M28 只声明管线行为指标，真实模型评估轮另立。
+M29 的本地验收与剩余 CI/平台条件见[里程碑计划](../plans/m29-interaction-coordinator-concurrency-and-recovery.md)。
+本接口不承诺跨崩溃 exactly-once 消费，也不重放外部动作。Artifact 长期保留/擦除、跨主体
+容量与遗忘归 M31；长期记忆自动生命周期归 M30；真实模型语义质量和真实设备验证单独取证。

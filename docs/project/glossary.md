@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.9
+> 版本：1.10
 > 更新日期：2026-11-09
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -22,6 +22,15 @@
 封闭该任务进一步补投并交给宿主核对，不等于输入已读或已执行。权威来源：
 [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)。
 _Avoid_: 自动重试成功、恰好执行一次。
+
+**历史工作投影（Historical Work Projection）**：由输入账本及受控 Artifact 重建的主体/
+会话/任务映射，标记 historical，只读。它不代表当前 Runtime 中有活动 Task；续办需
+通过恢复许可创建关联的新 Task。权威来源：[交互恢复契约](../decisions/DEC-106-interaction-durable-recovery.md)。
+_Avoid_: 复活 Task、自动重放、恢复旧授权。
+
+**恢复许可（Recovery Permit）**：Observe/宿主 Verify 通过后生成的进程内有界许可，绑定
+主体、源上下文摘要、账本修订和事件水位，短期有效且单次消费；它不是平台动作授权。
+_Avoid_: 永久确认、模型授权、仅凭截图清除不确定性。
 
 **Runtime（运行时）**:
 进程内 Agent 能力的顶层协调者，拥有 Session 的创建与串行提交语义。

@@ -87,6 +87,23 @@ int main() {
     MIRA_CHECK(work && work->resumed_from == one.value().task_id);
     MIRA_CHECK(work->context_block.find("now use the corrected totals") != std::string::npos);
 
+    auto control_reply =
+        fixture.envelope("control-reply", "continue the stopped report", principal);
+    control_reply.reply_to = "stop";
+    const auto follow_up = fixture.submit(control_reply);
+    MIRA_CHECK(follow_up && follow_up.value().stage == InputStage::Routed);
+    const auto after_control = fixture.coordinator_->principal_state(principal);
+    const auto *linked = find_task(after_control.value(), *follow_up.value().task_id);
+    MIRA_CHECK(linked && linked->resumed_from == one.value().task_id);
+
+    auto unicode = fixture.envelope("unicode-bound", std::string(4095, 'a') + "报告", principal);
+    unicode.requested_intent = RouteIntent::NewTask;
+    const auto bounded_text = fixture.submit(unicode);
+    MIRA_CHECK(bounded_text && bounded_text.value().task_id);
+    const auto unicode_state = fixture.coordinator_->principal_state(principal);
+    const auto *unicode_work = find_task(unicode_state.value(), *bounded_text.value().task_id);
+    MIRA_CHECK(unicode_work && unicode_work->goal == std::string(4095, 'a'));
+
     // Task capacity is checked before opening a second environment/session.
     CoordinatorConfig config;
     config.max_tasks_per_principal = 1;

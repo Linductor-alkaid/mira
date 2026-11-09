@@ -1,5 +1,6 @@
 #pragma once
 
+#include "interaction_persistence.hpp"
 #include "interaction_routing.hpp"
 
 #include <kairo/executor.hpp>
@@ -63,8 +64,9 @@ class InteractionCoordinator::Impl final {
         for (auto &entry : registry) {
             for (auto &task : entry.second.tasks) {
                 for (const auto &item : states) {
-                    if (task.task_id == item.first) {
+                    if (task.task_id == item.first && task.state != item.second) {
                         task.state = item.second;
+                        task.context_block = assemble_context(task);
                     }
                 }
             }
@@ -169,6 +171,32 @@ class InteractionCoordinator::Impl final {
     [[nodiscard]] Result<void> flush_pending(TaskId task,
                                              const std::shared_ptr<IUserInputSink> &sink);
 
+    struct RecoveryPermit final {
+        PrincipalKey principal;
+        Sha256Digest context_digest;
+        SessionSequence ledger_revision = 0;
+        SessionSequence event_watermark = 0;
+        std::chrono::steady_clock::time_point expires;
+        std::shared_ptr<IEnvironment> environment;
+        TaskCheckpoint checkpoint;
+    };
+
+    [[nodiscard]] Result<ArtifactDescriptor> store_json(const JsonValue &);
+    [[nodiscard]] Result<JsonValue> read_json(const ArtifactDescriptor &) const;
+    [[nodiscard]] Result<LedgerEntry> admit_input(const InputEnvelope &);
+    [[nodiscard]] Result<InputEnvelope> load_input(const LedgerEntry &) const;
+    [[nodiscard]] Result<ArtifactDescriptor> store_context(const PrincipalTaskEntry &,
+                                                           const PrincipalContext &);
+    [[nodiscard]] Result<PrincipalTaskEntry> load_context(const LedgerEntry &) const;
+    [[nodiscard]] Result<void> restore_registry();
+    [[nodiscard]] Result<LedgerEntry> source_record(const PrincipalContext &, TaskId) const;
+    [[nodiscard]] Result<std::shared_ptr<IEnvironment>>
+    recovery_environment(const PrincipalContext &, TaskId);
+    [[nodiscard]] Result<SessionSequence> append_task_event(TaskId, SessionId, std::string,
+                                                            JsonValue);
+    [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
+                                                           const LedgerEntry &);
+
     CoordinatorConfig config;
     MiraRuntime &runtime;
     kairo::Executor &executor;
@@ -177,6 +205,10 @@ class InteractionCoordinator::Impl final {
     std::shared_ptr<IInputLedger> ledger;
     RouteResolver resolver;
     EnvironmentProvider environment_provider;
+    std::shared_ptr<IArtifactStore> artifacts;
+    std::shared_ptr<ICheckpointStore> checkpoints;
+    std::unordered_map<std::string, InputEnvelope> clarification_inputs;
+    std::unordered_map<TaskId, RecoveryPermit, StrongIdHash<TaskId>> recovery_permits;
 
     mutable std::mutex mutex;
     // Serializes the coordinator's own submissions: the registry, the pending

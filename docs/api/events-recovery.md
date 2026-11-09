@@ -85,6 +85,14 @@ SQLite 容器 schema 不变，迁移与回退约束见
 
 崩溃恢复规划（M4-08）：
 
+- `RecoveryPlanner::plan(task, session, now, context)` 为可选重载，在每页、checkpoint
+  读取和 reducer 返回边界检查协作取消/deadline；原三参数接口保持可用。同步存储 I/O 的
+  实际中断由 adapter 负责，deadline 不是强制抢占。
+- M29 的任务流恢复事件为 `RecoveryObservationRecorded` / `RecoveryVerificationResult`，
+  payload 各自使用 v1 schema，携带期望的前缀水位。reducer 在推进水位前验证，拒绝过期
+  观察/验证；验证须绑定当前观察摘要及全部未决 action。成功记录的可选
+  `TaskCheckpoint::recovery_verification_sequence` 保存接受见证，默认 0 不影响旧摘要。
+  旧 reducer 对新类型保守忽略。详细宿主接线见[交互协调层](interaction-coordinator.md)。
 - `RecoveryPlanner(events, checkpoints, policy).plan(task, session, now)` 返回
   `RecoveryOutcome`。
 - `RecoveryAction`：`ResumeObserving`（默认非终态恢复点）、`ResumeVerifying`（动作完成

@@ -1,9 +1,11 @@
 # Mira 实施总计划
 
-[M29](m29-interaction-coordinator-concurrency-and-recovery.md) 已进入 In Progress：
-按 [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md) 冻结显式归属、
-投递和恢复边界，本轮交付并发路由/可靠补投/Loop 插话增量；完整澄清回收、主体注册表
-恢复、断线回补及 journal 恢复接线仍未完成，不能按账本 rebuild 视作 M29 关闭。
+[M29](m29-interaction-coordinator-concurrency-and-recovery.md) 已补齐本地澄清/恢复接线：
+[DEC-106](../decisions/DEC-106-interaction-durable-recovery.md) 冻结 Sensitive 正文/工作投影、
+唯一澄清认领、历史映射、只读回补与 Observe/Verify 许可；reducer 前缀守卫防止旧验证
+清除迟到的未决动作，checkpoint 仍作为 Layer 0 的 P3 候选。Linux Debug 全量
+171/171、ASAN+UBSAN 和 TSan 定向各 14/14、严格 clang-tidy 13 单元及质量门禁通过。
+CI/平台补跑条件见里程碑记录；M29 保持 In Progress，未自动关闭 M30–M33 前置。
 
 [M36：受管记忆代理与完整请求准入](m36-memory-agent-context-integration.md)（Completed，Linux 离线范围），
 按 [DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)承接研究后的开发：

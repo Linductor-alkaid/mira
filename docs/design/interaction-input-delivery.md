@@ -1,12 +1,13 @@
 # 交互输入归属与投递
 
 > 状态：Active
-> 版本：1.0
+> 版本：1.1
 > 日期：2026-11-09
 > 负责人：Mira Maintainers
-> 范围：M29 首批并发与执行中插话增量；恢复部分尚未交付
+> 范围：M29 并发、澄清回收、历史投影与恢复；平台验收见计划
 > 决策：[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
-> [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)
+> [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)、
+> [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md)
 
 ## 目标与边界
 
@@ -14,9 +15,9 @@
 路由。输入接收、上下文更新、工具执行和任务结算分别有可观察边界。协调层位于 Runtime
 之上，不创建另一套 Task 状态机或副作用提交队列。完整请求仍由 Layer 0 决定准入。
 
-这份设计解释当前实现；完整澄清回收、跨进程注册表恢复、断线回补和未决副作用恢复
-由 [M29-03/05/06](../plans/m29-interaction-coordinator-concurrency-and-recovery.md) 继续跟踪。
-不能用账本 rebuild 推导出这些能力已完成。
+澄清、注册表与正文恢复、只读回补和未决副作用恢复的接线由
+[M29-03/05/06](../plans/m29-interaction-coordinator-concurrency-and-recovery.md) 交付。
+恢复投影不注册旧 Runtime Task，实际控制权仍属于新 Task、epoch 和资源 lease。
 
 ## 归属与提交顺序
 
@@ -75,15 +76,45 @@ Executor 的阻塞 I/O 边界，不要让同一个有限池的全部 worker 等�
 原文。宿主仍需在信封进入系统前脱敏正文，Loop 既有文本事件纪律沿用 DEC-016。
 按 id 查询账本以及结果登记是受信 owner 面，不能直接作为远端用户接口。
 
-rebuild 是索引投影恢复，不重建活动 Runtime Task，也不重投 Routed 输入。完整恢复还
-需受控 Artifact 正文引用、主体注册表投影和已消费/不确定状态协调。未决副作用只能复用
-RecoveryPlanner + journal，先 Observe/Verify。缺失或擦除历史不能补造；这些接线的
-未完成状态保留在 M29 计划中。
+rebuild 恢复账本后，配置了恢复存储的协调层枚举有界记录并载入 Sensitive 工作 Artifact，
+恢复主体、session/task、目标和约束映射。旧工作为 historical，只读；缺失/擦除、过期、
+不兼容状态明确暴露。未配置存储的旧接口保持显式运行模式，不伪造跨重启恢复能力。
+原始正文与必要上下文分离存储，快照带有来源 Artifact 闭包；缺少任一来源则拒绝恢复。
+输入、投影和页都有字节/条数上限，长期容量、孤立 Artifact 清理及整体遗忘由 M31 承担。
+
+追加失败可能已提交但回执丢失。账本将后续 mutation 封锁到 rebuild，读取只反映最后已
+确认投影；接纳不确定时保留正文。这样重启能够找回已经提交的引用，也不会在内存仍为
+Accepted 时将同一 input_id 再绑定别的 Task。
+
+澄清答案引用原输入及冻结候选；原输入认领唯一 resolved_by，保留原文并追加答案，仍以
+原 input_id 投递。答案记录标 NotRequired。二者之间崩溃可修复回执，不自动再派发。
+
+replay_inputs 在权限检查后只读当前窗口内的主体投影，按接纳序号翻页。resume_input
+只显式处理 Accepted 或当前 Runtime 内 NotDispatched 的记录。Dispatching/Delivered/
+Uncertain 不自动重投；普通汇只证明入队，不证明消费，无法承诺跨崩溃 exactly-once。
+
+recover_work 对历史或当前已结算工作复用 RecoveryPlanner，先新 Observe，再交给宿主
+对未决副作用/缺失验证/不明投递核验。观察与验证使用新的版本化任务事件，携带期望前缀
+水位。CheckpointBuilder 在推进水位前机械校验；验证必须引用当前观察及所有未决 action。
+插入的迟到记录使提案过期，不会被一次旧验证清除。接受见证持久化在
+TaskCheckpoint.recovery_verification_sequence，旧 JSON/digest 缺省为 0。
+
+恢复许可仅在当前进程内，绑定上下文摘要、主体、账本修订及事件水位，默认 60 秒、单次
+消费。续办创建新 session/task，关联 resumed_from。只读观察不会恢复旧 Task；后续
+动作仍需重新观察、当前 epoch 和资源租约。停止旧生产者、收敛在途动作与接管探针属于
+宿主职责；不能以 Runtime 已取消替代对实际副作用的核验。
+
+执行集保留原目标和已提交用户约束；checkpoint 通过 recovered_context_items 产生有界
+P3/UntrustedExternalData 候选，不 pinned。该 API 只读缓存，无磁盘热路径；宿主与记忆
+候选融合并遵守总采集上限，最后交给 Layer 0。完整 checkpoint 不能粘进受保护 User 项，
+否则会把可裁剪的历史升级成最小执行集。
 
 ## 验证与后续
 
 `tests/m29/` 覆盖多工作归属、实际并发重复提交、权限撤销、账本失败原子性、文件重开、
 补投后缀保留、汇异常、队列背压、有限任务超时/关闭、无记忆代理的两类 Loop 插话、
 repair、工具组中断、已执行动作 Verify，以及 Runtime 取消/接管的迟到完成。
-M28/M36 全量回归与 Sanitizer 是兼容性证据。目标平台、真实模型与完整恢复均须另行
-验收，具体结果和补跑条件见 M29 验证记录。
+新增文件重开、原文/答案认领中断、丢失接纳/路由/投递回执、源擦除、恢复取消/超时/
+接管/关闭、提交前窄窗口注入，以及 P3 在真实 Gateway 中的准入/预算丢弃测试。
+M28/M36/M4 回归与 Sanitizer 是兼容性证据；目标平台和真实模型单独验收，具体结果与
+补跑条件见 M29 验证记录。

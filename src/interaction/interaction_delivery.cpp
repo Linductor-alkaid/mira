@@ -27,25 +27,66 @@ InteractionCoordinator::Impl::flush_pending(TaskId task,
         return Result<void>{};
     auto &queue = waiting->second;
     while (!queue.empty()) {
-        try {
-            const auto delivered = sink->deliver(queue.front(), task);
-            if (!delivered)
-                return make_error(ErrorCode::Unavailable, InteractionDomainCode::SinkUnavailable,
-                                  "the input sink refused delivery", true);
-        } catch (...) {
+        const auto record = ledger->lookup(queue.front().input_id);
+        if (!record)
+            return record.error();
+        const bool tracked = static_cast<bool>(artifacts);
+        const auto uncertain_delivery = [&]() -> Result<void> {
             auto error =
                 make_error(ErrorCode::Unavailable, InteractionDomainCode::DeliveryUncertain,
                            "input delivery is uncertain; host reconciliation is required");
-            uncertain.emplace(task, error);
+            uncertain[task] = error;
             LedgerTransition transition;
             transition.stage = InputStage::Routed;
             transition.task_id = task;
             transition.note = "delivery uncertain; host reconciliation is required";
             transition.error = error;
+            if (tracked)
+                transition.delivery = InputDeliveryState::Uncertain;
             if (!ledger->advance(queue.front().input_id, transition))
                 return make_error(ErrorCode::DataLoss, InteractionDomainCode::DeliveryUncertain,
                                   "delivery is uncertain and its durable diagnostic failed");
             return error;
+        };
+        if (tracked) {
+            if (record.value().delivery == InputDeliveryState::Delivered ||
+                record.value().stage == InputStage::Answered ||
+                record.value().stage == InputStage::TaskSettled) {
+                queue.erase(queue.begin());
+                continue;
+            }
+            if (record.value().delivery != InputDeliveryState::NotDispatched)
+                return uncertain_delivery();
+            LedgerTransition starting;
+            starting.stage = InputStage::Routed;
+            starting.delivery = InputDeliveryState::Dispatching;
+            const auto saved = ledger->advance(record.value().input_id, starting);
+            if (!saved)
+                return saved.error();
+        }
+        try {
+            const auto delivered = sink->deliver(queue.front(), task);
+            if (!delivered) {
+                if (tracked) {
+                    LedgerTransition refused;
+                    refused.stage = InputStage::Routed;
+                    refused.delivery = InputDeliveryState::NotDispatched;
+                    if (!ledger->advance(record.value().input_id, refused))
+                        return uncertain_delivery();
+                }
+                return make_error(ErrorCode::Unavailable, InteractionDomainCode::SinkUnavailable,
+                                  "the input sink refused delivery", true);
+            }
+        } catch (...) {
+            return uncertain_delivery();
+        }
+        if (tracked) {
+            LedgerTransition delivered;
+            delivered.stage = InputStage::Routed;
+            delivered.delivery = InputDeliveryState::Delivered;
+            const auto saved = ledger->advance(record.value().input_id, delivered);
+            if (!saved)
+                return uncertain_delivery();
         }
         queue.erase(queue.begin());
     }
@@ -72,7 +113,7 @@ Result<void> InteractionCoordinator::register_sink(TaskId task_id,
         std::lock_guard lock(impl_->mutex);
         for (const auto &principal : impl_->registry)
             for (const auto &task : principal.second.tasks)
-                known = known || task.task_id == task_id;
+                known = known || (task.task_id == task_id && !task.historical);
     }
     const auto snapshot = impl_->runtime.task_snapshot(task_id);
     if (!known || !snapshot || is_terminal(snapshot.value().state))
@@ -90,6 +131,7 @@ Result<void> InteractionCoordinator::unregister_sink(TaskId task_id) {
 
 Result<InputDisposition> InteractionCoordinator::record_answer(std::string_view input_id,
                                                                std::string summary) {
+    std::lock_guard submit_lock(impl_->submit_mutex);
     if (!impl_->initialized) {
         return make_error(ErrorCode::InvalidState, InteractionDomainCode::NotInitialized,
                           "the interaction coordinator was not initialized");
@@ -114,6 +156,7 @@ Result<InputDisposition> InteractionCoordinator::record_answer(std::string_view 
 
 Result<InputDisposition> InteractionCoordinator::record_settlement(std::string_view input_id,
                                                                    TaskState terminal) {
+    std::lock_guard submit_lock(impl_->submit_mutex);
     if (!impl_->initialized) {
         return make_error(ErrorCode::InvalidState, InteractionDomainCode::NotInitialized,
                           "the interaction coordinator was not initialized");
@@ -121,6 +164,29 @@ Result<InputDisposition> InteractionCoordinator::record_settlement(std::string_v
     if (!is_terminal(terminal)) {
         return make_error(ErrorCode::InvalidArgument, InteractionDomainCode::InputInvalid,
                           "a settlement needs a terminal task state");
+    }
+    const auto current = impl_->ledger->lookup(input_id);
+    if (!current)
+        return current.error();
+    if (current.value().stage != InputStage::TaskSettled && current.value().task_id) {
+        const auto snapshot = impl_->runtime.task_snapshot(*current.value().task_id);
+        if (snapshot && is_terminal(snapshot.value().state) && snapshot.value().state != terminal)
+            return make_error(ErrorCode::InvalidState, InteractionDomainCode::RuntimeCommandFailed,
+                              "the settlement conflicts with the terminal Runtime state");
+    }
+    if (impl_->artifacts) {
+        const auto entry = impl_->ledger->lookup(input_id);
+        if (!entry)
+            return entry.error();
+        if (entry.value().task_id && entry.value().session_id &&
+            entry.value().stage != InputStage::TaskSettled &&
+            entry.value().stage != InputStage::Rejected) {
+            const auto recorded = impl_->append_task_event(
+                *entry.value().task_id, *entry.value().session_id, "TaskStateChanged",
+                JsonValue::Object{{"to", std::string(task_state_name(terminal))}});
+            if (!recorded)
+                return recorded.error();
+        }
     }
     LedgerTransition transition;
     transition.stage = InputStage::TaskSettled;
@@ -141,6 +207,7 @@ Result<InputDisposition> InteractionCoordinator::record_settlement(std::string_v
 
 Result<InputDisposition> InteractionCoordinator::record_rejection(std::string_view input_id,
                                                                   std::string reason) {
+    std::lock_guard submit_lock(impl_->submit_mutex);
     if (!impl_->initialized) {
         return make_error(ErrorCode::InvalidState, InteractionDomainCode::NotInitialized,
                           "the interaction coordinator was not initialized");
@@ -187,6 +254,8 @@ Result<void> InteractionCoordinator::close() {
     std::lock_guard submit_lock(impl_->submit_mutex);
     impl_->sinks.clear();
     impl_->pending.clear();
+    impl_->clarification_inputs.clear();
+    impl_->recovery_permits.clear();
     // Each retired job is finite pure computation. Keep the Executor alive
     // until these futures settle; none can call back into this object.
     for (auto &future : impl_->retired_futures)

@@ -1,5 +1,6 @@
 #include "action_journal_internal.hpp"
 #include "checkpoint_fact_wire.hpp"
+#include "checkpoint_recovery_guard.hpp"
 #include <mira/task_checkpoint.hpp>
 #include <mira/verified_fact.hpp>
 
@@ -584,6 +585,9 @@ Result<void> TaskCheckpoint::validate() const {
                                     "checkpoint constraints must be keyed");
         }
     }
+    if (recovery_verification_sequence > through_event_sequence)
+        return checkpoint_error(ErrorCode::InvalidArgument,
+                                "recovery verification witness exceeds the checkpoint watermark");
     for (const auto &fact : verified_facts) {
         if (!checkpoint_wire::fact_validity_valid(fact, schema_version)) {
             return checkpoint_error(ErrorCode::InvalidArgument,
@@ -606,6 +610,9 @@ Hash TaskCheckpoint::projection_digest() const {
     object.emplace_back("environment_epoch", static_cast<std::int64_t>(environment_epoch));
     object.emplace_back("through_event_sequence",
                         static_cast<std::int64_t>(through_event_sequence));
+    if (recovery_verification_sequence != 0)
+        object.emplace_back("recovery_verification_sequence",
+                            static_cast<std::int64_t>(recovery_verification_sequence));
     object.emplace_back("goal_statement", goal_statement);
     if (success_criterion.has_value()) {
         object.emplace_back("success_criterion", *success_criterion);
@@ -672,6 +679,9 @@ JsonValue checkpoint_to_json(const TaskCheckpoint &checkpoint) {
                         static_cast<std::int64_t>(checkpoint.environment_epoch));
     object.emplace_back("through_event_sequence",
                         static_cast<std::int64_t>(checkpoint.through_event_sequence));
+    if (checkpoint.recovery_verification_sequence != 0)
+        object.emplace_back("recovery_verification_sequence",
+                            static_cast<std::int64_t>(checkpoint.recovery_verification_sequence));
     object.emplace_back("created_at", wall_nanos(checkpoint.created_at));
     // nanoseconds::rep is `long long` on some libc++ targets while JsonValue
     // pins int64_t; cast explicitly so pair construction stays unambiguous.
@@ -786,6 +796,13 @@ Result<TaskCheckpoint> checkpoint_from_json(const JsonValue &json) {
     read_u64("task_epoch", checkpoint.task_epoch);
     read_u64("environment_epoch", checkpoint.environment_epoch);
     read_u64("through_event_sequence", checkpoint.through_event_sequence);
+    if (const auto *witness = json.find("recovery_verification_sequence")) {
+        if (!witness->is_integer() || witness->as_integer().value() < 0)
+            return checkpoint_error(ErrorCode::InvalidArgument,
+                                    "invalid recovery verification witness");
+        checkpoint.recovery_verification_sequence =
+            static_cast<std::uint64_t>(witness->as_integer().value());
+    }
     const auto *created = json.find("created_at");
     const auto *monotonic = json.find("created_at_monotonic");
     if (created != nullptr && created->is_integer()) {
@@ -877,9 +894,11 @@ CheckpointBuildResult CheckpointBuilder::build(const std::optional<TaskCheckpoin
             ++stats.stale_skipped;
             continue;
         }
+        const auto guarded = checkpoint_recovery::apply(checkpoint, event, last_sequence, stats);
         last_sequence = event.session_sequence;
         checkpoint.through_event_sequence = event.session_sequence;
-        apply_event(checkpoint, config_, event, stats);
+        if (guarded == checkpoint_recovery::GuardResult::NotGuarded)
+            apply_event(checkpoint, config_, event, stats);
     }
     checkpoint.schema_version = checkpoint_schema_current();
     std::erase_if(checkpoint.verified_facts,
