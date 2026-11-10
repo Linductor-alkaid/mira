@@ -17,9 +17,10 @@ namespace {
 // into native roles via `context_items_from_candidate`.
 ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation) {
     ContextItem item;
-    item.id = ContextItemId{
-        context_asset_id_from_seed("mira.memory.recall|" + operation.to_string() + "|" +
-                                   std::to_string(records.size())).value};
+    item.id =
+        ContextItemId{context_asset_id_from_seed("mira.memory.recall|" + operation.to_string() +
+                                                 "|" + std::to_string(records.size()))
+                          .value};
     item.kind = ContextItemKind::RetrievedMemory;
     item.authority = ContextAuthority::RetrievedMemory;
     item.sequence = 0;
@@ -303,14 +304,12 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         // cap. All admitted facts then render as one framed block.
         std::vector<MemoryRecord> selected;
         std::set<MemoryId> seen;
-        const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter,
-                               bool capped) {
+        const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter, bool capped) {
             for (const auto &record : records) {
                 if (capped && selected.size() >= config.max_records)
                     break;
                 if (filter && !proposal.selected_memories.empty() &&
-                    std::find(proposal.selected_memories.begin(),
-                              proposal.selected_memories.end(),
+                    std::find(proposal.selected_memories.begin(), proposal.selected_memories.end(),
                               record.id) == proposal.selected_memories.end())
                     continue;
                 if (!seen.insert(record.id).second)

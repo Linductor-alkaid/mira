@@ -90,8 +90,7 @@ Result<void> ContextIndexPolicy::validate() const {
                                "embedding dimension bound out of range");
     }
     if (max_asset_entries == 0 || max_asset_entries > 1'024) {
-        return retrieval_error(ContextDomainCode::InvalidItem,
-                               "asset entry bound out of range");
+        return retrieval_error(ContextDomainCode::InvalidItem, "asset entry bound out of range");
     }
     for (const auto &marker : forbidden_markers) {
         if (marker.empty()) {
@@ -764,8 +763,7 @@ constexpr std::string_view kAssistantLinePrefix = "assistant: ";
 
 [[nodiscard]] std::string_view replay_line(ConversationEntry::Kind kind,
                                            const std::string &line) noexcept {
-    if (kind == ConversationEntry::Kind::UserMessage &&
-        line.starts_with(kUserLinePrefix)) {
+    if (kind == ConversationEntry::Kind::UserMessage && line.starts_with(kUserLinePrefix)) {
         return std::string_view{line}.substr(kUserLinePrefix.size());
     }
     if (kind == ConversationEntry::Kind::AssistantSpeech &&
@@ -824,8 +822,9 @@ std::vector<ContextItem> context_items_from_candidate(const ContextCandidate &ca
         const auto &run = runs[index];
         ContextItem item;
         item.id = ContextItemId{context_asset_id_from_seed(
-            "mira.conversation.replay|" + candidate.asset_id.to_string() + "|" +
-            std::to_string(index) + "|" + std::to_string(run.through)).value};
+                                    "mira.conversation.replay|" + candidate.asset_id.to_string() +
+                                    "|" + std::to_string(index) + "|" + std::to_string(run.through))
+                                    .value};
         item.kind = ContextItemKind::RetrievedMemory;
         item.authority = ContextAuthority::RetrievedMemory;
         item.priority = ContextPriority::Normal;
@@ -878,18 +877,16 @@ conversation_kind_from(std::string_view name) noexcept {
 }
 
 [[nodiscard]] JsonValue conversation_turn_to_json(const ConversationSegmentEntry &turn) {
-    return JsonValue{JsonValue::Object{{"text", turn.text},
-                                       {"origin", turn.origin.to_string()},
-                                       {"session_sequence", static_cast<std::int64_t>(
-                                                               turn.session_sequence)},
-                                       {"kind", std::string(conversation_kind_name(turn.kind))}}};
+    return JsonValue{
+        JsonValue::Object{{"text", turn.text},
+                          {"origin", turn.origin.to_string()},
+                          {"session_sequence", static_cast<std::int64_t>(turn.session_sequence)},
+                          {"kind", std::string(conversation_kind_name(turn.kind))}}};
 }
 
-[[nodiscard]] Result<ConversationSegmentEntry>
-conversation_turn_from_json(const JsonValue &json) {
+[[nodiscard]] Result<ConversationSegmentEntry> conversation_turn_from_json(const JsonValue &json) {
     if (!json.is_object()) {
-        return retrieval_error(ContextDomainCode::InvalidItem,
-                               "candidate turn must be an object");
+        return retrieval_error(ContextDomainCode::InvalidItem, "candidate turn must be an object");
     }
     ConversationSegmentEntry turn;
     const auto *text = json.find("text");
@@ -908,8 +905,7 @@ conversation_turn_from_json(const JsonValue &json) {
     }
     if (const auto *sequence = json.find("session_sequence");
         sequence != nullptr && sequence->is_integer()) {
-        turn.session_sequence =
-            static_cast<SessionSequence>(sequence->as_integer().value_or(0.0));
+        turn.session_sequence = static_cast<SessionSequence>(sequence->as_integer().value_or(0.0));
     }
     if (const auto *kind = json.find("kind"); kind != nullptr && kind->is_string()) {
         const auto parsed = conversation_kind_from(*kind->as_string());

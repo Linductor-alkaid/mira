@@ -131,10 +131,9 @@ int recall_renders_one_framed_block_and_dedupes_expansions() {
     MemoryAgentProposal scripted;
     scripted.queries = {"volume"};
     MemoryAgentFixture fixture;
-    fixture.start([&scripted](const MemoryAgentInput &,
-                              const OperationContext &) -> Result<MemoryAgentProposal> {
-        return scripted;
-    });
+    fixture.start(
+        [&scripted](const MemoryAgentInput &,
+                    const OperationContext &) -> Result<MemoryAgentProposal> { return scripted; });
     auto binding = fixture.binding();
     MIRA_CHECK(fixture.service->bind(binding));
     // Two distinct claims (a same-claim second seed would supersede the
@@ -167,10 +166,10 @@ int recall_renders_one_framed_block_and_dedupes_expansions() {
     MIRA_CHECK(std::get<TextPart>(block.content.front()).sensitivity == Sensitivity::Internal);
     MIRA_CHECK(block.provenance.size() == 2);
     MIRA_CHECK(block.sequence == 0);
-    MIRA_CHECK(block.id == ContextItemId{context_asset_id_from_seed(
-                                "mira.memory.recall|" + result.value().operation.to_string() +
-                                "|2")
-                                .value});
+    MIRA_CHECK(block.id ==
+               ContextItemId{context_asset_id_from_seed("mira.memory.recall|" +
+                                                        result.value().operation.to_string() + "|2")
+                                 .value});
     MIRA_CHECK(block.validate().has_value());
 
     // A memory_ids selection citing an unknown record is an invalid proposal:

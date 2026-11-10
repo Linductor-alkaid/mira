@@ -198,13 +198,11 @@ int assistant_speech_entries_render_lines() {
     MIRA_CHECK(view.value()[1].session_sequence == speech_envelope.session_sequence);
     MIRA_CHECK(view.value()[1].recorded_at.wall == speech_envelope.timestamp.wall);
     MIRA_CHECK(view.value()[1].recorded_at.monotonic == speech_envelope.timestamp.monotonic);
-    MIRA_CHECK(view.value()[2].text ==
-               "tool call echo {\"message\":\"ping\"} (executed)\n"
-               "tool call echo (skipped)\n"
-               "tool call echo (failed)\n"
-               "tool call echo (not_executed)");
-    MIRA_CHECK(view.value()[3].text ==
-               "working on it\ntool call echo {} (executed)");
+    MIRA_CHECK(view.value()[2].text == "tool call echo {\"message\":\"ping\"} (executed)\n"
+                                       "tool call echo (skipped)\n"
+                                       "tool call echo (failed)\n"
+                                       "tool call echo (not_executed)");
+    MIRA_CHECK(view.value()[3].text == "working on it\ntool call echo {} (executed)");
     const auto rebuilt = build_conversation_view(store, session);
     MIRA_CHECK(rebuilt && rebuilt.value().size() == view.value().size());
     for (std::size_t index = 0; index < view.value().size(); ++index) {

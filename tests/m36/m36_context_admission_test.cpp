@@ -146,14 +146,12 @@ int replay_wire_roles_reach_the_wire_and_system_roles_fail_closed() {
     assistant_replay.content.emplace_back(TextPart{"assistant replay: atlas-2 is the backup"});
     const auto assistant_admitted = admitted_candidate(assistant_replay);
     MIRA_CHECK(assistant_admitted);
-    const auto assistant_on_wire =
-        std::find_if(assistant_admitted.value().request.input.begin(),
-                     assistant_admitted.value().request.input.end(),
-                     [](const ModelInputItem &item) {
-                         const auto *text = std::get_if<TextPart>(&item.content.front());
-                         return text != nullptr &&
-                                text->text.find("atlas-2 is the backup") != std::string::npos;
-                     });
+    const auto assistant_on_wire = std::find_if(
+        assistant_admitted.value().request.input.begin(),
+        assistant_admitted.value().request.input.end(), [](const ModelInputItem &item) {
+            const auto *text = std::get_if<TextPart>(&item.content.front());
+            return text != nullptr && text->text.find("atlas-2 is the backup") != std::string::npos;
+        });
     MIRA_CHECK(assistant_on_wire != assistant_admitted.value().request.input.end());
     MIRA_CHECK(assistant_on_wire->role == ModelRole::Assistant);
     MIRA_CHECK(assistant_on_wire->authority == Sensitivity::Public);
@@ -165,15 +163,12 @@ int replay_wire_roles_reach_the_wire_and_system_roles_fail_closed() {
     user_replay.wire_role = ModelRole::User;
     const auto user_admitted = admitted_candidate(user_replay);
     MIRA_CHECK(user_admitted);
-    const auto user_on_wire = std::find_if(user_admitted.value().request.input.begin(),
-                                           user_admitted.value().request.input.end(),
-                                           [](const ModelInputItem &item) {
-                                               const auto *text =
-                                                   std::get_if<TextPart>(&item.content.front());
-                                               return text != nullptr &&
-                                                      text->text.find("atlas-2 is the backup") !=
-                                                          std::string::npos;
-                                           });
+    const auto user_on_wire = std::find_if(
+        user_admitted.value().request.input.begin(), user_admitted.value().request.input.end(),
+        [](const ModelInputItem &item) {
+            const auto *text = std::get_if<TextPart>(&item.content.front());
+            return text != nullptr && text->text.find("atlas-2 is the backup") != std::string::npos;
+        });
     MIRA_CHECK(user_on_wire != user_admitted.value().request.input.end());
     MIRA_CHECK(user_on_wire->role == ModelRole::User);
 

@@ -827,8 +827,8 @@ int supervisor_routes_and_closes_retrieval() {
 // DEC-108: replay expansion of speaker-tagged turns into native role items
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] ConversationSegmentEntry
-turn(std::uint64_t sequence, std::string text, ConversationEntry::Kind kind) {
+[[nodiscard]] ConversationSegmentEntry turn(std::uint64_t sequence, std::string text,
+                                            ConversationEntry::Kind kind) {
     ConversationSegmentEntry turn_entry;
     turn_entry.text = std::move(text);
     turn_entry.origin = event_from_seed(sequence);
@@ -891,8 +891,10 @@ int replay_expands_turns_into_native_role_items() {
     // Item ids derive deterministically from asset id + run index + run
     // watermark; repeated conversion of the same input agrees bit for bit,
     // and no run reuses the asset id itself.
-    const auto expected_first = ContextItemId{context_asset_id_from_seed(
-        "mira.conversation.replay|" + candidate.asset_id.to_string() + "|0|2").value};
+    const auto expected_first =
+        ContextItemId{context_asset_id_from_seed("mira.conversation.replay|" +
+                                                 candidate.asset_id.to_string() + "|0|2")
+                          .value};
     MIRA_CHECK(items[0].id == expected_first);
     const auto again = context_items_from_candidate(candidate);
     MIRA_CHECK(again.size() == items.size());
@@ -1019,7 +1021,8 @@ int segment_entries_round_trip_through_the_index() {
     MIRA_CHECK(items[0].wire_role == ModelRole::User);
     MIRA_CHECK(std::get<TextPart>(items[0].content.front()).text == "where is the atlas backup");
     MIRA_CHECK(items[1].wire_role == ModelRole::Assistant);
-    MIRA_CHECK(std::get<TextPart>(items[1].content.front()).text == "atlas-2, verified this morning");
+    MIRA_CHECK(std::get<TextPart>(items[1].content.front()).text ==
+               "atlas-2, verified this morning");
     MIRA_CHECK(items[2].wire_role == ModelRole::User);
     MIRA_CHECK(std::get<TextPart>(items[2].content.front()).text ==
                "loop: loop settled: Completed");
@@ -1053,12 +1056,10 @@ int index_rejects_misplaced_oversized_or_mutated_entries() {
     MIRA_CHECK(tight.validate().has_value());
     InMemoryContextIndex tight_index(tight);
     const auto id = context_asset_id_from_seed("segment|too-many-entries");
-    ContextIndexAsset overgrown =
-        conversation_asset(id, session, "user: a\nuser: b\nuser: c", 3);
+    ContextIndexAsset overgrown = conversation_asset(id, session, "user: a\nuser: b\nuser: c", 3);
     for (std::uint64_t sequence = 1; sequence <= 3; ++sequence) {
-        overgrown.entries.push_back(
-            turn(sequence, "user: body " + std::to_string(sequence),
-                 ConversationEntry::Kind::UserMessage));
+        overgrown.entries.push_back(turn(sequence, "user: body " + std::to_string(sequence),
+                                         ConversationEntry::Kind::UserMessage));
     }
     const auto over = tight_index.upsert_asset(overgrown);
     MIRA_CHECK(!over.has_value());
