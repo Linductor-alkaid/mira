@@ -1,6 +1,8 @@
 #include "context_text.hpp"
 #include "memory_agent_support.hpp"
 
+#include <mira/context_retrieval.hpp>
+
 #include <algorithm>
 #include <set>
 
@@ -8,14 +10,28 @@ namespace mira {
 using memory_agent_support::error;
 using memory_agent_support::history_json;
 namespace {
-ContextItem memory_item(const MemoryRecord &record, std::uint64_t sequence) {
+// Recall facts merge into one framed user-role block (DEC-1xx): bare
+// statements as individual user messages read as live user speech, and
+// per-record speaker labels would only re-spend tokens. Verbatim conversation
+// replay never goes through here — that path expands speaker-tagged turns
+// into native roles via `context_items_from_candidate`.
+ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation) {
     ContextItem item;
-    item.id = ContextItemId{record.id.value};
+    item.id = ContextItemId{
+        context_asset_id_from_seed("mira.memory.recall|" + operation.to_string() + "|" +
+                                   std::to_string(records.size())).value};
     item.kind = ContextItemKind::RetrievedMemory;
     item.authority = ContextAuthority::RetrievedMemory;
-    item.sequence = sequence;
-    item.provenance = record.provenance;
-    item.content.emplace_back(TextPart{record.statement, record.sensitivity});
+    item.sequence = 0;
+    Sensitivity authority = Sensitivity::Public;
+    std::string text = "[recalled memory v1|count=" + std::to_string(records.size()) + "]";
+    for (const auto &record : records) {
+        text += "\n- " + record.statement;
+        authority = std::max(authority, record.sensitivity);
+        item.provenance.insert(item.provenance.end(), record.provenance.begin(),
+                               record.provenance.end());
+    }
+    item.content.emplace_back(TextPart{std::move(text), authority});
     return item;
 }
 bool in_scopes(const MemoryRecord &record, const std::vector<MemoryScope> &scopes) {
@@ -281,23 +297,37 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         return valid.error();
 
     if (input.mode == MemoryAgentMode::Recall) {
-        for (const auto &record : input.records)
-            if (proposal.selected_memories.empty() ||
-                std::find(proposal.selected_memories.begin(), proposal.selected_memories.end(),
-                          record.id) != proposal.selected_memories.end())
-                result.candidates.push_back(memory_item(record, result.candidates.size()));
+        // Selection keeps the previous semantics: the first batch honors the
+        // model's memory_ids filter (empty keeps all), expansion queries
+        // dedupe against everything already admitted and respect the record
+        // cap. All admitted facts then render as one framed block.
+        std::vector<MemoryRecord> selected;
+        std::set<MemoryId> seen;
+        const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter,
+                               bool capped) {
+            for (const auto &record : records) {
+                if (capped && selected.size() >= config.max_records)
+                    break;
+                if (filter && !proposal.selected_memories.empty() &&
+                    std::find(proposal.selected_memories.begin(),
+                              proposal.selected_memories.end(),
+                              record.id) == proposal.selected_memories.end())
+                    continue;
+                if (!seen.insert(record.id).second)
+                    continue;
+                selected.push_back(record);
+            }
+        };
+        admit(input.records, true, false);
         for (const auto &query : proposal.queries) {
             auto extra = query_records(query);
             if (!extra)
                 return extra.error();
             result.degraded |= extra.value().quality.degraded;
-            for (const auto &record : extra.value().records)
-                if (result.candidates.size() < config.max_records &&
-                    std::none_of(
-                        result.candidates.begin(), result.candidates.end(),
-                        [&](const auto &item) { return item.id.value == record.id.value; }))
-                    result.candidates.push_back(memory_item(record, result.candidates.size()));
+            admit(extra.value().records, false, true);
         }
+        if (!selected.empty())
+            result.candidates.push_back(memory_block(selected, job->id));
         std::size_t bytes = 0;
         for (const auto &item : result.candidates)
             bytes += std::get<TextPart>(item.content.front()).text.size();

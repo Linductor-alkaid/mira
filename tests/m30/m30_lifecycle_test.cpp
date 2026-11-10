@@ -28,9 +28,11 @@ int main() {
     const auto sink = std::make_shared<m28::RecordingSink>();
     MIRA_CHECK(host.coordinator->register_sink(task, sink));
     const auto recalled = host.finish(task);
+    // DEC-108: one recall renders all selected records as a single framed
+    // block instead of one bare user message per record.
     MIRA_CHECK(recalled && recalled.value().candidates.size() == 1);
     MIRA_CHECK(std::get<TextPart>(recalled.value().candidates.front().content.front()).text ==
-               "volume=30");
+               "[recalled memory v1|count=1]\n- volume=30");
     status = host.coordinator->memory_status(host.principal, task);
     MIRA_CHECK(status && !status.value().suspended && status.value().job);
     const auto operation = status.value().job->operation;

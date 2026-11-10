@@ -244,6 +244,12 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 实际载荷，快照本身不等于已装载请求。见[API](../api/memory-agent.md)。
 _Avoid_: 完整系统提示词、授权快照、供应商 continuation
 
+**原生角色回放（Native Role Replay）**:
+逐字会话记忆按原始说话人以原生 User/Assistant 消息角色回放（说话人由
+`wire_role` 结构承载，DEC-108）；事实召回合并为单个带框架头的 user 消息。
+不可信召回永不获得 System/Developer 角色。
+_Avoid_: 文本前缀标注说话人、把召回提升为系统消息
+
 **Supply Seam（供给缝）**:
 Agent Loop 的可选只读快照供给依赖（DEC-045/M25）：宿主注入回调，请求
 装配时经 Layer 0 转换消费当前会话已提交快照；只读、零自动化，写侧

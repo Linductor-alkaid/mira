@@ -57,13 +57,17 @@ namespace {
     }
     std::ostringstream text;
     bool has_content = false;
+    // The speaker is carried structurally by `entry.kind`; prefixing the text
+    // here would double up once `entry_line` (the single prefix renderer)
+    // adds "assistant: " for text consumers, and replay conversion emits
+    // native roles without any prefix (DEC-1xx).
     if (const auto *speech = detail->find("text"); speech != nullptr) {
         if (!speech->is_string()) {
             return projection_error("AssistantSpeech payload text is not a string");
         }
         const auto &spoken = *speech->as_string();
         if (!spoken.empty()) {
-            text << "assistant said: " << spoken;
+            text << spoken;
             has_content = true;
         }
     }
@@ -84,7 +88,7 @@ namespace {
             if (has_content) {
                 text << '\n';
             }
-            text << "assistant tool call " << *name->as_string();
+            text << "tool call " << *name->as_string();
             if (const auto *arguments = call.find("arguments"); arguments != nullptr &&
                                                                 arguments->is_string() &&
                                                                 !arguments->as_string()->empty()) {

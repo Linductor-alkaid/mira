@@ -141,6 +141,25 @@
 不新增自动重试、授权来源或物理删除路径。承诺、完整记忆意图/审批/纠正/删除、
 价值信号及同 scope 新世代接纳保持未完成。最终验收结果在实现结束后追加。
 
+### 2026-11-10：召回原生角色化增量（DEC-108）
+
+部署反馈：召回上下文的说话人仅靠文本前缀标注，模型无法在输入层面分辨身份。
+按 DEC-108 交付：`ConversationEntry::Kind` 贯穿投影（segment entry/索引资产/
+候选 turns），`ContextItem::wire_role`（仅 RetrievedMemory，只允许
+User/Assistant）与 `context_items_from_candidate` 逐轮原生角色展开；事实召回
+合并为单个 `[recalled memory v1|count=N]` 带框块；`conversation_log` 去除
+`assistant said:` 前缀烘焙（`entry_line` 成为唯一前缀渲染器）；compress 提示
+要求摘要归因 speaker。M30-04/M30-08 的范围随之更新。
+
+验证（Independent-Verification-Agent 独立执行，主循环复核）：更新
+m17/m3/m30_lifecycle/m36_context_admission/m36_memory_agent/
+m36_memory_agent_model 六个测试文件并新增 per-run 原生角色展开、turns JSON
+round-trip、索引 entries 校验、wire_role 准入 fail-closed、召回带框块去重等
+测试点；`cmake --build build/debug -j 8` 退出 0；`ctest --output-on-failure
+-j 8` 176/176 通过、0 失败；`tools/check_architecture.py` clean。剩余补跑
+条件：真实长会话触顶 `max_input_items` 的逐轮回放、supervisor 组合路由、
+真实模型质量评估，保持未验证并记录于此。
+
 ### 2026-11-10：首批生命周期增量验收
 
 基线 `a2c33a2` 上的未提交工作树。交付 DEC-107、三类内部 scope 映射、可选

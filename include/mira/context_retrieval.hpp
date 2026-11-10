@@ -65,6 +65,24 @@ struct ContextAssetId final {
 // re-register idempotently instead of duplicating entries (RULE-07).
 [[nodiscard]] ContextAssetId context_asset_id_from_seed(std::string_view seed);
 
+// One window entry with its provenance, added in M19 so Layer 3 consolidation
+// can bind model citations back to source events (additive change; the joined
+// `text` and flattened `source_events` are unchanged and remain the retrieval
+// surface). `text` mirrors the exact line carried in the segment text,
+// including the "[truncated]" marker for oversized entries, so the whole
+// segment stays bounded (RULE-08). `kind` carries the speaker structurally
+// from the DEC-016 view so replay surfaces can emit native message roles
+// instead of re-deriving them from the `text` prefix.
+struct ConversationSegmentEntry final {
+    std::string text;
+    EventId origin;
+    SessionSequence session_sequence = 0;
+    ConversationEntry::Kind kind = ConversationEntry::Kind::UserMessage;
+
+    friend constexpr bool operator==(const ConversationSegmentEntry &,
+                                     const ConversationSegmentEntry &) noexcept = default;
+};
+
 // Index admission policy. Bounds are RULE-08 ceilings; the marker lists stay
 // aligned with `ConsolidationPolicy` so secrets never reach the retrieval
 // surface regardless of which pipeline feeds it.
@@ -73,6 +91,9 @@ struct ContextIndexPolicy final {
     std::size_t max_source_events = 64;
     std::size_t max_assets = 100'000;
     std::size_t max_embedding_dims = 4'096;
+    // Speaker-tagged window lines carried per segment asset (mirrors the
+    // segmentation window ceiling).
+    std::size_t max_asset_entries = 1'024;
     // Content markers that must never enter the retrieval index.
     std::vector<std::string> forbidden_markers = default_forbidden_content_markers();
 
@@ -90,6 +111,11 @@ struct ContextIndexAsset final {
     std::optional<SessionId> session;
     std::optional<MemoryScope> scope;
     std::vector<EventId> source_events;
+    // Speaker-tagged window lines for ConversationSegment assets (empty for
+    // statement-surface assets). Mirror of the segment's `entries`; carried so
+    // recalled candidates can replay turns with native roles. Validated
+    // against the same policy bounds as the joined text.
+    std::vector<ConversationSegmentEntry> entries;
     // EventStore sequence watermark observed when the asset was derived.
     // Registering the same id with a strictly newer watermark invalidates a
     // previously attached embedding (the projection went stale); registering
@@ -168,6 +194,11 @@ struct ContextCandidate final {
     ContextAssetId asset_id;
     ContextAssetKind kind = ContextAssetKind::ConversationSegment;
     std::string text;
+    // Speaker-tagged turns mirrored from the source segment; empty for
+    // statement-surface assets. Replay conversion groups contiguous same-kind
+    // turns into native User/Assistant messages instead of one speaker-prefixed
+    // text block (DEC-1xx). Bounded by the same policy ceilings as the asset.
+    std::vector<ConversationSegmentEntry> turns;
     std::optional<SessionId> session;
     std::optional<MemoryScope> scope;
     std::vector<EventId> source_events;
@@ -271,12 +302,6 @@ struct ConversationSegmentationOptions final {
 // surface). `text` mirrors the exact line carried in the segment text,
 // including the "[truncated]" marker for oversized entries, so the whole
 // segment stays bounded (RULE-08).
-struct ConversationSegmentEntry final {
-    std::string text;
-    EventId origin;
-    SessionSequence session_sequence = 0;
-};
-
 struct ConversationSegment final {
     SessionId session;
     std::size_t first_entry = 0;
@@ -300,11 +325,18 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
 // Layer 0 admission path
 // ---------------------------------------------------------------------------
 
-// Pure conversion of a recalled candidate into a P4 `RetrievedMemory`
-// `ContextItem`. The item id derives deterministically from the asset id and
-// provenance is carried through; `StandardContextManager` retains the final
-// token/safety admission authority (DEC-032 §2 — retrieval never self-admits).
-[[nodiscard]] ContextItem context_item_from_candidate(const ContextCandidate &candidate);
+// Pure conversion of a recalled candidate into P4 `RetrievedMemory`
+// `ContextItem`s. Candidates carrying speaker-tagged turns (ConversationSegment
+// assets) expand into one item per run of contiguous same-speaker turns —
+// `wire_role` carries User/Assistant so assembly emits native roles instead of
+// one speaker-prefixed user message (DEC-1xx); loop-outcome lines join the
+// adjacent user-role run with their `loop:` prefix retained. Statement-surface
+// candidates yield exactly one user-role item. Item ids derive deterministically
+// from the asset id and provenance is carried through; `StandardContextManager`
+// retains the final token/safety admission authority (DEC-032 §2 — retrieval
+// never self-admits).
+[[nodiscard]] std::vector<ContextItem>
+context_items_from_candidate(const ContextCandidate &candidate);
 
 // ---------------------------------------------------------------------------
 // Versioned JSON serialization (schema "mira.context.candidate.v1"); readers

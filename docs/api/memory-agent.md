@@ -4,7 +4,8 @@
 > 更新日期：2026-11-10
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
 > 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
-> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)
+> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
+> [DEC-108](../decisions/DEC-108-native-role-memory-recall.md)
 > 设计：[记忆代理](../design/memory_agent_design.md)
 
 ## 宿主接线
@@ -41,6 +42,8 @@ session/task/epoch 必须与 binding 一致。submit 返回 MemoryAgentHandle，
 result；调用 result(operation) 是零等待查询，空 optional 代表 pending。
 
 Recall 的 query 只在绑定 scope 中检索，返回类型化候选，实际装载由 Gateway 再裁决。
+选中的事实 statement 合并为单个带框架头的 user 消息（DEC-108）；逐字会话回放候选
+按原始说话人展开为原生 User/Assistant 消息，永不 System/Developer。
 Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型伪造的事件正文。
 结果 consolidation 给出 Applied、PendingApproval、Rejected 等状态；待审批 mutation
 只有经过宿主当前权限/删除屏障复核后，才可通过既有 apply_pending 提交。

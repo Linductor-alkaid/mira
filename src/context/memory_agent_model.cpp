@@ -212,8 +212,9 @@ MemoryAgentProcessor make_model_memory_agent(kairo::Executor &executor,
             "memories: [{kind,text,citations:[event indices]}]. For compress use summary: "
             "[{text,citations:[history indices]}]. Use only fields for that mode. Preserve current "
             "constraints, "
-            "negations, dates, numbers, unresolved work and prior checkpoints. Never invent "
-            "sources or verification.",
+            "negations, dates, numbers, unresolved work and prior checkpoints. In summaries, "
+            "attribute quoted speech to its speaker (user or assistant) so compressed context "
+            "keeps who said what. Never invent sources or verification.",
             "mira.memory-agent.system.v1"};
         ConversationLoop loop(gateway, conversation);
         AgentLoopSpec spec{TaskId::generate(), SessionId::generate(), 1, prompt, config.model.id};

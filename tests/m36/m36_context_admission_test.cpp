@@ -1,6 +1,11 @@
 #include "support/m36_support.hpp"
 #include "support/test.hpp"
 
+#include <mira/context_contracts.hpp>
+
+#include <algorithm>
+#include <string>
+
 namespace {
 using namespace mira;
 using namespace mira::testing;
@@ -119,11 +124,103 @@ int fallback_uses_actual_profile_and_stale_completion_is_rejected() {
     MIRA_CHECK(fallback->requests().front().profile_id == fallback_profile->id);
     return 0;
 }
+int replay_wire_roles_reach_the_wire_and_system_roles_fail_closed() {
+    ConversationFixture fixture;
+    fixture.use_provider({text_response("unused")});
+    auto request = memory_request(fixture.spec_);
+    const auto admitted_candidate =
+        [&](const ContextItem &candidate) -> Result<AdmittedModelRequest> {
+        ModelContextSnapshot snapshot;
+        snapshot.candidates = {candidate};
+        return admit_model_request(request, *fixture.profile_, fixture.spec_.session_id, snapshot);
+    };
+
+    // DEC-108: an assistant-tagged replay item reaches the wire as a native
+    // Assistant message while keeping the Public trust tier of retrieved
+    // memory (RULE-09: never System/Developer).
+    ContextItem assistant_replay;
+    assistant_replay.id = ContextItemId::generate();
+    assistant_replay.kind = ContextItemKind::RetrievedMemory;
+    assistant_replay.authority = ContextAuthority::RetrievedMemory;
+    assistant_replay.wire_role = ModelRole::Assistant;
+    assistant_replay.content.emplace_back(TextPart{"assistant replay: atlas-2 is the backup"});
+    const auto assistant_admitted = admitted_candidate(assistant_replay);
+    MIRA_CHECK(assistant_admitted);
+    const auto assistant_on_wire =
+        std::find_if(assistant_admitted.value().request.input.begin(),
+                     assistant_admitted.value().request.input.end(),
+                     [](const ModelInputItem &item) {
+                         const auto *text = std::get_if<TextPart>(&item.content.front());
+                         return text != nullptr &&
+                                text->text.find("atlas-2 is the backup") != std::string::npos;
+                     });
+    MIRA_CHECK(assistant_on_wire != assistant_admitted.value().request.input.end());
+    MIRA_CHECK(assistant_on_wire->role == ModelRole::Assistant);
+    MIRA_CHECK(assistant_on_wire->authority == Sensitivity::Public);
+    MIRA_CHECK(assistant_replay.validate().has_value());
+
+    // A user-tagged replay item maps to User, like untagged memory.
+    ContextItem user_replay = assistant_replay;
+    user_replay.id = ContextItemId::generate();
+    user_replay.wire_role = ModelRole::User;
+    const auto user_admitted = admitted_candidate(user_replay);
+    MIRA_CHECK(user_admitted);
+    const auto user_on_wire = std::find_if(user_admitted.value().request.input.begin(),
+                                           user_admitted.value().request.input.end(),
+                                           [](const ModelInputItem &item) {
+                                               const auto *text =
+                                                   std::get_if<TextPart>(&item.content.front());
+                                               return text != nullptr &&
+                                                      text->text.find("atlas-2 is the backup") !=
+                                                          std::string::npos;
+                                           });
+    MIRA_CHECK(user_on_wire != user_admitted.value().request.input.end());
+    MIRA_CHECK(user_on_wire->role == ModelRole::User);
+
+    // Untrusted recall can never borrow System authority: validate() rejects
+    // the item and admission returns invalid without dispatching anything.
+    ContextItem system_replay = assistant_replay;
+    system_replay.id = ContextItemId::generate();
+    system_replay.wire_role = ModelRole::System;
+    MIRA_CHECK(!system_replay.validate().has_value());
+    const auto rejected = admitted_candidate(system_replay);
+    MIRA_CHECK(!rejected);
+    MIRA_CHECK(rejected.error().domain_code ==
+               static_cast<std::int32_t>(ContextDomainCode::InvalidItem));
+    MIRA_CHECK(fixture.provider_->requests().empty());
+    ContextItem developer_replay = assistant_replay;
+    developer_replay.id = ContextItemId::generate();
+    developer_replay.wire_role = ModelRole::Developer;
+    MIRA_CHECK(!developer_replay.validate().has_value());
+
+    // wire_role is reserved for retrieved-memory items.
+    ContextItem mislabelled = assistant_replay;
+    mislabelled.id = ContextItemId::generate();
+    mislabelled.kind = ContextItemKind::RecentAction;
+    MIRA_CHECK(!mislabelled.validate().has_value());
+
+    // The item JSON codec round-trips wire roles and rejects unknown values.
+    const auto encoded = context_item_to_json(assistant_replay);
+    const auto decoded = context_item_from_json(encoded);
+    MIRA_CHECK(decoded.has_value());
+    MIRA_CHECK(decoded.value().wire_role == ModelRole::Assistant);
+    MIRA_CHECK(decoded.value().kind == assistant_replay.kind);
+    MIRA_CHECK(context_item_from_json(context_item_to_json(user_replay)).value().wire_role ==
+               ModelRole::User);
+    JsonValue forged = encoded;
+    forged.set("wire_role", JsonValue{std::string{"system"}});
+    MIRA_CHECK(!context_item_from_json(forged).has_value());
+    forged.set("wire_role", JsonValue{std::string{"developer"}});
+    MIRA_CHECK(!context_item_from_json(forged).has_value());
+    return 0;
+}
 } // namespace
 int main() {
     if (preserves_native_protocol_and_accounts_for_whole_request())
         return 1;
     if (overflow_and_elevated_candidates_never_dispatch())
+        return 1;
+    if (replay_wire_roles_reach_the_wire_and_system_roles_fail_closed())
         return 1;
     return fallback_uses_actual_profile_and_stale_completion_is_rejected();
 }

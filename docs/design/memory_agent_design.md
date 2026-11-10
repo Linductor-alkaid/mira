@@ -67,6 +67,11 @@ Gateway 在两个 Loop 的动态工具选择之后执行准入。每个候选 pr
 记忆只允许 RetrievedMemory/RetrievedMemory，摘要只允许
 CheckpointSummary/UntrustedExternalData；二者不得 pinned，不允许携带非文本协议项。
 
+召回条目的角色语义见 DEC-108：逐字会话回放按连续同说话人轮次展开为原生
+User/Assistant 消息（`ContextItem::wire_role` 携带说话人，永不 System/Developer），
+事实召回合并为单个带框架头的 user 消息。文本前缀不再是说话人的承载层，
+`entry_line` 只是文本消费者的渲染器。
+
 输出 schema、provider extra_body、请求 framing、输出预留、安全 margin、图像和工具
 schema 都参与计数。Layer 0 若裁掉宿主选择的工具，Gateway 显式失败；不会静默改变
 Named/Required tool 语义。每个 fallback 独立重算，实际派发带 selection_digest，结果
@@ -80,6 +85,8 @@ Named/Required tool 语义。每个 fallback 独立重算，实际派发带 sele
 
 Recall 在绑定 allowlist 中查询，模型可选择提供的记录或提出最多四个扩展词法查询；
 新查询仍由服务设置 scope。返回的类型化候选最终经 Layer 0，服务缓存本身不具准入权。
+选中的事实 statement 合并为单个带框架头的 user 消息（`[recalled memory v1|count=N]`），
+不逐条注入裸 user 消息（DEC-108）。
 
 Record 从该 Session 的 EventStore 有界读取增量，只消费所属 Task 的事件。模型只返回
 带事件索引引用的 statement/kind。服务填充 provenance、scope 和 Unverified 等字段，

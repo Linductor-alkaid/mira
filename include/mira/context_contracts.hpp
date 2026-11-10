@@ -147,6 +147,11 @@ struct ContextItem final {
     bool replaceable_by_reference = false;
     // Tool results not yet followed by a model decision must be retained.
     bool consumed = true;
+    // Explicit wire role for RetrievedMemory replay items (DEC-1xx): carries
+    // the original speaker so assembly emits native User/Assistant messages
+    // instead of one speaker-prefixed user message. Only User/Assistant are
+    // legal — untrusted recall never gains System/Developer roles (RULE-09).
+    std::optional<ModelRole> wire_role;
     // Pairs ToolCall and ToolResult items; required for both kinds.
     std::optional<std::string> tool_call_key;
     // Ordering key inside one partition (event sequence or supplied order).

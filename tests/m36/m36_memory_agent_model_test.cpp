@@ -47,6 +47,10 @@ int real_memory_loop_runs_with_isolated_identity_and_validates_citations() {
     MIRA_CHECK(calls.front().tools.empty());
     MIRA_CHECK(calls.front().prompt_provenance.context_selection_digest != Hash{});
     MIRA_CHECK(provider->request_text(0).find("memory specialist") != std::string::npos);
+    // DEC-108: the compress prompt requires speaker attribution so compressed
+    // context keeps who said what.
+    MIRA_CHECK(provider->request_text(0).find("attribute quoted speech to its speaker") !=
+               std::string::npos);
     return 0;
 }
 
