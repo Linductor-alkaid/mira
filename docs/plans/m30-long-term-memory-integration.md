@@ -329,7 +329,15 @@ git diff --check
 
 | 未执行/待完成 | 原因及负责人 | 补跑条件 |
 | --- | --- | --- |
-| 当前分支远端 CI、Windows/MSVC、Android/NDK | 本轮仅 Linux 本地工作树；Mira Maintainers | 提交后运行仓库 CI 全矩阵，保存相同 head 的 run/checks |
+| Windows/Android 真实设备与模型运行 | CI 只覆盖 Windows 离线测试、Android 构建与交叉链接；Mira Maintainers/宿主集成者 | 在目标设备、固定模型与真实授权环境执行交互/取消/恢复矩阵，记录模型和设备版本 |
 | 真实用户界面与模型选择偏好工具的语义质量 | Mirage UI/模型凭据不在本轮；宿主集成者/Mira Maintainers | 接入真实认证与确认 UI，验证“只授权保存”的文案、跨会话回执与操作取消，记录模型版本和标注场景 |
 | OS 强杀/断电、长期容量与物理 GC | 本轮为关闭/重开及故障注入，未知注册 Artifact 的回收归 M31；Mira Maintainers | 目标平台故障矩阵、固定负载/时长与 Artifact/回执预算；不能将超时或到期当作已回收字节 |
 | 完整记忆纠正/忘掉/承诺/新世代 | 首批仅覆盖 Preference 与 scope 屏障联动；Mira Maintainers | 后续 M30 增量冻结剩余契约，补精确范围、前端反馈、联合幂等与已删除来源不回灌测试 |
+
+2026-11-10 CI 复核：原 master 的 GCC Release optional 警告与 Windows scope-budget
+夹具清理已由 [PR #126](https://github.com/Linductor-alkaid/mira/pull/126) 修复。代码 head
+`8585e49` 的两组 CI 合计 **24/24 job 通过**：Linux GCC/Clang Debug/Release、三套
+sanitizer、Windows Debug/Release（各 180/180 离线测试）、Android 双架构构建与安装
+消费交叉链接、quality 全部通过。具体 run、复现及历史分支核对见
+[存储维护记录](maintenance-2026-11-memory-storage.md)。原“远端 CI/Windows/NDK 待补跑”
+已由该证据补齐，真实设备/模型、强杀/断电及本里程碑其他工作项保持未完成。

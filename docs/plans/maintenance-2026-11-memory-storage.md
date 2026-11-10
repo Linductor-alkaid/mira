@@ -36,11 +36,13 @@
 - [ ] `MNT-202611-MS-06` 真实规模基准与生命周期：候选池截断、中文检索、向量 profile、
       删除重建、空间回收；固定 1万/10万数据、查询集、目标机与负载，报告扫描量/命中率/
       启动 RSS/p50/p95，不先承诺性能。
-- [ ] `MNT-202611-MS-07` 修复偏好恢复的 GCC Release 编译失败及 Windows 测试清理，保持 DEC-109 的
+- [x] `MNT-202611-MS-07` 修复偏好恢复的 GCC Release 编译失败及 Windows 测试清理，保持 DEC-109 的
       malformed event 拒绝规则；补齐缺失/非法结果字段回归与 Release 验证，
-      核对旧分支的代码与文档整合情况。通过 PR 的完整 CI 后合并 master 并清理已整合分支。
+      核对旧分支的代码与文档整合情况（代码验收 head 与 CI 证据见记录）。
 
 04–06 是后续待冻结工作，不因本轮交付而标为实现。03 复用已有能力，不声称实现了 04。
+07 的代码验收与交付操作分别记录：PR #126 最终 head 的完整 CI 通过后才合并 master、
+清理已整合分支；合并和清理结果以 PR 元数据及 Git refs 为准。
 
 ## 风险与验证矩阵
 
@@ -90,8 +92,9 @@ FTS 与 vector 的候选 ID 集合必须来自同一次已完成 ACL、生命周
 `/tmp/mira-memory-storage-quality.log`。日志路径仅为本次运行定位，复现以命令和仓库测试为准。
 
 04–06 保持未完成；没有实现 SqliteContextIndex、SqliteEventStore、旧 QQ JSON 迁移或
-ANN。远端 CI、Windows/Android、真实数据/模型质量、强杀/断电与规模基准未执行；
-由 Mira Maintainers 在对应平台、提供旧 schema 或固定 corpus/模型后补跑。本轮不关闭
+ANN。01–03 初次验收时，远端 CI、Windows/Android 尚未执行，后续结果见 07 记录。
+真实数据/模型质量、强杀/断电与规模基准仍未执行；由 Mira Maintainers 在对应平台、
+提供旧 schema 或固定 corpus/模型后补跑。本轮不关闭
 M30/M31，不宣称解决 4096 候选截断、完整历史版本检索或磁盘回收。
 
 2026-11-10：07 开始，分支 `fix/memory-ci-release`，基线 `951719c`。master 的
@@ -103,7 +106,7 @@ M30/M31，不宣称解决 4096 候选截断、完整历史版本检索或磁盘�
 
 历史分支核对：`d1cfc34`（`fix/bridge-host-feedback`）与已合并的 PR #123 提交
 `c191e21` 的完整 tree 相同（`git diff --exit-code c191e21 d1cfc34` 通过）。
-PR #123 链接及 156/156 基座记录已在 master，先前仅按祖先关系判断为遗漏不准确；
+PR #123 链接及 156/156 基座记录已在 master。该分支经 squash 合并，按 tree 等价核对，
 无需重复重放。其余旧研究/记忆分支的 head 均已是 master 祖先，已有内容不会在清理时丢失。
 
 07 修复将 applied result 的存在性、字符串字段与 optional 解析分步校验；追加十二种
@@ -125,3 +128,15 @@ PR #123 链接及 156/156 基座记录已在 master，先前仅按祖先关系�
 句柄顺序修复后，scope-budget 定向测试在 Debug/Release/ASAN+UBSAN/TSan 各 **1/1**
 通过，格式、文档与其余仓库质量门禁通过。完整平台 CI 仍由 PR #126 最终 head 验收；
 本机日志为 `/tmp/mira-memory-ci-*.log`。
+
+2026-11-10：07 的代码验收完成，修复 head `8585e49` 的两组完整 CI 合计 **24/24 job 通过**：
+[PR run 42792005704](https://github.com/Linductor-alkaid/mira/actions/runs/42792005704)、
+[push run 42791996228](https://github.com/Linductor-alkaid/mira/actions/runs/42791996228)。
+Linux GCC/Clang Debug/Release、ASAN/UBSAN/TSan 全量测试通过；Windows Debug/Release
+各 **180/180**，含 scope-budget 与十二种损坏回执回放；Android 双架构构建与安装消费
+交叉链接、quality 静态分析及仓库门禁通过。此前两处 CI 故障均已在相应配置验证。
+
+该证据锁定生产代码 head `8585e49`；后续只补验收文档，不把旧 head 的检查冒充最终
+提交的检查。PR #126 最终文档 head 仍须完整 Checks 通过才合并，合并与清理结果以 PR
+和 Git refs 为准。04–06 及 M30/M31 剩余工作保持开放，真实设备/模型、断电、容量与
+完整历史检索的限制不因此解除。

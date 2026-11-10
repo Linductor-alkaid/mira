@@ -1,5 +1,11 @@
 # Mira 实施总计划
 
+2026-11-10：偏好恢复和 SQLite 测试清理的 CI 修复由
+[PR #126](https://github.com/Linductor-alkaid/mira/pull/126)交付。代码 head `8585e49`
+的 push/PR 两组完整 CI **24/24 job 通过**，包括 Windows Debug/Release 各 180/180，
+其余平台及验收边界见[存储维护记录](maintenance-2026-11-memory-storage.md)。最终文档
+提交仍按同一 PR 的 Checks 验收后合并；M30/M31 剩余范围不因此关闭。
+
 记忆存储维护已立项：核对已有 SQLite memory/checkpoint、会话资产内存索引和事件文件
 边界，修复 FTS/vector 的全库截断干扰，并补齐跨进程持久化示例。外部项目研究与后续
 持久索引、事件后端、迁移和基准工作见[存储报告](../design/memory-storage-reference-study.md)
