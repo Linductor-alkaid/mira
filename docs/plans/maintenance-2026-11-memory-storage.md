@@ -36,6 +36,9 @@
 - [ ] `MNT-202611-MS-06` 真实规模基准与生命周期：候选池截断、中文检索、向量 profile、
       删除重建、空间回收；固定 1万/10万数据、查询集、目标机与负载，报告扫描量/命中率/
       启动 RSS/p50/p95，不先承诺性能。
+- [ ] `MNT-202611-MS-07` 修复偏好恢复的 GCC Release 编译失败，保持 DEC-109 的
+      malformed event 拒绝规则；补齐缺失/非法结果字段回归与 Release 验证，
+      核对旧分支的代码与文档整合情况。通过 PR 的完整 CI 后合并 master 并清理已整合分支。
 
 04–06 是后续待冻结工作，不因本轮交付而标为实现。03 复用已有能力，不声称实现了 04。
 
@@ -90,3 +93,23 @@ FTS 与 vector 的候选 ID 集合必须来自同一次已完成 ACL、生命周
 ANN。远端 CI、Windows/Android、真实数据/模型质量、强杀/断电与规模基准未执行；
 由 Mira Maintainers 在对应平台、提供旧 schema 或固定 corpus/模型后补跑。本轮不关闭
 M30/M31，不宣称解决 4096 候选截断、完整历史版本检索或磁盘回收。
+
+2026-11-10：07 开始，分支 `fix/memory-ci-release`，基线 `951719c`。master 的
+[CI run 42788178811](https://github.com/Linductor-alkaid/mira/actions/runs/42788178811)
+中 GCC Release 编译在 `memory_preference_storage.cpp:253` 报
+`-Werror=maybe-uninitialized`，涉及条件表达式生成的 optional version；其余 job
+当时仍在运行。修复不关闭警告、不修改 wire schema 或审批状态机；验证依据为
+[DEC-109](../decisions/DEC-109-memory-preference-approval.md)。远端验收待 PR 检查完成。
+
+历史分支核对：`d1cfc34`（`fix/bridge-host-feedback`）与已合并的 PR #123 提交
+`c191e21` 的完整 tree 相同（`git diff --exit-code c191e21 d1cfc34` 通过）。
+PR #123 链接及 156/156 基座记录已在 master，先前仅按祖先关系判断为遗漏不准确；
+无需重复重放。其余旧研究/记忆分支的 head 均已是 master 祖先，已有内容不会在清理时丢失。
+
+07 修复将 applied result 的存在性、字符串字段与 optional 解析分步校验；追加十二种
+损坏回执回放（缺失/null result，缺失 record/type/version，零/负/错误类型/溢出 version，
+非法 replayed、nil record 与未知 mutation type），均须在 initialize 时返回 DataLoss。
+本机按 Debug 编译命令追加 `-O3 -DNDEBUG` 后，原代码稳定复现同一编译失败，修复后
+退出 0；没有放宽 `-Werror`。偏好测试 Debug、ASAN+UBSAN、TSan 各 **4/4** 通过；
+生产单元严格 clang-tidy 和 format/docs/SBOM/platform/architecture 检查通过。
+完整 GCC Release 构建/测试与 PR CI 继续进行，未提前标为通过。
