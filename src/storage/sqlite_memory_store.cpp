@@ -1002,6 +1002,21 @@ class SqliteMemoryStore::Impl final {
             });
         }
 
+        // Leg limits belong to this authorized, filtered universe. Applying
+        // a global LIMIT before intersecting IDs lets unrelated scopes (or
+        // excluded claims/sensitivities) consume another query's recall budget.
+        // One bound JSON array avoids a placeholder per candidate (up to 4096)
+        // and is expanded by the bundled SQLite's built-in json_each table.
+        std::string eligible_json;
+        if (!request.text.empty() || !request.query_embedding.empty()) {
+            JsonValue::Array eligible_ids;
+            eligible_ids.reserve(candidates.size());
+            for (const auto &row : candidates) {
+                eligible_ids.emplace_back(row.id);
+            }
+            eligible_json = to_json_string(JsonValue{std::move(eligible_ids)});
+        }
+
         // Exact leg: verbatim substrings.
         std::set<std::string> exact_hits;
         if (!request.exact_terms.empty()) {
@@ -1024,11 +1039,14 @@ class SqliteMemoryStore::Impl final {
         std::map<std::string, double> fts_rank;
         if (!request.text.empty() && std::chrono::steady_clock::now() < deadline_point) {
             Statement fts(db, "SELECT record_id, rank FROM memory_fts WHERE memory_fts MATCH ?1"
+                              " AND record_id IN (SELECT value FROM json_each(?2))"
                               " ORDER BY rank LIMIT 512");
             if (fts.valid()) {
                 result.quality.fts_leg_ran = true;
                 const std::string expression = fts_match_expression(request.text);
                 sqlite3_bind_text(fts.get(), 1, expression.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(fts.get(), 2, eligible_json.c_str(), -1,
+                                  storage::transient_copy());
                 int fstep = sqlite3_step(fts.get());
                 std::size_t position = 0;
                 while (fstep == SQLITE_ROW) {
@@ -1078,12 +1096,15 @@ class SqliteMemoryStore::Impl final {
             std::chrono::steady_clock::now() < deadline_point) {
             const std::size_t query_dim = request.query_embedding.size();
             Statement embeddings(db, "SELECT record_id, vector FROM memory_embeddings"
-                                     " ORDER BY embedded_at DESC LIMIT ?");
+                                     " WHERE record_id IN (SELECT value FROM json_each(?2))"
+                                     " ORDER BY embedded_at DESC LIMIT ?1");
             std::size_t vector_errors = 0;
             if (embeddings.valid()) {
                 std::vector<float> decoded(query_dim);
                 sqlite3_bind_int64(embeddings.get(), 1,
                                    static_cast<std::int64_t>(options_.max_vector_scan));
+                sqlite3_bind_text(embeddings.get(), 2, eligible_json.c_str(), -1,
+                                  storage::transient_copy());
                 int estep = sqlite3_step(embeddings.get());
                 while (estep == SQLITE_ROW) {
                     const auto *id_text =

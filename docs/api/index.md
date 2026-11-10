@@ -100,5 +100,6 @@ target_link_libraries(my_app PRIVATE Mira::core Mira::state_store)
   与离散输入、`RuntimeBaseline` 生命周期。
 - [`examples/stateful_agent_consumer.cpp`](../../examples/stateful_agent_consumer.cpp)：
   durable Checkpoint 与 Memory、确定性 consolidation、supervised 调度与关闭、
-  分析回放。
+  分析回放；`seed/inspect <directory>` 验证独立进程恢复，显式目录保留数据，见
+  [持久记忆宿主接入](durable-memory-host.md)。
 - [`tests/consumer/`](../../tests/consumer/)：安装包最小外部消费者。

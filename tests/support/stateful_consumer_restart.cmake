@@ -1,0 +1,23 @@
+# Each execute_process starts a fresh OS process. The script owns only its
+# randomly named fixture directory; the consumer never deletes explicit roots.
+if(NOT DEFINED CONSUMER OR NOT DEFINED TEST_ROOT)
+    message(FATAL_ERROR "CONSUMER and TEST_ROOT are required")
+endif()
+string(RANDOM LENGTH 20 ALPHABET 0123456789abcdef suffix)
+set(fixture "${TEST_ROOT}/stateful-restart-${suffix}")
+file(MAKE_DIRECTORY "${fixture}")
+foreach(mode IN ITEMS seed inspect seed inspect)
+    execute_process(COMMAND "${CONSUMER}" "${mode}" "${fixture}"
+        RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 60)
+    if(NOT "${result}" STREQUAL "0")
+        file(REMOVE_RECURSE "${fixture}")
+        message(FATAL_ERROR "${mode} failed (${result}): ${output} ${error}")
+    endif()
+endforeach()
+foreach(path IN ITEMS events/events.log stateful-memory.db stateful-checkpoints.db)
+    if(NOT EXISTS "${fixture}/${path}")
+        file(REMOVE_RECURSE "${fixture}")
+        message(FATAL_ERROR "consumer removed durable state: ${path}")
+    endif()
+endforeach()
+file(REMOVE_RECURSE "${fixture}")

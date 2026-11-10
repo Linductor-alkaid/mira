@@ -118,6 +118,10 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - 混合检索三腿：exact（`exact_terms`）、FTS5（`text`，短语引用，操作符注入被拒绝）、
   有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并去重、多样性与
   token packing。
+- FTS 的 512 条额度和向量的 `max_vector_scan` 在已做 scope、生命周期、敏感度与 claim
+  过滤的候选 ID 集合内消耗，其他 scope 不会占用额度。候选池仍最多取 scope 内最新
+  4096 条，并非任意规模的全历史召回保证。部署、重启示例及剩余索引缺口见
+  [持久记忆宿主接入](durable-memory-host.md)。
 - 向量索引损坏或维度失配按 index lag 降级为 exact/FTS，不阻塞控制面
   （`index_lag()` / `clear_embeddings()`）。
 - 生命周期语义与 `SqliteCheckpointStore` 相同：单 writer、`open()` 显式迁移、宿主线程

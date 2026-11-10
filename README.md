@@ -186,7 +186,7 @@ is exercised continuously in CI.
 | Example | What it shows |
 | --- | --- |
 | [`minimal_consumer.cpp`](examples/minimal_consumer.cpp) | Simulator observation, discrete input, runtime lifecycle, tool-module contract smoke |
-| [`stateful_agent_consumer.cpp`](examples/stateful_agent_consumer.cpp) | Durable checkpoint + memory, deterministic consolidation, supervised shutdown, analytics replay |
+| [`stateful_agent_consumer.cpp`](examples/stateful_agent_consumer.cpp) | File events + SQLite checkpoint/memory, deterministic consolidation, cross-process seed/inspect, supervised shutdown ([guide](docs/api/durable-memory-host.md)) |
 | [`working_context_host_consumer.cpp`](examples/working_context_host_consumer.cpp) | Reference host wiring the working-context supply seam: auto-curation signals, memory promotion, subagent fork/merge |
 
 ## Platform support

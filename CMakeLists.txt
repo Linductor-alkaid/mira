@@ -464,6 +464,12 @@ mira_enable_sanitizers(mira_stateful_consumer)
 if(MIRA_BUILD_TESTS)
     add_test(NAME mira_stateful_consumer_test COMMAND mira_stateful_consumer)
     set_tests_properties(mira_stateful_consumer_test PROPERTIES LABELS "consumer" TIMEOUT 60)
+    add_test(NAME mira_stateful_consumer_restart_test
+        COMMAND "${CMAKE_COMMAND}"
+            -DCONSUMER=$<TARGET_FILE:mira_stateful_consumer>
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/stateful_consumer_restart.cmake")
+    set_tests_properties(mira_stateful_consumer_restart_test PROPERTIES LABELS "consumer;m4" TIMEOUT 300)
 endif()
 
 # Independent offline compositions (MNT-202611-06, DEC-086).

@@ -63,6 +63,11 @@
 
 ## 3. 设计与决策依据
 
+- [记忆存储研究](../design/memory-storage-reference-study.md)与
+  [维护计划](maintenance-2026-11-memory-storage.md)：核对全量事件驻留、4096 候选池、
+  持久会话索引缺口，后续事件后端/迁移/基准须与 M31-02/05/06/09/10 协同；
+  本轮召回修复和示例不构成容量治理或物理回收交付。
+
 - [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)
   §1–§10（本里程碑的主决策）。
 - [DEC-062](../decisions/DEC-062-memory-retention-sweep.md)——保留期清扫的窄接口、

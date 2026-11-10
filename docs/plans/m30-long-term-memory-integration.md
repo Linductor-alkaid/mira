@@ -51,6 +51,10 @@
 
 ## 3. 设计与决策依据
 
+- [记忆存储研究](../design/memory-storage-reference-study.md)与
+  [维护计划](maintenance-2026-11-memory-storage.md)：SQLite 宿主接入、检索额度隔离和
+  跨进程示例；持久会话资产索引及旧 JSON 导入仍待后续冻结，不代替 M30 生命周期验收。
+
 - [DEC-109](../decisions/DEC-109-memory-preference-approval.md)：持久偏好提案、预览、
   显式确认/拒绝、冻结版本与删除失效；本轮不实现承诺与新世代。
 

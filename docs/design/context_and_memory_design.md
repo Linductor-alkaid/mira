@@ -777,6 +777,11 @@ statement（`volume=30` 与 `volume is 30`）仍然是两条 claim，会并存�
 8. 做多样性选择，避免多个近重复 Memory 占满预算。
 9. 按 token budget 打包，并附 provenance 和 authority 标记。
 
+SQLite 参考后端的 FTS/vector 单腿额度必须在前述硬过滤后的候选 ID 集合内消耗，
+不能先全库 LIMIT 再求 ACL 交集。当前候选池仍有最新 4096 条的上限，历史版本的
+文本/向量索引也尚未单独构建；规模与历史召回改造见
+[存储核查](memory-storage-reference-study.md)及[维护计划](../plans/maintenance-2026-11-memory-storage.md)。
+
 ### 14.2 排名模型
 
 不冻结具体权重，但评分输入至少包含：

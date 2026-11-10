@@ -1,5 +1,10 @@
 # Mira 实施总计划
 
+记忆存储维护已立项：核对已有 SQLite memory/checkpoint、会话资产内存索引和事件文件
+边界，修复 FTS/vector 的全库截断干扰，并补齐跨进程持久化示例。外部项目研究与后续
+持久索引、事件后端、迁移和基准工作见[存储报告](../design/memory-storage-reference-study.md)
+与[维护计划](maintenance-2026-11-memory-storage.md)；不关闭 M30/M31 的剩余范围。
+
 M30 后续增量基于主干 `23f1291`（PR #125，含 DEC-108 召回）推进：
 [DEC-109](../decisions/DEC-109-memory-preference-approval.md)提供长期偏好的持久提案、
 宿主显式确认/拒绝、冻结版本和重开幂等；审批不会提升事实验证等级。完整 M30 的承诺、
