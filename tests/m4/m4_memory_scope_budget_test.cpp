@@ -27,6 +27,9 @@ struct Fixture final {
     ~Fixture() {
         if (store)
             (void)store->close();
+        // close() drains the worker; destruction releases the SQLite file
+        // handle. Windows cannot remove the database while it is still open.
+        store.reset();
         (void)executor.shutdown(true);
         std::filesystem::remove_all(root);
     }

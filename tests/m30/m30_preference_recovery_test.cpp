@@ -1,8 +1,70 @@
 #include "m30_preference_support.hpp"
+
+#include <algorithm>
+
 using namespace mira;
 using namespace mira::testing;
 
+namespace {
+int malformed_applied_results_fail_closed() {
+    for (int mode = 0; mode < 12; ++mode) {
+        PreferenceFixture host;
+        AppendRequest applied;
+        host.fault->before_append = [&](const AppendRequest &event) {
+            if (event.payload.type == "mira.memory-agent.preference-applied.v1")
+                applied = event;
+        };
+        const auto pending = host.propose("tone=brief");
+        MIRA_CHECK(pending && host.decide(pending.value()));
+        MIRA_CHECK(!applied.event_id.is_nil());
+        MIRA_CHECK(host.service->close());
+        auto parsed = parse_json(applied.payload.data);
+        MIRA_CHECK(parsed);
+        auto &json = parsed.value();
+        auto *result = json.find("result");
+        MIRA_CHECK(result && result->is_object());
+        if (mode == 0) {
+            auto fields = *json.as_object();
+            std::erase_if(fields, [](const auto &field) { return field.first == "result"; });
+            json = JsonValue{std::move(fields)};
+        } else if (mode == 1) {
+            *result = JsonValue{};
+        } else if (mode <= 4) {
+            const auto name = mode == 2 ? "record" : mode == 3 ? "type" : "version";
+            auto fields = *result->as_object();
+            std::erase_if(fields, [name](const auto &field) { return field.first == name; });
+            *result = JsonValue{std::move(fields)};
+        } else if (mode == 5) {
+            *result->find("version") = JsonValue{"0"};
+        } else if (mode == 6) {
+            *result->find("version") = JsonValue{"-1"};
+        } else if (mode == 7) {
+            *result->find("version") = JsonValue{1};
+        } else if (mode == 8) {
+            *result->find("replayed") = JsonValue{"true"};
+        } else if (mode == 9) {
+            *result->find("record") = JsonValue{MemoryId{}.to_string()};
+        } else if (mode == 10) {
+            *result->find("type") = JsonValue{"unknown-mutation"};
+        } else {
+            *result->find("version") = JsonValue{"18446744073709551616"};
+        }
+        applied.event_id = EventId::generate();
+        applied.payload.data = to_json_string(json);
+        MIRA_CHECK(host.storage.events->append(applied));
+        MemoryAgentService recovered(host.storage.executor, host.storage.memory,
+                                     host.storage.events, host.storage.runtime,
+                                     MemoryAgentProcessor{}, host.config);
+        const auto restored = recovered.initialize();
+        MIRA_CHECK(!restored && restored.error().code == ErrorCode::DataLoss);
+        MIRA_CHECK(recovered.close());
+    }
+    return 0;
+}
+} // namespace
+
 int main() {
+    MIRA_CHECK(malformed_applied_results_fail_closed() == 0);
     {
         PreferenceFixture weak;
         weak.fault->weak_type = "mira.memory-agent.preference-proposed.v1";

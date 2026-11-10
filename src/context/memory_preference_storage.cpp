@@ -241,13 +241,16 @@ Result<bool> MemoryAgentService::State::restore_preference(const EventEnvelope &
             return malformed();
     } else if (type == "mira.memory-agent.preference-applied.v1") {
         const auto *result = json.find("result");
-        const auto *record_text = result ? field(*result, "record") : nullptr;
-        const auto *mutation_type = result ? field(*result, "type") : nullptr;
-        const auto record = record_text ? MemoryId::parse(*record_text) : std::nullopt;
-        const auto applied =
-            mutation_type ? memory_mutation_type_from(*mutation_type) : std::nullopt;
-        const auto version = result ? number(*result, "version") : std::nullopt;
-        const auto *replayed = result ? result->find("replayed") : nullptr;
+        if (!result)
+            return malformed();
+        const auto *record_text = field(*result, "record");
+        const auto *mutation_type = field(*result, "type");
+        if (!record_text || !mutation_type)
+            return malformed();
+        const auto record = MemoryId::parse(*record_text);
+        const auto applied = memory_mutation_type_from(*mutation_type);
+        const auto version = number(*result, "version");
+        const auto *replayed = result->find("replayed");
         if ((proposal.state != PreferenceProposalState::Approving &&
              proposal.state != PreferenceProposalState::Applied) ||
             !record || record->is_nil() || !applied || !version || *version == 0 || !replayed ||
