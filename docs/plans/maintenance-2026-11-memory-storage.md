@@ -36,7 +36,7 @@
 - [ ] `MNT-202611-MS-06` 真实规模基准与生命周期：候选池截断、中文检索、向量 profile、
       删除重建、空间回收；固定 1万/10万数据、查询集、目标机与负载，报告扫描量/命中率/
       启动 RSS/p50/p95，不先承诺性能。
-- [ ] `MNT-202611-MS-07` 修复偏好恢复的 GCC Release 编译失败，保持 DEC-109 的
+- [ ] `MNT-202611-MS-07` 修复偏好恢复的 GCC Release 编译失败及 Windows 测试清理，保持 DEC-109 的
       malformed event 拒绝规则；补齐缺失/非法结果字段回归与 Release 验证，
       核对旧分支的代码与文档整合情况。通过 PR 的完整 CI 后合并 master 并清理已整合分支。
 
@@ -113,3 +113,15 @@ PR #123 链接及 156/156 基座记录已在 master，先前仅按祖先关系�
 退出 0；没有放宽 `-Werror`。偏好测试 Debug、ASAN+UBSAN、TSan 各 **4/4** 通过；
 生产单元严格 clang-tidy 和 format/docs/SBOM/platform/architecture 检查通过。
 完整 GCC Release 构建/测试与 PR CI 继续进行，未提前标为通过。
+
+07 后续验证：本机完整 GCC Release 与 Debug 全量均 **182/182** 通过。
+[PR #126](https://github.com/Linductor-alkaid/mira/pull/126)用于远端完整门禁。
+原 master CI 的 Windows Release job 后续报告新 scope-budget 测试异常退出
+（0xc0000409）。核对发现 fixture 在 `close()` 后仍持有 SQLite 对象，删除目录早于
+数据库句柄析构；补上 `store.reset()`，先释放数据库，再 shutdown Executor、清理目录。
+此修复仍保留测试原有的删除失败可见性，没有吞掉 filesystem 错误；Windows 以 PR CI
+验收，不用 Linux 的 unlink 行为推断已通过。
+
+句柄顺序修复后，scope-budget 定向测试在 Debug/Release/ASAN+UBSAN/TSan 各 **1/1**
+通过，格式、文档与其余仓库质量门禁通过。完整平台 CI 仍由 PR #126 最终 head 验收；
+本机日志为 `/tmp/mira-memory-ci-*.log`。
