@@ -35,6 +35,15 @@ MemoryScope memory_session_scope(const PrincipalContext &principal, SessionId se
                 .to_string(),
             principal.tenant_id.to_string()};
 }
+MemoryScope memory_application_scope(const PrincipalContext &principal,
+                                     std::string_view application_id) {
+    return {MemoryScopeKind::Application,
+            canonical_json_digest(JsonValue::Object{{"domain", "mira.memory.application.v1"},
+                                                    {"tenant", principal.tenant_id.to_string()},
+                                                    {"application", std::string(application_id)}})
+                .to_string(),
+            principal.tenant_id.to_string()};
+}
 
 Result<void> MemoryAgentService::State::validate() const {
     if (!memory || !events || runtime.is_nil() || config.max_works == 0 || config.max_works > 256 ||
@@ -111,17 +120,8 @@ Result<void> MemoryAgentService::initialize() {
 
 Result<void> MemoryAgentService::bind(MemoryWorkBinding binding) {
     auto &s = *state_;
-    if (auto valid = s.validate(); !valid)
+    if (auto valid = s.validate_binding(binding); !valid)
         return valid;
-    if (binding.work.task_id.is_nil() || binding.work.session_id.is_nil() ||
-        binding.work.goal.empty() || binding.work.goal.size() > 16 * 1024 ||
-        binding.principal.tenant_id.is_nil() || binding.principal.user_id.is_nil() ||
-        binding.scopes.empty() || binding.scopes.size() > 16)
-        return error(ErrorCode::InvalidArgument, "invalid memory work binding");
-    for (const auto &scope : binding.scopes)
-        if (scope.subject_id.empty() || scope.subject_id.size() > 256 ||
-            scope.tenant_id != binding.principal.tenant_id.to_string())
-            return error(ErrorCode::PermissionDenied, "memory scope is outside the work tenant");
     const std::lock_guard serialize(s.commit_mutex);
     const std::lock_guard lock(s.mutex);
     if (!s.initialized || s.closing)
@@ -250,7 +250,8 @@ bool MemoryAgentService::State::current(const Job &job) const {
     const auto found = works.find(job.request.task);
     return !closing && found != works.end() && !found->second.revoked &&
            !found->second.input_pending && found->second.revision == job.revision &&
-           (job.request.mode == MemoryAgentMode::Record || found->second.active);
+           (job.request.mode == MemoryAgentMode::Record ||
+            (found->second.active && memory_agent_support::request_current(found->second.binding)));
 }
 
 Result<MemoryAgentHandle> MemoryAgentService::submit(MemoryAgentRequest request,

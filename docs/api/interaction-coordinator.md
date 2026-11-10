@@ -1,10 +1,11 @@
 # 交互协调层
 
 > 头文件：`mira/interaction_coordinator.hpp`
-> 里程碑：M28 / M29（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
+> 里程碑：M28 / M29 / M30（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)、
 > [DEC-102](../decisions/DEC-102-interaction-input-arbitration-and-delivery.md)、
-> [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md)）
-> 状态：Active（M29 并发、澄清与恢复增量；平台/CI 状态见里程碑验收）
+> [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md)、
+> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)）
+> 状态：Active（M29 已验收；M30 生命周期增量的证据见里程碑）
 
 设计依据见[交互输入归属与投递](../design/interaction-input-delivery.md)。
 
@@ -307,3 +308,50 @@ const auto closed = coordinator.close();            // 消费 finite futures，�
 M29 的本地验收与剩余 CI/平台条件见[里程碑计划](../plans/m29-interaction-coordinator-concurrency-and-recovery.md)。
 本接口不承诺跨崩溃 exactly-once 消费，也不重放外部动作。Artifact 长期保留/擦除、跨主体
 容量与遗忘归 M31；长期记忆自动生命周期归 M30；真实模型语义质量和真实设备验证单独取证。
+
+## M30：显式启用记忆生命周期
+
+宿主先创建共享 MemoryAgentService，然后在 initialize 前调用
+`set_memory_service(service)`；初始化会重建服务删除屏障。服务、存储和 Executor
+的 owner 仍为宿主。既有宿主不调用此方法即可保持原行为。
+
+```cpp
+// 规范接口示例；memory/events/runtime/executor 均由宿主持有。
+auto service = std::make_shared<MemoryAgentService>(executor, memory, events, runtime_id);
+auto configured = coordinator.set_memory_service(service); // 检查 Result
+// set_event_store / environment provider 后 initialize；检查 Result。
+gateway.set_context_supplier(service->context_supplier());
+// 使用原生 ConversationLoopInputSink 或 AgentLoopInputSink 注册。
+// 自动接线启用时不要再叠加 service->input_sink，避免双重 revision 更新。
+```
+
+已有恢复 P3 或 Working Context 的宿主应在现有 supplier 中合并候选及各自失效探针，
+不能直接覆盖原来的供给回调。自动生命周期接线不接管宿主的其他投影 owner。
+
+每次成功路由仅自动白名单 User + 当前 Session；Application scope 仍由可信宿主
+显式选择。全部待投递输入被 Loop 队列接纳后，协调层才 acknowledge 对应 revision
+并提交 Recall；Loop 的内容生效点仍为轮边界 drain。候选在召回完成后通过 Gateway
+的 supplier 进入 Layer 0，第一轮可在无候选时执行。排队/拒绝/不确定投递期间候选
+入口封闭；重新入队和主代理记忆工具不会绕过这个门。
+
+`memory_status(principal, task)` 验证当前 grant、tenant/user、identity_version，返回
+`MemoryLifecycleStatus{suspended, terminal, job, error}`。job 为最新的
+MemoryAgentHandle，必须消费 `job.result`；提交成功不代表召回或写入完成。后续输入
+会替换进程内最新回执，已持有的 shared_future 仍可消费；既有记忆作业事件也保留。
+重复输入不重新派发。未配置/未知/未授权工作统一拒绝，不透露另一主体是否有作业。
+回执发布前通过 service.result 再验证修订与删除/撤销状态；被擦除或外部 reap 的旧
+作业不会从本 API 重新发放 future，而是返回当前错误。已持有的 future 是调用方
+自己的捕获值，不能作为新的上下文准入凭据。记忆面的错误沿用 mira.memory_agent
+错误域，不把已成功的输入路由标为 RouteRejected。
+
+首次 record_settlement 自动 retire，再提出一次 Session scope Record；不伪造
+TaskFactVerified，也不把普通聊天提及当作事实。Preference 审批仍由已有管线处理，
+重复结算不重复触发。若旧作业取消尚未收尾、容量/Executor 拒绝或服务异常，错误
+保留在 status 或 future 中，已成功投递的输入/已结算记录不因此回滚或重投。宿主
+决定何时显式重试 Record、处理 more_pending 或重新召回，不存在无限后台补偿。
+
+cancel_work 先向 Runtime 提交取消，再撤销记忆绑定；close 封闭 owner 探针并撤销
+本协调层绑定。直接 Runtime 接管也会通过任务 epoch 使请求候选失效，但宿主仍须
+同步 revoke/revise 以关闭全部后台写入权限。关闭顺序：停止前台生产者 → coordinator
+close → service close → Runtime shutdown → 关闭存储及外部 Executor。不要在自动
+接线期间自行修改同一绑定的 revision；冲突会明确报告 stale acknowledgement。

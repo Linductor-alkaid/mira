@@ -23,6 +23,8 @@ class IUserInputSink;
 [[nodiscard]] MemoryScope memory_user_scope(const PrincipalContext &principal);
 [[nodiscard]] MemoryScope memory_session_scope(const PrincipalContext &principal,
                                                SessionId session);
+[[nodiscard]] MemoryScope memory_application_scope(const PrincipalContext &principal,
+                                                   std::string_view application_id);
 
 enum class MemoryAgentMode : std::uint8_t { Recall, Record, Compress };
 
@@ -32,6 +34,11 @@ struct MemoryWorkBinding final {
     // Host-authorized exact allowlist, tenant-bound; no model scope strings.
     std::vector<MemoryScope> scopes;
     std::uint64_t environment_epoch = 0;
+    // Optional trusted host probe: bounded, non-reentrant, no I/O. A false
+    // result/exception closes request admission, including cached snapshots.
+    // Record after settlement is independent of this request-only probe.
+    std::function<bool()> request_current;
+    std::vector<std::string> user_constraints;
 };
 
 struct MemoryAgentNote final {
@@ -58,6 +65,7 @@ struct MemoryAgentInput final {
     std::vector<MemoryRecord> records;
     std::vector<EventEnvelope> events;
     std::vector<ModelInputItem> history;
+    std::vector<std::string> user_constraints;
 };
 // Runs on the service's managed I/O worker, with cooperative cancellation.
 // Output is only a proposal. No direct storage/role/authority capabilities.
@@ -143,6 +151,11 @@ class MemoryAgentService final {
     // cannot be rebound/re-extracted, including after process restart.
     [[nodiscard]] Result<void> initialize();
     [[nodiscard]] Result<void> bind(MemoryWorkBinding binding);
+    // DEC-107: atomically bind/update a work frame and suspend candidates
+    // until the entire corresponding input queue has been accepted. Existing
+    // identity/session/scopes are immutable; retired/revoked work stays closed.
+    [[nodiscard]] Result<std::uint64_t> stage_input(MemoryWorkBinding binding);
+    [[nodiscard]] Result<void> acknowledge_input(TaskId task, std::uint64_t revision);
     // Increments the revision, cancels old work and invalidates projections.
     [[nodiscard]] Result<void> revise(TaskId task, std::uint64_t task_epoch,
                                       std::uint64_t environment_epoch);

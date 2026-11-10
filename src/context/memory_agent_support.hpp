@@ -25,6 +25,13 @@ inline bool same_owner(const OperationContext &context, const AgentLoopSpec &spe
     return context.task == spec.task_id && context.session == spec.session_id &&
            context.task_epoch == spec.task_epoch;
 }
+inline bool request_current(const MemoryWorkBinding &binding) noexcept {
+    try {
+        return !binding.request_current || binding.request_current();
+    } catch (...) {
+        return false;
+    }
+}
 [[nodiscard]] JsonValue history_json(const std::vector<ModelInputItem> &history);
 [[nodiscard]] bool complete_history(const std::vector<ModelInputItem> &history);
 [[nodiscard]] std::string scope_key(const MemoryScope &scope);
@@ -98,6 +105,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     std::optional<Error> audit_error;
 
     [[nodiscard]] Result<void> validate() const;
+    [[nodiscard]] Result<void> validate_binding(const MemoryWorkBinding &) const;
     [[nodiscard]] Result<void> emit(const Job &job, const char *type,
                                     const MemoryAgentResult *result = nullptr);
     [[nodiscard]] bool current(const Job &job) const; // mutex held

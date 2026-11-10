@@ -108,6 +108,10 @@ Result<void> InteractionCoordinator::initialize() {
         if (!restored)
             return restored.error();
     }
+    if (impl_->memory) {
+        if (auto initialized = impl_->memory->initialize(); !initialized)
+            return initialized.error();
+    }
     impl_->initialized = true;
     return Result<void>{};
 }
@@ -607,6 +611,8 @@ Result<InputDisposition> InteractionCoordinator::submit_impl(InputEnvelope envel
     disposition.stage = InputStage::Routed;
     disposition.session_id = candidate.session_id;
     disposition.task_id = candidate.task_id;
+
+    impl_->stage_memory(envelope, candidate);
 
     auto &queue = impl_->pending[candidate.task_id];
     const bool already_waiting = !queue.empty();

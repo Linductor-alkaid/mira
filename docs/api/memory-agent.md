@@ -1,9 +1,10 @@
 # 记忆代理与完整请求准入
 
 > 状态：Active
-> 更新日期：2026-11-09
+> 更新日期：2026-11-10
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
-> 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)
+> 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
+> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)
 > 设计：[记忆代理](../design/memory_agent_design.md)
 
 ## 宿主接线
@@ -90,3 +91,21 @@ DEC-059 的 namespaced import/promotion 兼容行为。该开关只给可信宿�
 
 默认 token 估算不是精确 provider count。Linux fixture 之外的平台、模型质量和长期性能
 证据见[M36](../plans/m36-memory-agent-context-integration.md)，不能从本 API 推定。
+
+## M30 输入帧与内部 scope
+
+`memory_user_scope`、`memory_session_scope` 和 `memory_application_scope` 分别使用
+版本化摘要域，tenant 为独立字段。Application 参数必须是宿主稳定内部标识，不是
+模型提供的任意 scope，也不会自动赋予访问权。这些映射函数不负责鉴权或验证 ID；
+调用方必须先验证 principal/Session/Application 归属，再把精确白名单交给 bind。
+
+`stage_input(MemoryWorkBinding)` 返回新 revision，封闭当前候选并取消旧作业；可创建
+绑定或更新同主体、同 Session、相同 scope 集的活动工作。不得回退身份版本、任务/
+环境 epoch，不能复活已 retire/revoke 的工作。user_constraints 有界并传入语义工作
+的独立字段，仍为待解释的数据；不会提高其 authority 或 verification。
+`acknowledge_input(task, revision)` 只开放对应的当前帧，旧 revision 明确失败。
+
+可选 request_current 是可信宿主的有界、非重入、无 I/O 探针。false/异常会封闭
+Recall/Compress 与缓存请求快照；Record 在 terminal 后沿用显式权限，因此必须用
+revoke 彻底撤销写入。探针捕获对象须活到服务关闭，不能捕获已销毁的宿主裸指针。
+统一交互接线见[协调层 API](interaction-coordinator.md)。

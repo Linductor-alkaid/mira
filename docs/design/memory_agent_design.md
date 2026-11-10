@@ -1,11 +1,13 @@
 # 受管记忆代理与请求准入设计
 
 > 状态：Active
-> 版本：1.0
-> 更新日期：2026-11-09
+> 版本：1.1
+> 更新日期：2026-11-10
 > 负责人：Mira Maintainers
-> 决策：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)
-> 实施：[M36](../plans/m36-memory-agent-context-integration.md)
+> 决策：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
+> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)
+> 实施：[M36](../plans/m36-memory-agent-context-integration.md)、
+> [M30](../plans/m30-long-term-memory-integration.md)
 
 ## 1. 目标与边界
 
@@ -25,6 +27,24 @@ M32/M33 注意力与自主行为仍由各自计划交付。Layer 4 未在本增�
 默认 User/Session scope 通过带域分隔的内部 ID 摘要派生；tenant 为独立字段。
 bind 是可信宿主 API：宿主先鉴权并确认 allowlist 的所属关系，服务验证非空、tenant
 一致性和删除屏障。不能把仅知道 TaskId 当作外部用户授权。
+
+M30 可在初始化前向协调层注入共享服务，自动采用 User + 当前 Session 白名单。
+Application 映射有独立摘要域，但不会自动加入。路由提交后 stage_input 原子更新
+目标、约束及 epoch 并封闭请求候选；整个输入队列接纳成功后 acknowledge_input
+重验 revision，再启动一次 Recall。队列未消费、拒绝或不确定投递不等于记忆可用。
+这里的接纳是 Loop 队列接纳，输入内容仍由原 Loop 的轮边界 drain 生效。
+
+每工作可带 request_current 可信探针。协调层探针读取 Runtime 的终态/epoch 与当前
+绑定 grant 的过期时间；取消、接管、环境变化和 close 使已捕获快照失效。探针异常
+保守封闭。它不进行网络/存储调用，不替代宿主撤权同步；直接修改授权/终态后记录
+权限仍须 service.revoke 管理。外部 owner 必须让 Runtime 活到服务全部收敛之后。
+
+首次工作结算关闭请求投影并提出 Session scope 的 Record。只有既有已验证事件才
+能产生确定性事实，模型候选仍为 Unverified，偏好仍需审批。未送达输入禁止该触发，
+旧 job 尚未退出时可显式返回容量错误，不无限重试。完成作业由协调层的有限维护
+调用 reap 回收，服务仍持有和消费其 future；每工作最新回执可按当前主体鉴权查询。
+记忆错误不回滚已提交路由/投递或结算；受保护候选不可用时，Gateway 可明确拒绝
+请求，宿主不能通过忽略失效来继续使用旧缓存。结果中的 more_pending 留给宿主处理。
 
 每工作有独立修订号、候选缓存、历史捕获和压缩前缀；缓存最大 60 秒，且不得超过
 记忆的 expires_at/valid_until。每个 Operation 绑定当时的修订号与调用上下文。

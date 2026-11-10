@@ -93,6 +93,7 @@ add_library(mira_core
     src/interaction/interaction_recovery.cpp
     src/interaction/interaction_clarification.cpp
     src/interaction/interaction_context.cpp
+    src/interaction/interaction_memory.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/context_retrieval.cpp
@@ -111,6 +112,7 @@ add_library(mira_core
     src/context/memory_agent_model.cpp
     src/context/memory_agent_seams.cpp
     src/context/memory_agent_artifacts.cpp
+    src/context/memory_agent_binding.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp

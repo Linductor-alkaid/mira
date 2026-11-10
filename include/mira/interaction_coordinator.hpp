@@ -4,6 +4,7 @@
 #include <mira/core_contracts.hpp>
 #include <mira/environment.hpp>
 #include <mira/event_store.hpp>
+#include <mira/memory_agent.hpp>
 #include <mira/runtime.hpp>
 #include <mira/security.hpp>
 #include <mira/task_recovery.hpp>
@@ -533,6 +534,15 @@ struct CoordinatorConfig final {
     RecoveryPolicy recovery_policy{};
 };
 
+// Process-local lifecycle receipt, not a durable input stage. A submitted
+// job is not completion: consume job.result (or the service result API).
+struct MemoryLifecycleStatus final {
+    bool suspended = true;
+    bool terminal = false;
+    std::optional<MemoryAgentHandle> job;
+    std::optional<Error> error;
+};
+
 class InteractionCoordinator final {
   public:
     // The executor is injected explicitly: MiraRuntime does not expose its
@@ -557,6 +567,13 @@ class InteractionCoordinator final {
     void set_environment_provider(EnvironmentProvider provider);
     // Binds the route suggestion seam.
     void set_route_resolver(RouteResolver resolver);
+
+    // Opt in before initialize. The external owner closes the service after
+    // this coordinator and before Runtime/Executor. Automatically maps only
+    // User + current Session scopes; no model-selected scope expansion.
+    [[nodiscard]] Result<void> set_memory_service(std::shared_ptr<MemoryAgentService>);
+    [[nodiscard]] Result<MemoryLifecycleStatus> memory_status(const PrincipalContext &,
+                                                              TaskId) const;
 
     // Configure before initialize. Both stores required; bodies remain in
     // Sensitive artifacts and credentials/grants are never persisted.

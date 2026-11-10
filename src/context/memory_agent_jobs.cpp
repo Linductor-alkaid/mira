@@ -97,7 +97,8 @@ Result<MemoryAgentHandle> MemoryAgentService::State::submit(MemoryAgentRequest r
     const auto found = works.find(request.task);
     if (!initialized || closing || found == works.end() || found->second.revoked ||
         found->second.input_pending ||
-        (request.mode != MemoryAgentMode::Record && !found->second.active))
+        (request.mode != MemoryAgentMode::Record &&
+         (!found->second.active || !memory_agent_support::request_current(found->second.binding))))
         return error(ErrorCode::InvalidState, "memory work is not active");
     if (!memory_agent_support::same_owner(context, found->second.binding.work))
         return error(ErrorCode::PermissionDenied, "memory job context does not own the work");
@@ -200,6 +201,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
     MemoryAgentInput input;
     input.mode = job->request.mode;
     input.work = job->binding.work;
+    input.user_constraints = job->binding.user_constraints;
     MemoryAgentResult result;
     auto cache_until = std::chrono::system_clock::now() + config.cache_ttl;
     result.operation = job->id;
@@ -252,6 +254,8 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         input.history = job->request.history;
 
     std::size_t source_bytes = to_json_string(history_json(input.history)).size();
+    for (const auto &constraint : input.user_constraints)
+        source_bytes += constraint.size();
     for (const auto &record : input.records)
         source_bytes += record.statement.size();
     for (const auto &event : input.events)

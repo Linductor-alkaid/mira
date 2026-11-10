@@ -40,6 +40,7 @@ ModelContextSupplier MemoryAgentService::context_supplier() const {
             const auto found = s->works.find(request.task_id);
             if (s->closing || found == s->works.end() || !found->second.active ||
                 found->second.revoked || found->second.input_pending ||
+                !memory_agent_support::request_current(found->second.binding) ||
                 !memory_agent_support::same_owner(context, found->second.binding.work) ||
                 request.task_epoch != found->second.binding.work.task_epoch)
                 return error(ErrorCode::InvalidState, "memory request identity is not current");
@@ -59,6 +60,7 @@ ModelContextSupplier MemoryAgentService::context_supplier() const {
             return !state->closing && found != state->works.end() && found->second.active &&
                    !found->second.revoked && !found->second.input_pending &&
                    found->second.revision == revision &&
+                   memory_agent_support::request_current(found->second.binding) &&
                    (expires == std::chrono::system_clock::time_point{} ||
                     std::chrono::system_clock::now() < expires);
         };
@@ -70,7 +72,8 @@ ModelContextSupplier MemoryAgentService::context_supplier() const {
             const auto found = state->works.find(task);
             return !state->closing && found != state->works.end() && found->second.active &&
                    !found->second.revoked && !found->second.input_pending &&
-                   found->second.binding.work.task_epoch == epoch;
+                   found->second.binding.work.task_epoch == epoch &&
+                   memory_agent_support::request_current(found->second.binding);
         };
         return snapshot;
     };
