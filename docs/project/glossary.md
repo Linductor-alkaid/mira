@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.11
+> 版本：1.12
 > 更新日期：2026-11-10
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -37,6 +37,11 @@ _Avoid_: 永久确认、模型授权、仅凭截图清除不确定性。
 它不替代输入账本，也不能绕过 scope、删除屏障或 Layer 0。权威来源：
 [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)。
 _Avoid_: 输入已读、永久记忆成功、自动授权。
+
+**偏好提案（Preference Proposal）**：为明确用户确认冻结的词法偏好、目标版本及
+mutation；正文保存在受控 Artifact，确认意图和结果由事件重建。批准只授权保存，
+不会自动提高 verification。权威来源：[DEC-109](../decisions/DEC-109-memory-preference-approval.md)。
+_Avoid_: 已保存记忆、模型审批、未结算等于未写入。
 
 **Runtime（运行时）**:
 进程内 Agent 能力的顶层协调者，拥有 Session 的创建与串行提交语义。

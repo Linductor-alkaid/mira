@@ -103,6 +103,29 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     };
     std::map<ArtifactId, Projection> projections;
     std::optional<Error> audit_error;
+    struct PreferenceEntry final {
+        PreferenceProposal proposal;
+        PrincipalContext owner; // Only identity/version populated on replay; never grants.
+        Sha256Digest request_digest;
+        ArtifactDescriptor artifact;
+    };
+    // Protected by commit_mutex; the initializer also holds mutex. Bounded
+    // receipts are projections of the control stream, not a second database.
+    std::map<MutationId, PreferenceEntry> preference_entries;
+    std::optional<Error> preference_fence;
+    [[nodiscard]] Result<void> preference_available(const OperationContext &) const;
+    [[nodiscard]] Result<void> append_preference(const char *, JsonValue::Object,
+                                                 EventId = EventId{});
+    [[nodiscard]] Result<bool> restore_preference(const EventEnvelope &);
+    [[nodiscard]] Result<PreferenceProposal> read_preference(const PreferenceEntry &) const;
+    [[nodiscard]] Result<void> erase_preference_bodies(const std::string &, bool privacy);
+    [[nodiscard]] Result<void> invalidate_preference_proposals(const MemoryScope &);
+    [[nodiscard]] Result<void> clean_preference_bodies();
+    [[nodiscard]] Result<PreferenceProposal> propose_preference(PreferenceProposalRequest,
+                                                                const OperationContext &);
+    [[nodiscard]] Result<PreferenceProposal> decide_preference(const PrincipalContext &, MutationId,
+                                                               Sha256Digest, ConfirmationDecision,
+                                                               const OperationContext &);
 
     [[nodiscard]] Result<void> validate() const;
     [[nodiscard]] Result<void> validate_binding(const MemoryWorkBinding &) const;
@@ -122,4 +145,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     [[nodiscard]] Result<void> restore_projection(const JsonValue &payload);
     [[nodiscard]] Result<void> erase_projections(const std::string &scope);
 };
+
+[[nodiscard]] BuiltinToolRegistration preference_proposal_tool(
+    std::function<Result<PreferenceProposal>(PreferenceProposalRequest, const OperationContext &)>);
 } // namespace mira

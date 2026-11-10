@@ -220,6 +220,9 @@ Verified Event 到 Memory candidate 的确定性管道：
   对预先抽取的候选执行与 `consolidate()` 相同的策略管线（不做事件抽取、不挂模型
   钩子，候选 provenance 由调用方负责）；重复判定要求已存副本验证等级 ≥ 提案等级，
   杜绝验证等级降级。`consolidate()` 即"抽取 + 模型增强 + 本入口"，管线体只有一份。
+- `ConsolidationPolicy::require_explicit_approval`（默认 false）可将包括
+  HumanCorrection 在内的所有修改保留为 pending；重复 no-op 不写入。DEC-109 的
+  偏好提案强制启用，批准仍通过 `apply_pending` 提交原 mutation，不另建写入路径。
 - 冲突检测（设计 §13.5）：冲突检索用 `MemoryQuery::claim_key` 按归一化主语收窄，同主语
   的不同值判为冲突（Supersede），同主语同值且已存副本验证等级不低于提案判为
   `duplicate-noop`。Core 侧自己复核主语是否相等，不信任后端的过滤。

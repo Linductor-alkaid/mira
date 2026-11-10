@@ -1,11 +1,13 @@
 # 受管记忆代理与请求准入设计
 
 > 状态：Active
-> 版本：1.1
+> 版本：1.2
 > 更新日期：2026-11-10
 > 负责人：Mira Maintainers
 > 决策：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
-> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)
+> [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
+> [DEC-108](../decisions/DEC-108-native-role-memory-recall.md)、
+> [DEC-109](../decisions/DEC-109-memory-preference-approval.md)
 > 实施：[M36](../plans/m36-memory-agent-context-integration.md)、
 > [M30](../plans/m30-long-term-memory-integration.md)
 
@@ -163,3 +165,19 @@ continuation_source 返回有界状态报告；父 Loop 拟结束时在自身受
 验证入口是 M36 测试与 memory_agent_host_consumer：两个工作、协调层路由与纠正、
 最终请求准入、真实 SQLite、独立记忆模型循环、引用造假、取消/超时/拒绝/接管/关闭。
 目标平台、真实模型语义质量、长期资源增长与同 scope 删除后重新接纳仍需后续验证。
+
+## 长期偏好的显式确认边界（DEC-109）
+
+主代理通过 memory_propose_preference 提出 key=value，不获得 MemoryRecord 写入或
+确认权限。服务强制将包括纠正的 candidate 留在既有 consolidation 的审批门后，冻结
+mutation/previous/version；待确认内容用 Sensitive Artifact 保存，元数据在控制事件面
+登记。宿主用当前认证主体及 mira.memory.manage grant 预览并按 digest 决定。
+
+批准按 intent → apply_pending → completion 推进；后端 mutation 幂等保证未结算重试
+不会再次修改记录。前置版本检查不允许把用户确认迁移到新的冲突目标；追加错误、
+弱 ack、未知 apply 结果都会封锁管理面，重建后由当前权限显式续办。该协议不新增写入
+后端，不替代 ActionJournal，也不将模型提案升级为 HumanConfirmed。
+
+scope 删除屏障同时覆盖新提案 Artifact；拒绝/外部失效清理正文，超过确认/来源有效期
+只返回元数据。保存的 mutation 不用于请求注入，只有批准后的 IMemory 查询结果才是
+P4 候选，继续经过 DEC-108 的带框块与 Layer 0。承诺、新世代与全局回收仍属后续计划。

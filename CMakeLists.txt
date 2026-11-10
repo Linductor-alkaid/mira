@@ -113,6 +113,9 @@ add_library(mira_core
     src/context/memory_agent_seams.cpp
     src/context/memory_agent_artifacts.cpp
     src/context/memory_agent_binding.cpp
+    src/context/memory_preference.cpp
+    src/context/memory_preference_storage.cpp
+    src/context/memory_preference_tool.cpp
     src/observation/coordinate_transform.cpp
     src/observation/observation.cpp
     src/observation/observation_pipeline.cpp

@@ -28,6 +28,34 @@ class IUserInputSink;
 
 enum class MemoryAgentMode : std::uint8_t { Recall, Record, Compress };
 
+enum class PreferenceProposalState : std::uint8_t {
+    Pending,
+    Approving,
+    Applied,
+    NoChange,
+    Rejected,
+    Stale,
+    Erased,
+    Expired
+};
+struct PreferenceProposalRequest final {
+    MutationId id;
+    std::string statement;
+    std::optional<MemoryId> target;
+    std::optional<std::uint64_t> expected_version;
+};
+struct PreferenceProposal final {
+    MutationId id;
+    Sha256Digest digest;
+    MemoryScope scope;
+    PreferenceProposalState state = PreferenceProposalState::Pending;
+    WallTimePoint expires_at;
+    std::string statement;
+    std::optional<MemoryRecord> previous;
+    std::optional<MemoryMutation> mutation;
+    std::optional<MemoryMutationResult> applied;
+};
+
 struct MemoryWorkBinding final {
     PrincipalContext principal;
     AgentLoopSpec work;
@@ -132,6 +160,8 @@ struct MemoryAgentConfig final {
     std::shared_ptr<IArtifactStore> artifacts;
     std::size_t max_projection_artifacts = 512;
     ConsolidationPolicy consolidation;
+    std::size_t max_preference_proposals = 256;
+    std::chrono::seconds preference_proposal_ttl{std::chrono::hours(24)};
 };
 
 // DEC-101: host owner, not a perpetual child of the frontend run. Stores and
@@ -166,6 +196,19 @@ class MemoryAgentService final {
     // Must precede out-of-service mutations; invalidates all dependent work.
     [[nodiscard]] Result<void> invalidate_scope(const MemoryScope &scope);
     [[nodiscard]] Result<ErasureResult> erase_scope(const MemoryScope &scope);
+
+    // DEC-109: finite synchronous I/O; invoke via the injected Executor and
+    // consume the result. Propose is bound to an active work; preview/decide
+    // require a current mira.memory.manage grant and an exact owner/digest.
+    // No model tool can approve. Approval authorizes storage, not a claim of
+    // HumanConfirmed truth; all writes use consolidation/apply_pending.
+    [[nodiscard]] Result<PreferenceProposal> propose_preference(PreferenceProposalRequest,
+                                                                const OperationContext &);
+    [[nodiscard]] Result<PreferenceProposal>
+    preference_proposal(const PrincipalContext &, MutationId, const OperationContext &) const;
+    [[nodiscard]] Result<PreferenceProposal> decide_preference(const PrincipalContext &, MutationId,
+                                                               Sha256Digest, ConfirmationDecision,
+                                                               const OperationContext &);
 
     [[nodiscard]] Result<MemoryAgentHandle> submit(MemoryAgentRequest request,
                                                    OperationContext context);

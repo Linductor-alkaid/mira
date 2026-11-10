@@ -330,6 +330,23 @@ std::vector<BuiltinToolRegistration> MemoryAgentService::tools() const {
                                        : JsonValue{JsonValue::Object{{"state", "pending"}}};
              }});
     }
+    if (state_->config.artifacts) {
+        registrations.push_back(preference_proposal_tool(
+            [weak](PreferenceProposalRequest request,
+                   const OperationContext &context) -> Result<PreferenceProposal> {
+                const auto state = weak.lock();
+                if (!state)
+                    return error(ErrorCode::InvalidState, "preference owner no longer exists");
+                try {
+                    return state->propose_preference(std::move(request), context);
+                } catch (...) {
+                    const std::lock_guard lock(state->commit_mutex);
+                    state->preference_fence =
+                        error(ErrorCode::DataLoss, "preference tool failed; reopen required");
+                    return *state->preference_fence;
+                }
+            }));
+    }
     return registrations;
 }
 } // namespace mira

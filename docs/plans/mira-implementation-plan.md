@@ -1,5 +1,10 @@
 # Mira 实施总计划
 
+M30 后续增量基于主干 `23f1291`（PR #125，含 DEC-108 召回）推进：
+[DEC-109](../decisions/DEC-109-memory-preference-approval.md)提供长期偏好的持久提案、
+宿主显式确认/拒绝、冻结版本和重开幂等；审批不会提升事实验证等级。完整 M30 的承诺、
+价值信号及删除后新世代仍未完成，验证与限制见[M30 记录](m30-long-term-memory-integration.md)。
+
 [M30](m30-long-term-memory-integration.md) 已开始首批生命周期增量，依据
 [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)接通主体 scope、输入队列
 接纳后的 Recall、结算后的既有管线 Record 与有界回执。M29 前置已满足；承诺实体、

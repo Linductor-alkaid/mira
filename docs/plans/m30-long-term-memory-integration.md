@@ -12,7 +12,7 @@
 > M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）；
 > DEC-070 契约冻结（已满足，2026-10-28 随 M28 登记一并冻结）
 > 建议发布点：非发布物；M31 价值驱动淘汰的输入侧前提
-> 更新日期：2026-11-10（开始 DEC-107 主体 scope 与交互记忆生命周期接线）
+> 更新日期：2026-11-10（DEC-109 持久偏好提案与显式确认增量）
 
 ## 1. 目标
 
@@ -50,6 +50,9 @@
 - **不新增**第二套记忆写入路径：写入**必须**走既有 consolidation / promotion 管线。
 
 ## 3. 设计与决策依据
+
+- [DEC-109](../decisions/DEC-109-memory-preference-approval.md)：持久偏好提案、预览、
+  显式确认/拒绝、冻结版本与删除失效；本轮不实现承诺与新世代。
 
 - [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)：首批生命周期、
   确定性 scope 白名单与有界结果；不替代本计划其余实现细则的冻结。
@@ -100,14 +103,14 @@
 
 ## 5. 工作项
 
-- [ ] `M30-01` 立项与跑前冻结（DEC-107 首批已冻结；承诺、完整记忆意图、价值信号与删除世代细则待冻结）。
+- [ ] `M30-01` 立项与跑前冻结（DEC-107/109 增量已冻结；承诺、完整记忆意图、价值信号与删除世代细则待冻结）。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
-- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径（终态 Session Record 已接通；User 长期记忆意图、审批交互及其余触发仍待完成）。
+- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径（终态 Session Record 及显式 User 偏好提案/持久审批已接通；其他候选报告的统一持久收集与触发仍待完成）。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
-- [ ] `M30-05` 「记住 / 忘掉 / 纠正」的路由、范围判定与可解释输出。
+- [ ] `M30-05` 「记住 / 忘掉 / 纠正」的路由、范围判定与可解释输出（偏好提案、版本冻结的纠正、确认/拒绝/过期/未知结果已交付；完整意图与遗忘交互仍待完成）。
 - [ ] `M30-06` 价值信号（importance / 使用信号）产出（供 M31 使用）。
-- [ ] `M30-07` IVA 测试矩阵（首批四组通过；承诺/完整纠正删除/价值信号/新世代矩阵待补）。
-- [ ] `M30-08` 文档同步（DEC-107 首批设计/API/术语/计划已同步，完整里程碑收口仍待后续增量）。
+- [ ] `M30-07` IVA 测试矩阵（生命周期与偏好协议共八组通过；承诺/完整纠正删除/价值信号/新世代矩阵待补）。
+- [ ] `M30-08` 文档同步（DEC-107/108/109 设计/API/术语/计划已同步，完整里程碑收口仍待后续增量）。
 - [ ] `M30-09` 冻结并实现删除后的同 scope 新知识接纳：区分新世代与已删除来源，
       旧事件、摘要和在途提案不得回灌；有新的明确用户输入时可重新记忆。与 M31
       的屏障保留/回收协同验收，不能直接删除 M36 的屏障来重新开放 scope。
@@ -240,3 +243,89 @@ git diff --check
 | 持久化的记忆意图/审批/纠正/删除、承诺及价值信号 | 尚未交付完整用户交互及存储形态，M30-01/03/05/06/07/08 保持未完成 | Mira Maintainers；按 DEC-070 冻结剩余细则，补充跨重启与联合幂等测试后验收 |
 | 同 scope 删除后的新知识接纳 | M36 屏障仍保守封闭；本轮没有移除屏障或自动重放旧事件 | Mira Maintainers；按 M30-09 冻结新世代及来源水位，与 M31 协同验收后开放 |
 | 与宿主恢复 P3/Working Context 的组合 | supplier 的其他 owner 仍由宿主显式合并；不会自动覆盖已有回调 | Mira Maintainers/宿主集成者；合并候选及各自 current 探针，按实际宿主链路补端到端验证 |
+
+### 2026-11-10：长期偏好审批增量开始
+
+已同步 master `23f1291`（PR #125，含 DEC-108 原生角色召回），在
+`feat/memory-preference-approval` 推进 M30-03/05/07/08。交付目标为：模型只提出
+User Preference 候选，宿主持当前 grant 预览并按摘要确认/拒绝，经原 consolidation
+与 apply_pending 写入；持久 Artifact/事件、scope 擦除和重开幂等闭合。
+完整 M30 继续 In Progress。
+
+### 2026-11-10：长期偏好协议验收
+
+基线 `23f1291`，分支 `feat/memory-preference-approval` 的未提交工作树。
+交付 DEC-109、强制待审批 policy 开关、User Preference 提案/预览/决定 API、
+只可提案的模型工具，以及事件/Artifact 恢复与删除联动。没有修改 third_party、
+没有新建线程/定时设施或第二套 IMemory 写入路径；到期测试用 kairo one-shot timer
+并消费 future。DEC-108 的原生角色和带框事实召回继续保留。
+
+验证对象：
+
+| 测试 | 核心证据 |
+| --- | --- |
+| m30_preference_approval_test | 提案不写 MemoryRecord；当前用户按 digest 确认；纠正 HumanCorrection 仍先待审批；Supersede 版本链；重复不提升 Unverified；拒绝清理；禁止内容/注入过滤；模型无批准工具；事件不含正文 |
+| m30_preference_security_test | user/tenant/identity_version/缺 grant/过期 grant/非精确 resource/Anonymous 拒绝；摘要不匹配拒绝；同 claim 两提案只允许当前版本；批准使旧请求快照失效；scope 外部失效和擦除阻止旧提案回写 |
+| m30_preference_recovery_test | 提案、审批意图、完成回执三个窗口，写入前失败及写入后丢 ack 均重开 EventStore/SQLite/ArtifactStore 验证；弱 ack 封锁；重复确认只留一条记录；拒绝/擦除重建不可恢复正文 |
+| m30_preference_lifecycle_test | 缺 deadline、取消、额度、到期（仅元数据）、关闭；取消发生在耐久 intent 后不写入，显式续办；Artifact commit 未知与中断后清理失败都封锁，最多一份未知 Artifact/封锁窗口 |
+
+环境：Linux 7.0.0-42-generic / x86_64、GCC 13.3.0、C++20 Debug、
+WarningsAsErrors；SQLite 3.53.4、kairo pin `78c6f5575331`。Provider 为离线 fixture，
+没有真实模型端点、用户记忆数据或设备输入。可复验命令与最终结果：
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 4
+ctest --test-dir build/debug --output-on-failure -j 4
+# 180/180，通过且无 skip。
+
+mira_preference_targets=(
+  mira_m30_scope_binding_test mira_m30_lifecycle_test
+  mira_m30_recording_test mira_m30_lifecycle_faults_test
+  mira_m30_preference_approval_test mira_m30_preference_security_test
+  mira_m30_preference_recovery_test mira_m30_preference_lifecycle_test
+  mira_m36_context_admission_test mira_m36_memory_agent_test
+  mira_m36_memory_agent_lifecycle_test mira_m36_memory_agent_model_test
+  mira_m29_arbitration_test mira_m29_ledger_atomicity_test mira_m29_delivery_test
+  mira_m29_lifecycle_test mira_m29_loop_interruption_test
+  mira_m29_clarification_recovery_test mira_m29_restart_replay_test
+  mira_m29_recovery_verification_test mira_m29_recovery_faults_test
+  mira_m29_recovery_lifecycle_test mira_m28_lifecycle_test
+  mira_m3_assistant_speech_test mira_m4_recovery_test mira_m4_consolidation_test
+  mira_m23_promotion_test mira_memory_agent_host_consumer mira_interaction_recovery_host_consumer
+)
+mira_preference_regex='mira_m30_|mira_m36_|mira_m29_|mira_m28_lifecycle_test|mira_m3_assistant_speech_test|mira_m4_(recovery|consolidation)_test|mira_m23_promotion_test|mira_memory_agent_host_consumer_test|mira_interaction_recovery_host_consumer_test'
+cmake --preset asan -DMIRA_ENABLE_UBSAN=ON
+cmake --build build/asan --target "${mira_preference_targets[@]}" -j 2
+ctest --test-dir build/asan -R "$mira_preference_regex" --output-on-failure -j 2
+# ASAN+UBSAN 29/29 通过，包含旧 consolidation/promotion 默认行为。
+cmake --preset tsan
+cmake --build build/tsan --target "${mira_preference_targets[@]}" -j 2
+setarch x86_64 -R ctest --test-dir build/tsan -R "$mira_preference_regex" --output-on-failure -j 2
+# TSan 29/29 通过，按 CI 方式禁用 ASLR。
+
+for mira_unit in src/context/{memory_preference,memory_preference_storage,memory_preference_tool,memory_consolidation,memory_agent,memory_agent_seams}.cpp; do
+  clang-tidy -p build/debug "$mira_unit" --quiet || exit 1
+done
+# 六个生产编译单元严格检查通过，无 warning/error。
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+开发时修正了 JsonValue 的 const 对象访问/boolean API 名称与测试头引用；没有放宽
+生产校验或测试断言。最后追加的审批前 TTL 重验已重新构建并全量通过。日志：
+`/tmp/mira-m30-preference-{configure,core-build,targeted-build,targeted-test}.log`、
+`/tmp/mira-m30-preference-full-{build,test}.log`、
+`/tmp/mira-m30-preference-{asan,tsan}-{configure,build,test}.log`、
+`/tmp/mira-m30-preference-tidy-*.log`、`/tmp/mira-m30-preference-quality.log`。
+
+工作项仍按增量记录：M30-03 已有显式偏好持久路径，其他临时报表的统一收集不冒充
+完成；M30-05 尚未交付完整自然语言意图/逐记录遗忘与前端 UI 集成，M30-01/06/09
+的承诺、价值信号与删除后新世代仍未完成。没有改动已通过的 DEC-108 召回契约。
+
+| 未执行/待完成 | 原因及负责人 | 补跑条件 |
+| --- | --- | --- |
+| 当前分支远端 CI、Windows/MSVC、Android/NDK | 本轮仅 Linux 本地工作树；Mira Maintainers | 提交后运行仓库 CI 全矩阵，保存相同 head 的 run/checks |
+| 真实用户界面与模型选择偏好工具的语义质量 | Mirage UI/模型凭据不在本轮；宿主集成者/Mira Maintainers | 接入真实认证与确认 UI，验证“只授权保存”的文案、跨会话回执与操作取消，记录模型版本和标注场景 |
+| OS 强杀/断电、长期容量与物理 GC | 本轮为关闭/重开及故障注入，未知注册 Artifact 的回收归 M31；Mira Maintainers | 目标平台故障矩阵、固定负载/时长与 Artifact/回执预算；不能将超时或到期当作已回收字节 |
+| 完整记忆纠正/忘掉/承诺/新世代 | 首批仅覆盖 Preference 与 scope 屏障联动；Mira Maintainers | 后续 M30 增量冻结剩余契约，补精确范围、前端反馈、联合幂等与已删除来源不回灌测试 |

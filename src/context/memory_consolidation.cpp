@@ -346,7 +346,8 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             std::find(policy_.approval_required_kinds.begin(),
                       policy_.approval_required_kinds.end(),
                       proposed.kind) != policy_.approval_required_kinds.end();
-        if (needs_approval && candidate.reason != MutationReasonCode::HumanCorrection) {
+        if (policy_.require_explicit_approval ||
+            (needs_approval && candidate.reason != MutationReasonCode::HumanCorrection)) {
             MemoryMutation mutation;
             mutation.id = entry.mutation;
             mutation.scope = scope;

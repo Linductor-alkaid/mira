@@ -5,7 +5,8 @@
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
 > 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
 > [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
-> [DEC-108](../decisions/DEC-108-native-role-memory-recall.md)
+> [DEC-108](../decisions/DEC-108-native-role-memory-recall.md)、
+> [DEC-109](../decisions/DEC-109-memory-preference-approval.md)
 > 设计：[记忆代理](../design/memory_agent_design.md)
 
 ## 宿主接线
@@ -112,3 +113,82 @@ DEC-059 的 namespaced import/promotion 兼容行为。该开关只给可信宿�
 Recall/Compress 与缓存请求快照；Record 在 terminal 后沿用显式权限，因此必须用
 revoke 彻底撤销写入。探针捕获对象须活到服务关闭，不能捕获已销毁的宿主裸指针。
 统一交互接线见[协调层 API](interaction-coordinator.md)。
+
+## M30：长期偏好提案、预览与决定（DEC-109）
+
+这些是有界同步 I/O API。宿主在注入 Executor 的有限任务中调用并消费 future，先停止
+生产者并消费这些有限任务，再 close 服务和存储。不能在持有服务锁的回调中重入，
+不能从服务自己的 worker 中做 owner teardown。I/O 依赖 Adapter 的有界返回，deadline
+是合作检查，不是抢占或撤销已提交写入的承诺。
+
+```cpp
+// 规范接口片段。context 含绑定的 task/session/epoch 与有效 deadline。
+PreferenceProposalRequest request;
+request.id = MutationId::generate(); // 保留到本次提案结算；同 id 不能换正文/主体。
+request.statement = "answer.style=brief";
+auto prepared = executor.submit_auto([&] {
+    return service.propose_preference(request, context);
+});
+auto proposal = prepared.get(); // 检查 Result；此时没有写入 MemoryRecord。
+// 将 proposal 的 statement / previous / digest 交给已认证用户预览。
+// 只有宿主收到明确的用户决定后才执行以下阶段；模型输出不是用户确认。
+auto confirmation_context = make_control_context();
+confirmation_context.deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+// 使用此次 UI 操作的取消信号和最新 principal，不复用原 Task 已过期/已取消的 context。
+auto decided = executor.submit_auto([&] {
+    return service.decide_preference(current_principal, proposal.value().id,
+        proposal.value().digest, ConfirmationDecision::Approve, confirmation_context);
+});
+auto receipt = decided.get(); // 检查 Result 和 state，不能将提交/超时当作未写入。
+```
+
+提案要求活动 work 的精确 User scope 白名单；固定 kind=Preference、verification=
+Unverified，正文为至多 4096 字节的词法 key=value。自由语义规范化由主代理/宿主完成。
+同 key 不同值形成待确认 Supersede，previous 与 mutation 一起冻结，UI 必须展示修改
+目标和版本；可选 request.target + expected_version 必须成对且匹配当前记录。
+
+`preference_proposal(principal, id, context)` 用于重开后的预览，授权与决定一致：
+非 Anonymous 的当前身份、tenant/user/identity_version 与提案一致，持有有效
+`mira.memory.manage` grant，grant.version 与身份版本相等。resource selector 可为空
+（主体自己的偏好），或精确 `{type="memory", scope=<User subject_id>, pattern=""}`。
+其他/wildcard selector 不被隐式接受。宿主应重新读取当前认证结果，不能复用原任务
+保存的旧 grant 或把记忆里的授权文字当成 PrincipalContext。
+
+若配置 ArtifactStore，`tools()` 在旧三个工具之后新增 `memory_propose_preference`：
+参数为 statement，以及可选 request_id/target/expected_version。省略 request_id 时
+从本次 tool operation 派生；工具仅返回 proposal_id、digest、状态和需人工审批标志，
+不提供确认/拒绝工具。普通前台发言、模型 done 或模型的“用户已同意”不能调用确认面。
+User/Assistant 原生召回与 `[recalled memory v1|count=N]` 合并块沿用 DEC-108。
+
+状态与结果：
+
+| 状态 | 含义 |
+| --- | --- |
+| Pending | mutation 已冻结、引用已耐久登记，尚未写入 MemoryRecord |
+| Approving | 审批意图已登记；写入/完成回执可能未结算，不能宣称未写入 |
+| Applied | 冻结 mutation 经 apply_pending 提交，applied 给出 record/version；这是历史回执 |
+| NoChange | 同 claim 已有验证等级不低的记录，本次未修改，也未提高验证等级 |
+| Rejected / Stale | 用户拒绝或 scope 外部变更使提案关闭，清理提案正文 |
+| Erased | scope 删除屏障已使该提案不可用，不能从它重新提取内容 |
+| Expired | 待确认窗口已过期，不能再批准；只返回元数据 |
+
+批准是授权保存，不将模型提案升级为 HumanConfirmed。纠正 mutation 的 reason 是
+HumanCorrection，但仍先经过强制审批；原记录保留 Superseded 版本链。冲突不改写目标，
+必须重新提案。拒绝未结算 Approving 不被接受，先由当前授权宿主核对/幂等重试。
+
+默认保留 256 个回执（含已完成），确认窗口 24 小时；窗口不晚于 previous 的到期/
+valid_until。过期后不返回冻结正文，即使终态回执仍可查看。物理回收与回执 GC 归 M31，
+当前不声称凭 TTL 已释放所有 Artifact 字节。已完成结果也不代表该偏好仍是当前值。
+
+正文和完整 mutation 仅存在 Sensitive Artifact。控制分区的版本化
+`preference-proposed` / `preference-approval-intent` / `preference-applied` /
+`preference-rejected` / `preference-invalidated` 事件只有身份、摘要、引用和结果元数据，
+均要求 ProcessCrash ack。失败/弱 ack 封锁偏好管理面；关闭并重开相关存储及服务后
+显式重试。原 mutation id 保证 SQL 幂等，不自动恢复 worker 或自动批准。过期的
+Approving 需宿主核对，不能以过期为由声称先前没有写入。
+
+同 scope 的请求快照在批准写入前失效。服务外写入必须先成功 invalidate_scope，并
+收敛相关并发写入；它会耐久作废待确认提案。resolve Approving 后才允许该操作。
+scope erase 与重开会清理关联提案 Artifact，包括已批准回执的正文；已被调用方持有
+的预览副本不能再次作为准入或审批凭据。scope 删除后仍不可重新绑定，M30-09 未开放。
+本 API 不新增自然语言解析器、承诺调度、逐记录物理删除或 UI；这些继续由后续工作承担。

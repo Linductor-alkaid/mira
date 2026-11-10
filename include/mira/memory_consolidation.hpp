@@ -63,6 +63,9 @@ struct ConsolidationPolicy final {
     // memory agents force false: model text cannot mint an import exemption
     // or claim verification above Unverified, even with a namespace tag.
     bool allow_model_import_exemption = true;
+    // A proposal-only owner can require approval even for HumanCorrection.
+    // Duplicate no-ops remain read-only; the default preserves old callers.
+    bool require_explicit_approval = false;
 
     [[nodiscard]] Result<void> validate() const;
 };

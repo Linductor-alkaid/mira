@@ -55,6 +55,9 @@ Result<void> MemoryAgentService::State::validate() const {
         config.timeout.count() <= 0 || config.timeout > std::chrono::minutes(10) ||
         config.cache_ttl.count() <= 0 || config.cache_ttl > std::chrono::minutes(10) ||
         config.max_projection_artifacts == 0 || config.max_projection_artifacts > 4096 ||
+        config.max_preference_proposals == 0 || config.max_preference_proposals > 4096 ||
+        config.preference_proposal_ttl <= std::chrono::seconds(0) ||
+        config.preference_proposal_ttl > std::chrono::hours(24 * 30) ||
         !config.consolidation.validate())
         return error(ErrorCode::InvalidArgument, "invalid memory agent configuration");
     return {};
@@ -84,6 +87,11 @@ Result<void> MemoryAgentService::initialize() {
             return page.error();
         for (const auto &event : page.value().events) {
             query.after_sequence = event.session_sequence;
+            auto preference = s.restore_preference(event);
+            if (!preference)
+                return preference.error();
+            if (preference.value())
+                continue;
             if (event.payload.type == "mira.memory-agent.projection-stored.v1") {
                 auto payload = parse_json(event.payload.data);
                 if (!payload)
@@ -102,6 +110,8 @@ Result<void> MemoryAgentService::initialize() {
             s.blocked_scopes.insert(*key->as_string());
             if (auto erased = s.erase_projections(*key->as_string()); !erased)
                 return erased;
+            if (auto erased = s.erase_preference_bodies(*key->as_string(), true); !erased)
+                return erased;
             if (s.blocked_scopes.size() > s.config.max_works * 16)
                 return error(ErrorCode::ResourceExhausted,
                              "memory erasure barrier capacity exceeded");
@@ -111,9 +121,14 @@ Result<void> MemoryAgentService::initialize() {
         if (page.value().events.empty())
             return error(ErrorCode::DataLoss, "memory erasure barrier scan made no progress");
     } while (true);
-    for (const auto &scope : s.blocked_scopes)
+    for (const auto &scope : s.blocked_scopes) {
         if (auto erased = s.erase_projections(scope); !erased)
             return erased;
+        if (auto erased = s.erase_preference_bodies(scope, true); !erased)
+            return erased;
+    }
+    if (auto cleaned = s.clean_preference_bodies(); !cleaned)
+        return cleaned;
     s.initialized = true;
     return {};
 }
@@ -194,6 +209,8 @@ Result<void> MemoryAgentService::revoke(TaskId task) {
 Result<void> MemoryAgentService::invalidate_scope(const MemoryScope &scope) {
     auto &s = *state_;
     const std::lock_guard serialize(s.commit_mutex);
+    if (auto invalidated = s.invalidate_preference_proposals(scope); !invalidated)
+        return invalidated;
     const std::lock_guard lock(s.mutex);
     for (auto &[id, work] : s.works) {
         (void)id;
@@ -239,6 +256,9 @@ Result<ErasureResult> MemoryAgentService::erase_scope(const MemoryScope &scope) 
     if (!stored || stored.value().achieved < Durability::ProcessCrash)
         return error(ErrorCode::DataLoss, "memory erasure barrier was not durably stored");
     if (auto erased = s.erase_projections(memory_agent_support::scope_key(scope)); !erased)
+        return erased.error();
+    if (auto erased = s.erase_preference_bodies(memory_agent_support::scope_key(scope), true);
+        !erased)
         return erased.error();
     ErasureRequest request;
     request.scope = scope;
