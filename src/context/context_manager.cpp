@@ -94,6 +94,12 @@ constexpr const char *kReasonMinimumRouted = "minimum_set_routed_large_window";
     case ContextItemKind::ToolCall:
         return ModelRole::Assistant;
     default:
+        // RetrievedMemory replay items carry their original speaker as an
+        // explicit wire role (DEC-1xx); validate() restricts it to
+        // User/Assistant, never System/Developer (RULE-09).
+        if (item.wire_role.has_value()) {
+            return *item.wire_role;
+        }
         return ModelRole::User;
     }
 }

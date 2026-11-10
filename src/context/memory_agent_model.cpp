@@ -169,7 +169,9 @@ MemoryAgentProcessor make_model_memory_agent(kairo::Executor &executor,
         if (!resource.value() ||
             resource.value()->profile().profile_digest() != config.model.profile_digest())
             return error(ErrorCode::InvalidArgument, "memory provider does not match its profile");
-        JsonValue::Array records, events;
+        JsonValue::Array records, events, constraints;
+        for (const auto &constraint : input.user_constraints)
+            constraints.emplace_back(constraint);
         for (const auto &record : input.records)
             records.emplace_back(JsonValue::Object{{"id", record.id.to_string()},
                                                    {"statement", record.statement},
@@ -183,6 +185,7 @@ MemoryAgentProcessor make_model_memory_agent(kairo::Executor &executor,
                                        : input.mode == MemoryAgentMode::Record ? "record"
                                                                                : "compress"},
                               {"goal", input.work.goal},
+                              {"user_constraints", std::move(constraints)},
                               {"records", std::move(records)},
                               {"events", std::move(events)},
                               {"history", memory_agent_support::history_json(input.history)}});
@@ -209,8 +212,9 @@ MemoryAgentProcessor make_model_memory_agent(kairo::Executor &executor,
             "memories: [{kind,text,citations:[event indices]}]. For compress use summary: "
             "[{text,citations:[history indices]}]. Use only fields for that mode. Preserve current "
             "constraints, "
-            "negations, dates, numbers, unresolved work and prior checkpoints. Never invent "
-            "sources or verification.",
+            "negations, dates, numbers, unresolved work and prior checkpoints. In summaries, "
+            "attribute quoted speech to its speaker (user or assistant) so compressed context "
+            "keeps who said what. Never invent sources or verification.",
             "mira.memory-agent.system.v1"};
         ConversationLoop loop(gateway, conversation);
         AgentLoopSpec spec{TaskId::generate(), SessionId::generate(), 1, prompt, config.model.id};

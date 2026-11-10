@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.10
-> 更新日期：2026-11-09
+> 版本：1.11
+> 更新日期：2026-11-10
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -31,6 +31,12 @@ _Avoid_: 复活 Task、自动重放、恢复旧授权。
 **恢复许可（Recovery Permit）**：Observe/宿主 Verify 通过后生成的进程内有界许可，绑定
 主体、源上下文摘要、账本修订和事件水位，短期有效且单次消费；它不是平台动作授权。
 _Avoid_: 永久确认、模型授权、仅凭截图清除不确定性。
+
+**记忆生命周期回执（Memory Lifecycle Receipt）**：协调层为当前工作提供的进程内状态，
+区分输入尚未接纳、作业已提交、作业失败及请求投影已关闭；future 完成才有执行结果。
+它不替代输入账本，也不能绕过 scope、删除屏障或 Layer 0。权威来源：
+[DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)。
+_Avoid_: 输入已读、永久记忆成功、自动授权。
 
 **Runtime（运行时）**:
 进程内 Agent 能力的顶层协调者，拥有 Session 的创建与串行提交语义。
@@ -237,6 +243,12 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定
 实际载荷，快照本身不等于已装载请求。见[API](../api/memory-agent.md)。
 _Avoid_: 完整系统提示词、授权快照、供应商 continuation
+
+**原生角色回放（Native Role Replay）**:
+逐字会话记忆按原始说话人以原生 User/Assistant 消息角色回放（说话人由
+`wire_role` 结构承载，DEC-108）；事实召回合并为单个带框架头的 user 消息。
+不可信召回永不获得 System/Developer 角色。
+_Avoid_: 文本前缀标注说话人、把召回提升为系统消息
 
 **Supply Seam（供给缝）**:
 Agent Loop 的可选只读快照供给依赖（DEC-045/M25）：宿主注入回调，请求

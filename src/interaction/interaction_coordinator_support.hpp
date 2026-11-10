@@ -196,6 +196,20 @@ class InteractionCoordinator::Impl final {
                                                             JsonValue);
     [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
                                                            const LedgerEntry &);
+    void stage_memory(const InputEnvelope &, const PrincipalTaskEntry &);
+    void activate_memory(TaskId);
+    void settle_memory(TaskId);
+    void revoke_memory(TaskId);
+    struct MemoryWork final {
+        MemoryWorkBinding binding;
+        std::uint64_t revision = 0;
+        MemoryLifecycleStatus status;
+    };
+    std::shared_ptr<MemoryAgentService> memory;
+    std::unordered_map<TaskId, MemoryWork, StrongIdHash<TaskId>> memory_works;
+    // Probes may outlive the coordinator; close invalidates before Runtime
+    // teardown. The owner keeps Runtime alive until service.close completes.
+    std::shared_ptr<std::atomic<bool>> memory_alive = std::make_shared<std::atomic<bool>>(true);
 
     CoordinatorConfig config;
     MiraRuntime &runtime;

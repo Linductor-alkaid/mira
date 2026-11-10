@@ -4,6 +4,8 @@
 > 日期：2026-11-09
 > 负责人：Mira Maintainers
 > 冻结里程碑：M36
+> 2026-11-10 [DEC-108](DEC-108-native-role-memory-recall.md) 修订第 1 条：召回候选可携带原生
+> User/Assistant 说话人角色（永不 System/Developer），事实召回合并为带框块。
 > 替代/被替代：补充 DEC-032/068/099，不替换既有记忆写入契约
 
 ## 背景与问题

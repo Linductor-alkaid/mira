@@ -14,7 +14,12 @@ using interaction_support::kMaxConstraintBytes;
 } // namespace
 
 Result<CommandHandle> InteractionCoordinator::cancel_work(TaskId task_id) {
-    return impl_->runtime.cancel_task(task_id);
+    auto cancelled = impl_->runtime.cancel_task(task_id);
+    if (cancelled) {
+        std::lock_guard submit_lock(impl_->submit_mutex);
+        impl_->revoke_memory(task_id);
+    }
+    return cancelled;
 }
 
 Result<void>
@@ -91,6 +96,7 @@ InteractionCoordinator::Impl::flush_pending(TaskId task,
         queue.erase(queue.begin());
     }
     pending.erase(waiting);
+    activate_memory(task);
     return Result<void>{};
 }
 
@@ -202,6 +208,8 @@ Result<InputDisposition> InteractionCoordinator::record_settlement(std::string_v
     disposition.stage = entry.stage;
     disposition.session_id = entry.session_id;
     disposition.task_id = entry.task_id;
+    if (entry.task_id && current.value().stage != InputStage::TaskSettled)
+        impl_->settle_memory(*entry.task_id);
     return disposition;
 }
 
@@ -251,7 +259,12 @@ void InteractionCoordinator::shutdown() { (void)close(); }
 
 Result<void> InteractionCoordinator::close() {
     impl_->stopping.store(true, std::memory_order_release);
+    impl_->memory_alive->store(false, std::memory_order_release);
     std::lock_guard submit_lock(impl_->submit_mutex);
+    for (const auto &[task, work] : impl_->memory_works) {
+        (void)work;
+        impl_->revoke_memory(task);
+    }
     impl_->sinks.clear();
     impl_->pending.clear();
     impl_->clarification_inputs.clear();

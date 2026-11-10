@@ -181,6 +181,16 @@ int segmentation_is_deterministic_and_bounded() {
     MIRA_CHECK(first.value().front().through_sequence == 7);
     MIRA_CHECK(first.value().back().through_sequence == 30);
     MIRA_CHECK(!first.value().front().asset_id.is_nil());
+    // DEC-108: every window entry mirrors its source line and speaker kind.
+    for (const auto &segment : first.value()) {
+        MIRA_CHECK(segment.entries.size() == segment.entry_count);
+        for (const auto &window_entry : segment.entries) {
+            MIRA_CHECK(window_entry.kind == ConversationEntry::Kind::UserMessage);
+            MIRA_CHECK(window_entry.text == "user: message body number " +
+                                                std::to_string(window_entry.session_sequence));
+            MIRA_CHECK(window_entry.origin == event_from_seed(window_entry.session_sequence));
+        }
+    }
 
     // Re-segmenting the identical log yields identical asset ids (idempotent
     // rebuilds, RULE-07).
@@ -194,6 +204,21 @@ int segmentation_is_deterministic_and_bounded() {
     MIRA_CHECK(truncated.value().size() == 1);
     MIRA_CHECK(truncated.value()[0].text.size() <= options.max_segment_bytes + 16);
     MIRA_CHECK(truncated.value()[0].text.find("[truncated]") != std::string::npos);
+    // The truncated singleton window keeps the aligned entry with its kind
+    // (DEC-108), including for non-user speakers.
+    MIRA_CHECK(truncated.value()[0].entries.size() == 1);
+    MIRA_CHECK(truncated.value()[0].entries[0].kind == ConversationEntry::Kind::UserMessage);
+    MIRA_CHECK(truncated.value()[0].entries[0].text == truncated.value()[0].text);
+    const ConversationEntry oversized_speech =
+        entry(32, std::string(8'000, 'y'), ConversationEntry::Kind::AssistantSpeech);
+    const auto truncated_speech =
+        segment_conversation(session, std::vector<ConversationEntry>{oversized_speech}, options);
+    MIRA_CHECK(truncated_speech.has_value() && truncated_speech.value().size() == 1);
+    MIRA_CHECK(truncated_speech.value()[0].entries.size() == 1);
+    MIRA_CHECK(truncated_speech.value()[0].entries[0].kind ==
+               ConversationEntry::Kind::AssistantSpeech);
+    MIRA_CHECK(truncated_speech.value()[0].entries[0].session_sequence == 32);
+    MIRA_CHECK(truncated_speech.value()[0].entries[0].origin == oversized_speech.origin);
 
     // Invalid options fail closed; nil session is rejected.
     ConversationSegmentationOptions bad;
@@ -683,7 +708,12 @@ int candidates_admit_through_layer_zero() {
     MIRA_CHECK(result.value().candidates.size() == 1);
 
     const ContextCandidate &candidate = result.value().candidates[0];
-    const ContextItem item = context_item_from_candidate(candidate);
+    // A statement-surface candidate (no turns) converts to exactly one
+    // user-role wire item without a wire role (DEC-108).
+    const auto items = context_items_from_candidate(candidate);
+    MIRA_CHECK(items.size() == 1);
+    const ContextItem &item = items.front();
+    MIRA_CHECK(!item.wire_role.has_value());
     MIRA_CHECK(item.kind == ContextItemKind::RetrievedMemory);
     MIRA_CHECK(item.authority == ContextAuthority::RetrievedMemory);
     MIRA_CHECK(item.provenance == candidate.source_events);
@@ -793,6 +823,276 @@ int supervisor_routes_and_closes_retrieval() {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// DEC-108: replay expansion of speaker-tagged turns into native role items
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] ConversationSegmentEntry turn(std::uint64_t sequence, std::string text,
+                                            ConversationEntry::Kind kind) {
+    ConversationSegmentEntry turn_entry;
+    turn_entry.text = std::move(text);
+    turn_entry.origin = event_from_seed(sequence);
+    turn_entry.session_sequence = sequence;
+    turn_entry.kind = kind;
+    return turn_entry;
+}
+
+int replay_expands_turns_into_native_role_items() {
+    ContextCandidate candidate;
+    candidate.asset_id = context_asset_id_from_seed("replay-candidate");
+    candidate.kind = ContextAssetKind::ConversationSegment;
+    candidate.session = session_from_seed(20);
+    candidate.source_events = {event_from_seed(1), event_from_seed(2), event_from_seed(3),
+                               event_from_seed(4), event_from_seed(5)};
+    candidate.through_event_sequence = 5;
+    // U,U,A,U,L — contiguous same-speaker turns merge; the loop outcome joins
+    // the adjacent user-role run with its "loop: " line retained (DEC-108).
+    candidate.turns = {
+        turn(1, "user: alpha", ConversationEntry::Kind::UserMessage),
+        turn(2, "user: beta", ConversationEntry::Kind::UserMessage),
+        turn(3, "assistant: gamma", ConversationEntry::Kind::AssistantSpeech),
+        turn(4, "user: delta", ConversationEntry::Kind::UserMessage),
+        turn(5, "loop: loop settled: Completed (steps 3)", ConversationEntry::Kind::LoopOutcome),
+    };
+
+    const auto items = context_items_from_candidate(candidate);
+    MIRA_CHECK(items.size() == 3);
+
+    // Run 0: two user lines merge into one User item, prefixes stripped.
+    MIRA_CHECK(items[0].kind == ContextItemKind::RetrievedMemory);
+    MIRA_CHECK(items[0].authority == ContextAuthority::RetrievedMemory);
+    MIRA_CHECK(items[0].wire_role == ModelRole::User);
+    MIRA_CHECK(std::get<TextPart>(items[0].content.front()).text == "alpha\nbeta");
+    MIRA_CHECK(items[0].sequence == 2);
+    MIRA_CHECK(
+        (items[0].provenance == std::vector<EventId>{event_from_seed(1), event_from_seed(2)}));
+    MIRA_CHECK(items[0].consumed);
+    MIRA_CHECK(items[0].validate().has_value());
+
+    // Run 1: the assistant turn keeps its own native Assistant role.
+    MIRA_CHECK(items[1].kind == ContextItemKind::RetrievedMemory);
+    MIRA_CHECK(items[1].authority == ContextAuthority::RetrievedMemory);
+    MIRA_CHECK(items[1].wire_role == ModelRole::Assistant);
+    MIRA_CHECK(std::get<TextPart>(items[1].content.front()).text == "gamma");
+    MIRA_CHECK(items[1].sequence == 3);
+    MIRA_CHECK(items[1].provenance == std::vector<EventId>{event_from_seed(3)});
+    MIRA_CHECK(items[1].validate().has_value());
+
+    // Run 2: the trailing user turn merges the loop outcome; the loop line
+    // keeps its "loop: " prefix inside the user-role message.
+    MIRA_CHECK(items[2].wire_role == ModelRole::User);
+    MIRA_CHECK(std::get<TextPart>(items[2].content.front()).text ==
+               "delta\nloop: loop settled: Completed (steps 3)");
+    MIRA_CHECK(items[2].sequence == 5);
+    MIRA_CHECK(
+        (items[2].provenance == std::vector<EventId>{event_from_seed(4), event_from_seed(5)}));
+    MIRA_CHECK(items[2].validate().has_value());
+
+    // Item ids derive deterministically from asset id + run index + run
+    // watermark; repeated conversion of the same input agrees bit for bit,
+    // and no run reuses the asset id itself.
+    const auto expected_first =
+        ContextItemId{context_asset_id_from_seed("mira.conversation.replay|" +
+                                                 candidate.asset_id.to_string() + "|0|2")
+                          .value};
+    MIRA_CHECK(items[0].id == expected_first);
+    const auto again = context_items_from_candidate(candidate);
+    MIRA_CHECK(again.size() == items.size());
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        MIRA_CHECK(again[index].id == items[index].id);
+        MIRA_CHECK(again[index].provenance == items[index].provenance);
+        MIRA_CHECK(again[index].sequence == items[index].sequence);
+        MIRA_CHECK(items[index].id.to_string() != candidate.asset_id.to_string());
+    }
+
+    // Legacy shape: a segment-kind candidate without recorded turns still
+    // converts to exactly one user-role item with no wire role.
+    ContextCandidate legacy = candidate;
+    legacy.turns.clear();
+    const auto single = context_items_from_candidate(legacy);
+    MIRA_CHECK(single.size() == 1);
+    MIRA_CHECK(!single.front().wire_role.has_value());
+    MIRA_CHECK(single.front().id.to_string() == candidate.asset_id.to_string());
+    MIRA_CHECK(single.front().sequence == candidate.through_event_sequence);
+    MIRA_CHECK(single.front().provenance == candidate.source_events);
+    MIRA_CHECK(single.front().validate().has_value());
+    return 0;
+}
+
+int candidate_turns_json_round_trips_and_unknown_kinds_fail_closed() {
+    ContextCandidate candidate;
+    candidate.asset_id = context_asset_id_from_seed("turns-round-trip");
+    candidate.kind = ContextAssetKind::ConversationSegment;
+    candidate.text = "user: alpha\nassistant: beta\nloop: loop settled: Cancelled";
+    candidate.session = session_from_seed(21);
+    candidate.turns = {
+        turn(1, "user: alpha", ConversationEntry::Kind::UserMessage),
+        turn(2, "assistant: beta", ConversationEntry::Kind::AssistantSpeech),
+        turn(3, "loop: loop settled: Cancelled", ConversationEntry::Kind::LoopOutcome),
+    };
+    candidate.source_events = {event_from_seed(1), event_from_seed(2), event_from_seed(3)};
+    candidate.through_event_sequence = 3;
+
+    const JsonValue json = context_candidate_to_json(candidate);
+    const auto *turns_value = json.find("turns");
+    MIRA_CHECK(turns_value != nullptr && turns_value->is_array());
+    MIRA_CHECK(turns_value->as_array()->size() == candidate.turns.size());
+    MIRA_CHECK(turns_value->as_array()->front().find("kind") != nullptr);
+    const auto parsed = context_candidate_from_json(json);
+    MIRA_CHECK(parsed.has_value());
+    MIRA_CHECK(parsed.value().asset_id == candidate.asset_id);
+    MIRA_CHECK(parsed.value().kind == candidate.kind);
+    MIRA_CHECK(parsed.value().turns == candidate.turns);
+    MIRA_CHECK(parsed.value().source_events == candidate.source_events);
+    MIRA_CHECK(parsed.value().through_event_sequence == candidate.through_event_sequence);
+
+    // An unknown turn kind fails closed with InvalidItem (DEC-108).
+    JsonValue corrupted = json;
+    JsonValue::Array poisoned = *turns_value->as_array();
+    MIRA_CHECK(!poisoned.empty());
+    poisoned.front().set("kind", JsonValue{std::string{"Narrator"}});
+    corrupted.set("turns", JsonValue{std::move(poisoned)});
+    const auto rejected = context_candidate_from_json(corrupted);
+    MIRA_CHECK(!rejected.has_value());
+    MIRA_CHECK(rejected.error().domain_code ==
+               static_cast<std::int32_t>(ContextDomainCode::InvalidItem));
+
+    // A turn that is not an object is rejected the same way.
+    JsonValue shapeless = json;
+    shapeless.set("turns", JsonValue{JsonValue::Array{JsonValue{std::string{"user: alpha"}}}});
+    MIRA_CHECK(!context_candidate_from_json(shapeless).has_value());
+
+    // Statement-surface candidates carry no turns member and round-trip empty.
+    ContextCandidate statement = candidate;
+    statement.kind = ContextAssetKind::RecoveryLesson;
+    statement.turns.clear();
+    const auto bare = context_candidate_from_json(context_candidate_to_json(statement));
+    MIRA_CHECK(bare.has_value() && bare.value().turns.empty());
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// DEC-108: index carries segment entries; misplaced or mutated entries fail
+// ---------------------------------------------------------------------------
+
+int segment_entries_round_trip_through_the_index() {
+    const SessionId session = session_from_seed(18);
+    InMemoryContextIndex index;
+    // Derive the asset from a real segmentation so text, provenance and
+    // entries stay aligned by construction.
+    const std::vector<ConversationEntry> entries = {
+        entry(1, "where is the atlas backup"),
+        entry(2, "atlas-2, verified this morning", ConversationEntry::Kind::AssistantSpeech),
+        entry(3, "loop settled: Completed", ConversationEntry::Kind::LoopOutcome),
+    };
+    const auto segments = segment_conversation(session, entries, {});
+    MIRA_CHECK(segments.has_value() && segments.value().size() == 1);
+    ContextIndexAsset asset;
+    asset.id = segments.value()[0].asset_id;
+    asset.kind = ContextAssetKind::ConversationSegment;
+    asset.text = segments.value()[0].text;
+    asset.session = session;
+    asset.source_events = segments.value()[0].source_events;
+    asset.entries = segments.value()[0].entries;
+    asset.through_event_sequence = segments.value()[0].through_sequence;
+    MIRA_CHECK(asset.validate(ContextIndexPolicy{}).has_value());
+    MIRA_CHECK(index.upsert_asset(asset).has_value());
+    // The stored asset keeps the speaker-tagged entries verbatim.
+    const auto stored = index.asset(asset.id);
+    MIRA_CHECK(stored.has_value() && stored.value().entries == asset.entries);
+
+    ContextQuery query;
+    query.session = session;
+    query.text = "atlas backup";
+    const auto result = index.retrieve(query, RetrievalBudget{});
+    MIRA_CHECK(result.has_value() && result.value().candidates.size() == 1);
+    const auto &candidate = result.value().candidates[0];
+    // retrieve() copies the segment entries into the candidate turns.
+    MIRA_CHECK(candidate.turns == asset.entries);
+    MIRA_CHECK(candidate.turns.size() == 3);
+    MIRA_CHECK(candidate.turns[0].kind == ConversationEntry::Kind::UserMessage);
+    MIRA_CHECK(candidate.turns[1].kind == ConversationEntry::Kind::AssistantSpeech);
+    MIRA_CHECK(candidate.turns[2].kind == ConversationEntry::Kind::LoopOutcome);
+
+    // The retrieved candidate replays into three native-role items: user,
+    // assistant, and a user-role item holding only the loop line.
+    const auto items = context_items_from_candidate(candidate);
+    MIRA_CHECK(items.size() == 3);
+    MIRA_CHECK(items[0].wire_role == ModelRole::User);
+    MIRA_CHECK(std::get<TextPart>(items[0].content.front()).text == "where is the atlas backup");
+    MIRA_CHECK(items[1].wire_role == ModelRole::Assistant);
+    MIRA_CHECK(std::get<TextPart>(items[1].content.front()).text ==
+               "atlas-2, verified this morning");
+    MIRA_CHECK(items[2].wire_role == ModelRole::User);
+    MIRA_CHECK(std::get<TextPart>(items[2].content.front()).text ==
+               "loop: loop settled: Completed");
+    for (const auto &item : items) {
+        MIRA_CHECK(item.validate().has_value());
+    }
+    return 0;
+}
+
+int index_rejects_misplaced_oversized_or_mutated_entries() {
+    const SessionId session = session_from_seed(19);
+    InMemoryContextIndex index;
+
+    // Statement-surface assets never carry window entries.
+    const auto episode = context_asset_id_from_seed("episode|entries");
+    ContextIndexAsset learning =
+        learning_asset(episode, ContextAssetKind::WorkflowEpisode, R"({"run_id":"run-1"})", 1);
+    learning.entries.push_back(
+        turn(1, "user: strayed into a learning asset", ConversationEntry::Kind::UserMessage));
+    const auto refused = index.upsert_asset(learning);
+    MIRA_CHECK(!refused.has_value());
+    MIRA_CHECK(refused.error().domain_code ==
+               static_cast<std::int32_t>(ContextDomainCode::InvalidItem));
+    MIRA_CHECK(index.size() == 0);
+
+    // The entry ceiling is policy-bounded: an asset with more entries than
+    // max_asset_entries fails closed, and a zero ceiling invalidates the
+    // policy itself.
+    ContextIndexPolicy tight;
+    tight.max_asset_entries = 2;
+    MIRA_CHECK(tight.validate().has_value());
+    InMemoryContextIndex tight_index(tight);
+    const auto id = context_asset_id_from_seed("segment|too-many-entries");
+    ContextIndexAsset overgrown = conversation_asset(id, session, "user: a\nuser: b\nuser: c", 3);
+    for (std::uint64_t sequence = 1; sequence <= 3; ++sequence) {
+        overgrown.entries.push_back(turn(sequence, "user: body " + std::to_string(sequence),
+                                         ConversationEntry::Kind::UserMessage));
+    }
+    const auto over = tight_index.upsert_asset(overgrown);
+    MIRA_CHECK(!over.has_value());
+    MIRA_CHECK(over.error().domain_code ==
+               static_cast<std::int32_t>(ContextDomainCode::InvalidItem));
+    MIRA_CHECK(tight_index.size() == 0);
+    ContextIndexPolicy zero;
+    zero.max_asset_entries = 0;
+    MIRA_CHECK(!zero.validate().has_value());
+
+    // Same watermark: identical entries re-register idempotently, any entry
+    // change (including only the speaker kind) fails closed; a newer
+    // watermark with unchanged entries is accepted.
+    InMemoryContextIndex plain;
+    ContextIndexAsset registered = conversation_asset(id, session, "user: a\nuser: b", 9);
+    registered.entries = {
+        turn(1, "user: a", ConversationEntry::Kind::UserMessage),
+        turn(2, "user: b", ConversationEntry::Kind::UserMessage),
+    };
+    MIRA_CHECK(plain.upsert_asset(registered).has_value());
+    MIRA_CHECK(plain.upsert_asset(registered).has_value());
+    ContextIndexAsset mutated = registered;
+    mutated.entries[1].kind = ConversationEntry::Kind::AssistantSpeech;
+    const auto changed = plain.upsert_asset(mutated);
+    MIRA_CHECK(!changed.has_value());
+    MIRA_CHECK(changed.error().domain_code ==
+               static_cast<std::int32_t>(ContextDomainCode::InvalidItem));
+    ContextIndexAsset advanced = registered;
+    advanced.through_event_sequence = 10;
+    MIRA_CHECK(plain.upsert_asset(advanced).has_value());
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -836,6 +1136,19 @@ int main() {
         return failures;
     }
     if (int failures = supervisor_routes_and_closes_retrieval(); failures != 0) {
+        return failures;
+    }
+    if (int failures = replay_expands_turns_into_native_role_items(); failures != 0) {
+        return failures;
+    }
+    if (int failures = candidate_turns_json_round_trips_and_unknown_kinds_fail_closed();
+        failures != 0) {
+        return failures;
+    }
+    if (int failures = segment_entries_round_trip_through_the_index(); failures != 0) {
+        return failures;
+    }
+    if (int failures = index_rejects_misplaced_oversized_or_mutated_entries(); failures != 0) {
         return failures;
     }
     std::cout << "m17 context retrieval: OK\n";

@@ -1,12 +1,20 @@
 # Mira 实施总计划
 
+[M30](m30-long-term-memory-integration.md) 已开始首批生命周期增量，依据
+[DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)接通主体 scope、输入队列
+接纳后的 Recall、结算后的既有管线 Record 与有界回执。M29 前置已满足；承诺实体、
+完整纠正/审批/删除、价值信号和删除后的新世代接纳继续按未完成项推进。
+Linux Debug 176/176、ASAN+UBSAN 与 TSan 定向各 23/23、严格 clang-tidy 8 单元及
+质量门禁通过；本增量的远端 CI/平台仍待补跑，完整 M30 保持 In Progress。
+
 [M29](m29-interaction-coordinator-concurrency-and-recovery.md) 已补齐本地澄清/恢复接线：
 [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md) 冻结 Sensitive 正文/工作投影、
 唯一澄清认领、历史映射、只读回补与 Observe/Verify 许可；reducer 前缀守卫防止旧验证
 清除迟到的未决动作，checkpoint 仍作为 Layer 0 的 P3 候选。同步主干 #123 后，
 Linux Debug 全量 172/172、ASAN+UBSAN 和 TSan 定向各 20/20 通过；恢复增量
 13 单元及合流后的 ConversationLoop 严格 clang-tidy、相关质量门禁通过。
-CI/平台补跑条件见里程碑记录；M29 保持 In Progress，未自动关闭 M30–M33 前置。
+2026-11-10：PR #124 CI 24 项通过，合并为 `a2c33a2`，M29 按机制与 CI 范围关闭。
+真实模型/设备等补跑条件仍见里程碑记录；M30–M33 不自动完成。
 
 [M36：受管记忆代理与完整请求准入](m36-memory-agent-context-integration.md)（Completed，Linux 离线范围），
 按 [DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)承接研究后的开发：
@@ -452,10 +460,10 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M26](m26-temporal-policy-stage-t1.md) | Temporal Policy Stage T1——条件策略契约与确定性 Runtime 最小闭环（[DEC-037](../decisions/DEC-037-temporal-policy.md)：`TemporalHistory`/`TrackedEntity`/T1 子集版本化事件族/`ReactiveRule` schema v1 契约 + `IPolicyRuntime`/`ReactivePolicyRuntime` 最小闭环——冻结确定性数据集上「重复事件 → 候选规则 → 晋升后无需 Agent 正确执行」；无平台、无感知、无模型依赖，指标全部为管线行为指标） | DEC-037 冻结（已满足）；T1 纯 Core 确定性阶段常规授权（总计划 §4.1 第 7 条与 DEC-037 决策第 7 条，已满足）；M26 §4 冻结 | Stage T2/T3 真机感知与 T6 连续控制的契约与方法学锚点（非发布物） | Completed |
 | [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物）；已交付（[PR #71](https://github.com/Linductor-alkaid/mira/pull/71) CI 全绿） | Completed |
 | [M28](m28-interaction-coordinator-first-stage.md) | 交互协调层首阶段——主体级输入接纳与最小路由闭环（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)/[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)：主体级 `InputEnvelope` 入口与四阶段 `InputStage`、耐久幂等台账 `IInputLedger`（宿主 `input_id` 去重 + 窗口外明确过期）、确定性路由裁决八意图闭集（含「指代不清 → 自然语言澄清」）、结果关联与迟到结果处置、`IUserInputSink` 输入缝与 `ConversationLoop` 对称入队通道、按工作组织的上下文归属；无模型、无平台） | DEC-068 冻结（已满足）；M25 供给缝接线形态（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M28 §4 冻结 | M29/M30/M31 的接线前提（非发布物） | Completed |
-| [M29](m29-interaction-coordinator-concurrency-and-recovery.md) | 交互协调层第二阶段——执行中插话、切换/恢复、并发归属、持久化与断线回补（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §5/§8；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5） | M28 关闭（**已满足**——2026-10-29 随 PR #113 合并） | M30 长期记忆接入的接线前提（非发布物） | In Progress |
-| [M30](m30-long-term-memory-integration.md) | 长期记忆接入——提取、检索、纠正、删除与可选回忆反馈（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §6 / [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §3；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**未满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | Planned |
+| [M29](m29-interaction-coordinator-concurrency-and-recovery.md) | 交互协调层第二阶段——执行中插话、切换/恢复、并发归属、持久化与断线回补（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §5/§8；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5） | M28 关闭（**已满足**——2026-10-29 随 PR #113 合并） | M30 长期记忆接入的接线前提（非发布物） | Completed |
+| [M30](m30-long-term-memory-integration.md) | 长期记忆接入——提取、检索、纠正、删除与可选回忆反馈（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §6 / [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §3；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**已满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | In Progress |
 | [M31](m31-capacity-admission-and-archival-recovery.md) | 容量准入、自动归档与可恢复清理（[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：分层容量预算与主体份额、四层遗忘与冻结淘汰序、保护集合、会话退出生命周期与归档资格、跨存储可证明回收、周期清扫宿主、部署档位数值冻结；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6） | M28、M30 关闭（**未满足**）；DEC-069 数值档位冻结；[`EXE-20261028-001`](../executor_feedback/ledger.md) 临时边界确定 | 部署档位与有限容量契约的冻结锚点（非发布物） | Planned |
-| [M32](m32-attention-focus-and-safe-switch.md) | 注意力焦点与安全切换协议（[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)：`TaskOrigin`×`TaskPriority` 优先级正交化、纯函数只读的 `Interruptibility` 判定、`Prepare→Suspend→Release→Commit→Resume` 五阶段协议与失败回滚、焦点只读投影与变更事件、租约-焦点对照视图、`TaskCheckpoint` 追加 `held_resources`/`in_progress_step`、崩溃可识别；来源为 Mirage 路线图 §4.3/§4.9，**未**进入 #111；无模型、无平台） | DEC-071 冻结（已满足）；M28/M29 关闭（**未满足**）；M32 §4 冻结 | M33 自主行为通道的接线前提（非发布物） | Planned |
+| [M32](m32-attention-focus-and-safe-switch.md) | 注意力焦点与安全切换协议（[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)：`TaskOrigin`×`TaskPriority` 优先级正交化、纯函数只读的 `Interruptibility` 判定、`Prepare→Suspend→Release→Commit→Resume` 五阶段协议与失败回滚、焦点只读投影与变更事件、租约-焦点对照视图、`TaskCheckpoint` 追加 `held_resources`/`in_progress_step`、崩溃可识别；来源为 Mirage 路线图 §4.3/§4.9，**未**进入 #111；无模型、无平台） | DEC-071 冻结（已满足）；M28/M29 关闭（**已满足**）；M32 §4 冻结 | M33 自主行为通道的接线前提（非发布物） | Planned |
 | [M33](m33-autonomy-and-interruption-budget.md) | 主动行为通道与打断预算（[DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)：独立第二输入源 `AutonomousIntent`、权限三分类、九道确定性打断预算闸门（类别/全局开关、权限、最小间隔、合并窗口、每类别频率上限、配额、静默期、冷却）、Core 强制的用户否决禁用状态、跨重启预算账本与显式日界时区、不依赖模型请求的主动输出面、崩溃后自主任务不自动恢复；来源为 Mirage 路线图 §4.6，**未**进入 #111；无模型、无平台） | DEC-072 冻结（已满足）；M32/M30 关闭（**未满足**）；M33 §4 冻结 | 部署档位与主动交互契约的冻结锚点（非发布物） | Planned |
 
 ### 4.1 当前状态复核与后续入口（2026-09-09）

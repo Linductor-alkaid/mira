@@ -89,6 +89,9 @@ Result<void> ContextIndexPolicy::validate() const {
         return retrieval_error(ContextDomainCode::InvalidItem,
                                "embedding dimension bound out of range");
     }
+    if (max_asset_entries == 0 || max_asset_entries > 1'024) {
+        return retrieval_error(ContextDomainCode::InvalidItem, "asset entry bound out of range");
+    }
     for (const auto &marker : forbidden_markers) {
         if (marker.empty()) {
             return retrieval_error(ContextDomainCode::InvalidItem,
@@ -123,6 +126,17 @@ Result<void> ContextIndexAsset::validate(const ContextIndexPolicy &policy) const
     } else if (!scope_owned || session_owned) {
         return retrieval_error(ContextDomainCode::InvalidItem,
                                "learning assets own a scope and no session");
+    }
+    // Speaker-tagged lines exist only for conversation segments and never
+    // widen the sanitized surface: their joined bytes stay inside the same
+    // text bound that governs `text` itself.
+    if (kind != ContextAssetKind::ConversationSegment && !entries.empty()) {
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "statement-surface assets carry no window entries");
+    }
+    if (entries.size() > policy.max_asset_entries) {
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "asset entries exceed the policy bound");
     }
     if (carries_marker(text, policy.forbidden_markers)) {
         return retrieval_error(ContextDomainCode::ForbiddenContent,
@@ -230,7 +244,8 @@ class InMemoryContextIndex::Impl final {
                                        "asset watermark must not move backwards");
             }
             if (existing->asset.through_event_sequence == asset.through_event_sequence &&
-                (existing->asset.text != asset.text || existing->asset.kind != asset.kind)) {
+                (existing->asset.text != asset.text || existing->asset.kind != asset.kind ||
+                 existing->asset.entries != asset.entries)) {
                 return retrieval_error(ContextDomainCode::InvalidItem,
                                        "asset content changed without advancing the watermark");
             }
@@ -531,6 +546,9 @@ class InMemoryContextIndex::Impl final {
             item.asset_id = candidate.entry->asset.id;
             item.kind = candidate.entry->asset.kind;
             item.text = text;
+            if (candidate.entry->asset.kind == ContextAssetKind::ConversationSegment) {
+                item.turns = candidate.entry->asset.entries;
+            }
             item.session = candidate.entry->asset.session;
             item.scope = candidate.entry->asset.scope;
             item.source_events = candidate.entry->asset.source_events;
@@ -694,8 +712,8 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
             segment.entry_count = 1;
             segment.text = truncated_line;
             segment.source_events = {entry.origin};
-            segment.entries = {
-                ConversationSegmentEntry{truncated_line, entry.origin, entry.session_sequence}};
+            segment.entries = {ConversationSegmentEntry{truncated_line, entry.origin,
+                                                        entry.session_sequence, entry.kind}};
             segment.through_sequence = entry.session_sequence;
             segment.asset_id =
                 context_asset_id_from_seed("mira.conversation.segment|" + session.to_string() +
@@ -713,7 +731,7 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         text += line;
         source_events.push_back(entry.origin);
         window_entries.push_back(
-            ConversationSegmentEntry{line, entry.origin, entry.session_sequence});
+            ConversationSegmentEntry{line, entry.origin, entry.session_sequence, entry.kind});
         through = std::max(through, entry.session_sequence);
         ++consumed;
         if (consumed >= options.window_entries) {
@@ -728,27 +746,177 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
 // Layer 0 admission path
 // ---------------------------------------------------------------------------
 
-ContextItem context_item_from_candidate(const ContextCandidate &candidate) {
-    ContextItem item;
-    if (const auto parsed = ContextItemId::parse(candidate.asset_id.to_string()); parsed) {
-        item.id = *parsed;
+namespace {
+
+// Deterministic line prefixes produced by `entry_line`. Replay conversion
+// strips the speaker prefix from user/assistant lines because the native wire
+// role now carries that distinction (DEC-1xx); loop-outcome lines keep their
+// prefix inside the merged user-role run so they stay distinguishable from
+// genuine user speech.
+constexpr std::string_view kUserLinePrefix = "user: ";
+constexpr std::string_view kAssistantLinePrefix = "assistant: ";
+
+[[nodiscard]] ModelRole replay_role(ConversationEntry::Kind kind) noexcept {
+    return kind == ConversationEntry::Kind::AssistantSpeech ? ModelRole::Assistant
+                                                            : ModelRole::User;
+}
+
+[[nodiscard]] std::string_view replay_line(ConversationEntry::Kind kind,
+                                           const std::string &line) noexcept {
+    if (kind == ConversationEntry::Kind::UserMessage && line.starts_with(kUserLinePrefix)) {
+        return std::string_view{line}.substr(kUserLinePrefix.size());
     }
-    item.kind = ContextItemKind::RetrievedMemory;
-    item.authority = ContextAuthority::RetrievedMemory;
-    item.priority = ContextPriority::Normal;
-    TextPart part;
-    part.text = candidate.text;
-    part.sensitivity = Sensitivity::Internal;
-    item.content.push_back(std::move(part));
-    item.provenance = candidate.source_events;
-    item.sequence = candidate.through_event_sequence;
-    item.consumed = true;
-    return item;
+    if (kind == ConversationEntry::Kind::AssistantSpeech &&
+        line.starts_with(kAssistantLinePrefix)) {
+        return std::string_view{line}.substr(kAssistantLinePrefix.size());
+    }
+    return line; // loop outcomes keep their "loop: " prefix
+}
+
+// One run of contiguous same-speaker turns; a run becomes exactly one native
+// user/assistant message on the wire.
+struct ReplayRun final {
+    ModelRole role = ModelRole::User;
+    std::vector<std::string> lines;
+    std::vector<EventId> events;
+    SessionSequence through = 0;
+};
+
+} // namespace
+
+std::vector<ContextItem> context_items_from_candidate(const ContextCandidate &candidate) {
+    // Statement-surface candidates (and legacy segments without recorded
+    // kinds) keep the single user-role block conversion.
+    if (candidate.kind != ContextAssetKind::ConversationSegment || candidate.turns.empty()) {
+        ContextItem item;
+        if (const auto parsed = ContextItemId::parse(candidate.asset_id.to_string()); parsed) {
+            item.id = *parsed;
+        }
+        item.kind = ContextItemKind::RetrievedMemory;
+        item.authority = ContextAuthority::RetrievedMemory;
+        item.priority = ContextPriority::Normal;
+        TextPart part;
+        part.text = candidate.text;
+        part.sensitivity = Sensitivity::Internal;
+        item.content.push_back(std::move(part));
+        item.provenance = candidate.source_events;
+        item.sequence = candidate.through_event_sequence;
+        item.consumed = true;
+        return {std::move(item)};
+    }
+
+    std::vector<ReplayRun> runs;
+    for (const auto &turn : candidate.turns) {
+        const auto role = replay_role(turn.kind);
+        if (runs.empty() || runs.back().role != role) {
+            runs.push_back(ReplayRun{role, {}, {}, 0});
+        }
+        runs.back().lines.emplace_back(replay_line(turn.kind, turn.text));
+        runs.back().events.push_back(turn.origin);
+        runs.back().through = std::max(runs.back().through, turn.session_sequence);
+    }
+
+    std::vector<ContextItem> items;
+    items.reserve(runs.size());
+    for (std::size_t index = 0; index < runs.size(); ++index) {
+        const auto &run = runs[index];
+        ContextItem item;
+        item.id = ContextItemId{context_asset_id_from_seed(
+                                    "mira.conversation.replay|" + candidate.asset_id.to_string() +
+                                    "|" + std::to_string(index) + "|" + std::to_string(run.through))
+                                    .value};
+        item.kind = ContextItemKind::RetrievedMemory;
+        item.authority = ContextAuthority::RetrievedMemory;
+        item.priority = ContextPriority::Normal;
+        item.wire_role = run.role;
+        TextPart part;
+        for (std::size_t line = 0; line < run.lines.size(); ++line) {
+            if (line > 0) {
+                part.text += '\n';
+            }
+            part.text += run.lines[line];
+        }
+        part.sensitivity = Sensitivity::Internal;
+        item.content.push_back(std::move(part));
+        item.provenance = run.events;
+        item.sequence = run.through;
+        item.consumed = true;
+        items.push_back(std::move(item));
+    }
+    return items;
 }
 
 // ---------------------------------------------------------------------------
 // JSON serialization (schema "mira.context.candidate.v1")
 // ---------------------------------------------------------------------------
+
+[[nodiscard]] std::string_view conversation_kind_name(ConversationEntry::Kind kind) noexcept {
+    switch (kind) {
+    case ConversationEntry::Kind::UserMessage:
+        return "UserMessage";
+    case ConversationEntry::Kind::AssistantSpeech:
+        return "AssistantSpeech";
+    case ConversationEntry::Kind::LoopOutcome:
+        return "LoopOutcome";
+    }
+    return "UserMessage";
+}
+
+[[nodiscard]] std::optional<ConversationEntry::Kind>
+conversation_kind_from(std::string_view name) noexcept {
+    if (name == "UserMessage") {
+        return ConversationEntry::Kind::UserMessage;
+    }
+    if (name == "AssistantSpeech") {
+        return ConversationEntry::Kind::AssistantSpeech;
+    }
+    if (name == "LoopOutcome") {
+        return ConversationEntry::Kind::LoopOutcome;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] JsonValue conversation_turn_to_json(const ConversationSegmentEntry &turn) {
+    return JsonValue{
+        JsonValue::Object{{"text", turn.text},
+                          {"origin", turn.origin.to_string()},
+                          {"session_sequence", static_cast<std::int64_t>(turn.session_sequence)},
+                          {"kind", std::string(conversation_kind_name(turn.kind))}}};
+}
+
+[[nodiscard]] Result<ConversationSegmentEntry> conversation_turn_from_json(const JsonValue &json) {
+    if (!json.is_object()) {
+        return retrieval_error(ContextDomainCode::InvalidItem, "candidate turn must be an object");
+    }
+    ConversationSegmentEntry turn;
+    const auto *text = json.find("text");
+    if (text == nullptr || !text->is_string()) {
+        return retrieval_error(ContextDomainCode::InvalidItem, "candidate turn requires text");
+    }
+    turn.text = *text->as_string();
+    const auto *origin = json.find("origin");
+    if (origin != nullptr && origin->is_string()) {
+        const auto parsed = EventId::parse(*origin->as_string());
+        if (!parsed) {
+            return retrieval_error(ContextDomainCode::InvalidItem,
+                                   "candidate turn origin is malformed");
+        }
+        turn.origin = *parsed;
+    }
+    if (const auto *sequence = json.find("session_sequence");
+        sequence != nullptr && sequence->is_integer()) {
+        turn.session_sequence = static_cast<SessionSequence>(sequence->as_integer().value_or(0.0));
+    }
+    if (const auto *kind = json.find("kind"); kind != nullptr && kind->is_string()) {
+        const auto parsed = conversation_kind_from(*kind->as_string());
+        if (!parsed) {
+            return retrieval_error(ContextDomainCode::InvalidItem,
+                                   "candidate turn kind is unknown");
+        }
+        turn.kind = *parsed;
+    }
+    return turn;
+}
 
 JsonValue context_candidate_to_json(const ContextCandidate &candidate) {
     JsonValue::Object object;
@@ -759,6 +927,13 @@ JsonValue context_candidate_to_json(const ContextCandidate &candidate) {
     object.emplace_back("asset_id", candidate.asset_id.to_string());
     object.emplace_back("kind", context_asset_kind_name(candidate.kind));
     object.emplace_back("text", candidate.text);
+    if (!candidate.turns.empty()) {
+        JsonValue::Array turns;
+        for (const auto &turn : candidate.turns) {
+            turns.emplace_back(conversation_turn_to_json(turn));
+        }
+        object.emplace_back("turns", JsonValue(std::move(turns)));
+    }
     if (candidate.session.has_value()) {
         object.emplace_back("session", candidate.session->to_string());
     }
@@ -824,6 +999,15 @@ Result<ContextCandidate> context_candidate_from_json(const JsonValue &json) {
     candidate.kind = *parsed_kind;
     if (const auto *text = json.find("text"); text != nullptr && text->is_string()) {
         candidate.text = *text->as_string();
+    }
+    if (const auto *turns = json.find("turns"); turns != nullptr && turns->is_array()) {
+        for (const auto &turn : *turns->as_array()) {
+            auto parsed = conversation_turn_from_json(turn);
+            if (!parsed) {
+                return parsed.error();
+            }
+            candidate.turns.push_back(std::move(parsed).value());
+        }
     }
     if (const auto *session = json.find("session"); session != nullptr && session->is_string()) {
         const auto parsed_session = SessionId::parse(*session->as_string());

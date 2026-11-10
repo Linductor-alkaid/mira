@@ -484,6 +484,19 @@ Result<void> ContextItem::validate() const {
         return contract_error(ContextDomainCode::InvalidItem,
                               "retrieved memory items require retrieved memory authority");
     }
+    // Replay items carry their original speaker as a wire role (DEC-1xx), but
+    // untrusted recall never gains System/Developer authority on the wire
+    // (RULE-09); the mapping only ever yields User or Assistant.
+    if (wire_role.has_value()) {
+        if (kind != ContextItemKind::RetrievedMemory) {
+            return contract_error(ContextDomainCode::InvalidItem,
+                                  "wire roles are reserved for retrieved memory items");
+        }
+        if (*wire_role != ModelRole::User && *wire_role != ModelRole::Assistant) {
+            return contract_error(ContextDomainCode::InvalidItem,
+                                  "retrieved memory wire role must be user or assistant");
+        }
+    }
     if ((kind == ContextItemKind::ToolCall || kind == ContextItemKind::ToolResult) &&
         (!tool_call_key.has_value() || tool_call_key->empty())) {
         return contract_error(ContextDomainCode::InvalidItem, "tool items require a tool call key");
@@ -702,6 +715,10 @@ JsonValue context_item_to_json(const ContextItem &item) {
     if (item.tool_call_key.has_value()) {
         object.emplace_back("tool_call_key", *item.tool_call_key);
     }
+    if (item.wire_role.has_value()) {
+        object.emplace_back("wire_role",
+                            *item.wire_role == ModelRole::Assistant ? "assistant" : "user");
+    }
     object.emplace_back("sequence", static_cast<std::int64_t>(item.sequence));
     if (item.task_epoch.has_value()) {
         object.emplace_back("task_epoch", static_cast<std::int64_t>(*item.task_epoch));
@@ -800,6 +817,18 @@ Result<ContextItem> context_item_from_json(const JsonValue &json) {
     const auto *tool_key = json.find("tool_call_key");
     if (tool_key != nullptr && tool_key->is_string()) {
         item.tool_call_key = *tool_key->as_string();
+    }
+    const auto *wire_role = json.find("wire_role");
+    if (wire_role != nullptr && wire_role->is_string()) {
+        const std::string role = *wire_role->as_string();
+        if (role == "user") {
+            item.wire_role = ModelRole::User;
+        } else if (role == "assistant") {
+            item.wire_role = ModelRole::Assistant;
+        } else {
+            return contract_error(ContextDomainCode::InvalidItem,
+                                  "context item wire role is unknown");
+        }
     }
     const auto *sequence = json.find("sequence");
     if (sequence != nullptr && sequence->is_integer()) {

@@ -40,10 +40,12 @@ int actual_loop_events_rebuild_and_segment() {
     MIRA_CHECK(view.value()[0].text == "remember this follow-up");
     const auto &tool_speech = view.value()[1];
     MIRA_CHECK(tool_speech.kind == ConversationEntry::Kind::AssistantSpeech);
-    MIRA_CHECK(tool_speech.text == "assistant tool call echo {\"message\":\"ping\"} (executed)");
+    // DEC-108: the speaker is carried structurally by `kind`; entry text is
+    // the bare speech and `entry_line` is the single prefix renderer.
+    MIRA_CHECK(tool_speech.text == "tool call echo {\"message\":\"ping\"} (executed)");
     const auto &answer_speech = view.value()[2];
     MIRA_CHECK(answer_speech.kind == ConversationEntry::Kind::AssistantSpeech);
-    MIRA_CHECK(answer_speech.text == "assistant said: done");
+    MIRA_CHECK(answer_speech.text == "done");
     const auto &outcome = view.value()[3];
     MIRA_CHECK(outcome.kind == ConversationEntry::Kind::LoopOutcome);
     MIRA_CHECK(outcome.text ==
@@ -73,13 +75,14 @@ int actual_loop_events_rebuild_and_segment() {
     MIRA_CHECK(segments.value()[0].source_events.back() == outcome.origin);
     MIRA_CHECK(segments.value()[0].through_sequence == outcome.session_sequence);
     MIRA_CHECK(segments.value()[0].text.find("Answered") != std::string::npos);
-    // DEC-104: the segment lines carry the speaker role prefixes.
+    // DEC-104/DEC-108: the segment lines carry the speaker role prefixes
+    // exactly once, ahead of the bare entry text.
     MIRA_CHECK(segments.value()[0].text.find("user: remember this follow-up") != std::string::npos);
     MIRA_CHECK(segments.value()[0].text.find(
-                   "assistant: assistant tool call echo {\"message\":\"ping\"} (executed)") !=
+                   "assistant: tool call echo {\"message\":\"ping\"} (executed)") !=
                std::string::npos);
-    MIRA_CHECK(segments.value()[0].text.find("assistant: assistant said: done") !=
-               std::string::npos);
+    MIRA_CHECK(segments.value()[0].text.find("assistant: done") != std::string::npos);
+    MIRA_CHECK(segments.value()[0].text.find("assistant said:") == std::string::npos);
     MIRA_CHECK(segments.value()[0].text == repeated.value()[0].text);
     MIRA_CHECK(segments.value()[0].asset_id == repeated.value()[0].asset_id);
     return 0;
@@ -184,7 +187,7 @@ int assistant_speech_entries_render_lines() {
     MIRA_CHECK(view.value()[0].kind == ConversationEntry::Kind::UserMessage);
     MIRA_CHECK(view.value()[0].text == "hello there");
     MIRA_CHECK(view.value()[1].kind == ConversationEntry::Kind::AssistantSpeech);
-    MIRA_CHECK(view.value()[1].text == "assistant said: spoken answer");
+    MIRA_CHECK(view.value()[1].text == "spoken answer");
     EventQuery query;
     query.session_id = session;
     const auto page = store.read(query);
@@ -195,13 +198,11 @@ int assistant_speech_entries_render_lines() {
     MIRA_CHECK(view.value()[1].session_sequence == speech_envelope.session_sequence);
     MIRA_CHECK(view.value()[1].recorded_at.wall == speech_envelope.timestamp.wall);
     MIRA_CHECK(view.value()[1].recorded_at.monotonic == speech_envelope.timestamp.monotonic);
-    MIRA_CHECK(view.value()[2].text ==
-               "assistant tool call echo {\"message\":\"ping\"} (executed)\n"
-               "assistant tool call echo (skipped)\n"
-               "assistant tool call echo (failed)\n"
-               "assistant tool call echo (not_executed)");
-    MIRA_CHECK(view.value()[3].text ==
-               "assistant said: working on it\nassistant tool call echo {} (executed)");
+    MIRA_CHECK(view.value()[2].text == "tool call echo {\"message\":\"ping\"} (executed)\n"
+                                       "tool call echo (skipped)\n"
+                                       "tool call echo (failed)\n"
+                                       "tool call echo (not_executed)");
+    MIRA_CHECK(view.value()[3].text == "working on it\ntool call echo {} (executed)");
     const auto rebuilt = build_conversation_view(store, session);
     MIRA_CHECK(rebuilt && rebuilt.value().size() == view.value().size());
     for (std::size_t index = 0; index < view.value().size(); ++index) {
@@ -282,17 +283,27 @@ int segment_lines_carry_role_prefixes() {
     MIRA_CHECK(segments && segments.value().size() == 1);
     const auto &text = segments.value()[0].text;
     // The role prefix attaches to each entry: a multi-line assistant entry
-    // carries it once, ahead of its first rendered line.
+    // carries it once, ahead of its first rendered line. Entry text itself is
+    // prefix-free since DEC-108; only `entry_line` renders prefixes.
     MIRA_CHECK(text ==
                "user: please answer\n"
-               "assistant: assistant said: the answer\n"
-               "assistant tool call echo {} (executed)\n"
+               "assistant: the answer\n"
+               "tool call echo {} (executed)\n"
                "loop: loop settled: Answered (terminal text + 1 tool call) (turns 1, total_turns "
                "1, recoveries 0, tool_executions 1)");
     MIRA_CHECK(segments.value()[0].entries.size() == 3);
     MIRA_CHECK(segments.value()[0].entries[0].text == "user: please answer");
-    MIRA_CHECK(segments.value()[0].entries[1].text == "assistant: assistant said: the answer\n"
-                                                      "assistant tool call echo {} (executed)");
+    // Segment entries mirror the exact prefixed line carried in the segment
+    // text; prefix stripping happens only at replay conversion (DEC-108).
+    MIRA_CHECK(segments.value()[0].entries[1].text ==
+               "assistant: the answer\ntool call echo {} (executed)");
+    // DEC-108: the speaker travels structurally into every segment entry.
+    MIRA_CHECK(segments.value()[0].entries[0].kind == ConversationEntry::Kind::UserMessage);
+    MIRA_CHECK(segments.value()[0].entries[1].kind == ConversationEntry::Kind::AssistantSpeech);
+    MIRA_CHECK(segments.value()[0].entries[2].kind == ConversationEntry::Kind::LoopOutcome);
+    MIRA_CHECK(segments.value()[0].entries[2].text ==
+               "loop: loop settled: Answered (terminal text + 1 tool call) (turns 1, total_turns "
+               "1, recoveries 0, tool_executions 1)");
     return 0;
 }
 

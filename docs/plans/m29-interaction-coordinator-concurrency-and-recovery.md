@@ -1,6 +1,6 @@
 # M29：交互协调层第二阶段——执行中插话、并发归属、持久化与断线回补
 
-> 状态：In Progress（本地工作项已验收，远端 CI/平台退出条件待补跑）
+> 状态：Completed（机制与 CI 矩阵范围；真实模型/设备、断电及长期运行仍见补跑表）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -8,7 +8,7 @@
 > [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5）
 > 前置：M28 关闭（**已满足**——2026-10-29 已合并关闭，按总计划同步修正旧说明）
 > 建议发布点：非发布物；M30 长期记忆接入的接线前提
-> 更新日期：2026-11-09（DEC-106 澄清/恢复/只读回补与 reducer 提交校验）
+> 更新日期：2026-11-10（PR #124 CI 24 项通过并合并，补记退出证据）
 
 ## 1. 目标
 
@@ -115,11 +115,11 @@
 
 ## 6. 测试与退出条件
 
-- [ ] 工作项与门禁全部勾选，验证记录落档。
-- [ ] 覆盖 issue #111 的验收场景 2（穿插话题）、3（并行工作与指代）、4（插话纠正/取消）、
+- [x] 工作项与门禁全部勾选，验证记录落档（机制/离线与 CI 范围）。
+- [x] 覆盖 issue #111 的验收场景 2（穿插话题）、3（并行工作与指代）、4（插话纠正/取消）、
       6（压缩和重启）的前半段。
-- [ ] CI 全矩阵绿；受影响的决策/设计/API 手册/术语表已同步。
-- [ ] 未执行的平台/真实模型验证保持未勾选并记录原因与补跑条件。
+- [x] CI 全矩阵绿；受影响的决策/设计/API 手册/术语表已同步。
+- [x] 未执行的平台/真实模型验证保持未勾选并记录原因与补跑条件。
 
 ## 7. 风险与阻塞
 
@@ -319,3 +319,21 @@ git diff --check
 `/tmp/mira-m29-pr-merge-initial-test.log` 和
 `/tmp/mira-m29-pr-merge-tsan-initial-test.log`。远端 CI 结果由维护者反馈，
 本轮不自动合并；前节平台/真实模型等补跑条件继续有效。
+
+### 2026-11-10：CI 验收与合并关闭
+
+用户确认 CI 通过并授权合并后，再次核对 PR #124 的 head
+`639dabbe4e2f34583cd2c68ce4af91c92a3821e3`：24 项检查全部 pass，包含 push/PR
+两次矩阵；每次覆盖 Linux GCC/Clang Debug/Release、Windows Debug/Release、
+Android arm64/x86_64、ASAN/UBSAN/TSAN 与 quality。
+证据：[PR #124 Checks](https://github.com/Linductor-alkaid/mira/pull/124/checks)、
+[PR 矩阵](https://github.com/Linductor-alkaid/mira/actions/runs/42647180519)、
+[push 矩阵](https://github.com/Linductor-alkaid/mira/actions/runs/42647065409)。
+按锁定 head squash 合并为 `a2c33a284a60e67a09b1d9e53ed05b72d0c744a0`，
+本地确认合并 tree 与已验收 head 一致，删除该工作分支。
+
+G1/G3/G4 由仲裁/澄清/账本测试覆盖场景 2/3，G2/G7 的两类 Loop 中断与控制覆盖
+场景 4，G5/G6 的文件重开、只读回补、P3 及 journal 核验覆盖场景 6 的恢复半段。
+这关闭 M29 的机制与 CI 退出条件，满足 M30 的归属接线前置；不将上述 CI 构建
+等同于真实设备动作、真实模型语义质量、OS 强杀/断电或长期稳定性。前节未执行项
+仍由 Mira Maintainers 按原条件补跑。M30–M33 不随之自动完成。

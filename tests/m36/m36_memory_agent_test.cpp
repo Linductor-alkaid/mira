@@ -1,6 +1,9 @@
 #include "support/m36_support.hpp"
 #include "support/test.hpp"
 
+#include <mira/context_contracts.hpp>
+#include <mira/context_retrieval.hpp>
+
 namespace {
 using namespace mira;
 using namespace mira::testing;
@@ -121,9 +124,80 @@ int compression_requires_real_citations_and_matching_protocol_prefix() {
     MIRA_CHECK(!artifacts.open(artifact));
     return 0;
 }
+int recall_renders_one_framed_block_and_dedupes_expansions() {
+    // DEC-108: a scripted proposal re-queries the same records so the
+    // expansion leg must dedupe against the first batch instead of doubling
+    // the block.
+    MemoryAgentProposal scripted;
+    scripted.queries = {"volume"};
+    MemoryAgentFixture fixture;
+    fixture.start(
+        [&scripted](const MemoryAgentInput &,
+                    const OperationContext &) -> Result<MemoryAgentProposal> { return scripted; });
+    auto binding = fixture.binding();
+    MIRA_CHECK(fixture.service->bind(binding));
+    // Two distinct claims (a same-claim second seed would supersede the
+    // first) that both lexically match the query "volume".
+    MIRA_CHECK(fixture.seed(binding, "volume=30"));
+    MIRA_CHECK(fixture.seed(binding, "volume_level=high"));
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.query = "volume";
+    auto handle = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(handle && handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &result = handle.value().result.get();
+    MIRA_CHECK(result);
+    MIRA_CHECK(result.value().candidates.size() == 1);
+    const auto &block = result.value().candidates.front();
+    const auto &text = std::get<TextPart>(block.content.front()).text;
+    const auto header_end = text.find('\n');
+    MIRA_CHECK(header_end != std::string::npos);
+    MIRA_CHECK(text.substr(0, header_end) == "[recalled memory v1|count=2]");
+    MIRA_CHECK(text.find("\n- volume=30") != std::string::npos);
+    MIRA_CHECK(text.find("\n- volume_level=high") != std::string::npos);
+    // The framed block is one retrieved-memory item: strictest sensitivity of
+    // the selected records, merged provenance, deterministic id derived from
+    // the operation and the record count, no wire role.
+    MIRA_CHECK(block.kind == ContextItemKind::RetrievedMemory);
+    MIRA_CHECK(block.authority == ContextAuthority::RetrievedMemory);
+    MIRA_CHECK(!block.wire_role.has_value());
+    // The block takes the strictest sensitivity of the selected records;
+    // consolidated records default to Internal.
+    MIRA_CHECK(std::get<TextPart>(block.content.front()).sensitivity == Sensitivity::Internal);
+    MIRA_CHECK(block.provenance.size() == 2);
+    MIRA_CHECK(block.sequence == 0);
+    MIRA_CHECK(block.id ==
+               ContextItemId{context_asset_id_from_seed("mira.memory.recall|" +
+                                                        result.value().operation.to_string() + "|2")
+                                 .value});
+    MIRA_CHECK(block.validate().has_value());
+
+    // A memory_ids selection citing an unknown record is an invalid proposal:
+    // the job fails closed instead of recalling anything.
+    scripted.queries.clear();
+    scripted.selected_memories = {MemoryId::generate()};
+    auto invalid_handle = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(invalid_handle &&
+               invalid_handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &invalid_result = invalid_handle.value().result.get();
+    MIRA_CHECK(!invalid_result);
+
+    // A recall with no matching records settles with no candidates at all.
+    scripted.selected_memories.clear();
+    MemoryAgentRequest unmatched = request;
+    unmatched.query = "totally-unrelated-zzz";
+    auto empty_handle = fixture.service->submit(unmatched, memory_context(binding.work));
+    MIRA_CHECK(empty_handle &&
+               empty_handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &empty_result = empty_handle.value().result.get();
+    MIRA_CHECK(empty_result && empty_result.value().candidates.empty());
+    return 0;
+}
 } // namespace
 int main() {
     if (scopes_and_work_revisions_are_isolated())
+        return 1;
+    if (recall_renders_one_framed_block_and_dedupes_expansions())
         return 1;
     if (terminal_event_recording_uses_existing_write_and_approval_gates())
         return 1;
