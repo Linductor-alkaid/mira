@@ -5,8 +5,8 @@
       "name": "kairo",
       "source": "https://github.com/Linductor-alkaid/kairo.git",
       "path": "third_party/kairo",
-      "version": "0.7.2-14-g78c6f55",
-      "commit": "78c6f55753316769a0ae8140048bbd897f1f046c",
+      "version": "v0.7.4",
+      "commit": "10e870bcb94b109a1a1f32eab8ef0d3d9f01055b",
       "license": "MIT",
       "license_file": "third_party/kairo/LICENSE"
     },
