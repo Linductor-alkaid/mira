@@ -1763,3 +1763,14 @@ Controller 共用 journal 接线保持未执行，负责人与补跑条件见维
 `MNT-202611-SC-01`（Completed，Linux 本地离线范围），依据
 [DEC-091](../decisions/DEC-091-http-stream-connection-policy.md) 增加请求级 keep-alive
 策略并接线模型流式请求，保持单 Exchange socket 所有权。
+
+2026-11-11：新增 [kairo 定版 pin 升级维护](maintenance-2026-11-kairo-pin-release.md)，
+履行 DEC-073 决策 4 与 `MNT-KAIRO-07` 的发版复核义务：上游已发布
+`v0.7.3`/`v0.7.4`（含 PR #223/#224），[DEC-110](../decisions/DEC-110-kairo-pin-v0.7.4-release.md)
+冻结 pin `78c6f557`（`v0.7.2-14-g78c6f55`，未发布 master）→ `10e870bc`
+（`v0.7.4`），消除未发布 master 漂移风险（D-1）。暴露面核对零命中
+（`submit_v2`/`submit_task_result`/`TaskResult`/`CpuGpuTask` 均无使用），
+零代码迁移；唯一行为变更为空 `cpu_affinity` 默认 OS 自由调度，已采纳
+（big.LITTLE 正向收益，保留显式恢复路径）。依赖记录（lock/SBOM/直接依赖表）
+已同步；本地独立验证 **182/182 全绿**、`sbom-check` 与 `architecture-check`
+零违规；CI 全矩阵取证与关闭待提交后进行，状态 In Progress。

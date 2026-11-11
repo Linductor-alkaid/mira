@@ -70,10 +70,15 @@
 - [x] `MNT-KAIRO-06` CI 全矩阵取证（linux gcc/clang × Debug/Release、
       windows Debug/Release、android arm64/x86_64 NDK 交叉、sanitizers
       ASAN/TSAN/UBSAN、quality）——**24/24 全绿**，见 §6 验证记录。
-- [ ] `MNT-KAIRO-07` 上游发版后复核并改 pin 到正式 tag（或复核后仍保留 master commit
+- [x] `MNT-KAIRO-07` 上游发版后复核并改 pin 到正式 tag（或复核后仍保留 master commit
       并记录理由）。**触发条件**：上游发布包含 PR #223/#224 的 tag。
       本项在发版前保持未完成——**它是跨轮的开放项，不阻塞本轮关闭**：
       升级本身已交付并取证，复核是对「未发布 pin」这一状态的周期性再确认。
+      **2026-11-11 完成**：上游 `v0.7.3`（含 PR #223/#224，2026-10-29）与
+      `v0.7.4`（2026-11-11）已发布，pin 复核并升级到
+      `10e870bcb94b109a1a1f32eab8ef0d3d9f01055b`（`v0.7.4`），决策与取证见
+      [DEC-110](../decisions/DEC-110-kairo-pin-v0.7.4-release.md) 与
+      [maintenance-2026-11-kairo-pin-release](maintenance-2026-11-kairo-pin-release.md)。
 
 ## 5. 风险与阻塞
 
