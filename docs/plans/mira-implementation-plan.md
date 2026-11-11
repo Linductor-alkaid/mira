@@ -1773,4 +1773,5 @@ Controller 共用 journal 接线保持未执行，负责人与补跑条件见维
 零代码迁移；唯一行为变更为空 `cpu_affinity` 默认 OS 自由调度，已采纳
 （big.LITTLE 正向收益，保留显式恢复路径）。依赖记录（lock/SBOM/直接依赖表）
 已同步；本地独立验证 **182/182 全绿**、`sbom-check` 与 `architecture-check`
-零违规；CI 全矩阵取证与关闭待提交后进行，状态 In Progress。
+零违规；[PR #127](https://github.com/Linductor-alkaid/mira/pull/127) CI
+**24/24 全绿**（push 与 pull_request 两个 run 各 12 job），本轮 Completed。

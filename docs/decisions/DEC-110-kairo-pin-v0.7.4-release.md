@@ -96,8 +96,11 @@ commit 且不浮动；**上游发版后必须复核并改 pin 到正式 tag**（
 - `python3 tools/check_sbom.py .` 确认 submodule commit、lock 与 SBOM 三者一致。
 - `python3 tools/check_architecture.py` 确认零新增违规。
 - CI 矩阵（linux gcc/clang × Debug/Release、windows Debug/Release、
-  android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）
-  随合并 PR 取证后回填本节。
+  android arm64/x86_64 NDK 交叉、sanitizers ASAN/TSAN/UBSAN、quality）全绿——
+  **已取证**：[PR #127](https://github.com/Linductor-alkaid/mira/pull/127)
+  head `02e4045`，两个 workflow run 各 12 个 job 全 success，合计 **24/24**
+  （[push](https://github.com/Linductor-alkaid/mira/actions/runs/42974127379)、
+  [pull_request](https://github.com/Linductor-alkaid/mira/actions/runs/42974175498)）。
 
 ## 关联文档和工作项
 

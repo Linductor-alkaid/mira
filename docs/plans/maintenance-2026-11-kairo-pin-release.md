@@ -1,6 +1,7 @@
 # 维护计划：kairo 定版 pin 升级轮（2026-11）
 
-> 状态：In Progress（2026-11-11 立项；升级与决策已冻结，验证取证进行中）
+> 状态：Completed（2026-11-11 立项、升级、独立验证与 CI 全矩阵取证；
+> [PR #127](https://github.com/Linductor-alkaid/mira/pull/127)，CI 24/24 全绿）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（维护轮）
 > 前置：[DEC-110](../decisions/DEC-110-kairo-pin-v0.7.4-release.md)（已冻结）；
@@ -66,10 +67,9 @@ PR #223/#224 的正式 tag（v0.7.3，收尾于 v0.7.4），把 kairo pin 从
 - [x] `MNT-KRELEASE-05` 本地构建与全量回归（Independent-Verification-Agent
       独立执行并回报证据）。
 - [x] `MNT-KRELEASE-06` `python3 tools/check_architecture.py` 零新增违规。
-- [ ] `MNT-KRELEASE-07` CI 全矩阵取证（linux gcc/clang × Debug/Release、
+- [x] `MNT-KRELEASE-07` CI 全矩阵取证（linux gcc/clang × Debug/Release、
       windows Debug/Release、android arm64/x86_64 NDK 交叉、sanitizers
-      ASAN/TSAN/UBSAN、quality）；完成前本轮不关闭，完成后在 DEC-110
-      验证方式与本节回填。
+      ASAN/TSAN/UBSAN、quality）——**24/24 全绿**，见 §6 CI 取证记录。
 
 ## 5. 风险与阻塞
 
@@ -114,3 +114,22 @@ PR #223/#224 的正式 tag（v0.7.3，收尾于 v0.7.4），把 kairo pin 从
   默认变更的性能影响属性能范畴，本轮仅功能回归，不做基准、不宣称性能保证。
 - 未完成：`MNT-KRELEASE-07` CI 全矩阵取证——待变更提交并走 PR 后回填，
   完成前本轮保持 In Progress、不关闭。
+
+### 2026-11-11：CI 全矩阵取证与关闭
+
+- PR：[#127](https://github.com/Linductor-alkaid/mira/pull/127)
+  （`chore(deps): pin kairo to v0.7.4 release (DEC-110)`），分支
+  `deps/kairo-pin-v0.7.4`，head 提交 `02e4045`。
+- 两个 workflow run 均 `completed / success`：
+  - [42974127379](https://github.com/Linductor-alkaid/mira/actions/runs/42974127379)
+    （push）：quality、sanitizers (ASAN/TSAN/UBSAN)、linux (gcc/clang ×
+    Debug/Release)、windows (Debug/Release)、android (arm64/x86_64
+    release)——12/12 success；
+  - [42974175498](https://github.com/Linductor-alkaid/mira/actions/runs/42974175498)
+    （pull_request）：同 12 个 job——12/12 success。
+  - 合计 **24/24 全绿**（`gh pr checks` 汇总：linux 8、sanitizers 6、
+    windows 4、android 4、quality 2，全部 pass）。
+- CI 覆盖即本决策 delta 的目标平台矩阵（含本机无法覆盖的 clang/MSVC/
+  NDK 交叉与三条 sanitizer 套件）；`MNT-KRELEASE-07` 完成，本轮**关闭**
+  （证据回填提交后的复跑仍为本 head 的文档增量，矩阵结论由上述 run
+  承载）。
