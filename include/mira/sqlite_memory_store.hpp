@@ -32,7 +32,27 @@ struct SqliteMemoryStoreOptions final {
     // compact(); zero keeps them forever.
     std::chrono::seconds purge_horizon{0};
 
+    // DEC-111: optional aggregate file-length budget for this exclusively
+    // owned database and its WAL/SHM/rollback journal. Zero preserves legacy
+    // unbounded behavior. Does not include artifacts, events or filesystem
+    // block/directory overhead. Existing oversized files fail open unchanged.
+    std::uint64_t max_storage_bytes = 0;
+    std::uint64_t capacity_reserve_bytes = 64 * 1024;
+
     [[nodiscard]] Result<void> validate() const;
+};
+
+struct SqliteMemoryCapacitySnapshot final {
+    std::uint64_t limit_bytes = 0;
+    std::uint64_t reserve_bytes = 0;
+    std::uint64_t database_bytes = 0;
+    std::uint64_t wal_bytes = 0;
+    std::uint64_t shm_bytes = 0;
+    std::uint64_t journal_bytes = 0;
+    std::uint64_t file_bytes = 0;
+    // Process-local high watermark of admitted file lengths, including a
+    // reservation whose underlying I/O may fail. Not physical block usage.
+    std::uint64_t peak_admitted_file_bytes = 0;
 };
 
 // Hybrid retrieval weights (lexical_exact, fts_rank, vector_similarity,
@@ -103,6 +123,7 @@ class SqliteMemoryStore final : public IMemory,
     [[nodiscard]] std::size_t pending_requests() const;
     void set_worker_paused(bool paused);
     Result<void> close() noexcept;
+    [[nodiscard]] Result<SqliteMemoryCapacitySnapshot> capacity_snapshot() const;
 
   private:
     class Impl;

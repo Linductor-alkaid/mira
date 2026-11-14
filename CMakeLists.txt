@@ -222,6 +222,7 @@ set_target_properties(mira_workflow PROPERTIES
 # Kept outside mira_core so the installed Core contract stays SQLite-free;
 # public headers in include/mira never expose sqlite3 types.
 add_library(mira_state_store
+    src/storage/memory_capacity_vfs.cpp
     src/storage/sqlite_support.cpp
     src/storage/sqlite_store_open.cpp
     src/storage/sqlite_checkpoint_store.cpp

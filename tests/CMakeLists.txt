@@ -208,6 +208,7 @@ endfunction()
 
 mira_add_m4_store_test(mira_m4_sqlite_checkpoint_test m4/m4_sqlite_checkpoint_test.cpp)
 mira_add_m4_store_test(mira_m4_sqlite_memory_test m4/m4_sqlite_memory_test.cpp)
+mira_add_m4_store_test(mira_m31_memory_capacity_test m31/sqlite_memory_capacity_test.cpp)
 mira_add_m4_store_test(mira_m4_store_open_test m4/m4_store_open_test.cpp)
 mira_add_m4_store_test(mira_m4_memory_retrieval_test m4/m4_memory_retrieval_test.cpp)
 mira_add_m4_store_test(mira_m4_memory_scope_budget_test m4/m4_memory_scope_budget_test.cpp)

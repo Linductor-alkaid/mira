@@ -1,3 +1,4 @@
+#include "memory_capacity_vfs.hpp"
 #include "sqlite_store_open.hpp"
 #include <mira/embedding_math.hpp>
 #include <mira/sqlite_memory_store.hpp>
@@ -268,15 +269,32 @@ Result<void> SqliteMemoryStoreOptions::validate() const {
     if (max_vector_scan == 0 || keep_versions_per_record == 0) {
         return store_error(ErrorCode::InvalidArgument, "store scan bounds must be positive");
     }
+    if (max_storage_bytes != 0 &&
+        (max_storage_bytes < 1024 * 1024 || max_storage_bytes > (1ULL << 40) ||
+         capacity_reserve_bytes >= max_storage_bytes || read_only_diagnostic))
+        return store_error(ErrorCode::InvalidArgument, "invalid exclusive memory capacity limits");
     return Result<void>{};
 }
 
 class SqliteMemoryStore::Impl final {
   public:
     Impl(SqliteMemoryStoreOptions options, StoreDiagnostics diagnostics, DatabaseHandle database,
-         std::unique_ptr<StoreChannel> channel, IArtifactStore *artifacts)
+         std::unique_ptr<StoreChannel> channel, IArtifactStore *artifacts,
+         std::unique_ptr<storage::MemoryCapacityVfs> capacity)
         : options_(std::move(options)), diagnostics_(std::move(diagnostics)),
-          database_(std::move(database)), channel_(std::move(channel)), artifacts_(artifacts) {}
+          capacity_(std::move(capacity)), database_(std::move(database)),
+          channel_(std::move(channel)), artifacts_(artifacts) {}
+
+    template <class T, class Op> Result<T> run(Op op) const {
+        return channel_->run<T>([this, op = std::move(op)](sqlite3 *db) -> Result<T> {
+            if (capacity_)
+                capacity_->reset_rejection();
+            auto result = op(db);
+            if (!result && capacity_ && capacity_->rejected())
+                return storage::memory_capacity_error();
+            return result;
+        });
+    }
 
     [[nodiscard]] Result<void> check_writable() const {
         if (read_only_) {
@@ -640,6 +658,16 @@ class SqliteMemoryStore::Impl final {
             }
         }
 
+        if (capacity_) {
+            const auto current = capacity_->snapshot();
+            if (!current)
+                return current.error();
+            if (current.value().file_bytes >=
+                options_.max_storage_bytes - options_.capacity_reserve_bytes)
+                return storage::memory_capacity_error();
+            capacity_->set_operation_limit(options_.max_storage_bytes -
+                                           options_.capacity_reserve_bytes);
+        }
         MemoryRecord proposed = mutation.proposed;
         proposed.scope = mutation.scope;
         // The kind's default lifetime is a store default, not a caller duty:
@@ -1904,6 +1932,7 @@ class SqliteMemoryStore::Impl final {
 
     SqliteMemoryStoreOptions options_;
     StoreDiagnostics diagnostics_;
+    std::unique_ptr<storage::MemoryCapacityVfs> capacity_;
     DatabaseHandle database_;
     std::unique_ptr<StoreChannel> channel_;
     IArtifactStore *artifacts_ = nullptr;
@@ -1925,6 +1954,15 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     db_options.busy_timeout = options.busy_timeout;
     db_options.mode = options.read_only_diagnostic ? storage::DbOpenMode::ReadOnlyDiagnostic
                                                    : storage::DbOpenMode::ReadWrite;
+    std::unique_ptr<storage::MemoryCapacityVfs> capacity;
+    if (options.max_storage_bytes != 0) {
+        auto guarded = storage::MemoryCapacityVfs::create(options);
+        if (!guarded)
+            return guarded.error();
+        capacity = std::move(guarded.value());
+        db_options.vfs_name = capacity->name();
+        db_options.exclusive_owner = true;
+    }
     auto opened = storage::open_reference_store(
         db_options, {kStoreKind, kMemoryStoreSchema, kSchemaDdl, store_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
@@ -1934,6 +1972,8 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                          return {};
                      }});
     if (!opened) {
+        if (capacity && capacity->rejected())
+            return storage::memory_capacity_error();
         return opened.error();
     }
     auto handle = std::move(opened.value().database);
@@ -1948,7 +1988,7 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     const bool read_only = options.read_only_diagnostic ||
                            diagnostics.disposition == StoreSchemaDisposition::ReadOnlyDiagnostic;
     auto impl = std::make_unique<Impl>(std::move(options), diagnostics, std::move(handle),
-                                       std::move(channel), artifacts);
+                                       std::move(channel), artifacts, std::move(capacity));
     impl->read_only_.store(read_only);
     return std::unique_ptr<SqliteMemoryStore>(new SqliteMemoryStore(std::move(impl)));
 }
@@ -1960,35 +2000,35 @@ SqliteMemoryStore::~SqliteMemoryStore() {
 }
 
 Result<MemoryQueryResult> SqliteMemoryStore::query(const MemoryQuery &query) const {
-    return impl_->channel_->run<MemoryQueryResult>(
+    return impl_->run<MemoryQueryResult>(
         [this, &query](sqlite3 *db) { return impl_->query(db, query); });
 }
 
 Result<std::optional<MemoryRecord>> SqliteMemoryStore::get(MemoryId record,
                                                            const MemoryScope &scope) const {
-    return impl_->channel_->run<std::optional<MemoryRecord>>(
+    return impl_->run<std::optional<MemoryRecord>>(
         [record, scope](sqlite3 *db) -> Result<std::optional<MemoryRecord>> {
             return Impl::read_scoped_record(db, record, scope);
         });
 }
 
 Result<MemoryMutationResult> SqliteMemoryStore::apply(const MemoryMutation &mutation) {
-    return impl_->channel_->run<MemoryMutationResult>(
+    return impl_->run<MemoryMutationResult>(
         [this, &mutation](sqlite3 *db) { return impl_->apply(db, mutation); });
 }
 
 Result<MemoryCompactionResult> SqliteMemoryStore::compact(const MemoryScope &scope) {
-    return impl_->channel_->run<MemoryCompactionResult>(
+    return impl_->run<MemoryCompactionResult>(
         [this, &scope](sqlite3 *db) { return impl_->compact(db, scope); });
 }
 
 Result<MemoryCompactionResult> SqliteMemoryStore::sweep(MemorySweepOptions options) {
-    return impl_->channel_->run<MemoryCompactionResult>(
+    return impl_->run<MemoryCompactionResult>(
         [this, options](sqlite3 *db) { return impl_->sweep(db, options); });
 }
 
 Result<ErasureResult> SqliteMemoryStore::erase(const ErasureRequest &request) {
-    return impl_->channel_->run<ErasureResult>(
+    return impl_->run<ErasureResult>(
         [this, &request](sqlite3 *db) { return impl_->erase(db, request); });
 }
 
@@ -1997,7 +2037,7 @@ Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const
         return make_memory_error(MemoryDomainCode::InvalidRecord,
                                  "embedding dimensions must be within (0, 4096]");
     }
-    return impl_->channel_->run<void>([record, vector](sqlite3 *db) -> Result<void> {
+    return impl_->run<void>([record, vector](sqlite3 *db) -> Result<void> {
         const std::string id = record.to_string();
         Statement exists(db, "SELECT 1 FROM memory_records WHERE id = ?1 AND status = 'active'");
         if (!exists.valid()) {
@@ -2032,7 +2072,7 @@ Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const
 }
 
 Result<std::size_t> SqliteMemoryStore::index_lag() const {
-    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+    return impl_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
         Statement lag(db, "SELECT COUNT(*) FROM memory_records r WHERE r.status = 'active'"
                           " AND NOT EXISTS(SELECT 1 FROM memory_embeddings e"
                           " WHERE e.record_id = r.id)");
@@ -2047,7 +2087,7 @@ Result<std::size_t> SqliteMemoryStore::index_lag() const {
 }
 
 Result<bool> SqliteMemoryStore::has_embedding(MemoryId record) const {
-    return impl_->channel_->run<bool>([record](sqlite3 *db) -> Result<bool> {
+    return impl_->run<bool>([record](sqlite3 *db) -> Result<bool> {
         Statement query(db, "SELECT 1 FROM memory_embeddings WHERE record_id = ?1");
         if (!query.valid()) {
             return store_error(ErrorCode::Internal, "embedding probe failed to prepare");
@@ -2070,7 +2110,7 @@ Result<std::size_t> SqliteMemoryStore::clear_embeddings() {
     if (!writable) {
         return writable.error();
     }
-    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+    return impl_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
         Transaction transaction(db);
         if (!transaction.valid()) {
             return store_error(ErrorCode::Internal, "index reset transaction rejected");
@@ -2099,6 +2139,23 @@ std::size_t SqliteMemoryStore::pending_requests() const { return impl_->channel_
 
 void SqliteMemoryStore::set_worker_paused(bool paused) { impl_->channel_->set_paused(paused); }
 
-Result<void> SqliteMemoryStore::close() noexcept { return impl_->channel_->close(); }
+Result<void> SqliteMemoryStore::close() noexcept {
+    const auto closed = impl_->channel_->close();
+    if (closed && impl_->capacity_)
+        impl_->capacity_->reset_rejection(); // Final connection checkpoint may use reserve.
+    return closed;
+}
 
+} // namespace mira
+
+namespace mira {
+Result<SqliteMemoryCapacitySnapshot> SqliteMemoryStore::capacity_snapshot() const {
+    return impl_->run<SqliteMemoryCapacitySnapshot>(
+        [this](sqlite3 *) -> Result<SqliteMemoryCapacitySnapshot> {
+            if (!impl_->capacity_)
+                return store_error(ErrorCode::InvalidState,
+                                   "memory file capacity is not configured");
+            return impl_->capacity_->snapshot();
+        });
+}
 } // namespace mira

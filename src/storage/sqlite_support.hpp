@@ -35,6 +35,8 @@ struct DbOpenOptions final {
     std::filesystem::path path;
     DbOpenMode mode = DbOpenMode::ReadWrite;
     std::chrono::milliseconds busy_timeout{5'000};
+    const char *vfs_name = nullptr;
+    bool exclusive_owner = false;
 };
 
 [[nodiscard]] std::string sqlite_error_message(int code, sqlite3 *database);
