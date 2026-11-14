@@ -1,6 +1,7 @@
 # M31：容量准入、自动归档与可恢复清理
 
-> 状态：Planned（2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
+> 状态：In Progress（M31-13 元数据首增量；完整 M31-01～12 仍待跑前冻结）
+> 原范围 2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
 > 一并登记；**跑前冻结待本里程碑立项时完成**，本文件当前只冻结范围边界与非目标）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
@@ -14,6 +15,24 @@
 > 更新日期：2026-10-28（登记）
 
 ## 1. 目标
+
+2026-11-14：维护者明确授权 Mirage 需求的元数据首增量。
+`M31-13`（Completed，Linux 元数据首增量）按 [DEC-111](../decisions/DEC-111-bounded-sqlite-memory-files.md)
+冻结 SqliteMemoryStore 的独占文件总量接纳/预留/快照与重开语义；不提前关闭 M31-01～12
+或宣称 Artifact/EventStore 与完整遗忘生命周期已交付。
+
+验收（2026-11-14）：Mirage 下游工作树以相同公开头/实现构建并执行
+mira_memory_capacity_contract_test（本仓库 tests/m31/sqlite_memory_capacity_test.cpp）。
+Debug/ASAN/UBSAN/TSAN 均通过，TSAN 以 setarch x86_64 -R 执行；每配置 58 次检查，
+独立 directory_iterator 文件长度测量与 snapshot 一致，满额拒绝、保留记录/幂等重放、
+独占冲突、关闭/重开、擦除、无效预算与超限旧文件不截断通过。四配置完整下游矩阵
+各 15/15（13 个业务测试和 2 个隔离 fixture），无 sanitizer 报告。Ubuntu 24.04.5
+x86_64、GCC 13.3、CMake 3.28.3/Ninja。架构/平台边界/379 文件格式检查通过，移除
+本次触及文件的陈旧 baseline 项，未新增例外。初版测试使用错误的宏返回类型、未设置
+Episode 所需 Verified 等级，修正测试后重建；未把失败构建后的旧结果计入验收。
+真实断电/磁盘故障、Windows、物理块峰值、跨 store 回收和 M31-01～12 尚未验收；
+负责人 Mira/Mirage 维护者，待相应接口/目标设备就绪补跑。原始日志在下游本机
+build/m15-persistent-<preset>-checked-build.log / -test.log。
 
 把「持续交互」从「能一直聊」变成「**能一直聊且资源有界**」：
 

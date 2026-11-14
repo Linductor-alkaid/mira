@@ -42,7 +42,7 @@ Result<sqlite3 *> open_database(const DbOpenOptions &options) {
                           : SQLITE_OPEN_READONLY;
     sqlite3 *database = nullptr;
     const int open_result =
-        sqlite3_open_v2(options.path.string().c_str(), &database, flags, nullptr);
+        sqlite3_open_v2(options.path.string().c_str(), &database, flags, options.vfs_name);
     if (open_result != SQLITE_OK) {
         const std::string message =
             open_result == SQLITE_CANTOPEN
@@ -59,8 +59,12 @@ Result<sqlite3 *> open_database(const DbOpenOptions &options) {
     }
     // A garbage file opens lazily; the first pragma read fails immediately and
     // the file is left untouched (initialization never wipes or rewrites).
-    const char *probe = options.mode == DbOpenMode::ReadWrite ? "PRAGMA journal_mode=WAL;"
-                                                              : "PRAGMA query_only=ON;";
+    const char *probe =
+        options.mode == DbOpenMode::ReadWrite
+            ? (options.exclusive_owner ? "PRAGMA locking_mode=EXCLUSIVE;PRAGMA temp_store=MEMORY;"
+                                         "PRAGMA mmap_size=0;PRAGMA journal_mode=WAL;"
+                                       : "PRAGMA journal_mode=WAL;")
+            : "PRAGMA query_only=ON;";
     char *probe_error = nullptr;
     const int probe_result = sqlite3_exec(database, probe, nullptr, nullptr, &probe_error);
     if (probe_result != SQLITE_OK) {

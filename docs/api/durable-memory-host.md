@@ -21,6 +21,23 @@ Mira 不会因为宿主保存了聊天事件就自动启用长期记忆。需要
 返回明确错误；不可悄悄换成 MemoryEventStore/InMemoryContextIndex 后继续宣称持久化。
 应用构建需链接 `Mira::core`、`Mira::state_store` 与宿主使用的 kairo 目标。
 
+### 有界 SQLite 文件（DEC-111）
+
+SqliteMemoryStoreOptions.max_storage_bytes 默认为 0（保持旧行为）；设为 1 MiB～1 TiB
+开启独占文件接纳，capacity_reserve_bytes 必须小于限额。范围是数据库、WAL、SHM、
+rollback journal 四个文件的长度总和，不包含 Artifact/EventStore、目录元数据或块分配。
+不能让其他 SQLite 连接/进程修改这些文件；独占冲突明确拒绝。应用不要用自身计数替代
+实际存储接纳，也不要自动删除超额旧库来绕过打开失败。
+
+新 mutation 受限额减 reserve 约束，已有幂等重放优先读取原账本；erase/compact/sweep
+可使用预留，但不保证一定成功。真实写入前超过限额返回 ResourceExhausted，事务与
+mutation-id/WAL 恢复沿既有实现。capacity_snapshot() 在 StoreChannel 上返回逐文件
+长度、合计和进程内 peak_admitted_file_bytes；这个峰值含已接纳但底层失败的预留，
+不是文件系统物理占用或持久跨重启峰值。未配置容量/已关闭时查询明确拒绝。
+
+先停止生产/排空调用，再 close 并销毁实际 Store，最后关闭外部 Executor。这里只是
+M31-13 的元数据首增量，跨层清理、自动归档、价值遗忘、工件共享回收仍按 M31 推进。
+
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次
 启动时生成新的 user ID，也不要把 QQ 号码或群号直接当授权。真实平台的鉴权、路由和
 账号映射由 Adapter/宿主处理，Core 不依赖 QQ SDK。

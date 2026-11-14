@@ -187,6 +187,10 @@ focus, autonomy and interruption budgets) remain planned
 ([implementation plan](docs/plans/mira-implementation-plan.md)).
 Routing quality and capacity figures are **not** yet measured.
 
+The M31 metadata increment now offers optional exclusive SQLite file-length
+admission and capacity snapshots (DEC-111); this is not the full multi-store
+capacity/forgetting lifecycle.
+
 ## Getting started
 
 Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja. Executor, Mbed TLS, and
