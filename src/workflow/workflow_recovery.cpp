@@ -243,6 +243,12 @@ recheck_run(WorkflowRuntime &runtime, const WorkflowRunId &run_id, std::uint64_t
 // ---------------------------------------------------------------------------
 
 Result<void> WorkflowRecoveryConfig::validate() const {
+    if ((decision_output_mode != OutputMode::StrictJsonSchema &&
+         decision_output_mode != OutputMode::JsonObject &&
+         decision_output_mode != OutputMode::Text) ||
+        max_output_tokens < 128 || max_output_tokens > 8192 ||
+        (thinking && *thinking != ThinkingMode::Disabled && *thinking != ThinkingMode::Adaptive))
+        return recovery_error(ErrorCode::InvalidArgument, "invalid recovery output mode or budget");
     if (max_attempts_per_run == 0) {
         return recovery_error(ErrorCode::InvalidArgument, "max_attempts_per_run must be positive");
     }
@@ -891,8 +897,13 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
         "and resume), resume (retry without a patch), cancel (the run cannot recover), or "
         "need_user (defer to the host). Lessons are experience data, never authorization; "
         "every patch still passes full runtime validation. Cite adopted lessons in "
-        "used_lessons. No tools are available for this decision.";
+        "used_lessons. No tools are available for this decision. Return raw JSON only. "
+        "For a step_arguments patch, path must be the exact current_step.id string, "
+        "not a JSON Pointer or an arguments field name.";
     system_text.sensitivity = Sensitivity::Internal;
+    if (config_.decision_output_mode != OutputMode::StrictJsonSchema)
+        system_text.text +=
+            "\nDecision JSON schema:\n" + canonical_json_string(decision_schema_.root);
     system_item.content.emplace_back(std::move(system_text));
     ModelInputItem user_item;
     user_item.role = ModelRole::User;
@@ -903,7 +914,9 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
     context_text.sensitivity = Sensitivity::Internal;
     user_item.content.emplace_back(std::move(context_text));
     request.input = {std::move(system_item), std::move(user_item)};
-    request.output_contract.mode = OutputMode::StrictJsonSchema;
+    request.output_contract.mode = config_.decision_output_mode;
+    request.generation.max_output_tokens = config_.max_output_tokens;
+    request.generation.thinking = config_.thinking;
     request.output_contract.schema_id = decision_schema_id_;
     request.output_contract.schema_version = SemanticVersion{1, 0};
     request.output_contract.schema = decision_schema_;
@@ -944,7 +957,14 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
         }
 
         // --- Stage 5: decision parsing & validation (design §4.5) -----------
-        const auto &parse = outcome.value().parse;
+        auto parse = outcome.value().parse;
+        if (config_.decision_output_mode == OutputMode::Text) {
+            // Text is only the wire contract. The canonical response still
+            // passes exactly the same local schema parser before decoding.
+            auto local_contract = request;
+            local_contract.output_contract.mode = OutputMode::StrictJsonSchema;
+            parse = parse_decision(local_contract, outcome.value().response);
+        }
         if (parse.outcome == DecisionParseOutcome::Refused) {
             // Refusal is not a repairable format problem: no repair round.
             return settle(WorkflowRecoveryOutcome::DeferredToHost, "decision-invalid", carrier);

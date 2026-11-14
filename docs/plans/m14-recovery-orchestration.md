@@ -1,6 +1,22 @@
 # M14：Workflow 恢复编排（Agent Harness 恢复闭环）
 
-> 状态：Completed
+> 状态：Completed（原 M14-01～07；M14-08 已完成 Linux 源码/下游验收，目标平台另列）
+
+2026-11-14：`M14-08`（Completed，Linux 下游增量）按
+[DEC-112](../decisions/DEC-112-recovery-output-mode.md) 补齐显式 Text/JsonObject 决策协议、
+同源 schema 供给、生成预算与本地校验回归；旧严格模式保持默认，不自动降级。
+
+验证：下游 Mirage 直接编译本仓库 m14_recovery_test.cpp 的
+mira_recovery_contract_test，连同新 Text/JsonObject 合法/坏 JSON/模式与预算拒绝、
+真实原子工具续跑及学习持久化路径，在 Debug/ASAN/UBSAN/TSAN 矩阵各 15/15 通过。
+Text 初版遗漏同源 schema parser，受控在线返回 decision-invalid 后补齐；显式补丁
+路径契约后，已配置 deepseek-flash 两次真实调用均修复/续跑成功，第二次携带 Lesson。
+独立第二进程重开读回两条 Episode/两条 Lesson。最终两次用量为输入 1818、输出 363
+token，共约 3.3s，属于合成文件任务，不代表真实桌面或模型泛化质量。共保留六次
+恢复尝试（四次开发失败，最终两次成功）；首轮没有 provider 调用计数/usage，未补造。
+Ubuntu 24.04.5 x86_64/GCC 13.3/CMake 3.28.3/Ninja；TSAN 用 setarch -R。
+代码边界/格式检查通过。新扩展的 Windows、installed 包、在线目标桌面与性能基准
+未补验，负责人 Mira/Mirage 维护者，待目标构建/设备就绪后补跑；既有首增量证据保留。
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)
 > 前置：[M13](m13-memory-and-learning-loop.md)（学习闭环数据面已交付）、

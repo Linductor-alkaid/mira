@@ -418,6 +418,17 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
 
 ## 兼容性与限制
 
+### 显式恢复输出协议（DEC-112 / M14-08）
+
+WorkflowRecoveryConfig.decision_output_mode 默认 StrictJsonSchema，也可显式指定
+JsonObject 或 Text；StrictFunctionTool 拒绝。非严格模式提供同一决策 schema 的系统
+约束，仍无工具授权；Text 的 canonical response 会再次调用同源本地 schema parser，
+只有通过 schema/决策解码/patch/权限/epoch 校验才可续跑，不能将纯文本当命令。
+不会因服务端拒绝而自动切换协议。Messages 目前只映射 Text，宿主应据此选择模式。
+
+max_output_tokens 为 128～8192，默认 2048；thinking 可显式 Disabled/Adaptive，否则
+沿模型默认。期限、尝试数与修复预算仍独立。实际模型质量和目标环境必须另外验收。
+
 - IR 的 minor 升级要求 reader 升级（未知字段不跳过）；这是本模块相对通用事件 schema
   更强的承诺。
 - `Navigate` 解析与 `screen_state` 谓词自 M12 起落地（DEC-028）：**前提是宿主安装了
