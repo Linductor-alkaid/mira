@@ -34,6 +34,14 @@ Episode 所需 Verified 等级，修正测试后重建；未把失败构建后�
 负责人 Mira/Mirage 维护者，待相应接口/目标设备就绪补跑。原始日志在下游本机
 build/m15-persistent-<preset>-checked-build.log / -test.log。
 
+同日分支 CI 首轮：Windows Debug 的容量测试在 open 返回 SQLITE_CANTOPEN，其余已完成
+Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weakly_canonical
+字符串，而 SQLite 使用原生 VFS 的 xFullPathname；改为复用原生 VFS 的文件名规范化，
+同时保留原最终文件计量以拒绝符号链接。容量测试增加带 `.` 的原始路径写法；修正后的
+本机 Debug 已重新构建容量/owner/Runtime Service 与服务程序，定向含隔离 fixture
+5/5 通过，格式/架构/平台边界通过；其余本机矩阵与目标 CI 另行记录，首轮 Windows
+失败不计为通过。下游日志 build/m15-native-vfs-debug-build.log / -test.log。
+
 把「持续交互」从「能一直聊」变成「**能一直聊且资源有界**」：
 
 1. **总量有界**：所有持久化与驻留数据层纳入**一个**容量预算；按主体份额、
