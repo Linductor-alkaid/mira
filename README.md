@@ -144,7 +144,9 @@ Routing quality and capacity figures are **not** yet measured.
 
 The M31 metadata increment now offers optional exclusive SQLite file-length
 admission and capacity snapshots (DEC-111); this is not the full multi-store
-capacity/forgetting lifecycle.
+capacity/forgetting lifecycle. Workflow recovery keeps strict JSON output by
+default and can explicitly use Text/JsonObject with the same local validation
+and bounded generation (DEC-112). Live product evidence belongs to the host.
 
 ## Getting started
 
