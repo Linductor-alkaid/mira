@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <vector>
 
 namespace mira::storage {
 Error memory_capacity_error() {
@@ -157,7 +158,6 @@ class MemoryCapacityVfs::Impl final {
         return value;
     }
     void configure() {
-        base = sqlite3_vfs_find(nullptr);
         if (!base)
             return;
         vfs = *base;
@@ -256,14 +256,24 @@ MemoryCapacityVfs::create(const SqliteMemoryStoreOptions &options) {
     impl->limit = options.max_storage_bytes;
     impl->operation_limit = impl->limit;
     impl->reserve = options.capacity_reserve_bytes;
+    impl->base = sqlite3_vfs_find(nullptr);
+    if (!impl->base || impl->base->mxPathname <= 0 || impl->base->mxPathname > 1024 * 1024)
+        return memory_capacity_error();
+    // SQLite xOpen receives the native VFS spelling, which can differ from
+    // filesystem::weakly_canonical (notably drive/path casing on Windows).
+    std::vector<char> full(static_cast<std::size_t>(impl->base->mxPathname) + 1, '\0');
+    if (impl->base->xFullPathname(impl->base, options.path.string().c_str(),
+                                  static_cast<int>(full.size()), full.data()) != SQLITE_OK)
+        return memory_capacity_error();
+    const std::string name(full.data());
+    impl->names = {name, name + "-wal", name + "-shm", name + "-journal"};
     std::error_code ec;
-    const auto path = std::filesystem::weakly_canonical(options.path, ec);
+    const auto path = std::filesystem::absolute(options.path, ec).lexically_normal();
     if (ec)
         return memory_capacity_error();
-    impl->names = {path.string(), path.string() + "-wal", path.string() + "-shm",
-                   path.string() + "-journal"};
-    for (std::size_t n = 0; n < impl->paths.size(); ++n)
-        impl->paths[n] = impl->names[n];
+    impl->paths = {path, std::filesystem::path(path.string() + "-wal"),
+                   std::filesystem::path(path.string() + "-shm"),
+                   std::filesystem::path(path.string() + "-journal")};
     SqliteMemoryCapacitySnapshot current;
     if (impl->scan(current) != SQLITE_OK || current.file_bytes > impl->limit)
         return memory_capacity_error();

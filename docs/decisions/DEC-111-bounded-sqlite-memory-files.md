@@ -13,6 +13,8 @@
 Store 是文件唯一 owner 时契约成立，不能用其他 SQLite 连接或外部进程修改这些文件。
 
 SQLite 默认 VFS 承担实际平台 I/O 与事务/恢复。shim 不自建线程、任务队列或数据库；
+文件身份白名单取自该 VFS 的 xFullPathname，不用 std::filesystem 的另一种规范化
+字符串匹配 SQLite xOpen；计量路径保留原最终文件以拒绝符号链接。
 初始打开/迁移后所有运行期操作沿同一 Executor StoreChannel。增长超过硬限额返回
 ResourceExhausted；不自动扩容、删除、重试或冒充回滚。已有 mutation-id 幂等与 WAL
 恢复继续复用。超过配置的已有文件拒绝打开且不删除；正常重开重新计量，不依赖驻留计数。

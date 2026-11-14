@@ -58,7 +58,7 @@ void capacity_and_recovery() {
     ExecutorOwner executor;
     Directory dir;
     SqliteMemoryStoreOptions options;
-    options.path = dir.path / "memory.db";
+    options.path = dir.path / "." / "memory.db"; // Native VFS normalizes this spelling.
     options.max_storage_bytes = 1024 * 1024;
     options.capacity_reserve_bytes = 256 * 1024;
     auto store = take(SqliteMemoryStore::open(executor.value, options));
