@@ -334,6 +334,9 @@ add_test(
 set_tests_properties(mira_installed_consumer_test PROPERTIES LABELS "contract;consumer" TIMEOUT 180)
 
 if(Python3_Interpreter_FOUND)
+    add_test(NAME mira_architecture_paths_test
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/architecture_paths_test.py")
+    set_tests_properties(mira_architecture_paths_test PROPERTIES LABELS "contract;architecture")
     add_test(NAME mira_docs_test
         COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_docs.py"
                 "${PROJECT_SOURCE_DIR}")
