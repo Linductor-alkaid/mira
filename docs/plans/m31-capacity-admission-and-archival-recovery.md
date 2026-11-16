@@ -203,4 +203,17 @@ Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weak
 
 ## 8. 验证记录
 
-> 尚无记录。
+### 2026-11-16：CI 与嵌入式架构检查修正
+
+232c9d1 的 Linux/Windows Debug/Release、Android 两 ABI 与 ASAN/UBSAN/TSAN job
+全部通过；quality 的静态分析构建、格式、文档、SBOM、平台边界均通过，架构检查
+拒绝 sqlite_memory_store.cpp 的文件规模。排查发现 check_architecture 用绝对路径
+过滤 third_party/build，令 Mirage 嵌入式本地检查跳过所有源码，错误显示所有 baseline
+已消失。此前“本地架构通过/移除陈旧项”的结果不能作为真实扫描证据。
+
+改为相对 Mira 仓库根过滤，增加普通目录及 third_party/build 父目录的检查器回归：
+自研源码必须被扫描、仓库内 vendor/generated 仍排除、真实规模违规必须检出。
+人工恢复 be44e36 已存在的 sqlite_memory_store.cpp 规模基线，非新增豁免或提高预算；
+该文件既有拆分债务仍保留。修正后直接运行检查器回归通过（3 种父路径），真实扫描
+显示 16 项既有债务、0 stale、0 新违规。文档/SBOM/平台边界检查通过。CI 结果另记
+Mirage M15-17；未把其他项目仍开放的设备/断电验收改为通过。
