@@ -25,6 +25,13 @@ class IEmbeddingProvider {
   public:
     virtual ~IEmbeddingProvider() = default;
 
+    // Identity of this producer configuration (DEC-111): derived
+    // deterministically from the canonical descriptor (protocol family,
+    // endpoint host, model, dims). Changing the model or endpoint retires
+    // the old identity, so previously indexed vectors stop matching queries
+    // instead of silently answering with a different model's geometry.
+    [[nodiscard]] virtual EmbedderId embedder_id() const = 0;
+
     // One vector for one text. The dimension is the provider's choice; a
     // dimension that does not match the indexed vectors degrades the vector
     // leg, never the query.
@@ -37,24 +44,27 @@ class IEmbeddingProvider {
 };
 
 // The projection sink. A durable store without a vector leg does not
-// implement it; the memory query contract still reports index lag, and the
-// vector leg degrades to exact/lexical recall.
+// implement it; the memory query contract still reports index lag, and
+// the vector leg degrades to exact/lexical recall. Every vector belongs to
+// one embedder identity (DEC-111): probes and lag are answered per identity,
+// so switching producers truthfully reports the rebuilt projection as lagging.
 class IMemoryEmbeddingIndex {
   public:
     virtual ~IMemoryEmbeddingIndex() = default;
 
-    // Attaches (or replaces) the vector of one record. Empty or oversized
-    // vectors are rejected so corrupt supply surfaces as index lag rather
-    // than query poisoning.
-    [[nodiscard]] virtual Result<void> index_embedding(MemoryId record,
+    // Attaches (or replaces) the vector of one record for one embedder.
+    // Empty or oversized vectors are rejected so corrupt supply surfaces as
+    // index lag rather than query poisoning.
+    [[nodiscard]] virtual Result<void> index_embedding(MemoryId record, EmbedderId embedder,
                                                        std::span<const float> vector) = 0;
-    // Whether a record currently carries a usable vector.
-    [[nodiscard]] virtual Result<bool> has_embedding(MemoryId record) const = 0;
-    // Active records without a usable vector.
-    [[nodiscard]] virtual Result<std::size_t> index_lag() const = 0;
-    // Drops every vector (e.g. after an embedding-model change); returns how
-    // many were dropped.
-    [[nodiscard]] virtual Result<std::size_t> clear_embeddings() = 0;
+    // Whether a record currently carries a vector of this embedder.
+    [[nodiscard]] virtual Result<bool> has_embedding(MemoryId record,
+                                                     EmbedderId embedder) const = 0;
+    // Active records without a vector of this embedder.
+    [[nodiscard]] virtual Result<std::size_t> index_lag(EmbedderId embedder) const = 0;
+    // Drops every vector of this embedder (e.g. before a re-index); returns
+    // how many were dropped.
+    [[nodiscard]] virtual Result<std::size_t> clear_embeddings(EmbedderId embedder) = 0;
 };
 
 // What one repair pass achieved.
@@ -117,10 +127,10 @@ class MemoryEmbeddingIndexer final {
     repair(IMemory &memory, const MemoryScope &scope,
            MemoryEmbeddingRepairOptions options = MemoryEmbeddingRepairOptions{});
 
-    // The query vector for MemoryQuery::query_embedding. A failure is the
-    // caller's to handle: the vector leg is optional, the lexical and exact
-    // legs are not.
-    [[nodiscard]] Result<std::vector<float>> embed_query(std::string_view text);
+    // The query vector for MemoryQuery::query_embedding, carrying this
+    // producer's identity. A failure is the caller's to handle: the vector
+    // leg is optional, the lexical and exact legs are not.
+    [[nodiscard]] Result<MemoryEmbedding> embed_query(std::string_view text);
 
   private:
     IMemoryEmbeddingIndex &index_;

@@ -149,6 +149,8 @@ add_library(mira_core
     src/model/model_budget.cpp
     src/model/model_supervisor.cpp
     src/model/model_provider.cpp
+    src/model/embedding_provider.cpp
+    src/model/reranker_provider.cpp
     src/model/model_upload.cpp
     src/model/model_gateway.cpp
     src/model/model_context_admission.cpp
@@ -494,6 +496,39 @@ mira_enable_sanitizers(mira_memory_agent_host_consumer)
 if(MIRA_BUILD_TESTS)
     add_test(NAME mira_memory_agent_host_consumer_test COMMAND mira_memory_agent_host_consumer)
     set_tests_properties(mira_memory_agent_host_consumer_test PROPERTIES LABELS "consumer;m36" TIMEOUT 30)
+endif()
+
+# MNT-202611-EP (DEC-111): offline embedding producer chain - provider over a
+# scripted transport, supervisor-driven repair, recall with the semantic prior
+# and the degrade round.
+# MNT-202611-HR (DEC-112): offline reranker chain - Layer 1 retrieval over an
+# in-memory index, OpenAiCompatibleReranker over a scripted transport, and the
+# contract degrade round.
+add_executable(mira_reranker_host_consumer examples/reranker_host_consumer.cpp)
+target_link_libraries(mira_reranker_host_consumer PRIVATE Mira::core kairo::kairo)
+target_include_directories(mira_reranker_host_consumer SYSTEM PRIVATE
+    ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_reranker_host_consumer)
+mira_enable_sanitizers(mira_reranker_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_reranker_host_consumer_test
+             COMMAND mira_reranker_host_consumer)
+    set_tests_properties(mira_reranker_host_consumer_test
+                         PROPERTIES LABELS "consumer" TIMEOUT 30)
+endif()
+
+add_executable(mira_embedding_recall_host_consumer examples/embedding_recall_host_consumer.cpp)
+target_link_libraries(mira_embedding_recall_host_consumer PRIVATE
+    Mira::core Mira::state_store kairo::kairo)
+target_include_directories(mira_embedding_recall_host_consumer SYSTEM PRIVATE
+    ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_embedding_recall_host_consumer)
+mira_enable_sanitizers(mira_embedding_recall_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_embedding_recall_host_consumer_test
+             COMMAND mira_embedding_recall_host_consumer)
+    set_tests_properties(mira_embedding_recall_host_consumer_test
+                         PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 
 # M29 durable interaction recovery and read-only backfill, offline.

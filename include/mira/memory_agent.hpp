@@ -2,6 +2,7 @@
 
 #include <mira/conversation_loop.hpp>
 #include <mira/memory_consolidation.hpp>
+#include <mira/memory_embedding.hpp>
 #include <mira/model_context_admission.hpp>
 #include <mira/security.hpp>
 
@@ -67,6 +68,10 @@ struct MemoryWorkBinding final {
     // Record after settlement is independent of this request-only probe.
     std::function<bool()> request_current;
     std::vector<std::string> user_constraints;
+    // Any-of label prefilter applied to every Recall query of this work
+    // (DEC-112 metadata): only records carrying at least one of these labels
+    // participate. Host-defined data tags; bounds mirror MemoryQuery::labels.
+    std::vector<std::string> labels;
 };
 
 struct MemoryAgentNote final {
@@ -180,6 +185,14 @@ class MemoryAgentService final {
     // Rebuild durable scope erasure barriers before admission. Erased scopes
     // cannot be rebound/re-extracted, including after process restart.
     [[nodiscard]] Result<void> initialize();
+
+    // Opt-in semantic prior for Recall queries (DEC-111): before initialize(),
+    // the host may inject an embedding producer. Recall then embeds the query
+    // text once per query; an embed failure (timeout included) degrades the
+    // vector leg and marks the result degraded — it never fails the recall.
+    // The producer is invoked on the job's Executor worker; the transport's
+    // deadlines bound the blocking call.
+    [[nodiscard]] Result<void> set_recall_embedder(std::shared_ptr<IEmbeddingProvider> embedder);
     [[nodiscard]] Result<void> bind(MemoryWorkBinding binding);
     // DEC-107: atomically bind/update a work frame and suspend candidates
     // until the entire corresponding input queue has been accepted. Existing

@@ -103,6 +103,9 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     };
     std::map<ArtifactId, Projection> projections;
     std::optional<Error> audit_error;
+    // Optional recall embedder (DEC-111); guarded by mutex and frozen at
+    // initialize() so jobs never observe a mid-flight producer swap.
+    std::shared_ptr<IEmbeddingProvider> recall_embedder;
     struct PreferenceEntry final {
         PreferenceProposal proposal;
         PrincipalContext owner; // Only identity/version populated on replay; never grants.

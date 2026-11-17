@@ -18,7 +18,9 @@ namespace mira {
 // Versioned long-term memory contracts (M4-01; durable backends are M4-09+)
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 0}; }
+// {1,1} adds the labels/importance metadata fields (DEC-112); readers accept
+// the previous compatible minor and ignore unknown members.
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 1}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -174,6 +176,11 @@ struct MemoryRecord final {
     // External imports must carry their namespace and cannot claim
     // HumanConfirmed verification (design Context/Memory §19).
     std::optional<std::string> source_namespace;
+    // Structured metadata (DEC-112): free-form labels for host-defined
+    // filtering and a neutral importance prior. Labels are data, never
+    // instructions; importance is a retrieval prior, not an authority signal.
+    std::vector<std::string> labels;
+    float importance = 0.5F;
     SchemaVersion schema_version = memory_schema_current();
     // Store-side optimistic-concurrency version; backends set it on read and
     // check it on Update/Supersede/Tombstone mutations.
@@ -239,6 +246,38 @@ struct MemoryMutationResult final {
 // Retrieval contracts (M4-10/M4-11)
 // ---------------------------------------------------------------------------
 
+// Identity of one embedding producer configuration (DEC-111). Vectors from
+// different embedders are never comparable; equality of this id is the only
+// gate that lets a query vector meet an indexed vector in the cosine leg.
+// The id is derived deterministically from the producer's canonical
+// descriptor (protocol family, endpoint host, model, dims), so changing the
+// model automatically retires the old vectors' identity.
+#define MIRA_DEFINE_MEMORY_EMBEDDING_ID(name)                                                      \
+    struct name final {                                                                            \
+        Id128 value{};                                                                             \
+        static name generate() { return name{Id128::generate()}; }                                 \
+        static std::optional<name> parse(std::string_view text) noexcept {                         \
+            const auto parsed = Id128::parse(text);                                                \
+            return parsed ? std::optional<name>(name{*parsed}) : std::nullopt;                     \
+        }                                                                                          \
+        [[nodiscard]] bool is_nil() const noexcept { return value.is_nil(); }                      \
+        [[nodiscard]] std::string to_string() const { return value.to_string(); }                  \
+        friend constexpr bool operator==(const name &, const name &) noexcept = default;           \
+        friend constexpr auto operator<=>(const name &, const name &) noexcept = default;          \
+    }
+
+MIRA_DEFINE_MEMORY_EMBEDDING_ID(EmbedderId);
+
+#undef MIRA_DEFINE_MEMORY_EMBEDDING_ID
+
+// An embedding that always travels with the identity of the producer that
+// created it (DEC-111). An unattributed vector is not a representable state:
+// values without an embedder id (or the reverse) fail validation.
+struct MemoryEmbedding final {
+    std::vector<float> values;
+    EmbedderId embedder;
+};
+
 // Which retrieval legs ran and how they degraded. Quality is reported so the
 // Reasoner can continue, ask a human, or fail — never silently.
 struct MemoryQueryQuality final {
@@ -252,6 +291,9 @@ struct MemoryQueryQuality final {
     // Active records without a usable embedding; the vector index may lag the
     // authoritative records (it is a rebuildable projection).
     std::size_t index_lag = 0;
+    // Candidates dropped by the near-duplicate suppression (DEC-112), which
+    // only runs when the query carries an embedding and the option is on.
+    std::size_t dedup_suppressed = 0;
     bool vector_degraded = false;
     bool deadline_exceeded = false;
     bool degraded = false;
@@ -274,9 +316,14 @@ struct MemoryQuery final {
     // The value is a claim subject, normalized by
     // memory_normalize_claim_key().
     std::optional<std::string> claim_key;
-    // Optional embedding for the bounded cosine leg; dimension must match the
-    // indexed vectors or the leg degrades to exact/FTS.
-    std::vector<float> query_embedding;
+    // Any-of label prefilter (DEC-112): only records carrying at least one of
+    // these labels participate. A hard filter, like the scope allowlist.
+    std::optional<std::vector<std::string>> labels;
+    // Optional embedding for the bounded cosine leg (DEC-111): the values
+    // always carry the identity of their producer. Only vectors of the same
+    // embedder meet in the cosine leg; a mismatching identity surfaces as a
+    // vector error and degrades the leg to exact/FTS.
+    MemoryEmbedding query_embedding;
     std::size_t max_results = 32;
     // Conservative token packing budget for the selected statements.
     std::uint64_t token_budget = 4'096;

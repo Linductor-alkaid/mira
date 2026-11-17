@@ -323,7 +323,8 @@ int failure_retrieval_query_is_deterministic_and_bounded() {
     MIRA_CHECK(std::find(query.value().kinds->begin(), query.value().kinds->end(),
                          MemoryKind::RecoveryLesson) != query.value().kinds->end());
     MIRA_CHECK(query.value().exact_terms.size() == 2);
-    MIRA_CHECK(query.value().query_embedding.empty());
+    MIRA_CHECK(query.value().query_embedding.values.empty());
+    MIRA_CHECK(query.value().query_embedding.embedder.is_nil());
     MIRA_CHECK(query.value().max_results == kLimits.max_retrieval_results);
     MIRA_CHECK(query.value().token_budget == kLimits.retrieval_token_budget);
     MIRA_CHECK(query.value().deadline == kLimits.retrieval_deadline);

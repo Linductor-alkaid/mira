@@ -40,6 +40,13 @@
   可重建投影：statement 改变即丢弃旧向量。Core 不含推理实现——这与 `IModelProvider`、
   `IContextEmbedder` 同一分工。见
   [DEC-060](../decisions/DEC-060-memory-embedding-provider.md)。
+- §14.4 向量身份与生产者实现：每个向量携带 `EmbedderId`（canonical descriptor 确定性
+  派生），余弦腿只在同一身份内比较、跨身份失配可见并降级；查询向量结构化为
+  `MemoryEmbedding{values, embedder}`。Core 附带 OpenAI 兼容 `/v1/embeddings` 协议
+  适配器 `OpenAiCompatibleEmbeddingProvider`（协议适配在 Core、HTTP 栈经注入的
+  `IHttpTransport`），记忆代理 recall 可 opt-in 注入查询向量（embed 失败只降级）。
+  store schema 1.2 为 `memory_embeddings` 加身份列，迁移清空无身份旧向量。
+  见 [DEC-111](../decisions/DEC-111-memory-embedding-producer-and-vector-identity.md)。
 - §13.5 Claim Key：冲突检测以归一化主语为准——`volume=30` 与 `volume = 30` 是同一个
   claim，不再并存；`MemoryQuery::claim_key` 提供按主语的硬过滤，冲突检索在排序与
   多样性裁剪之前收窄候选集，Core 侧另做一次主语复核。见
@@ -782,6 +789,23 @@ SQLite 参考后端的 FTS/vector 单腿额度必须在前述硬过滤后的候�
 文本/向量索引也尚未单独构建；规模与历史召回改造见
 [存储核查](memory-storage-reference-study.md)及[维护计划](../plans/maintenance-2026-11-memory-storage.md)。
 
+### 14.1a 融合模式（DEC-112）
+
+三腿的融合公式是 store 选项（`SqliteMemoryStoreOptions::fusion`），默认
+`WeightedSum`（历史行为零变化）。`ReciprocalRank` 模式：FTS 与余弦两腿各自按
+排名投票 `1/(60 + rank + 1)`（weighted-RRF，k=60 文档化常量），在候选集内
+min-max 归一化后叠加先验项（verification / confidence / recency /
+importance）——先验永远只是次级信号，候选集内的腿差距不会被先验淹没。RRF
+存在的理由：BM25 与余弦分数分布不可比，加权融合会让向量腿翻转词面序
+（真实供应商双模型实测确认）；RRF 只用排名，两腿任一缺席仍稳定。exact 仍是
+强制过滤器，以共享常量票参与（不是排名）。
+
+元数据先验：`labels`（any-of 硬预过滤，候选 SQL 内执行）与 `importance`
+（[0,1]，宿主写时赋值）是 DEC-112 新增的结构化元数据；importance 的排序
+权重默认 0.0，宿主显式启用。近重去重（`near_dup_threshold`，默认关）在排序
+后 top-64 有界区间内抑制嵌入余弦过阈的候选，阈值按 embedder 实测标定
+（bge-m3 改述近重 ≈0.86）；无查询身份向量的候选豁免。
+
 ### 14.2 排名模型
 
 不冻结具体权重，但评分输入至少包含：
@@ -822,20 +846,32 @@ Graphiti 类双时态图后端只作为可选远程实现。首期不要求 Andr
 Core 不做推理。
 
 ```cpp
-class IEmbeddingProvider {          // 生产者：宿主提供实现
+class IEmbeddingProvider {          // 生产者：宿主提供实现（DEC-111：附身份）
+    virtual EmbedderId embedder_id() const = 0;
     virtual Result<std::vector<float>> embed(std::string_view text) = 0;
 };
 
 class IMemoryEmbeddingIndex {        // 投影：没有向量腿的存储不必实现
-    virtual Result<void> index_embedding(MemoryId, std::span<const float>) = 0;
-    virtual Result<bool> has_embedding(MemoryId) const = 0;
-    virtual Result<std::size_t> index_lag() const = 0;
-    virtual Result<std::size_t> clear_embeddings() = 0;
+    virtual Result<void> index_embedding(MemoryId, EmbedderId, std::span<const float>) = 0;
+    virtual Result<bool> has_embedding(MemoryId, EmbedderId) const = 0;
+    virtual Result<std::size_t> index_lag(EmbedderId) const = 0;
+    virtual Result<std::size_t> clear_embeddings(EmbedderId) = 0;
 };
 ```
 
 `MemoryEmbeddingIndexer` 把两者接起来：它按记录产出向量并写入投影，按 scope 做一次**有界
-修复**（把还没有向量的活记录补齐），并为 `MemoryQuery::query_embedding` 产出查询向量。
+修复**（把还没有向量的活记录补齐），并为 `MemoryQuery::query_embedding` 产出带身份的
+查询向量。Core 另附一个 OpenAI 兼容 `/v1/embeddings` 协议适配器
+（`embedding_provider.hpp` 的 `OpenAiCompatibleEmbeddingProvider`）：协议适配在 Core、
+HTTP 栈经注入的 `IHttpTransport`——与 `OpenAiCompatibleProvider` 同一分工；
+[DEC-111](../decisions/DEC-111-memory-embedding-producer-and-vector-identity.md)。
+
+**向量身份（DEC-111）**：每个向量携带其生产者身份 `EmbedderId`——由 canonical descriptor
+（协议族、endpoint host、model、维度）确定性派生，换模型或换 endpoint host 自动换身份。
+查询向量同样结构化（`MemoryEmbedding{values, embedder}`），无身份的向量不是可表达的
+状态。余弦腿只在同一身份内比较：跨身份失配计 `vector_errors` 并降级（配置错误可见），
+绝不混算两种几何。一条记录同时只保存一个向量（statement 的单一投影），新身份的写入
+重新归属该记录，旧身份随即如实计入自己的 lag。
 
 规则：
 
@@ -848,6 +884,8 @@ class IMemoryEmbeddingIndex {        // 投影：没有向量腿的存储不必�
   跳过。
 - **失败只降级**。生产者失败或向量写入失败时，投影保持缺口，exact / lexical 腿继续
   回答，记录本身仍然是权威源。修复pass 下一轮重试。
+- **失败只降级（召回端同理）**。recall 侧（DEC-107 记忆代理）可选注入 recall embedder：
+  embed 失败（含超时）只丢向量腿、词法腿照常回答、结果置 degraded，绝不使 recall 失败。
 - **不接写入热路径**。每个 Event 或每次写入都同步嵌入会增加控制面延迟，而向量索引是
   可重建投影（§23 明确拒绝同步写 embedding）。宿主在自己的 Executor worker 上驱动索引
   与修复。

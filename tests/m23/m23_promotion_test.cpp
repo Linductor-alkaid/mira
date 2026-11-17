@@ -896,10 +896,48 @@ int projection_byte_determinism() {
     MIRA_CHECK(left_memory.stored_records() == right_memory.stored_records());
     return 0;
 }
+// DEC-112 wiring: the promotion policy carries host-defined labels onto
+// every promoted candidate; the projection never invents labels, and an
+// invalid label set is refused at the policy boundary.
+int promotion_carries_host_labels() {
+    WorkingContextSnapshot snapshot = m23_snapshot(21);
+    snapshot.constraints.push_back(m23_item("rotate staging keys monthly", 21, 0.9));
+    snapshot.decisions.push_back(m23_item("prefer streaming responses", 22, 0.8));
+
+    WorkingContextPromotionPolicy policy;
+    policy.labels = {"promoted", "w4"};
+
+    const MemoryScope scope = m23_env_scope("env-labels");
+    const auto projection = memory_candidates_from_working_context(snapshot, scope, policy);
+    MIRA_CHECK(projection.has_value() && projection.value().candidates.size() == 2);
+    for (const auto &candidate : projection.value().candidates) {
+        MIRA_CHECK(candidate.proposed.labels.size() == 2);
+        MIRA_CHECK(candidate.proposed.labels.front() == "promoted");
+        MIRA_CHECK(candidate.proposed.source_namespace == "working-context");
+    }
+
+    // No labels configured -> candidates stay unlabeled (documented default).
+    const auto unlabeled = memory_candidates_from_working_context(snapshot, scope);
+    MIRA_CHECK(unlabeled.has_value());
+    for (const auto &candidate : unlabeled.value().candidates) {
+        MIRA_CHECK(candidate.proposed.labels.empty());
+    }
+
+    // Policy boundary validation.
+    WorkingContextPromotionPolicy too_long = policy;
+    too_long.labels = {std::string(65, 'x')};
+    MIRA_CHECK(!too_long.validate().has_value());
+    WorkingContextPromotionPolicy too_many = policy;
+    too_many.labels.assign(17, "x");
+    MIRA_CHECK(!too_many.validate().has_value());
+    return 0;
+}
 
 } // namespace
 
 int main() {
+    if (promotion_carries_host_labels())
+        return 1;
     const struct {
         const char *name;
         int (*run)();

@@ -127,6 +127,20 @@ gates). The first stage of the principal-level interaction layer, **M28**, is
 delivered: locally green (119/119, 118/118 under TSAN) and CI green across the
 full matrix (24/24).
 
+The memory vector leg gained a real producer in the 2026-11 maintenance round
+([DEC-111](docs/decisions/DEC-111-memory-embedding-producer-and-vector-identity.md)):
+a Core OpenAI-compatible `/v1/embeddings` protocol adapter over the injected
+`IHttpTransport`, deterministic `EmbedderId` comparability guarding (store
+schema 1.2), and opt-in recall-side query vectors that degrade instead of
+failing. Real-provider smoke evidence is still pending and recorded as such.
+
+Memory retrieval gained hybrid fusion in the 2026-11 maintenance round
+([DEC-112](docs/decisions/DEC-112-hybrid-retrieval-fusion.md)): an opt-in RRF
+fusion mode over the FTS5 + bounded-cosine legs, structured metadata columns
+(labels/importance, store schema 1.3), near-duplicate suppression, and an
+OpenAI/Cohere-style `/v1/rerank` adapter behind the host-injected
+`IContextReranker` contract (live-provider smoke verified).
+
 Still open — and honestly reported rather than claimed: on-device Android
 runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the
 first stage of the unified behavior trace (DEC-038). Mira ships the runtime and
@@ -140,6 +154,12 @@ ledger, deterministic routing and a natural-language clarification path
 **M29–M31** add execution-time interruption, concurrent attribution and
 restart recovery, together with a bounded capacity model, layered forgetting,
 and session archival ([DEC-069](docs/decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)).
+Since **M28**, the interaction recovery stage **M29** and the managed
+subagent / semantic tool selection / memory-agent stages **M34–M36** are
+delivered (Linux offline scope), **M30** (long-term memory integration) is in
+progress, and **M31–M33** (bounded capacity and layered forgetting, attention
+focus, autonomy and interruption budgets) remain planned
+([implementation plan](docs/plans/mira-implementation-plan.md)).
 Routing quality and capacity figures are **not** yet measured.
 
 ## Getting started

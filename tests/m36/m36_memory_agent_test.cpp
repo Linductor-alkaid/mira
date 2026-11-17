@@ -4,9 +4,20 @@
 #include <mira/context_contracts.hpp>
 #include <mira/context_retrieval.hpp>
 
+#include <iostream>
+#include <string>
+
 namespace {
 using namespace mira;
 using namespace mira::testing;
+
+[[nodiscard]] Id128 ordinal_id(std::uint64_t ordinal) {
+    Id128::Bytes bytes{};
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        bytes[index] = static_cast<std::uint8_t>((ordinal >> ((index % 8) * 8)) & 0xFFU);
+    }
+    return Id128{bytes};
+}
 
 int scopes_and_work_revisions_are_isolated() {
     MemoryAgentFixture fixture;
@@ -192,9 +203,149 @@ int recall_renders_one_framed_block_and_dedupes_expansions() {
     const auto &empty_result = empty_handle.value().result.get();
     MIRA_CHECK(empty_result && empty_result.value().candidates.empty());
     return 0;
+} // DEC-111: the recall embedder turns the query into a vector; a paraphrase
+// with no shared lexical token is answered by the vector leg alone, and an
+// embed failure degrades the result without failing the recall.
+int recall_embedder_sets_the_query_vector_and_degrades() {
+    class ScriptedEmbedder final : public IEmbeddingProvider {
+      public:
+        EmbedderId embedder_id() const override { return id; }
+        Result<std::vector<float>> embed(std::string_view) override {
+            ++calls;
+            if (fail) {
+                return make_memory_error(MemoryDomainCode::IndexDegraded, "embedder down");
+            }
+            return std::vector<float>{1.0F, 0.0F};
+        }
+        EmbedderId id = EmbedderId::generate();
+        bool fail = false;
+        int calls = 0;
+    };
+
+    auto embedder = std::make_shared<ScriptedEmbedder>();
+    MemoryAgentFixture fixture;
+    fixture.start({}, {}, embedder);
+    auto binding = fixture.binding("tone task");
+    MIRA_CHECK(fixture.service->bind(binding));
+    // Seed like the fixture does, keeping the record id so a vector can be
+    // attached for the paraphrase proof.
+    MemoryCandidate candidate;
+    candidate.proposed.id = MemoryId::generate();
+    candidate.proposed.scope = binding.scopes.front();
+    candidate.proposed.kind = MemoryKind::EnvironmentFact;
+    candidate.proposed.statement = "用户偏好简洁回复";
+    candidate.proposed.provenance = {EventId::generate()};
+    candidate.evidence = candidate.proposed.provenance;
+    candidate.proposed.verification = MemoryVerification::Verified;
+    candidate.proposed.confidence = 0.9F;
+    const auto consolidated = MemoryConsolidator{}.consolidate_candidates(
+        *fixture.memory, {candidate}, binding.scopes.front(), Timestamp::now());
+    MIRA_CHECK(consolidated && consolidated.value().count_of(CandidateDisposition::Applied) == 1);
+
+    // Manual vector for the seeded statement: the query paraphrase shares
+    // no lexical token, so only the vector leg can bridge.
+    MIRA_CHECK(fixture.memory
+                   ->index_embedding(candidate.proposed.id, embedder->embedder_id(),
+                                     std::vector<float>{1.0F, 0.0F})
+                   .has_value());
+
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.query = "别太啰嗦";
+    auto handle = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(handle && handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &recalled = handle.value().result.get();
+    MIRA_CHECK(recalled && !recalled.value().degraded);
+    MIRA_CHECK(recalled.value().candidates.size() == 1);
+    MIRA_CHECK(embedder->calls == 1);
+
+    // An embed failure only drops the vector leg: the recall still settles,
+    // and the result is marked degraded.
+    embedder->fail = true;
+    auto failed_handle = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(failed_handle &&
+               failed_handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &degraded = failed_handle.value().result.get();
+    MIRA_CHECK(degraded && degraded.value().degraded);
+    MIRA_CHECK(embedder->calls == 2);
+
+    // The seam is frozen at initialize(): late configuration is refused.
+    auto late = std::make_shared<ScriptedEmbedder>();
+    MIRA_CHECK(!fixture.service->set_recall_embedder(late));
+    MIRA_CHECK(!fixture.service->set_recall_embedder(nullptr));
+    return 0;
 }
+// DEC-112 wiring: the work binding's label prefilter narrows the recall
+// universe; a work without labels sees both records.
+int recall_applies_the_work_label_prefilter() {
+    MemoryAgentFixture fixture;
+    fixture.start();
+    auto binding = fixture.binding("labeled task");
+    binding.labels = {"ops"};
+    MIRA_CHECK(fixture.service->bind(binding));
+    const auto seed_labeled = [&](std::uint64_t ordinal, std::string statement,
+                                  std::vector<std::string> labels) {
+        MemoryCandidate candidate;
+        candidate.proposed.id = MemoryId{ordinal_id(ordinal)};
+        candidate.proposed.scope = binding.scopes.front();
+        candidate.proposed.kind = MemoryKind::EnvironmentFact;
+        candidate.proposed.statement = std::move(statement);
+        candidate.proposed.labels = std::move(labels);
+        candidate.proposed.provenance = {EventId{ordinal_id(ordinal + 500)}};
+        candidate.evidence = candidate.proposed.provenance;
+        candidate.proposed.verification = MemoryVerification::Verified;
+        candidate.proposed.confidence = 0.9F;
+        const auto consolidated = MemoryConsolidator{}.consolidate_candidates(
+            *fixture.memory, {candidate}, binding.scopes.front(), Timestamp::now());
+        return consolidated && consolidated.value().count_of(CandidateDisposition::Applied) == 1;
+    };
+    MIRA_CHECK(seed_labeled(10, "volume=30 ops note", {"ops"}));
+    MIRA_CHECK(seed_labeled(11, "network=offline tone note", {}));
+
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.query = "note";
+    auto handle = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(handle && handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &filtered = handle.value().result.get();
+    MIRA_CHECK(filtered && filtered.value().candidates.size() == 1);
+    MIRA_CHECK(!filtered.value().degraded);
+    // The framed block carries only the labeled record.
+    const auto &filtered_block =
+        std::get<TextPart>(filtered.value().candidates.front().content.front()).text;
+    MIRA_CHECK(filtered_block.find("volume=30 ops note") != std::string::npos);
+    MIRA_CHECK(filtered_block.find("network=offline tone note") == std::string::npos);
+
+    // A second work without labels sees both records.
+    auto open_binding = fixture.binding("open task");
+    open_binding.scopes = binding.scopes;
+    MIRA_CHECK(fixture.service->bind(open_binding));
+    MemoryAgentRequest open_request;
+    open_request.task = open_binding.work.task_id;
+    open_request.query = "note";
+    auto open_handle = fixture.service->submit(open_request, memory_context(open_binding.work));
+    MIRA_CHECK(open_handle && open_handle.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &open_result = open_handle.value().result.get();
+    MIRA_CHECK(open_result && open_result.value().candidates.size() == 1);
+    // One framed block carries all matching records for the label-less work.
+    const auto &open_block =
+        std::get<TextPart>(open_result.value().candidates.front().content.front()).text;
+    MIRA_CHECK(open_block.find("volume=30 ops note") != std::string::npos);
+    MIRA_CHECK(open_block.find("network=offline tone note") != std::string::npos);
+
+    // Invalid label sets are refused at bind time.
+    auto bad = fixture.binding("bad labels");
+    bad.labels.assign(17, "x");
+    MIRA_CHECK(!fixture.service->bind(bad));
+    return 0;
+}
+
 } // namespace
 int main() {
+    if (recall_applies_the_work_label_prefilter())
+        return 1;
+    if (recall_embedder_sets_the_query_vector_and_degrades())
+        return 1;
     if (scopes_and_work_revisions_are_isolated())
         return 1;
     if (recall_renders_one_framed_block_and_dedupes_expansions())

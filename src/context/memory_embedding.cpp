@@ -60,15 +60,16 @@ Result<void> MemoryEmbeddingIndexer::index_record(const MemoryRecord &record) {
         return embedded.error();
     }
     const auto &values = embedded.value();
-    return index_.index_embedding(record.id, std::span<const float>(values));
+    return index_.index_embedding(record.id, provider_.embedder_id(),
+                                  std::span<const float>(values));
 }
 
-Result<std::vector<float>> MemoryEmbeddingIndexer::embed_query(std::string_view text) {
+Result<MemoryEmbedding> MemoryEmbeddingIndexer::embed_query(std::string_view text) {
     auto embedded = provider_.embed(text);
     if (!embedded) {
         return embedded.error();
     }
-    return embedded;
+    return MemoryEmbedding{std::move(embedded).value(), provider_.embedder_id()};
 }
 
 Result<MemoryEmbeddingRepairReport>
@@ -91,6 +92,7 @@ MemoryEmbeddingIndexer::repair(IMemory &memory, const MemoryScope &scope,
         return found.error();
     }
     MemoryEmbeddingRepairReport report;
+    const EmbedderId embedder = provider_.embedder_id();
     for (const auto &record : found.value().records) {
         ++report.scanned;
         if (!semantic_eligible(record.kind)) {
@@ -99,7 +101,7 @@ MemoryEmbeddingIndexer::repair(IMemory &memory, const MemoryScope &scope,
             ++report.ineligible;
             continue;
         }
-        const auto present = index_.has_embedding(record.id);
+        const auto present = index_.has_embedding(record.id, embedder);
         if (!present) {
             return present.error();
         }
@@ -114,14 +116,15 @@ MemoryEmbeddingIndexer::repair(IMemory &memory, const MemoryScope &scope,
             continue;
         }
         const auto &values = embedded.value();
-        const auto attached = index_.index_embedding(record.id, std::span<const float>(values));
+        const auto attached =
+            index_.index_embedding(record.id, embedder, std::span<const float>(values));
         if (!attached) {
             ++report.failed;
             continue;
         }
         ++report.repaired;
     }
-    const auto lag = index_.index_lag();
+    const auto lag = index_.index_lag(embedder);
     if (!lag) {
         return lag.error();
     }

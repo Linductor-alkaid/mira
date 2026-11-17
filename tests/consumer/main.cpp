@@ -567,7 +567,7 @@ int main() {
         }
         const auto retrieval = mira::failure_retrieval_query(signature, learning_scope);
         if (!retrieval.has_value() || retrieval.value().exact_terms.size() != 2 ||
-            !retrieval.value().query_embedding.empty()) {
+            !retrieval.value().query_embedding.values.empty()) {
             return 61;
         }
 

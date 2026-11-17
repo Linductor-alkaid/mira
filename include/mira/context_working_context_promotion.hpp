@@ -52,6 +52,10 @@ struct WorkingContextPromotionPolicy final {
     // `max_candidates_per_run` still applies downstream). Drop counters stay
     // exact for every item regardless of truncation.
     std::size_t max_candidates_per_run = 32;
+    // Host-defined data tags carried onto every promoted candidate (DEC-112
+    // metadata). The projection never invents labels; it only carries what
+    // the host put here. Bounds mirror the record contract (<=16 x <=64B).
+    std::vector<std::string> labels;
 
     [[nodiscard]] Result<void> validate() const;
 };

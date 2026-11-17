@@ -76,12 +76,13 @@ struct Fixture final {
 int zero_vectors_do_not_create_candidates() {
     Fixture fixture(temp_dir() / "retrieval-zero.db");
     const auto scope = scope_of("zero-vectors");
+    const EmbedderId producer = EmbedderId::generate();
     const auto record = make_record(scope, "alpha beta");
     MIRA_CHECK(fixture.store->apply(add_for(record)));
-    MIRA_CHECK(fixture.store->index_embedding(record.id, std::vector<float>{0.0F, 0.0F}));
+    MIRA_CHECK(fixture.store->index_embedding(record.id, producer, std::vector<float>{0.0F, 0.0F}));
     MemoryQuery query;
     query.scopes = {scope};
-    query.query_embedding = {1.0F, 0.0F};
+    query.query_embedding = MemoryEmbedding{{1.0F, 0.0F}, producer};
     auto result = fixture.store->query(query);
     MIRA_CHECK(result && result.value().records.empty());
     MIRA_CHECK(result.value().quality.vector_degraded && !result.value().quality.vector_leg_ran);
@@ -89,9 +90,9 @@ int zero_vectors_do_not_create_candidates() {
     auto fallback = fixture.store->query(query);
     MIRA_CHECK(fallback && fallback.value().records.size() == 1);
     MIRA_CHECK(fallback.value().quality.fts_leg_ran && fallback.value().quality.vector_degraded);
-    MIRA_CHECK(fixture.store->index_embedding(record.id, std::vector<float>{1.0F, 0.0F}));
+    MIRA_CHECK(fixture.store->index_embedding(record.id, producer, std::vector<float>{1.0F, 0.0F}));
     query.text.clear();
-    query.query_embedding = {0.0F, 0.0F};
+    query.query_embedding = MemoryEmbedding{{0.0F, 0.0F}, producer};
     auto invalid_query = fixture.store->query(query);
     MIRA_CHECK(invalid_query && invalid_query.value().records.empty());
     MIRA_CHECK(invalid_query.value().quality.vector_degraded);
@@ -102,6 +103,7 @@ int exact_fts_and_vector_legs_merge() {
     Fixture fixture(temp_dir() / "retrieval-hybrid.db");
     auto *store = fixture.store.get();
     const auto scope = scope_of("kitchen");
+    const EmbedderId producer = EmbedderId::generate();
 
     MIRA_CHECK(store->apply(add_for(make_record(scope, "the oven manual is in drawer two", 300)))
                    .has_value());
@@ -149,15 +151,15 @@ int exact_fts_and_vector_legs_merge() {
         const bool oven = entry.statement.find("oven") != std::string::npos;
         const std::vector<float> vector =
             oven ? std::vector<float>{1.0F, 0.0F} : std::vector<float>{0.0F, 1.0F};
-        MIRA_CHECK(store->index_embedding(entry.id, vector).has_value());
+        MIRA_CHECK(store->index_embedding(entry.id, producer, vector).has_value());
         ++attached;
     }
     MIRA_CHECK(attached == 3);
-    MIRA_CHECK(store->index_lag().has_value() && store->index_lag().value() == 0);
+    MIRA_CHECK(store->index_lag(producer).has_value() && store->index_lag(producer).value() == 0);
 
     MemoryQuery vector_query;
     vector_query.scopes = {scope};
-    vector_query.query_embedding = {0.9F, 0.1F};
+    vector_query.query_embedding = MemoryEmbedding{{0.9F, 0.1F}, producer};
     auto vector_result = store->query(vector_query);
     MIRA_CHECK(vector_result.has_value());
     MIRA_CHECK(vector_result.value().quality.vector_leg_ran);
@@ -167,7 +169,7 @@ int exact_fts_and_vector_legs_merge() {
     // Index lag reports records without embeddings.
     MIRA_CHECK(
         store->apply(add_for(make_record(scope, "dishwasher tablet brand is finish"))).has_value());
-    auto lag = store->index_lag();
+    auto lag = store->index_lag(producer);
     MIRA_CHECK(lag.has_value() && lag.value() == 1);
     return 0;
 }
@@ -176,6 +178,7 @@ int vector_corruption_degrades_without_blocking() {
     Fixture fixture(temp_dir() / "retrieval-degrade.db");
     auto *store = fixture.store.get();
     const auto scope = scope_of("lab");
+    const EmbedderId producer = EmbedderId::generate();
 
     auto target = make_record(scope, "calibration file is on the shared drive");
     MIRA_CHECK(store->apply(add_for(target)).has_value());
@@ -184,11 +187,12 @@ int vector_corruption_degrades_without_blocking() {
 
     // Dimension mismatch between query and index degrades the vector leg but
     // exact/FTS still answer.
-    MIRA_CHECK(store->index_embedding(target.id, std::vector<float>{1.0F, 2.0F, 3.0F}).has_value());
+    MIRA_CHECK(store->index_embedding(target.id, producer, std::vector<float>{1.0F, 2.0F, 3.0F})
+                   .has_value());
     MemoryQuery mismatch;
     mismatch.scopes = {scope};
     mismatch.text = "calibration";
-    mismatch.query_embedding = {1.0F, 0.0F};
+    mismatch.query_embedding = MemoryEmbedding{{1.0F, 0.0F}, producer};
     auto degraded = store->query(mismatch);
     MIRA_CHECK(degraded.has_value());
     MIRA_CHECK(!degraded.value().records.empty());
@@ -197,12 +201,12 @@ int vector_corruption_degrades_without_blocking() {
 
     // Clearing the index (embedding-model change) reports lag and keeps
     // serving exact/FTS results.
-    auto cleared = store->clear_embeddings();
+    auto cleared = store->clear_embeddings(producer);
     MIRA_CHECK(cleared.has_value() && cleared.value() >= 1);
     MemoryQuery after_clear;
     after_clear.scopes = {scope};
     after_clear.text = "calibration";
-    after_clear.query_embedding = {1.0F, 0.0F, 0.0F};
+    after_clear.query_embedding = MemoryEmbedding{{1.0F, 0.0F, 0.0F}, producer};
     auto fallback = store->query(after_clear);
     MIRA_CHECK(fallback.has_value());
     MIRA_CHECK(!fallback.value().records.empty());

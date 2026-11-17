@@ -89,17 +89,28 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 ## memory_embedding.hpp：向量腿的生产者与投影
 
 向量腿需要生产者与投影两个宿主边界，Core 不做推理（与 `IModelProvider`、
-`IContextEmbedder` 同一分工）：
+`IContextEmbedder` 同一分工）。每个向量携带其生产者身份（DEC-111）：
 
-- `IEmbeddingProvider`：`embed(text)` 产出一个向量；`embed_batch(texts)` 默认逐条循环，
-  有批量 API 的宿主可覆写。结果按输入顺序返回。
-- `IMemoryEmbeddingIndex`（投影）：`index_embedding()` 写入、`has_embedding()` 探测、
-  `index_lag()` 统计缺少向量的活记录、`clear_embeddings()` 清空（例如换了 embedding
-  模型后）。没有向量腿的存储不必实现它；查询契约仍然报告 index lag。
+- `EmbedderId` / `MemoryEmbedding`：向量身份与结构化查询向量
+  （`MemoryQuery::query_embedding` = `MemoryEmbedding{values, embedder}`，二者必须
+  配对出现）。
+- `IEmbeddingProvider`：`embedder_id()` 声明生产者身份；`embed(text)` 产出一个向量；
+  `embed_batch(texts)` 默认逐条循环，有批量 API 的宿主可覆写。结果按输入顺序返回。
+- `IMemoryEmbeddingIndex`（投影）：`index_embedding(record, embedder, vector)` 写入、
+  `has_embedding(record, embedder)` 探测、`index_lag(embedder)` 统计缺少**该身份**
+  向量的活记录、`clear_embeddings(embedder)` 按身份清空。没有向量腿的存储不必实现它；
+  查询契约仍然报告 index lag。一条记录同时只保存一个向量，新身份写入重新归属。
 - `MemoryEmbeddingIndexer`（驱动）：`index_record(record)` 为一条记录产出并写入向量；
-  `repair(memory, scope, options)` 做一次有界修复，把该 scope 内尚无向量的活记录补齐，
-  返回 `MemoryEmbeddingRepairReport`（scanned / repaired / failed / ineligible /
-  index_lag）；`embed_query(text)` 产出 `MemoryQuery::query_embedding` 用的查询向量。
+  `repair(memory, scope, options)` 做一次有界修复，把该 scope 内尚无该身份向量的活记录
+  补齐，返回 `MemoryEmbeddingRepairReport`（scanned / repaired / failed / ineligible /
+  index_lag）；`embed_query(text)` 产出携带身份的查询向量。
+
+规则：
+
+- **身份守卫**：余弦腿只在同一 `EmbedderId` 内比较；跨身份失配计入
+  `MemoryQueryQuality` 的向量错误并降级（配置错误可见，绝不混算两种几何）。身份由
+  canonical descriptor 确定性派生，换模型/换 endpoint host 自动换身份、旧向量如实计入
+  lag。生产者协议适配见 [模型层](model-agent-loop.md) 的 `embedding_provider.hpp`。
 
 规则：
 
@@ -111,13 +122,23 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   重新计入 index lag，不用上一版文本回答语义查询。
 - **不接写入热路径**：宿主在自己的 Executor worker 上驱动索引与修复。
 
+
 ## sqlite_memory_store.hpp：SqliteMemoryStore（`Mira::state_store`）
 
 `IMemory` 的 SQLite/WAL 参考后端（`SqliteMemoryStoreOptions`，含 `RetrievalWeights`）：
 
-- 混合检索三腿：exact（`exact_terms`）、FTS5（`text`，短语引用，操作符注入被拒绝）、
-  有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并去重、多样性与
-  token packing。
+- 混合检索三腿：exact（`exact_terms`，强制过滤）、FTS5（`text`，短语引用，操作符
+  注入被拒绝）、有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并
+  去重、多样性与 token packing。
+- **融合模式**（DEC-112，`SqliteMemoryStoreOptions::fusion`）：默认 `WeightedSum`
+  （历史行为）；`ReciprocalRank` = weighted-RRF（FTS+cosine 排名投票，k=60，候选集
+  内 min-max 归一化）叠加先验项——词面序不被向量腿翻转，先验只做次级信号。
+  `RetrievalWeights`（含 `importance`，默认 0.0）经 options 配置。
+- **结构化元数据**（schema 1.3，纯加法迁移）：`MemoryRecord.labels`（≤16×64 字节，
+  any-of 硬预过滤 `MemoryQuery::labels`）与 `importance`（[0,1] 中性默认 0.5）。
+- **近重去重**（`near_dup_threshold`，默认关）：排序后 top-64 内按查询身份嵌入
+  余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed` 计数；无向量候选豁免，
+  阈值按 embedder 实测标定。
 - FTS 的 512 条额度和向量的 `max_vector_scan` 在已做 scope、生命周期、敏感度与 claim
   过滤的候选 ID 集合内消耗，其他 scope 不会占用额度。候选池仍最多取 scope 内最新
   4096 条，并非任意规模的全历史召回保证。部署、重启示例及剩余索引缺口见
@@ -142,7 +163,9 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   降级）。
 - 向量投影：存储同时实现 `IMemoryEmbeddingIndex`，宿主可用 `MemoryEmbeddingIndexer`
   把 `IEmbeddingProvider` 的产出写入投影。statement 改变或记录离开活跃面时旧向量被
-  丢弃，记录重新计入 index lag。
+  丢弃，记录重新计入 index lag。schema 1.2 为投影加 `embedder` 身份列（DEC-111）：
+  1.1 → 1.2 迁移在 `open()` 时清空无身份旧向量（投影可重建，lag 如实回升），余弦腿
+  跨身份失配计入向量错误。
 - claim key 过滤：`MemoryQuery::claim_key` 声明后，存储在排序与多样性裁剪之前按
   `memory_claim_key(statement).key` 收窄候选集；该查询不再套用每 (scope, kind) 组的
   多样性上限，因为调用方点名了一个主语。claim key 不是存储列，查询时现算，不需要

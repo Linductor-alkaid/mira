@@ -109,6 +109,8 @@ DEC-059 的 namespaced import/promotion 兼容行为。该开关只给可信宿�
 的独立字段，仍为待解释的数据；不会提高其 authority 或 verification。
 `acknowledge_input(task, revision)` 只开放对应的当前帧，旧 revision 明确失败。
 
+Work 绑定可携带 `labels`（any-of 预过滤，DEC-112）：该 work 的每个 Recall 查询只召回携带至少一个所列标签的记录；边界在 bind 时拒绝。
+
 可选 request_current 是可信宿主的有界、非重入、无 I/O 探针。false/异常会封闭
 Recall/Compress 与缓存请求快照；Record 在 terminal 后沿用显式权限，因此必须用
 revoke 彻底撤销写入。探针捕获对象须活到服务关闭，不能捕获已销毁的宿主裸指针。

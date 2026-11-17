@@ -1,0 +1,411 @@
+{
+  "meta": {
+    "name": "memory-hybrid-retrieval-gold-v1",
+    "description": "Curated gold-standard memory retrieval dataset (DEC-112 quality benchmark). Bilingual agent-memory corpus; queries typed paraphrase (no lexical overlap with gold), lexical (Latin identifier anchors), and multi (multiple gold records). Near-duplicate pairs are never co-gold: they exist to measure redundancy.",
+    "near_dup_pairs": [
+      [
+        "pr1",
+        "pr5"
+      ],
+      [
+        "n1",
+        "n2"
+      ],
+      [
+        "f1",
+        "f2"
+      ]
+    ]
+  },
+  "records": [
+    {
+      "id": "p1",
+      "kind": "preference",
+      "statement": "用户偏好简洁回复"
+    },
+    {
+      "id": "p2",
+      "kind": "preference",
+      "statement": "回答要覆盖多个角度，尽量详尽"
+    },
+    {
+      "id": "p3",
+      "kind": "preference",
+      "statement": "用户希望收到中文回复"
+    },
+    {
+      "id": "p4",
+      "kind": "preference",
+      "statement": "回复中可以适当使用表情符号"
+    },
+    {
+      "id": "p5",
+      "kind": "preference",
+      "statement": "用户讨厌重复解释同一件事"
+    },
+    {
+      "id": "p6",
+      "kind": "preference",
+      "statement": "每次都要附上完整的背景摘要"
+    },
+    {
+      "id": "p7",
+      "kind": "preference",
+      "statement": "表格比长段落更适合呈现数据"
+    },
+    {
+      "id": "p8",
+      "kind": "preference",
+      "statement": "数据要以纯文本叙述呈现"
+    },
+    {
+      "id": "e1",
+      "kind": "environment-fact",
+      "statement": "calibration 文件在共享盘 /lab/shared/calib.npy"
+    },
+    {
+      "id": "e2",
+      "kind": "environment-fact",
+      "statement": "部署脚本 deploy.sh 需要 API_KEY 环境变量"
+    },
+    {
+      "id": "e3",
+      "kind": "environment-fact",
+      "statement": "打印机 IP 是 192.168.1.42"
+    },
+    {
+      "id": "e4",
+      "kind": "environment-fact",
+      "statement": "数据库备份路径 /var/backups/mira.db"
+    },
+    {
+      "id": "e5",
+      "kind": "environment-fact",
+      "statement": "构建产物输出到 build/output 目录"
+    },
+    {
+      "id": "e6",
+      "kind": "environment-fact",
+      "statement": "staging 环境端口是 8443"
+    },
+    {
+      "id": "e7",
+      "kind": "environment-fact",
+      "statement": "CI 流水线在每周五 18 点跑回归"
+    },
+    {
+      "id": "e8",
+      "kind": "environment-fact",
+      "statement": "实验室门禁码是 472913"
+    },
+    {
+      "id": "e9",
+      "kind": "environment-fact",
+      "statement": "会议室预订系统是 https://book.lab.internal"
+    },
+    {
+      "id": "e10",
+      "kind": "environment-fact",
+      "statement": "固件版本 v2.4.1 有已知的蓝牙断连问题"
+    },
+    {
+      "id": "pr1",
+      "kind": "procedure",
+      "statement": "docker compose 重启前要先 down 旧容器"
+    },
+    {
+      "id": "pr2",
+      "kind": "application-fact",
+      "statement": "发布前必须在 staging 跑完整回归"
+    },
+    {
+      "id": "pr3",
+      "kind": "application-fact",
+      "statement": "实验数据要先过校验脚本再入库"
+    },
+    {
+      "id": "pr4",
+      "kind": "procedure",
+      "statement": "每周一上午整理会议纪要并发给全组"
+    },
+    {
+      "id": "pr5",
+      "kind": "procedure",
+      "statement": "重启 docker 服务时记得先 down 旧容器再 up"
+    },
+    {
+      "id": "pr6",
+      "kind": "procedure",
+      "statement": "打印机卡纸时先开前盖再取出纸盒"
+    },
+    {
+      "id": "ep1",
+      "kind": "episode",
+      "statement": "任务 A 在 2026-11-15 完成，验证通过"
+    },
+    {
+      "id": "ep2",
+      "kind": "episode",
+      "statement": "任务 B 失败：模型两次漏了点击坐标"
+    },
+    {
+      "id": "ep3",
+      "kind": "episode",
+      "statement": "11-14 的会议决定切换到 bge-m3 检索模型"
+    },
+    {
+      "id": "ep4",
+      "kind": "episode",
+      "statement": "上周固件升级后蓝牙偶发断连"
+    },
+    {
+      "id": "ep5",
+      "kind": "episode",
+      "statement": "任务 C 暂停，等待客户确认需求"
+    },
+    {
+      "id": "ep6",
+      "kind": "episode",
+      "statement": "事故复盘：备份任务连续三晚失败"
+    },
+    {
+      "id": "l1",
+      "kind": "recovery-lesson",
+      "statement": "教训：坐标点击前先重新截图 screenshot 确认"
+    },
+    {
+      "id": "l2",
+      "kind": "recovery-lesson",
+      "statement": "教训：长任务每 10 步做一次 checkpoint"
+    },
+    {
+      "id": "l3",
+      "kind": "recovery-lesson",
+      "statement": "教训：凭据不能写进配置文件"
+    },
+    {
+      "id": "l4",
+      "kind": "recovery-lesson",
+      "statement": "教训：重启服务前先通知在线用户"
+    },
+    {
+      "id": "n1",
+      "kind": "environment-fact",
+      "statement": "用户所在时区是 UTC+8"
+    },
+    {
+      "id": "n2",
+      "kind": "environment-fact",
+      "statement": "用户的时区为东八区 (UTC+8)"
+    },
+    {
+      "id": "f1",
+      "kind": "environment-fact",
+      "statement": "白板马克笔已干"
+    },
+    {
+      "id": "f2",
+      "kind": "environment-fact",
+      "statement": "白板的马克笔需要更换了"
+    },
+    {
+      "id": "d1",
+      "kind": "application-fact",
+      "statement": "API_KEY 每季度轮换一次"
+    },
+    {
+      "id": "d2",
+      "kind": "application-fact",
+      "statement": "calibration 设备每年校准两次"
+    },
+    {
+      "id": "d3",
+      "kind": "application-fact",
+      "statement": "staging 数据库每周日清理"
+    },
+    {
+      "id": "d4",
+      "kind": "environment-fact",
+      "statement": "茶水间在二楼东侧"
+    },
+    {
+      "id": "d5",
+      "kind": "environment-fact",
+      "statement": "办公室Wi-Fi密码每月第一个周一更换"
+    },
+    {
+      "id": "d6",
+      "kind": "environment-fact",
+      "statement": "前台钥匙存放在第三个抽屉"
+    }
+  ],
+  "queries": [
+    {
+      "id": "QP1",
+      "type": "paraphrase",
+      "text": "回答别太啰嗦",
+      "gold": [
+        "p1"
+      ]
+    },
+    {
+      "id": "QP2",
+      "type": "paraphrase",
+      "text": "别用英文答我",
+      "gold": [
+        "p3"
+      ]
+    },
+    {
+      "id": "QP3",
+      "type": "paraphrase",
+      "text": "说过一次的事别再重复",
+      "gold": [
+        "p5"
+      ]
+    },
+    {
+      "id": "QP4",
+      "type": "paraphrase",
+      "text": "数据别用大段文字堆",
+      "gold": [
+        "p7"
+      ]
+    },
+    {
+      "id": "QPR1",
+      "type": "paraphrase",
+      "text": "怎么重启 docker 服务",
+      "gold": [
+        "pr1"
+      ]
+    },
+    {
+      "id": "QPR2",
+      "type": "paraphrase",
+      "text": "实验数据怎么入库",
+      "gold": [
+        "pr3"
+      ]
+    },
+    {
+      "id": "QL1",
+      "type": "lexical",
+      "text": "calibration 文件在哪",
+      "gold": [
+        "e1"
+      ]
+    },
+    {
+      "id": "QL2",
+      "type": "lexical",
+      "text": "API_KEY 在哪配置",
+      "gold": [
+        "e2"
+      ]
+    },
+    {
+      "id": "QL3",
+      "type": "paraphrase",
+      "text": "打印机地址",
+      "gold": [
+        "e3"
+      ]
+    },
+    {
+      "id": "QL4",
+      "type": "lexical",
+      "text": "mira.db 备份位置",
+      "gold": [
+        "e4"
+      ]
+    },
+    {
+      "id": "QL5",
+      "type": "lexical",
+      "text": "staging 端口是多少",
+      "gold": [
+        "e6"
+      ]
+    },
+    {
+      "id": "QL6",
+      "type": "lexical",
+      "text": "checkpoint 教训",
+      "gold": [
+        "l2"
+      ]
+    },
+    {
+      "id": "QL7",
+      "type": "lexical",
+      "text": "screenshot 教训",
+      "gold": [
+        "l1"
+      ]
+    },
+    {
+      "id": "QL8",
+      "type": "paraphrase",
+      "text": "构建产物目录",
+      "gold": [
+        "e5"
+      ]
+    },
+    {
+      "id": "QM1",
+      "type": "multi",
+      "text": "蓝牙有哪些问题",
+      "gold": [
+        "e10",
+        "ep4"
+      ]
+    },
+    {
+      "id": "QM2",
+      "type": "multi",
+      "text": "部署相关的注意事项",
+      "gold": [
+        "e2",
+        "pr2",
+        "pr1"
+      ]
+    },
+    {
+      "id": "QM3",
+      "type": "multi",
+      "text": "实验室的设施信息",
+      "gold": [
+        "e8",
+        "e9",
+        "f1"
+      ]
+    },
+    {
+      "id": "QM4",
+      "type": "multi",
+      "text": "备份和恢复的做法",
+      "gold": [
+        "e4",
+        "ep6"
+      ]
+    },
+    {
+      "id": "QM5",
+      "type": "multi",
+      "text": "时区和会议安排",
+      "gold": [
+        "n1",
+        "pr4"
+      ]
+    },
+    {
+      "id": "QM6",
+      "type": "paraphrase",
+      "text": "检索模型相关的决定和变更",
+      "gold": [
+        "ep3"
+      ]
+    }
+  ]
+}

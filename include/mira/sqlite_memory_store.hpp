@@ -14,6 +14,33 @@ namespace mira {
 // Durable SQLite/WAL long-term memory reference backend (M4-09..M4-13)
 // ---------------------------------------------------------------------------
 
+// Hybrid retrieval weights (lexical_exact, fts_rank, vector_similarity,
+// verification, confidence, recency). Equal weights mean "leg ran";
+// implementation details live in the .cpp.
+struct RetrievalWeights final {
+    double exact = 0.30;
+    double fts = 0.20;
+    double vector = 0.30;
+    double verification = 0.10;
+    double confidence = 0.05;
+    double recency = 0.05;
+    // Prior over the record's declared importance (DEC-112 metadata).
+    // Defaults to zero so the shipped ranking is unchanged; hosts opt in.
+    double importance = 0.0;
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
+// How the ranking legs fuse into one score (DEC-112). WeightedSum is the
+// shipped default and keeps the historical behavior byte-for-byte;
+// ReciprocalRank fuses the FTS and cosine legs by rank (weighted RRF,
+// k=60, normalized to [0,1]) so incomparable score distributions cannot
+// flip the lexical ordering.
+enum class RetrievalFusion : std::uint8_t {
+    WeightedSum,
+    ReciprocalRank,
+};
+
 // Tuning knobs for the reference backend. Ranking weights are documented
 // defaults, not a frozen contract (design Context/Memory §14.2).
 struct SqliteMemoryStoreOptions final {
@@ -31,20 +58,20 @@ struct SqliteMemoryStoreOptions final {
     // Tombstones and superseded history older than this are purged by
     // compact(); zero keeps them forever.
     std::chrono::seconds purge_horizon{0};
+    // Fusion mode of the ranking legs (DEC-112).
+    RetrievalFusion fusion = RetrievalFusion::WeightedSum;
+    // Near-duplicate suppression over the ranked head (DEC-112): candidates
+    // whose embedding cosine against an already-kept candidate reaches this
+    // threshold are dropped. 0.0 disables the pass; the threshold is a
+    // per-embedder empirical value (bge-m3 paraphrase near-dups measured
+    // ~0.86) and must be recalibrated when the embedder changes.
+    double near_dup_threshold = 0.0;
+    // Ranking weights (documented defaults; design Context/Memory §14.2).
+    // The importance prior defaults to zero: metadata never changes the
+    // shipped ranking unless the host opts in.
+    RetrievalWeights weights;
 
     [[nodiscard]] Result<void> validate() const;
-};
-
-// Hybrid retrieval weights (lexical_exact, fts_rank, vector_similarity,
-// verification, confidence, recency). Equal weights mean "leg ran";
-// implementation details live in the .cpp.
-struct RetrievalWeights final {
-    double exact = 0.30;
-    double fts = 0.20;
-    double vector = 0.30;
-    double verification = 0.10;
-    double confidence = 0.05;
-    double recency = 0.05;
 };
 
 // IMemory over SQLite/WAL. One Executor blocking-I/O worker owns the single
@@ -78,18 +105,20 @@ class SqliteMemoryStore final : public IMemory,
 
     // ---- Index maintenance (rebuildable projections) ----
 
-    // Attaches an embedding for one record. Vectors are a projection of the
-    // authoritative record; empty or oversized vectors are rejected so a
-    // corrupt entry surfaces as index lag instead of poisoning queries.
-    [[nodiscard]] Result<void> index_embedding(MemoryId record,
+    // Attaches an embedding for one record, owned by one embedder identity
+    // (DEC-111). Vectors are a projection of the authoritative record; empty
+    // or oversized vectors are rejected so a corrupt entry surfaces as index
+    // lag instead of poisoning queries.
+    [[nodiscard]] Result<void> index_embedding(MemoryId record, EmbedderId embedder,
                                                std::span<const float> vector) override;
-    // Whether a record currently carries a usable vector.
-    [[nodiscard]] Result<bool> has_embedding(MemoryId record) const override;
-    // Number of Active records without a usable embedding.
-    [[nodiscard]] Result<std::size_t> index_lag() const override;
-    // Drops every embedding (e.g. after an embedding-model change); records
+    // Whether a record currently carries a vector of this embedder.
+    [[nodiscard]] Result<bool> has_embedding(MemoryId record, EmbedderId embedder) const override;
+    // Number of Active records without a vector of this embedder; a producer
+    // switch therefore reports the full rebuild scope as lag.
+    [[nodiscard]] Result<std::size_t> index_lag(EmbedderId embedder) const override;
+    // Drops every vector of this embedder (e.g. before a re-index); records
     // stay authoritative and retrieval degrades to exact/FTS until rebuilt.
-    [[nodiscard]] Result<std::size_t> clear_embeddings() override;
+    [[nodiscard]] Result<std::size_t> clear_embeddings(EmbedderId embedder) override;
 
     // ---- Retention (cross-scope sweep) ----
 

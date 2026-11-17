@@ -178,6 +178,31 @@ _Avoid_: 宏、脚本、模板
 投影。
 _Avoid_: 搜索索引（不涉相关性排序）
 
+**Embedder Identity（向量生产者身份）**:
+记忆向量腿的 `EmbedderId`——由生产者 canonical descriptor
+（协议族、endpoint host、model、维度）确定性派生的强类型 id；
+余弦腿只在同一身份内比较，跨身份失配可见并降级（DEC-111）。
+_Avoid_: 向量版本号（不是版本）、模型名（身份是派生 id，
+可读描述在 profile）
+
+**RRF 融合（Reciprocal Rank Fusion）**:
+按排名投票 `1/(k+rank)`（k=60）融合 FTS 与余弦两腿的检索模式，
+候选集内归一化后叠加先验项；两腿分数分布不可比时的确定性融合
+（DEC-112）。
+_Avoid_: 加权分数融合（分布不可比）、把 exact 当排名腿
+
+**近重去重（Near-duplicate Suppression）**:
+排序后有界区间内按查询身份嵌入余弦抑制过阈候选的召回面补充；
+阈值按 embedder 实测标定，无向量候选豁免。去重主力在写入侧
+（claim-key 冲突检索）。
+_Avoid_: 语句全等去重（那是字面层）、MMR（未采纳）
+
+**向量可比性守卫（Vector Comparability Guard）**:
+禁止不同生产者几何混算的强制规则：查询向量必须携带身份，存储
+按身份过滤与归属，失配计入向量错误。换模型即换身份，旧向量
+如实计入 index lag。
+_Avoid_: 维度检查（维度相同不代表几何可比）
+
 **部署窗（Deployment Window）**:
 只允许在部署边界发生模组准入与 Skill 发布变更的阶段划分；运行期
 只降级。

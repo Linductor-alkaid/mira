@@ -3,6 +3,7 @@
 > 头文件：`mira/model_contracts.hpp`、`model_profile.hpp`、`model_provider.hpp`、
 > `model_gateway.hpp`、`model_supervisor.hpp`、`model_budget.hpp`、`model_schema.hpp`、
 > `model_sse.hpp`、`model_dialect.hpp`、`model_transport.hpp`、`model_upload.hpp`、
+> `embedding_provider.hpp`、
 > `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
 > `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`
 
@@ -162,6 +163,37 @@ profile.allow_private_endpoint = true;
 该字段始终进入 manifest 和 `profile_digest()`。升级后默认 profile 摘要也会变化，
 消费者须重编译并重新生成 RouteDecision/continuation 绑定；详见
 [DEC-094](../decisions/DEC-094-profile-private-endpoint-consent.md)。
+
+## embedding_provider.hpp：OpenAI 兼容 `/v1/embeddings` 生产者
+
+Core 协议适配器，实现记忆向量腿的 `IEmbeddingProvider`（DEC-111）。HTTP 栈经注入的
+`IHttpTransport`，与 `OpenAiCompatibleProvider` 同一分工：协议适配在 Core，socket/TLS
+在 `adapters/net`，凭据只传 `SecretRef`、仅在 transport 边界解析。
+
+- `EmbeddingProfile`：endpoint_origin / api_prefix / model_selector / expected_dims
+  （声明即断言）/ credential / `TransportDeadlines` / 批量上限；`validate()` 拒绝
+  不完整配置。
+- `OpenAiCompatibleEmbeddingProvider`：`embed()` 单文本一次 POST；`embed_batch()` 批量
+  （超过 profile 上限自动拆分，按响应 `index` 保序；无 `index` 按位置序，混合态拒绝）。
+  响应解析 fail-closed；非 2xx 走共享的 `map_http_error_status`。
+- `embedding_identity_from_descriptor()`：producer 身份派生（canonical descriptor 的
+  SHA-256 前 16 字节）——换模型或换 endpoint host 自动换身份。
+
+## reranker_provider.hpp：OpenAI/Cohere 风格 `/v1/rerank` 适配器
+
+实现 Layer 2 的 `IContextReranker`（DEC-112）。HTTP 栈经注入的 `IHttpTransport`，
+与 `OpenAiCompatibleEmbeddingProvider` 同一分工；凭据只传 `SecretRef`。
+
+- `RerankerProfile`：endpoint/prefix/model/credential/deadlines/批量上限
+  （`max_candidates` ≤128）；`validate()` 拒绝不完整配置。
+- `OpenAiCompatibleReranker`：契约语义逐条落实——只重排不增员、截断
+  `max_output`、空输入返回空、超批次上限拒绝、任何传输/协议失败整批返回
+  Error（宿主降级到检索序，无部分输出）。响应 `results[{index,
+  relevance_score}]` fail-closed 解析（index 越界/重复/非有限分 →
+  ProtocolViolation）；融合镜像参考实现（0.60·minmax(rerank) +
+  0.40·minmax(retrieval)，全等集 0.5，稳定排序保检索序）。
+- **语义边界**：reranker 只排主题相关，不裁决记忆冲突，无准入权
+  （设计 Context Intelligence §5.6）。250ms 记忆代理路径不接远端 rerank。
 
 ## model_provider.hpp 与 model_transport.hpp
 
