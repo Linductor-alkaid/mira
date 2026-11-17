@@ -194,6 +194,17 @@
   （Project status 增补）、`docs/decisions/DEC-060-…`（修订注记）、
   `docs/decisions/DEC-111-…`（新增）、本计划。
 
+### 2026-11-17：PR CI 验收（回填）
+
+- PR [#128](https://github.com/Linductor-alkaid/mira/pull/128)（squash 合入
+  master `87b0bdd`，同轮含 DEC-112/HR）：push + pull_request 双管线 **24/24
+  job 全绿**——Linux GCC/Clang Debug+Release、Windows MSVC Debug+Release、
+  Android NDK arm64/x86_64、ASAN/UBSAN/TSAN、quality（format/docs/sbom/
+  architecture/clang-tidy）。首轮 quality 因 benchmark 文件未格式化失败一次，
+  `e336aea` 修复后全绿（check-suite run `133947079624` 起）。
+- 本计划的"远端 CI/平台待补跑"条件就此关闭；真实供应商冒烟仍保持未执行
+  （见上方补跑条件，独立于 CI）。
+
 **补跑条件（真实供应商冒烟）**：
 - 前置：可用 OpenAI-compatible `/v1/embeddings` 端点 API key（如 SiliconFlow
   `BAAI/bge-m3`），仅注入环境变量，不入库不入文档。

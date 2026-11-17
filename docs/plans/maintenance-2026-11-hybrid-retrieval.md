@@ -151,6 +151,14 @@ bge-m3 dense 1024 维 + bge-reranker-v2-m3 经硅基流动双端点真实实测
   五路对比（真实 API），两端点连通性验证。
 - 未执行项：HR-02…09 与真实冒烟。
 
+### 2026-11-17：PR CI 验收（回填）
+
+- PR [#128](https://github.com/Linductor-alkaid/mira/pull/128)（squash 合入
+  master `87b0bdd`）：push + pull_request 双管线 **24/24 job 全绿**（含
+  ASAN/UBSAN/TSAN 与 Windows/Android——本地未执行的两项就此覆盖）。
+  首轮 quality 失败（benchmark 文件未格式化）由 `e336aea` 修复。
+- 本计划 §6 的 CI 相关退出条件全部达成。
+
 ### 2026-11-17：实现、测试与文档同步（HR-02…09）
 
 - **范围**：`RetrievalFusion` 选项与 weighted-RRF 分支（候选集内 min-max 归一化 +
