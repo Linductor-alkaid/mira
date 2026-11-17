@@ -86,6 +86,12 @@ bge-m3 dense 1024 维 + bge-reranker-v2-m3 经硅基流动双端点真实实测
       （key 经 auth.json/env，代理 127.0.0.1:7897），证据入验证表。
 - [x] `MNT-202611-HR-09` 文档同步：设计 §14、API 三处、术语表、
       reference-study §2、总计划注记、README 状态行、本计划验证记录。
+- [x] `MNT-202611-HR-11` 检索质量基准（同日追加）：金标数据集
+      （44 记录 / 20 查询，digest `c8767eba…`）+ 五配置实测（真实
+      bge-m3/bge-reranker），登记
+      [memory-hybrid-retrieval-v1](../benchmarks/memory-hybrid-retrieval-v1.md)；
+      harness 在 `tests/benchmark/hybrid-retrieval/`（人工工具，不进 ctest）。
+      关闭本计划"增益未量化"遗留项。
 - [x] `MNT-202611-HR-10` 接线缝收尾（同日追加）：`MemoryWorkBinding::labels`
       （bind 时 refuse 校验 → Recall 查询自动携带预过滤，m36 门）、
       `WorkingContextPromotionPolicy::labels`（提升候选携带宿主标签，
@@ -184,8 +190,8 @@ bge-m3 dense 1024 维 + bge-reranker-v2-m3 经硅基流动双端点真实实测
 - **限制与未执行项**：
   - ASAN/UBSAN/TSAN 与 Windows/Android 未本地执行，随 PR CI；按测试分层，
     发版前全量独立验证另行委派。
-  - 融合/去重的检索质量增益未量化（archetype 级判据 + 确定性锚定，非金标集
-    评估）；LongMemEval 式基准留后续轮。
+  - 检索质量增益已于 HR-11 量化（单数据集 20 查询，支持配置间相对对照）；
+    跨语料外推与 LongMemEval 式通用评测留后续轮。
   - reranker 成本/延迟分布未测量（单次调用实测亚秒级，量级为 infer 零头）。
 - **同步**：`docs/design/context_and_memory_design.md`（§14.1a）、
   `docs/api/context-memory.md`、`docs/api/model-agent-loop.md`、`docs/api/index.md`、
