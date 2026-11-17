@@ -119,8 +119,8 @@ int main(int argc, char **argv) {
     if (!tls_factory->initialize()) {
         return 3;
     }
-    auto transport = std::make_shared<adapters::net::SocketHttpTransport>(executor, secrets,
-                                                                          tls_factory);
+    auto transport =
+        std::make_shared<adapters::net::SocketHttpTransport>(executor, secrets, tls_factory);
     if (!transport->start()) {
         return 4;
     }
@@ -163,8 +163,8 @@ int main(int argc, char **argv) {
         query_texts.push_back(*entry.find("text")->as_string());
     }
 
-    std::cout << "embedding " << statements.size() << " statements + "
-              << query_texts.size() << " queries...\n";
+    std::cout << "embedding " << statements.size() << " statements + " << query_texts.size()
+              << " queries...\n";
     auto statement_vectors = embedder.embed_batch(statements);
     if (!statement_vectors) {
         std::cerr << "statement embedding failed: " << statement_vectors.error().safe_message
@@ -228,8 +228,8 @@ int main(int argc, char **argv) {
             record.scope = scope;
             record.kind = kind;
             record.statement = statements[index];
-            record.recorded_at =
-                std::chrono::system_clock::now() + std::chrono::seconds(static_cast<int64_t>(index));
+            record.recorded_at = std::chrono::system_clock::now() +
+                                 std::chrono::seconds(static_cast<int64_t>(index));
             record.validity.valid_from = record.recorded_at;
             record.provenance = {EventId{ordinal_id(ordinal + 5000)}};
             record.verification = floor_for_kind(kind);
@@ -252,12 +252,10 @@ int main(int argc, char **argv) {
             ++ordinal;
         }
 
-        const MemoryScope query_scopes[] = {scope_for_kind(MemoryKind::EnvironmentFact,
-                                                           SessionId{}, 0),
-                                            scope_for_kind(MemoryKind::ApplicationFact,
-                                                           SessionId{}, 0),
-                                            scope_for_kind(MemoryKind::RecoveryLesson,
-                                                           SessionId{}, 0)};
+        const MemoryScope query_scopes[] = {
+            scope_for_kind(MemoryKind::EnvironmentFact, SessionId{}, 0),
+            scope_for_kind(MemoryKind::ApplicationFact, SessionId{}, 0),
+            scope_for_kind(MemoryKind::RecoveryLesson, SessionId{}, 0)};
         for (std::size_t q = 0; q < query_ids.size(); ++q) {
             MemoryQuery query;
             for (const auto &scope : query_scopes) {
@@ -265,8 +263,7 @@ int main(int argc, char **argv) {
             }
             query.text = query_texts[q];
             if (config.with_embedding) {
-                query.query_embedding =
-                    MemoryEmbedding{query_vectors.value()[q], producer};
+                query.query_embedding = MemoryEmbedding{query_vectors.value()[q], producer};
             }
             auto result = store->query(query);
             if (!result) {
@@ -316,10 +313,8 @@ int main(int argc, char **argv) {
         }
         ContextQuery query;
         query.session = SessionId{ordinal_id(99)};
-        const std::string &text =
-            query_texts[std::distance(query_ids.begin(),
-                                      std::find(query_ids.begin(), query_ids.end(),
-                                                ranked.query_id))];
+        const std::string &text = query_texts[std::distance(
+            query_ids.begin(), std::find(query_ids.begin(), query_ids.end(), ranked.query_id))];
         query.text = text;
         auto result = reranker.rerank(query, candidates);
         Ranked ranked_out;
