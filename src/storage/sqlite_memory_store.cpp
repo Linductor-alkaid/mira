@@ -34,7 +34,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 1};
+constexpr SchemaVersion kMemoryStoreSchema{1, 3};
 constexpr const char *kStoreKind = "memory";
 
 constexpr const char *kSchemaDdl =
@@ -59,6 +59,8 @@ constexpr const char *kSchemaDdl =
     " supersedes TEXT,"
     " expires_at INTEGER,"
     " source_namespace TEXT,"
+    " labels TEXT NOT NULL DEFAULT '[]',"
+    " importance REAL NOT NULL DEFAULT 0.5,"
     " schema_major INTEGER NOT NULL,"
     " schema_minor INTEGER NOT NULL,"
     " version INTEGER NOT NULL,"
@@ -88,6 +90,7 @@ constexpr const char *kSchemaDdl =
     " applied_at INTEGER NOT NULL);"
     "CREATE TABLE IF NOT EXISTS memory_embeddings("
     " record_id TEXT PRIMARY KEY,"
+    " embedder TEXT NOT NULL DEFAULT '',"
     " dim INTEGER NOT NULL,"
     " vector BLOB NOT NULL,"
     " embedded_at INTEGER NOT NULL);"
@@ -164,6 +167,78 @@ constexpr const char *kSchemaDdl =
     return storage::exec_sql(db, sql.c_str());
 }
 
+// True when the embedding projection already carries the producer identity
+// column (schema 1.2 and later).
+[[nodiscard]] bool embeddings_have_embedder_column(sqlite3 *db) {
+    Statement query(db, "PRAGMA table_info(memory_embeddings)");
+    if (!query.valid()) {
+        return false;
+    }
+    while (sqlite3_step(query.get()) == SQLITE_ROW) {
+        const auto *name = reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 1));
+        if (name != nullptr && std::string_view(name) == "embedder") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when the record table already carries the metadata columns (schema
+// 1.3 and later).
+[[nodiscard]] bool records_have_metadata_columns(sqlite3 *db) {
+    Statement query(db, "PRAGMA table_info(memory_records)");
+    if (!query.valid()) {
+        return false;
+    }
+    bool labels = false;
+    bool importance = false;
+    while (sqlite3_step(query.get()) == SQLITE_ROW) {
+        const auto *name = reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 1));
+        if (name == nullptr) {
+            continue;
+        }
+        labels = labels || std::string_view(name) == "labels";
+        importance = importance || std::string_view(name) == "importance";
+    }
+    return labels && importance;
+}
+
+// Schema 1.2 -> 1.3: structured metadata columns for labels and importance
+// (DEC-112). Purely additive - existing rows take the neutral defaults
+// (empty annotation, 0.5) and the projection keeps the authoritative copy in
+// the document JSON, so nothing is cleared.
+[[nodiscard]] Result<void> migrate_memory_schema_1_2_to_1_3(sqlite3 *db) {
+    if (records_have_metadata_columns(db)) {
+        return {};
+    }
+    constexpr const char *kAddColumns =
+        "ALTER TABLE memory_records ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';"
+        "ALTER TABLE memory_records ADD COLUMN importance REAL NOT NULL DEFAULT 0.5;";
+    return storage::exec_sql(db, kAddColumns);
+}
+
+// Schema 1.1 -> 1.2: every embedding records the identity of the producer
+// that created it (DEC-111), so the cosine leg only ever compares vectors of
+// the same geometry.
+//
+// Pre-1.2 rows carry no attribution and no honest identity exists for them,
+// so the projection is cleared: it is a rebuildable projection (RULE-07) and
+// index lag immediately reports every Active record as pending re-embedding.
+// Keeping unattributed rows would fake a zero lag while the vector leg could
+// never use them. The store stays writable and exact/FTS legs keep answering
+// while the host drives repair passes with the configured producer.
+[[nodiscard]] Result<void> migrate_memory_schema_1_1_to_1_2(sqlite3 *db) {
+    constexpr const char *kAddColumn =
+        "ALTER TABLE memory_embeddings ADD COLUMN embedder TEXT NOT NULL DEFAULT '';";
+    constexpr const char *kClearLegacy = "DELETE FROM memory_embeddings;";
+    std::string sql;
+    if (!embeddings_have_embedder_column(db)) {
+        sql += kAddColumn;
+    }
+    sql += kClearLegacy;
+    return storage::exec_sql(db, sql.c_str());
+}
+
 [[nodiscard]] int sensitivity_rank(Sensitivity sensitivity) {
     switch (sensitivity) {
     case Sensitivity::Public:
@@ -187,6 +262,7 @@ struct Row final {
     std::string verification;
     std::string kind;
     int sensitivity_rank_value = 1;
+    double importance = 0.5;
     MemoryRecord decoded;
 };
 
@@ -214,6 +290,7 @@ struct Row final {
     decoded.verification = memory_verification_name(value.verification);
     decoded.kind = memory_kind_name(value.kind);
     decoded.sensitivity_rank_value = sensitivity_rank(value.sensitivity);
+    decoded.importance = value.importance;
     decoded.decoded = std::move(value);
     return decoded;
 }
@@ -255,6 +332,16 @@ struct Row final {
 
 } // namespace
 
+Result<void> RetrievalWeights::validate() const {
+    for (const double weight :
+         {exact, fts, vector, verification, confidence, recency, importance}) {
+        if (!(weight >= 0.0 && weight <= 1.0) || std::isnan(weight)) {
+            return store_error(ErrorCode::InvalidArgument, "ranking weights must be within [0, 1]");
+        }
+    }
+    return Result<void>{};
+}
+
 Result<void> SqliteMemoryStoreOptions::validate() const {
     if (path.empty()) {
         return store_error(ErrorCode::InvalidArgument, "store path must not be empty");
@@ -268,6 +355,14 @@ Result<void> SqliteMemoryStoreOptions::validate() const {
     if (max_vector_scan == 0 || keep_versions_per_record == 0) {
         return store_error(ErrorCode::InvalidArgument, "store scan bounds must be positive");
     }
+    if (!(near_dup_threshold >= 0.0 && near_dup_threshold <= 1.0) ||
+        std::isnan(near_dup_threshold)) {
+        return store_error(ErrorCode::InvalidArgument,
+                           "near duplicate threshold must be within [0, 1]");
+    }
+    if (const auto valid = weights.validate(); !valid) {
+        return valid.error();
+    }
     return Result<void>{};
 }
 
@@ -276,7 +371,8 @@ class SqliteMemoryStore::Impl final {
     Impl(SqliteMemoryStoreOptions options, StoreDiagnostics diagnostics, DatabaseHandle database,
          std::unique_ptr<StoreChannel> channel, IArtifactStore *artifacts)
         : options_(std::move(options)), diagnostics_(std::move(diagnostics)),
-          database_(std::move(database)), channel_(std::move(channel)), artifacts_(artifacts) {}
+          database_(std::move(database)), channel_(std::move(channel)), artifacts_(artifacts),
+          weights_(options_.weights) {}
 
     [[nodiscard]] Result<void> check_writable() const {
         if (read_only_) {
@@ -525,9 +621,9 @@ class SqliteMemoryStore::Impl final {
                 " kind, statement, evidence, valid_from, valid_until, recorded_at,"
                 " verification, confidence, sensitivity, sensitivity_rank, status, supersedes,"
                 " expires_at, source_namespace, schema_major, schema_minor, version,"
-                " updated_at, document)"
+                " updated_at, document, labels, importance)"
                 " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,"
-                " ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"
+                " ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " statement = excluded.statement, evidence = excluded.evidence,"
                 " valid_from = excluded.valid_from, valid_until = excluded.valid_until,"
@@ -537,7 +633,8 @@ class SqliteMemoryStore::Impl final {
                 " supersedes = excluded.supersedes, expires_at = excluded.expires_at,"
                 " source_namespace = excluded.source_namespace,"
                 " version = excluded.version, updated_at = excluded.updated_at,"
-                " document = excluded.document");
+                " document = excluded.document, labels = excluded.labels,"
+                " importance = excluded.importance");
         if (!upsert.valid()) {
             return store_error(ErrorCode::Internal, "record upsert failed to prepare");
         }
@@ -568,6 +665,13 @@ class SqliteMemoryStore::Impl final {
         }
         sqlite3_bind_int64(upsert.get(), 23, wall_nanos(std::chrono::system_clock::now()));
         sqlite3_bind_text(upsert.get(), 24, document.c_str(), -1, storage::transient_copy());
+        JsonValue::Array label_values;
+        for (const auto &label : record.labels) {
+            label_values.emplace_back(JsonValue(label));
+        }
+        const std::string labels_json = to_json_string(JsonValue(std::move(label_values)));
+        sqlite3_bind_text(upsert.get(), 25, labels_json.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_double(upsert.get(), 26, static_cast<double>(record.importance));
         if (sqlite3_step(upsert.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "record upsert failed");
         }
@@ -844,6 +948,19 @@ class SqliteMemoryStore::Impl final {
             }
             sql += ")";
         }
+        // Any-of label prefilter (DEC-112): a hard filter like the scope
+        // allowlist, evaluated inside the authorized candidate universe.
+        std::size_t label_param_base = 0;
+        if (request.labels.has_value()) {
+            label_param_base = scope_keys.size() + 2 + (request.kinds ? request.kinds->size() : 0);
+            sql += " AND EXISTS (SELECT 1 FROM json_each(memory_records.labels)"
+                   " WHERE value IN (";
+            for (std::size_t index = 0; index < request.labels->size(); ++index) {
+                sql += index == 0 ? "?" + std::to_string(label_param_base + index)
+                                  : ", ?" + std::to_string(label_param_base + index);
+            }
+            sql += "))";
+        }
         sql += " ORDER BY recorded_at DESC LIMIT 4096";
         Statement universe(db, sql.c_str());
         if (!universe.valid()) {
@@ -863,6 +980,13 @@ class SqliteMemoryStore::Impl final {
             for (const auto kind : *request.kinds) {
                 const std::string name = memory_kind_name(kind);
                 sqlite3_bind_text(universe.get(), next_param, name.c_str(), -1,
+                                  storage::transient_copy());
+                ++next_param;
+            }
+        }
+        if (request.labels.has_value()) {
+            for (const auto &label : *request.labels) {
+                sqlite3_bind_text(universe.get(), next_param, label.c_str(), -1,
                                   storage::transient_copy());
                 ++next_param;
             }
@@ -1008,7 +1132,7 @@ class SqliteMemoryStore::Impl final {
         // One bound JSON array avoids a placeholder per candidate (up to 4096)
         // and is expanded by the bundled SQLite's built-in json_each table.
         std::string eligible_json;
-        if (!request.text.empty() || !request.query_embedding.empty()) {
+        if (!request.text.empty() || !request.query_embedding.values.empty()) {
             JsonValue::Array eligible_ids;
             eligible_ids.reserve(candidates.size());
             for (const auto &row : candidates) {
@@ -1086,16 +1210,18 @@ class SqliteMemoryStore::Impl final {
                 return std::find(policy.retrieval_legs.begin(), policy.retrieval_legs.end(),
                                  MemoryRetrievalLeg::Semantic) != policy.retrieval_legs.end();
             });
-        const bool semantic_withheld = !request.query_embedding.empty() && !semantic_eligible;
+        const bool semantic_withheld =
+            !request.query_embedding.values.empty() && !semantic_eligible;
         if (semantic_withheld) {
             result.quality.semantic_leg_withheld = true;
             result.quality.note = "semantic retrieval is not eligible for the queried kinds";
         }
         std::map<std::string, double> vector_scores;
-        if (!request.query_embedding.empty() && semantic_eligible &&
+        if (!request.query_embedding.values.empty() && semantic_eligible &&
             std::chrono::steady_clock::now() < deadline_point) {
-            const std::size_t query_dim = request.query_embedding.size();
-            Statement embeddings(db, "SELECT record_id, vector FROM memory_embeddings"
+            const std::size_t query_dim = request.query_embedding.values.size();
+            const std::string query_producer = request.query_embedding.embedder.to_string();
+            Statement embeddings(db, "SELECT record_id, embedder, vector FROM memory_embeddings"
                                      " WHERE record_id IN (SELECT value FROM json_each(?2))"
                                      " ORDER BY embedded_at DESC LIMIT ?1");
             std::size_t vector_errors = 0;
@@ -1109,9 +1235,22 @@ class SqliteMemoryStore::Impl final {
                 while (estep == SQLITE_ROW) {
                     const auto *id_text =
                         reinterpret_cast<const char *>(sqlite3_column_text(embeddings.get(), 0));
-                    const auto *blob = sqlite3_column_blob(embeddings.get(), 1);
-                    const int bytes = sqlite3_column_bytes(embeddings.get(), 1);
+                    const auto *producer_text =
+                        reinterpret_cast<const char *>(sqlite3_column_text(embeddings.get(), 1));
+                    const auto *blob = sqlite3_column_blob(embeddings.get(), 2);
+                    const int bytes = sqlite3_column_bytes(embeddings.get(), 2);
                     if (id_text == nullptr || blob == nullptr || bytes <= 0 || bytes % 4 != 0) {
+                        ++vector_errors;
+                        estep = sqlite3_step(embeddings.get());
+                        continue;
+                    }
+                    // Vectors of a different embedder describe a different
+                    // geometry (DEC-111): they must not meet this query in
+                    // the cosine leg. The mismatch is a diagnosable config
+                    // error, counted like a dimension mismatch rather than
+                    // silently treated as "no rows".
+                    if (producer_text == nullptr ||
+                        std::string_view(producer_text) != query_producer) {
                         ++vector_errors;
                         estep = sqlite3_step(embeddings.get());
                         continue;
@@ -1126,7 +1265,7 @@ class SqliteMemoryStore::Impl final {
                     // aligned storage before the shared numeric boundary.
                     std::memcpy(decoded.data(), blob, static_cast<std::size_t>(bytes));
                     const auto similarity =
-                        embedding_cosine_similarity(decoded, request.query_embedding);
+                        embedding_cosine_similarity(decoded, request.query_embedding.values);
                     if (!similarity) {
                         ++vector_errors;
                     } else if (*similarity >= 0.0) {
@@ -1161,6 +1300,10 @@ class SqliteMemoryStore::Impl final {
         };
         std::vector<Scored> scored;
         scored.reserve(candidates.size());
+        std::vector<Scored> rrf_raw;
+        std::vector<double> rrf_priors;
+        rrf_raw.reserve(candidates.size());
+        rrf_priors.reserve(candidates.size());
         const std::int64_t newest = candidates.empty()
                                         ? now
                                         : std::max_element(candidates.begin(), candidates.end(),
@@ -1182,9 +1325,34 @@ class SqliteMemoryStore::Impl final {
         // An embedding the per-kind policy withheld is not a ranking request:
         // the kind-filtered set is the answer, ordered by the remaining
         // signals (design Context/Memory §6.2).
-        const bool ranking_attempted = !request.text.empty() || !request.exact_terms.empty() ||
-                                       (!request.query_embedding.empty() && !semantic_withheld);
+        const bool ranking_attempted =
+            !request.text.empty() || !request.exact_terms.empty() ||
+            (!request.query_embedding.values.empty() && !semantic_withheld);
         std::set<std::string> seen_statements;
+        // Reciprocal-rank fusion (DEC-112): ranks over the FTS and cosine
+        // legs, score desc with a deterministic id tie-break. exact stays a
+        // mandatory filter and contributes one shared constant vote instead
+        // of a ranking over its members.
+        const bool rrf_fusion = options_.fusion == RetrievalFusion::ReciprocalRank;
+        constexpr std::size_t kRrfConstant = 60;
+        const auto rank_order = [](const std::map<std::string, double> &scores) {
+            std::vector<std::pair<std::string, double>> entries(scores.begin(), scores.end());
+            std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs) {
+                if (lhs.second != rhs.second) {
+                    return lhs.second > rhs.second;
+                }
+                return lhs.first < rhs.first;
+            });
+            std::map<std::string, std::size_t> positions;
+            for (std::size_t position = 0; position < entries.size(); ++position) {
+                positions[entries[position].first] = position;
+            }
+            return positions;
+        };
+        const auto fts_positions =
+            rrf_fusion ? rank_order(fts_rank) : std::map<std::string, std::size_t>{};
+        const auto vector_positions =
+            rrf_fusion ? rank_order(vector_scores) : std::map<std::string, std::size_t>{};
         if (ranking_attempted && !any_leg && !result.quality.deadline_exceeded) {
             result.quality.degraded = result.quality.degraded || result.quality.vector_degraded;
             return result; // nothing matched; an empty answer beats a scope dump
@@ -1204,7 +1372,38 @@ class SqliteMemoryStore::Impl final {
             if (!seen_statements.insert(row.statement).second) {
                 continue; // near-duplicate suppression at statement equality
             }
+            // Priors are shared by both fusion modes and are computed on the
+            // same scale; the fused leg signal differs per mode.
+            double prior =
+                weights.verification *
+                (static_cast<double>(memory_verification_rank(row.decoded.verification)) / 3.0);
+            prior += weights.confidence * row.confidence;
+            prior += weights.importance * static_cast<double>(row.decoded.importance);
+            if (newest >= oldest) {
+                const double recency =
+                    span > 0.0 ? static_cast<double>(row.recorded_at - oldest) / span : 1.0;
+                prior += weights.recency * recency;
+            }
             double score = 0.0;
+            if (rrf_fusion) {
+                // Raw reciprocal-rank vote; normalized against the candidate
+                // set after the loop so the leg spread cannot be swamped by
+                // the (much smaller) prior spread.
+                double fused = 0.0;
+                if (exact_hit) {
+                    // Shared constant vote: a filter role, not a ranking.
+                    fused += weights.exact / static_cast<double>(kRrfConstant + 1);
+                }
+                if (const auto it = fts_positions.find(row.id); it != fts_positions.end()) {
+                    fused += weights.fts / static_cast<double>(kRrfConstant + it->second + 1);
+                }
+                if (const auto it = vector_positions.find(row.id); it != vector_positions.end()) {
+                    fused += weights.vector / static_cast<double>(kRrfConstant + it->second + 1);
+                }
+                rrf_raw.push_back({&row, fused});
+                rrf_priors.push_back(prior);
+                continue;
+            }
             if (exact_hit) {
                 score += weights.exact;
             }
@@ -1214,19 +1413,99 @@ class SqliteMemoryStore::Impl final {
             if (vector_entry != vector_scores.end()) {
                 score += weights.vector * vector_entry->second;
             }
-            score +=
-                weights.verification *
-                (static_cast<double>(memory_verification_rank(row.decoded.verification)) / 3.0);
-            score += weights.confidence * row.confidence;
-            if (newest >= oldest) {
-                const double recency =
-                    span > 0.0 ? static_cast<double>(row.recorded_at - oldest) / span : 1.0;
-                score += weights.recency * recency;
-            }
+            score += prior;
             scored.push_back({&row, score});
+        }
+        if (rrf_fusion) {
+            // Min-max the fused votes inside the touched candidate set, then
+            // add the priors. The leg spread therefore always dominates the
+            // (much smaller) prior spread, and a signal-free set degrades to
+            // the prior order instead of an arbitrary one.
+            double fused_min = 0.0;
+            double fused_max = 0.0;
+            if (!rrf_raw.empty()) {
+                fused_min = fused_max = rrf_raw.front().score;
+                for (const auto &entry : rrf_raw) {
+                    fused_min = std::min(fused_min, entry.score);
+                    fused_max = std::max(fused_max, entry.score);
+                }
+            }
+            const double leg_total = weights.exact + weights.fts + weights.vector;
+            const double span_normalized = fused_max - fused_min;
+            for (std::size_t index = 0; index < rrf_raw.size(); ++index) {
+                const double normalized = span_normalized > 0.0
+                                              ? (rrf_raw[index].score - fused_min) / span_normalized
+                                              : 1.0;
+                scored.push_back({rrf_raw[index].row, normalized * leg_total + rrf_priors[index]});
+            }
         }
         std::sort(scored.begin(), scored.end(),
                   [](const Scored &lhs, const Scored &rhs) { return lhs.score > rhs.score; });
+        // Near-duplicate suppression (DEC-112): a bounded head window;
+        // candidates carrying an embedding of the query's producer identity
+        // are compared against the already-kept set. Records without such a
+        // vector are exempt - the pass never pretends to compare.
+        if (options_.near_dup_threshold > 0.0 && !request.query_embedding.values.empty() &&
+            scored.size() > 1) {
+            const std::size_t window = std::min<std::size_t>(scored.size(), 64);
+            JsonValue::Array window_ids;
+            for (std::size_t index = 0; index < window; ++index) {
+                window_ids.emplace_back(JsonValue(scored[index].row->id));
+            }
+            Statement dup_index(
+                db, "SELECT record_id, vector FROM memory_embeddings WHERE embedder = ?1"
+                    " AND record_id IN (SELECT value FROM json_each(?2))");
+            if (dup_index.valid()) {
+                const std::string producer = request.query_embedding.embedder.to_string();
+                sqlite3_bind_text(dup_index.get(), 1, producer.c_str(), -1,
+                                  storage::transient_copy());
+                const std::string ids_json = to_json_string(JsonValue(std::move(window_ids)));
+                sqlite3_bind_text(dup_index.get(), 2, ids_json.c_str(), -1,
+                                  storage::transient_copy());
+                std::map<std::string, std::vector<float>> window_vectors;
+                int dup_step = sqlite3_step(dup_index.get());
+                while (dup_step == SQLITE_ROW) {
+                    const auto *id_text =
+                        reinterpret_cast<const char *>(sqlite3_column_text(dup_index.get(), 0));
+                    const auto *blob = sqlite3_column_blob(dup_index.get(), 1);
+                    const int bytes = sqlite3_column_bytes(dup_index.get(), 1);
+                    if (id_text != nullptr && blob != nullptr && bytes > 0 && bytes % 4 == 0) {
+                        std::vector<float> decoded(static_cast<std::size_t>(bytes) / 4);
+                        std::memcpy(decoded.data(), blob, static_cast<std::size_t>(bytes));
+                        window_vectors[id_text] = std::move(decoded);
+                    }
+                    dup_step = sqlite3_step(dup_index.get());
+                }
+                std::vector<Scored> kept;
+                std::vector<std::vector<float>> kept_vectors;
+                kept.reserve(scored.size());
+                for (std::size_t index = 0; index < scored.size(); ++index) {
+                    const auto &entry = scored[index];
+                    const auto vector_it =
+                        index < window ? window_vectors.find(entry.row->id) : window_vectors.end();
+                    bool duplicate = false;
+                    if (vector_it != window_vectors.end()) {
+                        for (const auto &kept_vector : kept_vectors) {
+                            const auto similarity =
+                                embedding_cosine_similarity(vector_it->second, kept_vector);
+                            if (similarity && *similarity >= options_.near_dup_threshold) {
+                                duplicate = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (duplicate) {
+                        ++result.quality.dedup_suppressed;
+                        continue;
+                    }
+                    kept.push_back(entry);
+                    if (vector_it != window_vectors.end()) {
+                        kept_vectors.push_back(vector_it->second);
+                    }
+                }
+                scored = std::move(kept);
+            }
+        }
         std::map<std::string, std::size_t> group_counts;
         for (const auto &entry : scored) {
             if (result.records.size() >= request.max_results) {
@@ -1251,14 +1530,19 @@ class SqliteMemoryStore::Impl final {
             result.records.push_back(entry.row->decoded);
             result.scores.push_back(entry.score);
         }
-        // Vector index lag: Active records without usable embeddings.
-        {
+        // Vector index lag: Active records without an embedding of the
+        // query's producer identity (DEC-111).
+        if (!request.query_embedding.embedder.is_nil()) {
             Statement lag(db, "SELECT COUNT(*) FROM memory_records r WHERE r.status = 'active'"
                               " AND NOT EXISTS(SELECT 1 FROM memory_embeddings e"
-                              " WHERE e.record_id = r.id)");
-            if (lag.valid() && sqlite3_step(lag.get()) == SQLITE_ROW) {
-                result.quality.index_lag =
-                    static_cast<std::size_t>(sqlite3_column_int64(lag.get(), 0));
+                              " WHERE e.record_id = r.id AND e.embedder = ?1)");
+            if (lag.valid()) {
+                const std::string producer = request.query_embedding.embedder.to_string();
+                sqlite3_bind_text(lag.get(), 1, producer.c_str(), -1, storage::transient_copy());
+                if (sqlite3_step(lag.get()) == SQLITE_ROW) {
+                    result.quality.index_lag =
+                        static_cast<std::size_t>(sqlite3_column_int64(lag.get(), 0));
+                }
             }
         }
         return result;
@@ -1928,8 +2212,22 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     auto opened = storage::open_reference_store(
         db_options, {kStoreKind, kMemoryStoreSchema, kSchemaDdl, store_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
+                         // The callback receives the file's recorded version
+                         // once, so the chain must fall through each step.
                          if (previous.major == 1 && previous.minor < 1) {
-                             return migrate_memory_schema_1_0_to_1_1(db);
+                             auto migrated = migrate_memory_schema_1_0_to_1_1(db);
+                             if (!migrated) {
+                                 return migrated.error();
+                             }
+                         }
+                         if (previous.major == 1 && previous.minor < 2) {
+                             auto migrated = migrate_memory_schema_1_1_to_1_2(db);
+                             if (!migrated) {
+                                 return migrated.error();
+                             }
+                         }
+                         if (previous.major == 1 && previous.minor < 3) {
+                             return migrate_memory_schema_1_2_to_1_3(db);
                          }
                          return {};
                      }});
@@ -1992,13 +2290,19 @@ Result<ErasureResult> SqliteMemoryStore::erase(const ErasureRequest &request) {
         [this, &request](sqlite3 *db) { return impl_->erase(db, request); });
 }
 
-Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const float> vector) {
+Result<void> SqliteMemoryStore::index_embedding(MemoryId record, EmbedderId embedder,
+                                                std::span<const float> vector) {
     if (vector.empty() || vector.size() > 4'096) {
         return make_memory_error(MemoryDomainCode::InvalidRecord,
                                  "embedding dimensions must be within (0, 4096]");
     }
-    return impl_->channel_->run<void>([record, vector](sqlite3 *db) -> Result<void> {
+    if (embedder.is_nil()) {
+        return make_memory_error(MemoryDomainCode::InvalidRecord,
+                                 "embedding requires a producer identity");
+    }
+    return impl_->channel_->run<void>([record, embedder, vector](sqlite3 *db) -> Result<void> {
         const std::string id = record.to_string();
+        const std::string producer = embedder.to_string();
         Statement exists(db, "SELECT 1 FROM memory_records WHERE id = ?1 AND status = 'active'");
         if (!exists.valid()) {
             return store_error(ErrorCode::Internal, "embedding check failed to prepare");
@@ -2012,18 +2316,20 @@ Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const
         if (!transaction.valid()) {
             return store_error(ErrorCode::Internal, "embedding transaction rejected");
         }
-        Statement upsert(db, "INSERT INTO memory_embeddings(record_id, dim, vector,"
-                             " embedded_at) VALUES(?1, ?2, ?3, ?4)"
-                             " ON CONFLICT(record_id) DO UPDATE SET dim = excluded.dim,"
+        Statement upsert(db, "INSERT INTO memory_embeddings(record_id, embedder, dim,"
+                             " vector, embedded_at) VALUES(?1, ?2, ?3, ?4, ?5)"
+                             " ON CONFLICT(record_id) DO UPDATE SET embedder ="
+                             " excluded.embedder, dim = excluded.dim,"
                              " vector = excluded.vector, embedded_at = excluded.embedded_at");
         if (!upsert.valid()) {
             return store_error(ErrorCode::Internal, "embedding upsert failed to prepare");
         }
         const auto bytes = static_cast<int>(vector.size() * sizeof(float));
         sqlite3_bind_text(upsert.get(), 1, id.c_str(), -1, storage::transient_copy());
-        sqlite3_bind_int64(upsert.get(), 2, static_cast<std::int64_t>(vector.size()));
-        sqlite3_bind_blob(upsert.get(), 3, vector.data(), bytes, storage::transient_copy());
-        sqlite3_bind_int64(upsert.get(), 4, wall_nanos(std::chrono::system_clock::now()));
+        sqlite3_bind_text(upsert.get(), 2, producer.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_int64(upsert.get(), 3, static_cast<std::int64_t>(vector.size()));
+        sqlite3_bind_blob(upsert.get(), 4, vector.data(), bytes, storage::transient_copy());
+        sqlite3_bind_int64(upsert.get(), 5, wall_nanos(std::chrono::system_clock::now()));
         if (sqlite3_step(upsert.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "embedding upsert failed");
         }
@@ -2031,14 +2337,19 @@ Result<void> SqliteMemoryStore::index_embedding(MemoryId record, std::span<const
     });
 }
 
-Result<std::size_t> SqliteMemoryStore::index_lag() const {
-    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+Result<std::size_t> SqliteMemoryStore::index_lag(EmbedderId embedder) const {
+    return impl_->channel_->run<std::size_t>([embedder](sqlite3 *db) -> Result<std::size_t> {
+        const std::string producer = embedder.to_string();
+        // Lag is answered per identity (DEC-111): after a producer
+        // switch the previously indexed vectors stop counting, so the
+        // rebuild scope is reported truthfully instead of fake zero.
         Statement lag(db, "SELECT COUNT(*) FROM memory_records r WHERE r.status = 'active'"
                           " AND NOT EXISTS(SELECT 1 FROM memory_embeddings e"
-                          " WHERE e.record_id = r.id)");
+                          " WHERE e.record_id = r.id AND e.embedder = ?1)");
         if (!lag.valid()) {
             return store_error(ErrorCode::Internal, "index lag failed to prepare");
         }
+        sqlite3_bind_text(lag.get(), 1, producer.c_str(), -1, storage::transient_copy());
         if (sqlite3_step(lag.get()) != SQLITE_ROW) {
             return store_error(ErrorCode::Internal, "index lag failed");
         }
@@ -2046,14 +2357,17 @@ Result<std::size_t> SqliteMemoryStore::index_lag() const {
     });
 }
 
-Result<bool> SqliteMemoryStore::has_embedding(MemoryId record) const {
-    return impl_->channel_->run<bool>([record](sqlite3 *db) -> Result<bool> {
-        Statement query(db, "SELECT 1 FROM memory_embeddings WHERE record_id = ?1");
+Result<bool> SqliteMemoryStore::has_embedding(MemoryId record, EmbedderId embedder) const {
+    return impl_->channel_->run<bool>([record, embedder](sqlite3 *db) -> Result<bool> {
+        Statement query(db, "SELECT 1 FROM memory_embeddings WHERE record_id = ?1"
+                            " AND embedder = ?2");
         if (!query.valid()) {
             return store_error(ErrorCode::Internal, "embedding probe failed to prepare");
         }
         const std::string id = record.to_string();
+        const std::string producer = embedder.to_string();
         sqlite3_bind_text(query.get(), 1, id.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(query.get(), 2, producer.c_str(), -1, storage::transient_copy());
         const int step = sqlite3_step(query.get());
         if (step == SQLITE_ROW) {
             return true;
@@ -2065,20 +2379,22 @@ Result<bool> SqliteMemoryStore::has_embedding(MemoryId record) const {
     });
 }
 
-Result<std::size_t> SqliteMemoryStore::clear_embeddings() {
+Result<std::size_t> SqliteMemoryStore::clear_embeddings(EmbedderId embedder) {
     const auto writable = impl_->check_writable();
     if (!writable) {
         return writable.error();
     }
-    return impl_->channel_->run<std::size_t>([](sqlite3 *db) -> Result<std::size_t> {
+    return impl_->channel_->run<std::size_t>([embedder](sqlite3 *db) -> Result<std::size_t> {
         Transaction transaction(db);
         if (!transaction.valid()) {
             return store_error(ErrorCode::Internal, "index reset transaction rejected");
         }
-        Statement clear(db, "DELETE FROM memory_embeddings");
+        Statement clear(db, "DELETE FROM memory_embeddings WHERE embedder = ?1");
         if (!clear.valid()) {
             return store_error(ErrorCode::Internal, "index reset failed to prepare");
         }
+        const std::string producer = embedder.to_string();
+        sqlite3_bind_text(clear.get(), 1, producer.c_str(), -1, storage::transient_copy());
         if (sqlite3_step(clear.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "index reset failed");
         }

@@ -183,7 +183,9 @@ int migration_and_version_stamp_roll_back_together() {
     auto migrated = fixture.open(true, path);
     MIRA_CHECK(migrated && migrated.value().disposition == StoreSchemaDisposition::Migrated);
     Database db(path);
-    MIRA_CHECK(db.text(kVersion) == "1.1");
+    // The chained migration (1.0 -> 1.1 -> 1.2 -> 1.3) stamps the reader's
+    // current store schema version, not an intermediate step.
+    MIRA_CHECK(db.text(kVersion) == "1.3");
     MIRA_CHECK(
         db.text(
             "SELECT count(*) FROM pragma_table_info('memory_mutations') WHERE name='scope_key'") ==

@@ -133,6 +133,26 @@ Result<void> MemoryAgentService::initialize() {
     return {};
 }
 
+// DEC-111: the producer is frozen before initialize() so recall jobs never
+// observe a mid-flight producer swap. Null refs are refused; un-setting is
+// not a supported transition (reconfigure by restarting the service).
+Result<void> MemoryAgentService::set_recall_embedder(std::shared_ptr<IEmbeddingProvider> embedder) {
+    auto &s = *state_;
+    if (embedder == nullptr) {
+        return error(ErrorCode::InvalidArgument, "recall embedder must not be null");
+    }
+    if (embedder->embedder_id().is_nil()) {
+        return error(ErrorCode::InvalidArgument, "recall embedder must carry an identity");
+    }
+    const std::lock_guard lock(s.mutex);
+    if (s.initialized || s.closing) {
+        return error(ErrorCode::InvalidState,
+                     "recall embedder must be configured before initialize()");
+    }
+    s.recall_embedder = std::move(embedder);
+    return {};
+}
+
 Result<void> MemoryAgentService::bind(MemoryWorkBinding binding) {
     auto &s = *state_;
     if (auto valid = s.validate_binding(binding); !valid)

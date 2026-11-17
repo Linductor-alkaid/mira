@@ -22,7 +22,7 @@ SQLite 内保存部分 JSON 快照是合理做法：关键是 ACL、身份、水
 | --- | --- | --- |
 | Cold 事件事实源 | [FileEventStore](../../src/storage/event_store.cpp)，`events.log`；有序、幂等、摘要、恢复 | 恢复载入 MemoryEventStore，默认 10万条；没有 SqliteEventStore；分段/索引与容量归 M31 |
 | 长期知识 | [SqliteMemoryStore](../../src/storage/sqlite_memory_store.cpp)，WAL、records/versions/provenance/mutations/holds/erasure | 宿主必须实例化并注入；文件存在不代表有调用 consolidation |
-| 关键词与向量 | 同库 FTS5、embedding BLOB、外部供给与 repair | 余弦是有界扫描，无生产 embedding 实现或 ANN；中文分词质量未验证 |
+| 关键词与向量 | 同库 FTS5、embedding BLOB、`OpenAiCompatibleEmbeddingProvider`（DEC-111）与 repair；RRF 融合模式 + `OpenAiCompatibleReranker`（DEC-112，/v1/rerank） | 余弦仍是有界扫描、无 ANN；RRF/去重阈值默认关或宿主 opt-in；中文分词质量未验证 |
 | 任务恢复 | [SqliteCheckpointStore](../../src/storage/sqlite_checkpoint_store.cpp)，水位与投影摘要 | 任务 checkpoint 不等于 Conversation checkpoint 或 Working Context 的持久后端 |
 | 会话段/流程回合/恢复教训资产 | [InMemoryContextIndex](../../src/context/context_retrieval.cpp)，来源事件与确定性 ID | 仅进程内；重启要重建，没有对应 SQLite 资产索引 |
 | 会话 checkpoint / Working Context | [consolidation](../../include/mira/context_consolidation.hpp)、[snapshot](../../include/mira/context_working_context.hpp) 契约及内存参考 store | 不可因为有任务 SQLite checkpoint 就声称所有 Warm 状态已持久 |

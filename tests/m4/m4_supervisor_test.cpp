@@ -89,34 +89,51 @@ class FakeMemory final : public IMemory {
     std::vector<MemoryRecord> records;
 };
 
-// A projection index double: it keeps the attached vectors and reports how
-// many records it still does not cover.
+// A projection index double: it keeps the attached vectors per embedder
+// identity and reports how many records it still does not cover.
 class FakeEmbeddingIndex final : public IMemoryEmbeddingIndex {
   public:
-    Result<void> index_embedding(MemoryId record, std::span<const float> vector) override {
-        vectors_[record.to_string()] = std::vector<float>(vector.begin(), vector.end());
+    Result<void> index_embedding(MemoryId record, EmbedderId embedder,
+                                 std::span<const float> vector) override {
+        vectors_[key(record, embedder)] = std::vector<float>(vector.begin(), vector.end());
         return Result<void>{};
     }
-    Result<bool> has_embedding(MemoryId record) const override {
-        return vectors_.count(record.to_string()) != 0;
+    Result<bool> has_embedding(MemoryId record, EmbedderId embedder) const override {
+        return vectors_.count(key(record, embedder)) != 0;
     }
-    Result<std::size_t> index_lag() const override {
-        const std::size_t attached = vectors_.size();
+    Result<std::size_t> index_lag(EmbedderId embedder) const override {
+        const auto attached = static_cast<std::size_t>(
+            std::count_if(vectors_.begin(), vectors_.end(), [&embedder](const auto &entry) {
+                return entry.first.second == embedder.to_string();
+            }));
         return covered > attached ? covered - attached : 0;
     }
-    Result<std::size_t> clear_embeddings() override {
-        vectors_.clear();
-        return Result<std::size_t>(0);
+    Result<std::size_t> clear_embeddings(EmbedderId embedder) override {
+        const auto removed = static_cast<std::size_t>(
+            std::count_if(vectors_.begin(), vectors_.end(), [&embedder](const auto &entry) {
+                return entry.first.second == embedder.to_string();
+            }));
+        std::erase_if(vectors_, [&embedder](const auto &entry) {
+            return entry.first.second == embedder.to_string();
+        });
+        return removed;
     }
 
     std::size_t covered = 0;
-    std::map<std::string, std::vector<float>> vectors_;
+    std::map<std::pair<std::string, std::string>, std::vector<float>> vectors_;
+
+  private:
+    [[nodiscard]] static std::pair<std::string, std::string> key(MemoryId record,
+                                                                 EmbedderId embedder) {
+        return {record.to_string(), embedder.to_string()};
+    }
 };
 
 // A producer double: it either yields a vector or refuses, so the repair
 // pass has a failure to report.
 class FixedProvider final : public IEmbeddingProvider {
   public:
+    EmbedderId embedder_id() const override { return id; }
     Result<std::vector<float>> embed(std::string_view) override {
         if (fail) {
             return test_error(ErrorCode::Unavailable, "producer down");
@@ -124,6 +141,7 @@ class FixedProvider final : public IEmbeddingProvider {
         ++calls;
         return std::vector<float>{1.0F, 0.5F};
     }
+    EmbedderId id = EmbedderId::generate();
     bool fail = false;
     std::size_t calls = 0;
 };

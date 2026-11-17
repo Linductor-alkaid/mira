@@ -30,6 +30,16 @@ Result<void> WorkingContextPromotionPolicy::validate() const {
     if (max_candidates_per_run == 0) {
         return promotion_error(ErrorCode::InvalidArgument, "candidate bound must be positive");
     }
+    if (labels.size() > 16) {
+        return promotion_error(ErrorCode::InvalidArgument,
+                               "promotion labels must not exceed 16 entries");
+    }
+    for (const auto &label : labels) {
+        if (label.empty() || label.size() > 64) {
+            return promotion_error(ErrorCode::InvalidArgument,
+                                   "promotion label entries must be within (0, 64] bytes");
+        }
+    }
     return Result<void>{};
 }
 
@@ -97,6 +107,7 @@ memory_candidates_from_working_context(const WorkingContextSnapshot &snapshot,
             record.confidence = static_cast<float>(item.confidence);
             record.sensitivity = Sensitivity::Internal;
             record.source_namespace = "working-context";
+            record.labels = policy.labels;
 
             MemoryCandidate candidate;
             candidate.proposed = std::move(record);

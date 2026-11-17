@@ -1,5 +1,18 @@
 # Mira 实施总计划
 
+2026-11-17（二）：[DEC-112](../decisions/DEC-112-hybrid-retrieval-fusion.md) 落地
+混合检索——store 层 RRF 融合模式（默认 WeightedSum 零变化）、schema 1.3 结构化
+元数据（labels/importance）、近重去重选项、`OpenAiCompatibleReranker`
+（`/v1/rerank` 协议适配，真实供应商冒烟通过）。范围与验证见
+[混合检索维护记录](maintenance-2026-11-hybrid-retrieval.md)。
+
+2026-11-17：[DEC-111](../decisions/DEC-111-memory-embedding-producer-and-vector-identity.md)
+落地记忆向量腿的 embedding 生产者与向量身份——Core 新增 OpenAI 兼容
+`/v1/embeddings` 协议适配器（`IHttpTransport` 注入）、`EmbedderId` 确定性身份与
+schema 1.2 迁移、记忆代理 recall 的 opt-in 查询向量（失败只降级）。范围与验证见
+[embedding producer 维护记录](maintenance-2026-11-memory-embedding-producer.md)；
+不改变 M30–M33 的范围与状态。
+
 2026-11-10：偏好恢复和 SQLite 测试清理的 CI 修复由
 [PR #126](https://github.com/Linductor-alkaid/mira/pull/126)交付。代码 head `8585e49`
 的 push/PR 两组完整 CI **24/24 job 通过**，包括 Windows Debug/Release 各 180/180，

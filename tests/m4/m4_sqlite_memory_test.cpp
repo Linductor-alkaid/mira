@@ -603,6 +603,153 @@ int migration_adds_ledger_scope() {
     return 0;
 }
 
+// Schema 1.1 -> 1.2: the embedding projection gains the producer identity
+// column, and pre-identity vectors are cleared — the projection is
+// rebuildable (RULE-07), so index lag truthfully reports the full rebuild
+// scope instead of fake-zero lag with unusable rows (DEC-111).
+int migration_adds_embedder_identity() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        const auto path = temp_dir() / "memory-identity-migration.db";
+        SqliteMemoryStoreOptions options;
+        options.path = path;
+        const auto scope = env_scope("device-legacy");
+        const MemoryRecord fact = record(scope, "legacy fact");
+        const std::vector<float> legacy_vector{1.0F, 0.0F};
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->apply(add_mutation(fact)).has_value());
+            MIRA_CHECK(store.value()
+                           ->index_embedding(fact.id, EmbedderId::generate(), legacy_vector)
+                           .has_value());
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        // Rewrite the file into the 1.1 layout: unattributed embeddings and
+        // the older recorded schema version.
+        {
+            sqlite3 *db = nullptr;
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db, "ALTER TABLE memory_embeddings DROP COLUMN embedder;",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db,
+                                    "UPDATE store_meta SET value = '1.1'"
+                                    " WHERE key = 'schema_version';",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            sqlite3_close(db);
+        }
+        const EmbedderId producer = EmbedderId::generate();
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::Migrated);
+            // The record survived; the unattributed vector did not.
+            MIRA_CHECK(store.value()->get(fact.id, scope).has_value());
+            const auto lag = store.value()->index_lag(producer);
+            MIRA_CHECK(lag.has_value() && lag.value() == 1);
+            const auto present = store.value()->has_embedding(fact.id, producer);
+            MIRA_CHECK(present.has_value() && !present.value());
+            // Repair semantics: the new producer re-embeds from the record.
+            MIRA_CHECK(
+                store.value()->index_embedding(fact.id, producer, legacy_vector).has_value());
+            const auto covered = store.value()->index_lag(producer);
+            MIRA_CHECK(covered.has_value() && covered.value() == 0);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::UpToDate);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
+// Schema 1.2 -> 1.3: the labels/importance metadata columns are additive
+// (DEC-112) - the migration adds the columns and keeps every row; the
+// document JSON remains authoritative, so a record's labels stay readable
+// through get() even where the migrated column holds the neutral default
+// until the next write refreshes it.
+int migration_adds_metadata_columns() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    {
+        const auto path = temp_dir() / "memory-metadata-migration.db";
+        SqliteMemoryStoreOptions options;
+        options.path = path;
+        const auto scope = env_scope("device-legacy");
+        MemoryRecord fact = record(scope, "legacy fact");
+        fact.labels = {"ops", "legacy"};
+        fact.importance = 0.9F;
+        const MemoryMutation applied = add_mutation(fact);
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->apply(applied).has_value());
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        // Rewrite the file into the 1.2 layout: drop the metadata columns and
+        // stamp the older schema version.
+        {
+            sqlite3 *db = nullptr;
+            MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db, "ALTER TABLE memory_records DROP COLUMN labels;", nullptr,
+                                    nullptr, nullptr) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db, "ALTER TABLE memory_records DROP COLUMN importance;",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            MIRA_CHECK(sqlite3_exec(db,
+                                    "UPDATE store_meta SET value = '1.2'"
+                                    " WHERE key = 'schema_version';",
+                                    nullptr, nullptr, nullptr) == SQLITE_OK);
+            sqlite3_close(db);
+        }
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::Migrated);
+            // The record survives and the document JSON keeps the metadata.
+            auto found = store.value()->get(fact.id, scope);
+            MIRA_CHECK(found.has_value() && found.value().has_value());
+            MIRA_CHECK(found.value()->labels.size() == 2);
+            MIRA_CHECK(std::fabs(found.value()->importance - 0.9F) < 1e-6F);
+            // The migrated column holds the neutral default, so the label
+            // prefilter matches nothing until a write refreshes it.
+            MemoryQuery query;
+            query.scopes = {scope};
+            query.labels = std::vector<std::string>{"ops"};
+            auto filtered = store.value()->query(query);
+            MIRA_CHECK(filtered.has_value() && filtered.value().records.empty());
+            fact.version = found.value()->version;
+            MemoryMutation refresh = applied;
+            refresh.id = MutationId::generate();
+            refresh.type = MemoryMutationType::Update;
+            refresh.target = fact.id;
+            refresh.expected_version = found.value()->version;
+            refresh.proposed = fact;
+            MIRA_CHECK(store.value()->apply(refresh).has_value());
+            auto refreshed = store.value()->query(query);
+            MIRA_CHECK(refreshed.has_value() && refreshed.value().records.size() == 1);
+            MIRA_CHECK(refreshed.value().records.front().id == fact.id);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+        {
+            auto store = SqliteMemoryStore::open(exec, options);
+            MIRA_CHECK(store.has_value());
+            MIRA_CHECK(store.value()->diagnostics().disposition ==
+                       StoreSchemaDisposition::UpToDate);
+            MIRA_CHECK(store.value()->close().has_value());
+        }
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
 int kind_policy_bounds_the_store() {
     kairo::Executor exec;
     MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
@@ -710,20 +857,22 @@ int kind_policy_withholds_the_semantic_leg() {
         auto store = SqliteMemoryStore::open(exec, options);
         MIRA_CHECK(store.has_value());
         const auto scope = env_scope("device-42");
+        const EmbedderId producer = EmbedderId::generate();
 
         auto episode = record(scope, "task settled: outcome=completed sequence=7");
         episode.kind = MemoryKind::Episode;
         episode.verification = MemoryVerification::Observed;
         MIRA_CHECK(store.value()->apply(add_mutation(episode)).has_value());
-        MIRA_CHECK(
-            store.value()->index_embedding(episode.id, std::vector<float>{1.0F, 0.0F}).has_value());
+        MIRA_CHECK(store.value()
+                       ->index_embedding(episode.id, producer, std::vector<float>{1.0F, 0.0F})
+                       .has_value());
 
         // An episode is a canonical structured record: embedding similarity
         // is not a retrieval mode for it (design Context/Memory §6.2).
         MemoryQuery filtered;
         filtered.scopes = {scope};
         filtered.kinds = std::vector<MemoryKind>{MemoryKind::Episode};
-        filtered.query_embedding = {0.9F, 0.1F};
+        filtered.query_embedding = MemoryEmbedding{{0.9F, 0.1F}, producer};
         auto withheld = store.value()->query(filtered);
         MIRA_CHECK(withheld.has_value());
         MIRA_CHECK(withheld.value().quality.semantic_leg_withheld);
@@ -736,7 +885,7 @@ int kind_policy_withholds_the_semantic_leg() {
         // Without a kind filter the semantic leg runs as before.
         MemoryQuery unfiltered;
         unfiltered.scopes = {scope};
-        unfiltered.query_embedding = {0.9F, 0.1F};
+        unfiltered.query_embedding = MemoryEmbedding{{0.9F, 0.1F}, producer};
         auto semantic = store.value()->query(unfiltered);
         MIRA_CHECK(semantic.has_value());
         MIRA_CHECK(semantic.value().quality.vector_leg_ran);
@@ -891,6 +1040,8 @@ int main() {
     failures += apply_scope_check_precedes_version_check();
     failures += mutation_ledger_is_scope_bound();
     failures += migration_adds_ledger_scope();
+    failures += migration_adds_embedder_identity();
+    failures += migration_adds_metadata_columns();
     failures += kind_policy_bounds_the_store();
     failures += kind_policy_withholds_the_semantic_leg();
     failures += erasure_complete_and_pending_hold();

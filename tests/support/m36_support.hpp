@@ -3,6 +3,7 @@
 #include "support/conversation_loop_support.hpp"
 #include <mira/interaction_coordinator.hpp>
 #include <mira/memory_agent.hpp>
+#include <mira/memory_embedding.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include <condition_variable>
@@ -77,10 +78,13 @@ class MemoryAgentFixture final {
         std::error_code ignored;
         std::filesystem::remove_all(root, ignored);
     }
-    void start(MemoryAgentProcessor processor = {}, MemoryAgentConfig config = {}) {
+    void start(MemoryAgentProcessor processor = {}, MemoryAgentConfig config = {},
+               std::shared_ptr<IEmbeddingProvider> recall_embedder = nullptr) {
         config.artifacts = std::make_shared<FileArtifactStore>(root / "artifacts");
         service = std::make_unique<MemoryAgentService>(executor, memory, events, runtime,
                                                        std::move(processor), config);
+        if (recall_embedder != nullptr && !service->set_recall_embedder(recall_embedder))
+            std::abort();
         if (!service->initialize())
             std::abort();
     }

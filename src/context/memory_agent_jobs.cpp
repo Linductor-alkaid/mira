@@ -224,6 +224,16 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
     result.operation = job->id;
     result.mode = input.mode;
     result.revision = job->revision;
+    // DEC-111: the recall query carries the optional semantic prior. An
+    // embed failure only drops the vector leg; the lexical legs answer and
+    // the result is marked degraded. The call is bounded by the producer's
+    // transport deadlines; cancellation of the job is honored at the next
+    // store query.
+    const auto embedder = [&]() -> std::shared_ptr<IEmbeddingProvider> {
+        const std::lock_guard lock(mutex);
+        return recall_embedder;
+    }();
+    bool embed_failed = false;
     const auto query_records = [&](const std::string &text) -> Result<MemoryQueryResult> {
         MemoryQuery query;
         query.scopes = job->binding.scopes;
@@ -232,6 +242,20 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         query.token_budget = config.max_result_bytes / 4;
         query.max_sensitivity = Sensitivity::Sensitive;
         query.deadline = std::min(config.timeout, std::chrono::milliseconds{250});
+        // DEC-112 wiring: the work's label prefilter narrows the recall
+        // universe before any leg runs (bounds validated at bind time).
+        if (!job->binding.labels.empty()) {
+            query.labels = job->binding.labels;
+        }
+        if (embedder != nullptr) {
+            auto embedded = embedder->embed(text);
+            if (embedded) {
+                query.query_embedding =
+                    MemoryEmbedding{std::move(embedded).value(), embedder->embedder_id()};
+            } else {
+                embed_failed = true;
+            }
+        }
         auto queried = memory->query(query);
         if (!queried)
             return queried.error();
@@ -255,7 +279,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         if (!recalled)
             return recalled.error();
         input.records = std::move(recalled.value().records);
-        result.degraded = recalled.value().quality.degraded;
+        result.degraded = recalled.value().quality.degraded || embed_failed;
     } else if (input.mode == MemoryAgentMode::Record) {
         auto page = events->read({input.work.session_id, job->after_sequence, config.max_events});
         if (!page)

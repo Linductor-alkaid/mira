@@ -13,6 +13,15 @@ Result<void> MemoryAgentService::State::validate_binding(const MemoryWorkBinding
         return error(ErrorCode::InvalidArgument, "invalid memory work binding");
     if (binding.user_constraints.size() > 64)
         return error(ErrorCode::ResourceExhausted, "memory work has too many constraints");
+    // DEC-112 recall label prefilter: bounds mirror MemoryQuery::labels so an
+    // invalid label set is refused at bind time, not at first recall.
+    if (binding.labels.size() > 16)
+        return error(ErrorCode::InvalidArgument, "memory work has too many labels");
+    for (const auto &label : binding.labels) {
+        if (label.empty() || label.size() > 64)
+            return error(ErrorCode::InvalidArgument,
+                         "memory work label entries must be within (0, 64] bytes");
+    }
     std::size_t bytes = 0;
     for (const auto &constraint : binding.user_constraints) {
         if (constraint.size() > config.max_source_bytes - bytes)
@@ -33,6 +42,15 @@ Result<std::uint64_t> MemoryAgentService::stage_input(MemoryWorkBinding binding)
     std::size_t bytes = binding.work.goal.size();
     if (binding.user_constraints.size() > 64)
         return error(ErrorCode::ResourceExhausted, "memory work has too many constraints");
+    // DEC-112 recall label prefilter: bounds mirror MemoryQuery::labels so an
+    // invalid label set is refused at bind time, not at first recall.
+    if (binding.labels.size() > 16)
+        return error(ErrorCode::InvalidArgument, "memory work has too many labels");
+    for (const auto &label : binding.labels) {
+        if (label.empty() || label.size() > 64)
+            return error(ErrorCode::InvalidArgument,
+                         "memory work label entries must be within (0, 64] bytes");
+    }
     for (const auto &constraint : binding.user_constraints) {
         if (constraint.size() > state_->config.max_source_bytes ||
             bytes > state_->config.max_source_bytes - constraint.size())

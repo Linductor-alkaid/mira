@@ -135,18 +135,19 @@ int vector_budget_is_local() {
     Fixture fixture;
     const auto owner = scope("vector-owner");
     const auto target = record(owner, "target=calibration");
+    const EmbedderId producer = EmbedderId::generate();
     const std::vector<float> embedding{1.F, 0.F};
     MIRA_CHECK(add(*fixture.store, target));
-    MIRA_CHECK(fixture.store->index_embedding(target.id, embedding));
+    MIRA_CHECK(fixture.store->index_embedding(target.id, producer, embedding));
     for (int i = 0; i < 3; ++i) {
         const auto foreign = record(scope("foreign-vector-owner"), "other=calibration");
         MIRA_CHECK(add(*fixture.store, foreign));
-        MIRA_CHECK(fixture.store->index_embedding(foreign.id, embedding));
+        MIRA_CHECK(fixture.store->index_embedding(foreign.id, producer, embedding));
     }
     fixture.reopen();
     MemoryQuery query;
     query.scopes = {owner};
-    query.query_embedding = embedding;
+    query.query_embedding = MemoryEmbedding{embedding, producer};
     auto found = fixture.store->query(query);
     MIRA_CHECK(found && found.value().quality.vector_leg_ran);
     MIRA_CHECK(found.value().records.size() == 1);
@@ -155,7 +156,7 @@ int vector_budget_is_local() {
     for (int i = 0; i < 3; ++i) {
         const auto excluded = record(owner, "other=calibration");
         MIRA_CHECK(add(*fixture.store, excluded));
-        MIRA_CHECK(fixture.store->index_embedding(excluded.id, embedding));
+        MIRA_CHECK(fixture.store->index_embedding(excluded.id, producer, embedding));
     }
     query.claim_key = "target";
     found = fixture.store->query(query);

@@ -485,6 +485,20 @@ Result<void> MemoryRecord::validate() const {
     if (!(confidence >= 0.0F && confidence <= 1.0F) || std::isnan(confidence)) {
         return memory_error(MemoryDomainCode::InvalidRecord, "confidence must be within [0,1]");
     }
+    // DEC-112 structured metadata bounds: labels are host-defined data tags,
+    // importance is a retrieval prior. Neither is an authority signal.
+    if (labels.size() > 16) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "labels must not exceed 16 entries");
+    }
+    for (const auto &label : labels) {
+        if (label.empty() || label.size() > 64) {
+            return memory_error(MemoryDomainCode::InvalidRecord,
+                                "label entries must be within (0, 64] bytes");
+        }
+    }
+    if (!(importance >= 0.0F && importance <= 1.0F) || std::isnan(importance)) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "importance must be within [0,1]");
+    }
     // Secrets never enter long-term memory (design Context/Memory §13.2).
     if (sensitivity == Sensitivity::Secret) {
         return memory_error(MemoryDomainCode::InvalidRecord,
@@ -553,14 +567,40 @@ Result<void> MemoryQuery::validate() const {
     if (kinds.has_value() && kinds->empty()) {
         return memory_error(MemoryDomainCode::InvalidRecord, "kind filter must not be empty");
     }
+    if (labels.has_value()) {
+        if (labels->empty()) {
+            return memory_error(MemoryDomainCode::InvalidRecord, "label filter must not be empty");
+        }
+        if (labels->size() > 16) {
+            return memory_error(MemoryDomainCode::InvalidRecord,
+                                "label filter must not exceed 16 entries");
+        }
+        for (const auto &label : *labels) {
+            if (label.empty() || label.size() > 64) {
+                return memory_error(MemoryDomainCode::InvalidRecord,
+                                    "label filter entries must be within (0, 64] bytes");
+            }
+        }
+    }
     if (max_results == 0 || max_results > 512) {
         return memory_error(MemoryDomainCode::InvalidRecord, "max_results must be within (0, 512]");
     }
     if (deadline.count() < 0) {
         return memory_error(MemoryDomainCode::InvalidRecord, "deadline must not be negative");
     }
-    if (query_embedding.size() > 4'096) {
+    if (query_embedding.values.size() > 4'096) {
         return memory_error(MemoryDomainCode::InvalidRecord, "query embedding exceeds bounds");
+    }
+    // DEC-111: values always travel with their producer identity. Exactly one
+    // of the two being present is a representable-invalid state, rejected here.
+    if (query_embedding.values.empty() != query_embedding.embedder.is_nil()) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "query embedding requires matching values and embedder id");
+    }
+    if (!std::all_of(query_embedding.values.begin(), query_embedding.values.end(),
+                     [](float component) { return std::isfinite(component); })) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "query embedding values must be finite");
     }
     return Result<void>{};
 }
@@ -779,6 +819,14 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     if (record.source_namespace.has_value()) {
         object.emplace_back("source_namespace", *record.source_namespace);
     }
+    if (!record.labels.empty()) {
+        JsonValue::Array labels;
+        for (const auto &label : record.labels) {
+            labels.emplace_back(JsonValue(label));
+        }
+        object.emplace_back("labels", JsonValue(std::move(labels)));
+    }
+    object.emplace_back("importance", static_cast<double>(record.importance));
     object.emplace_back("version", static_cast<std::int64_t>(record.version));
     return JsonValue(std::move(object));
 }
@@ -894,6 +942,27 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
     const auto *namespace_field = json.find("source_namespace");
     if (namespace_field != nullptr && namespace_field->is_string()) {
         record.source_namespace = *namespace_field->as_string();
+    }
+    const auto *labels = json.find("labels");
+    if (labels != nullptr && labels->is_array()) {
+        for (const auto &label : *labels->as_array()) {
+            if (label.is_string()) {
+                record.labels.emplace_back(*label.as_string());
+            }
+        }
+        if (record.labels.size() > 16) {
+            return memory_error(MemoryDomainCode::SchemaUnsupported,
+                                "memory record labels exceed the bound");
+        }
+    }
+    const auto *importance = json.find("importance");
+    if (importance != nullptr && importance->is_number()) {
+        const double value = importance->as_number().value();
+        // Out-of-range metadata degrades to the neutral default instead of
+        // failing the whole record (same policy as confidence above).
+        if (value >= 0.0 && value <= 1.0 && std::isfinite(value)) {
+            record.importance = static_cast<float>(value);
+        }
     }
     const auto *version = json.find("version");
     if (version != nullptr && version->is_integer() && version->as_integer().value() > 0) {

@@ -25,6 +25,10 @@ class HashingProvider final : public IEmbeddingProvider {
   public:
     std::atomic<int> calls{0};
     bool fail = false;
+    // Tests that need a second identity override this after construction.
+    EmbedderId id = EmbedderId::generate();
+
+    EmbedderId embedder_id() const override { return id; }
 
     Result<std::vector<float>> embed(std::string_view text) override {
         ++calls;
@@ -139,20 +143,21 @@ int provider_and_index_contract() {
     auto fact = record(scope, "the oven indicator is amber");
     MIRA_CHECK(fixture.store->apply(add_mutation(fact)).has_value());
 
-    // A record without a vector is index lag.
-    const auto lag_before = fixture.store->index_lag();
-    MIRA_CHECK(lag_before.has_value() && lag_before.value() == 1);
-    const auto absent = fixture.store->has_embedding(fact.id);
-    MIRA_CHECK(absent.has_value() && !absent.value());
-
     HashingProvider provider;
     MemoryEmbeddingIndexer indexer(*fixture.store, provider);
+
+    // A record without a vector of this embedder is index lag.
+    const auto lag_before = fixture.store->index_lag(provider.id);
+    MIRA_CHECK(lag_before.has_value() && lag_before.value() == 1);
+    const auto absent = fixture.store->has_embedding(fact.id, provider.id);
+    MIRA_CHECK(absent.has_value() && !absent.value());
+
     MIRA_CHECK(indexer.index_record(fact).has_value());
     MIRA_CHECK(provider.calls.load() == 1);
 
-    const auto present = fixture.store->has_embedding(fact.id);
+    const auto present = fixture.store->has_embedding(fact.id, provider.id);
     MIRA_CHECK(present.has_value() && present.value());
-    const auto lag_after = fixture.store->index_lag();
+    const auto lag_after = fixture.store->index_lag(provider.id);
     MIRA_CHECK(lag_after.has_value() && lag_after.value() == 0);
 
     // A kind that withholds semantic retrieval is refused: the vector would
@@ -166,10 +171,10 @@ int provider_and_index_contract() {
                static_cast<std::int32_t>(MemoryDomainCode::InvalidRecord));
     MIRA_CHECK(provider.calls.load() == 1); // no model call was spent
 
-    // Clearing the projection leaves the records authoritative.
-    const auto cleared = fixture.store->clear_embeddings();
+    // Clearing this embedder's projection leaves the records authoritative.
+    const auto cleared = fixture.store->clear_embeddings(provider.id);
     MIRA_CHECK(cleared.has_value() && cleared.value() == 1);
-    const auto gone = fixture.store->has_embedding(fact.id);
+    const auto gone = fixture.store->has_embedding(fact.id, provider.id);
     MIRA_CHECK(gone.has_value() && !gone.value());
     MIRA_CHECK(fixture.store->get(fact.id, scope).has_value());
     return 0;
@@ -284,7 +289,7 @@ int stale_vector_is_dropped_when_the_statement_changes() {
     HashingProvider provider;
     MemoryEmbeddingIndexer indexer(*fixture.store, provider);
     MIRA_CHECK(indexer.index_record(fact).has_value());
-    const auto attached = fixture.store->has_embedding(fact.id);
+    const auto attached = fixture.store->has_embedding(fact.id, provider.id);
     MIRA_CHECK(attached.has_value() && attached.value());
 
     MemoryMutation update;
@@ -299,9 +304,9 @@ int stale_vector_is_dropped_when_the_statement_changes() {
     update.reason = MutationReasonCode::VerifiedEvent;
     MIRA_CHECK(fixture.store->apply(update).has_value());
 
-    const auto dropped = fixture.store->has_embedding(fact.id);
+    const auto dropped = fixture.store->has_embedding(fact.id, provider.id);
     MIRA_CHECK(dropped.has_value() && !dropped.value());
-    const auto lag = fixture.store->index_lag();
+    const auto lag = fixture.store->index_lag(provider.id);
     MIRA_CHECK(lag.has_value() && lag.value() == 1);
 
     // The repair pass re-embeds the new text.
@@ -335,11 +340,123 @@ int tombstone_drops_the_vector() {
     tombstone.reason = MutationReasonCode::HumanCorrection;
     MIRA_CHECK(fixture.store->apply(tombstone).has_value());
 
-    const auto dropped = fixture.store->has_embedding(fact.id);
+    const auto dropped = fixture.store->has_embedding(fact.id, provider.id);
     MIRA_CHECK(dropped.has_value() && !dropped.value());
     // The record itself stays readable for audit (design §13.4).
     const auto retained = fixture.store->get(fact.id, scope);
     MIRA_CHECK(retained.has_value() && retained.value().has_value());
+    return 0;
+}
+
+// Vectors of different embedders never meet in the cosine leg: probes, lag
+// and queries are answered per identity, and a query carrying a foreign
+// identity surfaces the mismatch as a vector error instead of silently
+// answering "no rows" (DEC-111).
+int vectors_are_quarantined_per_embedder() {
+    Fixture fixture("identity-quarantine.db");
+    const auto scope = env_scope("device-42");
+    auto fact = record(scope, "the oven indicator is amber");
+    MIRA_CHECK(fixture.store->apply(add_mutation(fact)).has_value());
+
+    HashingProvider first;
+    MemoryEmbeddingIndexer first_indexer(*fixture.store, first);
+    MIRA_CHECK(first_indexer.index_record(fact).has_value());
+
+    HashingProvider second; // different identity, same geometry source
+    MemoryEmbeddingIndexer second_indexer(*fixture.store, second);
+    MIRA_CHECK(!(first.embedder_id() == second.embedder_id()));
+
+    // Probes and lag are per identity.
+    const auto seen_by_first = fixture.store->has_embedding(fact.id, first.id);
+    const auto seen_by_second = fixture.store->has_embedding(fact.id, second.id);
+    MIRA_CHECK(seen_by_first.has_value() && seen_by_first.value());
+    MIRA_CHECK(seen_by_second.has_value() && !seen_by_second.value());
+    const auto lag_first = fixture.store->index_lag(first.id);
+    const auto lag_second = fixture.store->index_lag(second.id);
+    MIRA_CHECK(lag_first.has_value() && lag_first.value() == 0);
+    MIRA_CHECK(lag_second.has_value() && lag_second.value() == 1);
+
+    // A query carrying the producer's identity answers from the vector leg.
+    MemoryQuery owned;
+    owned.scopes = {scope};
+    const auto owned_vector = first_indexer.embed_query("the oven indicator is amber");
+    MIRA_CHECK(owned_vector.has_value());
+    owned.query_embedding = owned_vector.value();
+    auto owned_result = fixture.store->query(owned);
+    MIRA_CHECK(owned_result.has_value() && owned_result.value().quality.vector_leg_ran);
+    MIRA_CHECK(!owned_result.value().records.empty());
+
+    // The same query under the foreign identity refuses to compare: the
+    // mismatch counts as a vector error and degrades the leg visibly.
+    MemoryQuery foreign;
+    foreign.scopes = {scope};
+    const auto foreign_vector = second_indexer.embed_query("the oven indicator is amber");
+    MIRA_CHECK(foreign_vector.has_value());
+    foreign.query_embedding = foreign_vector.value();
+    auto foreign_result = fixture.store->query(foreign);
+    MIRA_CHECK(foreign_result.has_value());
+    MIRA_CHECK(!foreign_result.value().quality.vector_leg_ran);
+    MIRA_CHECK(foreign_result.value().quality.vector_degraded);
+    MIRA_CHECK(foreign_result.value().records.empty()); // no cross-identity hit
+
+    // Repairing under the second identity re-embeds the record and
+    // re-attributes the projection: one record carries one vector (the
+    // statement's projection), so the old identity truthfully reports the
+    // record as lagging after the switch (DEC-111).
+    const auto report = second_indexer.repair(*fixture.store, scope);
+    MIRA_CHECK(report.has_value() && report.value().repaired == 1);
+    MIRA_CHECK(fixture.store->has_embedding(fact.id, second.id).value());
+    MIRA_CHECK(fixture.store->index_lag(second.id).value() == 0);
+    const auto stale_first = fixture.store->has_embedding(fact.id, first.id);
+    MIRA_CHECK(stale_first.has_value() && !stale_first.value());
+    MIRA_CHECK(fixture.store->index_lag(first.id).value() == 1);
+
+    // Clearing the retired identity removes nothing; clearing the active
+    // one drops the single projection row.
+    const auto cleared_stale = fixture.store->clear_embeddings(first.id);
+    MIRA_CHECK(cleared_stale.has_value() && cleared_stale.value() == 0);
+    const auto cleared_active = fixture.store->clear_embeddings(second.id);
+    MIRA_CHECK(cleared_active.has_value() && cleared_active.value() == 1);
+    MIRA_CHECK(!fixture.store->has_embedding(fact.id, second.id).value());
+    return 0;
+}
+
+// Plumbing proof for the semantic prior: a paraphrase query that shares no
+// lexical token with the statement is answered by the vector leg alone.
+// (Retrieval quality with a real embedding model is evidence for the
+// real-provider smoke run recorded in the maintenance plan, not this test.)
+int paraphrase_is_answered_by_the_vector_leg() {
+    Fixture fixture("paraphrase.db");
+    const auto scope = env_scope("device-42");
+    auto fact = record(scope, "用户偏好简洁回复");
+    MIRA_CHECK(fixture.store->apply(add_mutation(fact)).has_value());
+
+    // Hand-authored geometry: the statement projects onto +x, the paraphrase
+    // query nearly onto +x; an unrelated record projects onto +y.
+    const std::vector<float> statement_vector{1.0F, 0.0F};
+    const std::vector<float> noise_vector{0.0F, 1.0F};
+    auto unrelated = record(scope, "白板马克笔已干");
+    MIRA_CHECK(fixture.store->apply(add_mutation(unrelated)).has_value());
+    const EmbedderId producer = EmbedderId::generate();
+    MIRA_CHECK(fixture.store->index_embedding(fact.id, producer, statement_vector).has_value());
+    MIRA_CHECK(fixture.store->index_embedding(unrelated.id, producer, noise_vector).has_value());
+
+    // The lexical leg cannot bridge the paraphrase.
+    MemoryQuery lexical;
+    lexical.scopes = {scope};
+    lexical.text = "别太啰嗦";
+    const auto lexical_result = fixture.store->query(lexical);
+    MIRA_CHECK(lexical_result.has_value() && lexical_result.value().records.empty());
+
+    // The vector leg answers and ranks the aligned statement first.
+    MemoryQuery semantic;
+    semantic.scopes = {scope};
+    semantic.query_embedding = MemoryEmbedding{{0.95F, 0.05F}, producer};
+    const auto semantic_result = fixture.store->query(semantic);
+    MIRA_CHECK(semantic_result.has_value());
+    MIRA_CHECK(semantic_result.value().quality.vector_leg_ran);
+    MIRA_CHECK(!semantic_result.value().records.empty());
+    MIRA_CHECK(semantic_result.value().records.front().id == fact.id);
     return 0;
 }
 
@@ -353,6 +470,8 @@ int main() {
     failures += producer_failure_degrades_the_leg();
     failures += stale_vector_is_dropped_when_the_statement_changes();
     failures += tombstone_drops_the_vector();
+    failures += vectors_are_quarantined_per_embedder();
+    failures += paraphrase_is_answered_by_the_vector_leg();
     std::filesystem::remove_all(temp_dir());
     return failures == 0 ? 0 : 1;
 }

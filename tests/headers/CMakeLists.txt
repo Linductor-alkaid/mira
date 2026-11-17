@@ -20,6 +20,8 @@ foreach(HEADER IN ITEMS
         mira/model_context_admission.hpp
         mira/memory_agent.hpp
         mira/embedding_math.hpp
+        mira/embedding_provider.hpp
+        mira/reranker_provider.hpp
         mira/action_dispatcher.hpp
         mira/artifact_store.hpp
         mira/security.hpp

@@ -95,11 +95,16 @@ SkillHint）排除在语义召回之外。为这类记录产出向量是一次�
   近似，FTS 腿做得更好，却会让「向量腿已工作」成为假象。
 - **在 Core 里放一个 OpenAI 兼容的 `/embeddings` 客户端**：拒绝。Mira core 没有 HTTP
   栈（`adapters/net` 只有 TLS 与 socket），模型供应商适配本身也是宿主职责。
+  （2026-11-17 修订：Core 已有注入式 `IHttpTransport` 边界与 `OpenAiCompatibleProvider`
+  协议适配先例，本条拒绝被 [DEC-111](DEC-111-memory-embedding-producer-and-vector-identity.md)
+  撤销——协议适配在 Core、HTTP 栈经注入。）
 - **把 embedding 写进每次 mutation 的同步路径**：拒绝。同 §23：增加热路径延迟，且向量
   是可重建投影。
 - **给向量加 profile/模型身份并在存储里比较**：拒绝（首期）。那需要给
   `memory_embeddings` 加列并做一次 schema 迁移。首期用维度检查加 `clear_embeddings()`
-  覆盖换模型的情况；profile 身份留给后续。
+  覆盖换模型的情况；profile 身份留给后续。（2026-11-17 已由
+  [DEC-111](DEC-111-memory-embedding-producer-and-vector-identity.md) 落地：
+  `EmbedderId` 确定性派生 + schema 1.2 身份列。）
 - **用记录版本号判断向量是否过期**：拒绝。等价方案，但需要把版本写进向量表；直接丢弃
   旧向量用既有信号（index lag）表达同一件事，且不需要 schema 变更。
 
