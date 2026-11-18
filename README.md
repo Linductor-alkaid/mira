@@ -134,6 +134,26 @@ a Core OpenAI-compatible `/v1/embeddings` protocol adapter over the injected
 schema 1.2), and opt-in recall-side query vectors that degrade instead of
 failing. Real-provider smoke evidence is still pending and recorded as such.
 
+The write side also gained the DEC-115 layered write policy: conflicting
+claims coexist as bounded preserved alternatives (era succession, not
+observation time, decides when an authoritative claim is replaced), duplicate
+deliveries accumulate evidence on the incumbent instead of being dropped,
+verification is promoted strictly upward with evidence (HumanConfirmed stays
+terminal), and truncation is reported instead of silent. Security gates
+(secrets, injection, invalid records) are unchanged, and the DEC-109
+propose/approve API keeps its mandatory approval.
+
+The write side gained a model-assisted extraction supply in the 2026-11
+maintenance round ([DEC-114](docs/decisions/DEC-114-extraction-model-supply.md)):
+`ProviderConsolidationModel` turns recorded events into memory candidates over
+an injected `IModelProvider` (numbered event transcript, strict-JSON output
+contract, fail-closed parsing), and `wire_extraction_supply` assembles both
+supply surfaces — direct consolidate() and the memory agent's Record/Compress
+processor — in one validated call. Model proposals still pass the same policy
+pipeline (verification stripping, injection gate, claim-key conflicts, human
+approval), and a model outage degrades to the deterministic path by default;
+extraction remains opt-in with no default behavior change.
+
 Memory retrieval gained hybrid fusion in the 2026-11 maintenance round
 ([DEC-112](docs/decisions/DEC-112-hybrid-retrieval-fusion.md)): an opt-in RRF
 fusion mode over the FTS5 + bounded-cosine legs, structured metadata columns

@@ -113,6 +113,8 @@ namespace {
         return "MemoryTombstoned";
     case MemoryMutationType::Add:
     case MemoryMutationType::Update:
+    case MemoryMutationType::AppendEvidence:
+    case MemoryMutationType::PreserveAlternative:
     case MemoryMutationType::Noop:
         return "MemoryMutationApplied";
     }

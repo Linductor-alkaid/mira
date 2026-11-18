@@ -175,7 +175,8 @@ User/Assistant 原生召回与 `[recalled memory v1|count=N]` 合并块沿用 DE
 | Expired | 待确认窗口已过期，不能再批准；只返回元数据 |
 
 批准是授权保存，不将模型提案升级为 HumanConfirmed。纠正 mutation 的 reason 是
-HumanCorrection，但仍先经过强制审批；原记录保留 Superseded 版本链。冲突不改写目标，
+HumanCorrection，但仍先经过强制审批（DEC-115 后该 API 的强制审批语义不变——变的只是
+Consolidator 管道的 kind 审批默认）；原记录保留 Superseded 版本链。冲突不改写目标，
 必须重新提案。拒绝未结算 Approving 不被接受，先由当前授权宿主核对/幂等重试。
 
 默认保留 256 个回执（含已完成），确认窗口 24 小时；窗口不晚于 previous 的到期/

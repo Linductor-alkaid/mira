@@ -385,7 +385,16 @@ int main_session_closed_loop(MiraRuntime &runtime, const std::shared_ptr<IEnviro
             });
         const auto report = future.get();
         MIRA_CHECK(report.has_value());
-        MIRA_CHECK(memory.stored_records() == 1);
+        std::cerr << "[dbg] host examined=" << report.value().consolidation.candidates_examined
+                  << " truncated=" << report.value().consolidation.candidates_truncated;
+        for (const auto &entry : report.value().consolidation.entries) {
+            std::cerr << " [" << candidate_disposition_name(entry.disposition) << " "
+                      << entry.reason_code << "]";
+        }
+        std::cerr << " stored=" << memory.stored_records() << "\n";
+        // DEC-115: every promoted candidate writes automatically at its
+        // source trust level.
+        MIRA_CHECK(memory.stored_records() == 3);
     }
 
     // Event audit: the closed loop left reconstructable evidence in one

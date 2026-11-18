@@ -23,17 +23,25 @@ int main() {
     MIRA_CHECK(settled && settled.value().stage == InputStage::TaskSettled);
     const auto result = host.finish(task);
     MIRA_CHECK(result && result.value().mode == MemoryAgentMode::Record);
-    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
-    MIRA_CHECK(result.value().consolidation.pending_approval.size() == 1);
-    MIRA_CHECK(result.value().consolidation.pending_approval.front().proposed.verification ==
-               MemoryVerification::Unverified);
+    // DEC-115: the model-recorded preference writes automatically at its
+    // source trust level beside the deterministic fact.
+    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
+    MIRA_CHECK(result.value().consolidation.pending_approval.empty());
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::RejectedInvalid) == 1);
     MemoryQuery query;
     query.scopes = host.binding(input.value()).scopes;
     const auto recorded = host.storage.memory->query(query);
-    MIRA_CHECK(recorded && recorded.value().records.size() == 1);
-    MIRA_CHECK(recorded.value().records.front().statement == "volume=30");
-    MIRA_CHECK(recorded.value().records.front().verification == MemoryVerification::Verified);
+    MIRA_CHECK(recorded && recorded.value().records.size() == 2);
+    bool fact_stored = false;
+    bool preference_stored = false;
+    for (const auto &record : recorded.value().records) {
+        if (record.statement == "volume=30") {
+            fact_stored = record.verification == MemoryVerification::Verified;
+        } else {
+            preference_stored = record.verification == MemoryVerification::Unverified;
+        }
+    }
+    MIRA_CHECK(fact_stored && preference_stored);
     const auto status = host.coordinator->memory_status(host.principal, task);
     MIRA_CHECK(status && status.value().terminal && status.value().job);
     MIRA_CHECK(host.coordinator->record_settlement("record", TaskState::Completed));

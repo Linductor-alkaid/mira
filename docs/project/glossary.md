@@ -209,6 +209,30 @@ _Avoid_: 维度检查（维度相同不代表几何可比）
 不新增协议/评分/并发路径。
 _Avoid_: 默认值翻转当接线（那只改一个字段）、辅助器内藏触发策略
 
+**纪元接续（Era Succession）**:
+冲突取代的判据（DEC-115）：候选的 fact-validity 时间严格晚于在位纪元、
+验证级别不低于在位者、来源为 VerifiedEvent/HumanCorrection/审批背书时
+才走 Supersede；观察时间不驱动取代。
+_Avoid_: 按观察时间判新旧（那会错写历史纪元）、模型候选取代权威
+
+**并存主张（Preserved Alternative）**:
+同 claim-key 不同值的候选经 `PreserveAlternative` 落库为链接在位者的
+Active 记录（`alternative_of`），有界且超限显式报告；冲突裁决归消费方。
+_Avoid_: 一律 Supersede（覆盖并存观点）、无界并存（挤占召回面）
+
+**证据追加（AppendEvidence）**:
+同 claim 同值的重复投递把新独立事件合并进在位者 provenance；CAS 核对
+但不消费版本，事实身份与版本链不动。验证晋升只在严格更高级别且有证据
+时原地 Update（HumanConfirmed 终态）。
+_Avoid_: 重复即丢弃（丢证据）、证据合并提高版本（扰动事实链）
+
+**抽取供给（Extraction Supply）**:
+模型辅助候选提取的宿主装配面（DEC-114）：provider 适配器只做
+形状与引用绑定，信任门单源在 consolidate 管道内；propose 失败
+默认降级为确定性-only（模型是增强不是依赖）。
+_Avoid_: 适配器重复信任门（双份必漂移）、静默降级当 fail-closed
+（两种语义由 degrade_on_error 显式分开）
+
 **部署窗（Deployment Window）**:
 只允许在部署边界发生模组准入与 Skill 发布变更的阶段划分；运行期
 只降级。

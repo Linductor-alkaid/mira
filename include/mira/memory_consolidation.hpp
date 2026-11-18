@@ -52,13 +52,21 @@ class IConsolidationModel {
 };
 
 struct ConsolidationPolicy final {
-    // High-risk kinds requiring explicit approval before IMemory.apply().
-    std::vector<MemoryKind> approval_required_kinds = {MemoryKind::Preference};
+    // Kinds requiring explicit approval before IMemory.apply(). DEC-115
+    // removed the kind default: user-stated preferences, promotion
+    // constraints and agent-recorded preferences write automatically at
+    // their source trust level, while the DEC-109 propose/decide API keeps
+    // its own mandatory approval. Hosts may re-arm any kind here.
+    std::vector<MemoryKind> approval_required_kinds = {};
     // Nonempty ASCII case-insensitive substrings forbidden in long-term memory.
     std::vector<std::string> forbidden_markers = default_forbidden_content_markers();
     // Nonempty instruction-shaped substrings for untrusted/model text only.
     std::vector<std::string> injection_markers = default_injection_content_markers();
     std::size_t max_candidates_per_run = 64;
+    // DEC-115 coexistence bound: same-claim-key alternatives preserved per
+    // scope beyond this count are rejected with an explicit report (never
+    // silently dropped). The incumbent is not counted.
+    std::size_t max_alternatives_per_claim = 4;
     // DEC-059 legacy namespaced projections remain compatible. DEC-101
     // memory agents force false: model text cannot mint an import exemption
     // or claim verification above Unverified, even with a namespace tag.
@@ -77,10 +85,17 @@ struct ConsolidationEntry final {
     std::string reason_code;
     std::uint64_t resulting_version = 0;
     bool idempotent_replay = false;
+    // DEC-115: the incumbent claim this entry duplicates, appends evidence
+    // to, promotes, supersedes or preserves an alternative of.
+    std::optional<MemoryId> incumbent;
 };
 
 struct ConsolidationReport final {
+    // DEC-115: the pre-truncation candidate count (candidates that arrived).
     std::size_t candidates_examined = 0;
+    // How many candidates were dropped by max_candidates_per_run; zero when
+    // everything was examined. Over-cap work is reported, never silent.
+    std::size_t candidates_truncated = 0;
     std::vector<ConsolidationEntry> entries;
     // Mutations held for human approval; apply them via apply_pending().
     std::vector<MemoryMutation> pending_approval;

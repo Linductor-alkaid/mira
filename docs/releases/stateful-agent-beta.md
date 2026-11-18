@@ -52,8 +52,9 @@ ineligible 计数。
   （NDK 26.3/API 24）构建通过；Android 真机运行证据仍属 M7。
 - 混合检索的向量腿是线性 cosine 扫描（默认上限 1024 条）；达到设计声明的阈值后
   才引入 HNSW 类索引（设计 §14.3）。
-- Model-assisted consolidation 的候选提取接口已冻结（`IConsolidationModel`），但默认
-  无模型实现；当前 consolidation 全部走确定性路径。
+- Model-assisted consolidation 的候选提取接口已冻结（`IConsolidationModel`）；DEC-114
+  补齐了 provider 适配器与一呼式供给装配（`extraction_model_provider.hpp`），模型供给
+  仍为宿主 opt-in——缺省 consolidation 继续走确定性路径。
 - Replay 不加载 Provider continuation，也不执行任何 Network/Tool/Input 能力。
 
 ## 5. 升级与兼容

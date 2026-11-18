@@ -66,6 +66,9 @@ struct WorkingContextPromotionProjection final {
     std::vector<MemoryCandidate> candidates;
     std::size_t dropped_low_confidence = 0;   // item.confidence < policy floor
     std::size_t dropped_missing_evidence = 0; // item.source_events empty
+    // DEC-115: valid surplus candidates past max_candidates_per_run are
+    // reported, never silently skipped.
+    std::size_t dropped_overflow = 0;
 };
 
 // Projects the durable snapshot sections into memory candidates (plan §4.1,
