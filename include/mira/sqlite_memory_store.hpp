@@ -31,11 +31,14 @@ struct RetrievalWeights final {
     [[nodiscard]] Result<void> validate() const;
 };
 
-// How the ranking legs fuse into one score (DEC-112). WeightedSum is the
-// shipped default and keeps the historical behavior byte-for-byte;
-// ReciprocalRank fuses the FTS and cosine legs by rank (weighted RRF,
-// k=60, normalized to [0,1]) so incomparable score distributions cannot
-// flip the lexical ordering.
+// How the ranking legs fuse into one score (DEC-112, DEC-113).
+// ReciprocalRank is the shipped default (DEC-113 flipped it after the
+// HR-11 quality benchmark): it fuses the FTS and cosine legs by rank
+// (weighted RRF, k=60, normalized to [0,1]) so incomparable score
+// distributions cannot flip the lexical ordering — and with no query
+// vector it degenerates to exactly the lexical ordering. WeightedSum
+// keeps the historical score-linear behavior; hosts that prefer the
+// top-hit emphasis of a weighted blend (and do not rerank) opt back in.
 enum class RetrievalFusion : std::uint8_t {
     WeightedSum,
     ReciprocalRank,
@@ -58,8 +61,11 @@ struct SqliteMemoryStoreOptions final {
     // Tombstones and superseded history older than this are purged by
     // compact(); zero keeps them forever.
     std::chrono::seconds purge_horizon{0};
-    // Fusion mode of the ranking legs (DEC-112).
-    RetrievalFusion fusion = RetrievalFusion::WeightedSum;
+    // Fusion mode of the ranking legs (DEC-112, DEC-113). ReciprocalRank is
+    // the default: rank-based fusion cannot be flipped by incomparable leg
+    // score distributions, and without a query vector it orders exactly like
+    // the lexical leg. Set WeightedSum to restore the historical blend.
+    RetrievalFusion fusion = RetrievalFusion::ReciprocalRank;
     // Near-duplicate suppression over the ranked head (DEC-112): candidates
     // whose embedding cosine against an already-kept candidate reaches this
     // threshold are dropped. 0.0 disables the pass; the threshold is a

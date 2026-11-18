@@ -6,7 +6,10 @@
 > 冻结里程碑：2026-11 混合检索维护轮
 > 替代/被替代：无（延伸 [DEC-060](DEC-060-memory-embedding-provider.md)、
 > [DEC-111](DEC-111-memory-embedding-producer-and-vector-identity.md) 的检索供给面，
-> 不修改其决议）
+> 不修改其决议）。2026-11-18 修订：决策 1 的默认条款（"WeightedSum 默认，
+> 行为零变化"）被 [DEC-113](DEC-113-hybrid-retrieval-default-wiring.md) 执行
+> 备选方案第 1 条预授权的"对照评估后切默认"路径而翻转为 ReciprocalRank 默认
+> （前置 HR-11 基准已交付）；其余决议继续有效
 > 关闭的缺口：检索融合只有固定加权和（分数分布不可比时排序被单腿翻转）；记忆缺
 > 自由标注与重要性维度；`IContextReranker` 契约没有远端 cross-encoder 的协议适配器
 
@@ -114,6 +117,8 @@ DEC-058/061），本项只是召回面补充。
 
 - **直接替换默认融合为 RRF**：拒绝。加权和是被大量既有测试与基准锚定的
   现状，"默认不变 + 选项制 + 对照评估后切默认"是可回退路径。
+  （2026-11-18 修订：HR-11 基准交付后，[DEC-113](DEC-113-hybrid-retrieval-default-wiring.md)
+  执行本条预授权路径，默认融合翻转为 ReciprocalRank。）
 - **RRF 融合三腿（exact 计排名）**：拒绝。exact 是 0/1 布尔，给"命中者"
   都记 rank-1 会让 RRF 退化为第二张 exact 过滤票；保持强制过滤语义更诚实。
 - **importance 进相似度/进 RRF**：拒绝。先验不是相关性信号；分层叠加

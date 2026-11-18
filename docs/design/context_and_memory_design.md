@@ -789,22 +789,39 @@ SQLite 参考后端的 FTS/vector 单腿额度必须在前述硬过滤后的候�
 文本/向量索引也尚未单独构建；规模与历史召回改造见
 [存储核查](memory-storage-reference-study.md)及[维护计划](../plans/maintenance-2026-11-memory-storage.md)。
 
-### 14.1a 融合模式（DEC-112）
+### 14.1a 融合模式（DEC-112，默认值经 DEC-113 修订）
 
 三腿的融合公式是 store 选项（`SqliteMemoryStoreOptions::fusion`），默认
-`WeightedSum`（历史行为零变化）。`ReciprocalRank` 模式：FTS 与余弦两腿各自按
-排名投票 `1/(60 + rank + 1)`（weighted-RRF，k=60 文档化常量），在候选集内
-min-max 归一化后叠加先验项（verification / confidence / recency /
-importance）——先验永远只是次级信号，候选集内的腿差距不会被先验淹没。RRF
-存在的理由：BM25 与余弦分数分布不可比，加权融合会让向量腿翻转词面序
-（真实供应商双模型实测确认）；RRF 只用排名，两腿任一缺席仍稳定。exact 仍是
-强制过滤器，以共享常量票参与（不是排名）。
+`ReciprocalRank`（DEC-113 在 HR-11 质量基准交付后执行 DEC-112 预授权的
+"对照评估后切默认"路径；无查询向量时 RRF 退化为与词法序完全一致，行为零
+变化）。`ReciprocalRank` 模式：FTS 与余弦两腿各自按排名投票
+`1/(60 + rank + 1)`（weighted-RRF，k=60 文档化常量），在候选集内 min-max
+归一化后叠加先验项（verification / confidence / recency / importance）——
+先验永远只是次级信号，候选集内的腿差距不会被先验淹没。RRF 存在的理由：
+BM25 与余弦分数分布不可比，加权融合会让向量腿翻转词面序（真实供应商双模型
+实测确认）；RRF 只用排名，两腿任一缺席仍稳定。exact 仍是强制过滤器，以共享
+常量票参与（不是排名）。偏好首位加权融合形态的宿主可显式覆盖回
+`WeightedSum`。
 
 元数据先验：`labels`（any-of 硬预过滤，候选 SQL 内执行）与 `importance`
 （[0,1]，宿主写时赋值）是 DEC-112 新增的结构化元数据；importance 的排序
-权重默认 0.0，宿主显式启用。近重去重（`near_dup_threshold`，默认关）在排序
-后 top-64 有界区间内抑制嵌入余弦过阈的候选，阈值按 embedder 实测标定
-（bge-m3 改述近重 ≈0.86）；无查询身份向量的候选豁免。
+权重默认 0.0，宿主显式启用。近重去重（`near_dup_threshold`，store 默认关；
+DEC-113 接线器默认 0.85）在排序后 top-64 有界区间内抑制嵌入余弦过阈的候选，
+阈值按 embedder 实测标定（bge-m3 改述近重 ≈0.86）；无查询身份向量的候选
+豁免。
+
+### 14.1b 默认接线（DEC-113）
+
+检索能力的装配面收敛为一呼式组合辅助器 `hybrid_retrieval_wiring.hpp`：
+`hybrid_retrieval_store_options()`（open 前写入融合/去重默认）与
+`wire_hybrid_retrieval()`（open 后一次构建两条 provider 腿、注入 recall
+embedder、挂接投影 indexer）。校验完全前置——`set_recall_embedder` 不可撤销，
+任何校验失败都发生在注入之前。每条腿可选（仅 embedding / 仅 rerank /
+双无均非法——无腿可接即拒绝）；HTTP 栈仍由宿主注入 `IHttpTransport`，凭据
+只以 SecretRef 名进入配置。`HybridRetrievalStack` 的便捷路由直接转发
+supervisor 既有路径（repair = Deferrable、rerank = Interactive），不新增任何
+并发或协议路径。Layer 2 生产链整合（谁在什么时机调 retrieve→rerank）另立
+维护轮；250ms recall 路径不挂 rerank 的纪律不变。
 
 ### 14.2 排名模型
 
