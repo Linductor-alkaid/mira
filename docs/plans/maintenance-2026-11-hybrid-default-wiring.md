@@ -1,6 +1,6 @@
 # 维护计划：混合检索默认接线（2026-11）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M36 后维护轮）
 > 前置：[MNT-202611-HR 混合检索](maintenance-2026-11-hybrid-retrieval.md)
@@ -177,3 +177,16 @@
   `docs/plans/mira-implementation-plan.md`（顶部注记）、`README.md`
   （状态增补）、`docs/decisions/DEC-113-…`（新增）、
   `docs/decisions/DEC-112-…`（修订注记）、本计划。
+
+### 2026-11-18：PR CI 验收（回填）
+
+- PR [#129](https://github.com/Linductor-alkaid/mira/pull/129)（squash 合入
+  master `6bf831d`）：head `c1f4ab3` 的 push + pull_request 双管线 **24/24
+  job 全绿**（run `44219327534` / `44219365641`，含 ASAN/UBSAN/TSAN、
+  Windows Debug/Release 与 Android 双 ABI——本地未执行的两类平台就此覆盖），
+  **首轮一次通过，无修复轮**。
+- master 合并提交 `6bf831d` 的 push 管线 **12/12 job 全绿**（run
+  `44223885645`）。
+- 本计划 §6 的全部退出条件达成，计划状态转 Completed。
+- gh REST 轮询教训（供后续轮复用）：`gh api --jq` 的**多行表达式**会以
+  "expected an object but got: array" 假错失败，轮询脚本的 jq 必须单行。
