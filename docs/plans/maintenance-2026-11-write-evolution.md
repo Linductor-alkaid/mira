@@ -1,6 +1,6 @@
 # 维护计划：Memory Core 写入面分层解耦（2026-11）
 
-> 状态：In Progress
+> 状态：Completed
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（M36 后维护轮）
 > 前置：[MNT-202611-ME 抽取供给](maintenance-2026-11-extraction-supply.md)
@@ -186,3 +186,14 @@ forward-compat 升级器。
   `docs/decisions/DEC-114-…`（模型候选永不取代注记）、`README.md`、
   `docs/plans/mira-implementation-plan.md`、`docs/decisions/DEC-115-…`（新增）、
   `docs/decisions/DEC-109-…`（修订注记）、本计划。
+
+### 2026-11-18：PR CI 验收（回填）
+
+- PR [#130](https://github.com/Linductor-alkaid/mira/pull/130)（与 DEC-114 抽取
+  供给同分支合入，squash master `080f182`）：head `797ea36` 的 push +
+  pull_request 双管线 **24/24 job 全绿**（run `44275055881` / `44275116747`，
+  含 ASAN/UBSAN/TSAN、Windows Debug/Release 与 Android 双 ABI），**首轮一次
+  通过，无修复轮**。
+- master 合并提交 `080f182` 的 push 管线 **12/12 job 全绿**（run
+  `44280466524`）。
+- 本计划 §6 全部退出条件达成，计划状态转 Completed。
