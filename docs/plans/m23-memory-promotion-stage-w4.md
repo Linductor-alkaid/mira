@@ -113,7 +113,7 @@ struct WorkingContextPromotionProjection final {
 
 | 快照 section | MemoryKind | 理由（冻结） |
 | --- | --- | --- |
-| `constraints` | `Preference` | 用户约束与禁止项是典型跨任务偏好；默认 `ConsolidationPolicy::approval_required_kinds` 含 `Preference` → 天然落入 `PendingApproval` 人工审批门 |
+| `constraints` | `Preference` | 用户约束与禁止项是典型跨任务偏好；默认 `ConsolidationPolicy::approval_required_kinds` 含 `Preference` → 天然落入 `PendingApproval` 人工审批门（2026-11-18 DEC-115 修订：kind 审批默认取消，提升候选按 Unverified 源信任级自动写入；冲突改走并存/纪元接续） |
 | `decisions` | `ApplicationFact` | 含理由的决策是关于应用/环境的耐久事实 |
 | `verified_facts` | `EnvironmentFact` | 已核验事实的直接对应物 |
 | `failed_attempts` | `RecoveryLesson` | 失败经验与 M13 `RecoveryLesson` 学习闭环同源（DEC-029/030） |

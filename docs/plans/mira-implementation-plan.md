@@ -1,5 +1,19 @@
 # Mira 实施总计划
 
+2026-11-18（三）：[DEC-115](../decisions/DEC-115-write-path-decoupling.md)
+落地 Memory Core 写入面分层解耦——变异模型扩展（`AppendEvidence`/
+`PreserveAlternative`）、冲突分类处置（纪元接续 Supersede vs 有界并存）、
+重复投递证据追加与严格验证晋升、Preference kind 审批默认取消（DEC-109
+API 不变）、陈旧保护改按事实纪元、截断显式报告；安全门与 kind floors 不变。
+范围与验证见[写入面演进维护记录](maintenance-2026-11-write-evolution.md)。
+
+2026-11-18（二）：[DEC-114](../decisions/DEC-114-extraction-model-supply.md)
+落地记忆抽取的模型供给面——`ProviderConsolidationModel`（事件→候选，镜像
+consolidator 适配器模板）＋ 一呼式装配 `wire_extraction_supply`（consolidate
+直驱与 MemoryAgentService processor 两面一个装配）；propose 失败默认降级为
+确定性-only，模型供给为宿主 opt-in，无默认行为翻转。范围与验证见
+[抽取供给维护记录](maintenance-2026-11-extraction-supply.md)。
+
 2026-11-18：[DEC-113](../decisions/DEC-113-hybrid-retrieval-default-wiring.md)
 落地混合检索默认接线——store 默认融合翻转为 `ReciprocalRank`（执行 DEC-112
 预授权路径，量化依据为 HR-11 质量基准；无向量查询行为零变化）＋ 一呼式组合

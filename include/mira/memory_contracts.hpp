@@ -18,9 +18,10 @@ namespace mira {
 // Versioned long-term memory contracts (M4-01; durable backends are M4-09+)
 // ---------------------------------------------------------------------------
 
-// {1,1} adds the labels/importance metadata fields (DEC-112); readers accept
-// the previous compatible minor and ignore unknown members.
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 1}; }
+// {1,1} adds the labels/importance metadata fields (DEC-112); {1,2} adds the
+// optional `alternative_of` coexistence link (DEC-115). Readers accept the
+// previous compatible minors and ignore unknown members.
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 2}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -172,6 +173,10 @@ struct MemoryRecord final {
     Sensitivity sensitivity = Sensitivity::Internal;
     MemoryStatus status = MemoryStatus::Active;
     std::optional<MemoryId> supersedes;
+    // DEC-115 coexistence: an Active record that conflicts on the claim key
+    // but was preserved as an alternative view instead of superseding the
+    // incumbent names that incumbent here. Set only by PreserveAlternative.
+    std::optional<MemoryId> alternative_of;
     std::optional<std::chrono::system_clock::time_point> expires_at;
     // External imports must carry their namespace and cannot claim
     // HumanConfirmed verification (design Context/Memory §19).
@@ -205,6 +210,14 @@ enum class MemoryMutationType : std::uint8_t {
     Update,
     Supersede,
     Tombstone,
+    // DEC-115: merge new event evidence into the target's provenance. CAS
+    // version is checked but not consumed; the fact identity and its
+    // bitemporal chain stay untouched.
+    AppendEvidence,
+    // DEC-115: admit a conflicting claim as a coexisting alternative view
+    // linked to the incumbent (`proposed.alternative_of`). Never touches the
+    // incumbent.
+    PreserveAlternative,
     Noop,
 };
 

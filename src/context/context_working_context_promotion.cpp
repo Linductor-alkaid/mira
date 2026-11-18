@@ -86,6 +86,7 @@ memory_candidates_from_working_context(const WorkingContextSnapshot &snapshot,
                 continue;
             }
             if (projection.candidates.size() >= policy.max_candidates_per_run) {
+                projection.dropped_overflow += 1;
                 continue;
             }
 

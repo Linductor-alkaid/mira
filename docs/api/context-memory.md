@@ -203,6 +203,33 @@ endpoint 与 model 成对出现时生效，双腿皆缺被 `validate()` 拒绝�
 - 示例：`examples/hybrid_retrieval_host_consumer.cpp`（离线 scripted 全链：接线 →
   repair → 语义 recall → Layer 2 rerank → 降级轮）。
 
+## extraction_model_provider.hpp：记忆抽取的模型供给面（DEC-114）
+
+`IConsolidationModel`（模型辅助候选提取，memory_consolidation.hpp）的 provider 适配器
+与一呼式装配。适配器只做形状与引用绑定——信任门（`model_assisted` 强制、
+HumanConfirmed 剥离、注入标记、claim-key 冲突、审批闸门）单源在 `consolidate()`
+管道内。
+
+- `ExtractionModelOptions`：候选上限（16）、转录事件上限（64，取前 N 确定性截断）、
+  语句/载荷字符界、deadline、`max_output_tokens`、`degrade_on_error`（默认 true：
+  provider 失败/取消/超时/畸形输出一律返回空候选集，确定性抽取照常生效；false 时
+  抛出，走 Record job 的异常→失败 Result 通路）。
+- `ProviderConsolidationModel : IConsolidationModel`：ctor `(IModelProvider&, options)`
+  （非持有，镜像 ProviderSemanticConsolidator）。`propose()` = 编号事件转录
+  `[i|seq=N] <type>:<payload>` + 固定 system 指令（只从事件提炼、必引用支撑事件）→
+  StrictJsonSchema 输出契约（`candidates:[{kind(<7 类 kebab 枚举>), statement, sources,
+  confidence}]`）→ 单次 infer → fail-closed 解析：未知名/空语句/引用越界逐候选丢弃
+  （不修复）、超上限确定性截断、evidence 绑定被引用事件 id。
+- `ExtractionSupplyConfig` + `wire_extraction_supply(config, transport)`：校验前置装配
+  `ModelProfile`（text + strict_json_schema 声明、`store=false`）→ provider → 适配器，
+  返回 `ExtractionSupplyStack`。两条供给面一个装配：`stack.model()` 供
+  `MemoryConsolidator{policy, &stack.model()}` 直驱；`stack.agent_processor(executor)`
+  返回 `make_model_memory_agent` 装配的 `MemoryAgentProcessor`（每次调用在共享
+  transport 上新建 provider），覆盖 MemoryAgentService Record/Compress 路径。
+- **无默认行为翻转**：无模型路径原样保留且仍是缺省；模型供给是宿主 opt-in。
+- 示例：`examples/extraction_supply_host_consumer.cpp`（离线 scripted 全链：wire →
+  consolidate → 确定性 Applied + 模型 Preference PendingApproval → 审批 → 降级轮）。
+
 ## content_markers.hpp
 
 `default_forbidden_content_markers()` / `default_injection_content_markers()` 返回
@@ -276,9 +303,22 @@ Verified Event 到 Memory candidate 的确定性管道：
 - `ConsolidationPolicy::require_explicit_approval`（默认 false）可将包括
   HumanCorrection 在内的所有修改保留为 pending；重复 no-op 不写入。DEC-109 的
   偏好提案强制启用，批准仍通过 `apply_pending` 提交原 mutation，不另建写入路径。
-- 冲突检测（设计 §13.5）：冲突检索用 `MemoryQuery::claim_key` 按归一化主语收窄，同主语
-  的不同值判为冲突（Supersede），同主语同值且已存副本验证等级不低于提案判为
-  `duplicate-noop`。Core 侧自己复核主语是否相等，不信任后端的过滤。
+- 冲突检测与处置（设计 §13.5，DEC-115 修订）：冲突检索用 `MemoryQuery::claim_key`
+  按归一化主语收窄（有界 64 条），Core 侧自己复核主语是否相等，不信任后端的过滤。
+  同主语命中集按 `memory_same_claim` 分类处置：
+  - **duplicate 族**（key+value 全等）：新独立事件 → `AppendEvidence`（provenance
+    幂等合并，版本链不动，`"evidence-appended"`）；验证级别严格更高且有证据 → 原地
+    `Update` 晋升（只升不降，HumanConfirmed 终态，`"verification-promoted"`）；否则
+    `"duplicate-noop"`。
+  - **alternative 族**（同主语不同值）：纪元接续（valid_from 严格更晚 + 验证级别
+    不低于在位者 + VerifiedEvent/HumanCorrection/审批背书）→ Supersede；否则
+    `PreserveAlternative` 并存（`alternative_of` 链接，`"alternative-preserved"`；
+    无界提案覆盖有限纪元为 `"legacy-coexists-bounded"`）；并存数达
+    `max_alternatives_per_claim`（默认 4）→ `"alternative-cap-reached"`。模型候选
+    永不取代权威主张。
+- 截断可见化：`ConsolidationReport.candidates_examined` 为截断前全量，
+  `candidates_truncated` 报告 `max_candidates_per_run` 超限数量（不再静默丢弃）；
+  `ConsolidationEntry.incumbent` 标识该条目作用的在位主张。
 
 Checkpoint/检索输入经 StandardContextManager 装配并被 provider 消费的独立参考见
 [Context 离线宿主](offline-composition-hosts.md#context边界由宿主显式传递)。该组合
@@ -576,7 +616,8 @@ Working State Plane 进入长期 Memory 的唯一受控通道：快照中具有�
   覆盖），`evidence` 绑定 item 源事件 provenance；record id 从独立 seed 空间
   确定性派生（同输入同 id，跨进程可复现）。
 - `WorkingContextPromotionPolicy`：`min_confidence`（默认 0.5，低于即丢弃并
-  计数）与 `max_candidates_per_run`（固定 section 顺序截断，丢弃计数不受影响）。
+  计数）与 `max_candidates_per_run`（固定 section 顺序截断；DEC-115 起有效超限
+  计入 `dropped_overflow`）。
 - `promote_working_context_to_memory(consolidator, memory, snapshot, scope, now,
   policy)`：投影 + 共享管线组合入口；报告同时携带投影产物（含候选与丢弃计数）
   与管线 `ConsolidationReport`。scope 由宿主权威给定（ACL），Core 不发明

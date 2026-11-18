@@ -431,6 +431,10 @@ std::string memory_mutation_type_name(MemoryMutationType type) {
         return "supersede";
     case MemoryMutationType::Tombstone:
         return "tombstone";
+    case MemoryMutationType::AppendEvidence:
+        return "append-evidence";
+    case MemoryMutationType::PreserveAlternative:
+        return "preserve-alternative";
     case MemoryMutationType::Noop:
         return "noop";
     }
@@ -443,6 +447,8 @@ std::optional<MemoryMutationType> memory_mutation_type_from(std::string_view nam
         {"update", MemoryMutationType::Update},
         {"supersede", MemoryMutationType::Supersede},
         {"tombstone", MemoryMutationType::Tombstone},
+        {"append-evidence", MemoryMutationType::AppendEvidence},
+        {"preserve-alternative", MemoryMutationType::PreserveAlternative},
         {"noop", MemoryMutationType::Noop},
     };
     for (const auto &[type_name, type] : kTypes) {
@@ -528,6 +534,10 @@ Result<void> MemoryRecord::validate() const {
     if (status == MemoryStatus::Superseded && !supersedes.has_value()) {
         return memory_error(MemoryDomainCode::InvalidRecord,
                             "superseded records must reference their replacement");
+    }
+    if (alternative_of.has_value() && *alternative_of == id) {
+        return memory_error(MemoryDomainCode::InvalidRecord,
+                            "an alternative cannot reference itself");
     }
     if (version == 0) {
         return memory_error(MemoryDomainCode::InvalidRecord, "record version starts at one");
@@ -656,6 +666,32 @@ Result<void> MemoryMutation::validate() const {
         if (!expected_version.has_value()) {
             return memory_error(MemoryDomainCode::InvalidMutation,
                                 "mutation type requires an expected version");
+        }
+        break;
+    case MemoryMutationType::AppendEvidence:
+        // CAS is checked but not consumed (DEC-115): the fact identity and
+        // its version chain stay untouched by an evidence merge.
+        if (!target.has_value() || target->is_nil()) {
+            return memory_error(MemoryDomainCode::InvalidMutation,
+                                "append-evidence requires a target record");
+        }
+        if (!expected_version.has_value()) {
+            return memory_error(MemoryDomainCode::InvalidMutation,
+                                "append-evidence requires an expected version");
+        }
+        if (proposed.statement.empty()) {
+            return memory_error(MemoryDomainCode::InvalidMutation,
+                                "append-evidence requires the incumbent statement");
+        }
+        break;
+    case MemoryMutationType::PreserveAlternative:
+        if (target.has_value()) {
+            return memory_error(MemoryDomainCode::InvalidMutation,
+                                "preserve-alternative must not target a record");
+        }
+        if (!proposed.alternative_of.has_value() || proposed.alternative_of->is_nil()) {
+            return memory_error(MemoryDomainCode::InvalidMutation,
+                                "preserve-alternative must name the incumbent claim");
         }
         break;
     case MemoryMutationType::Noop:
@@ -813,6 +849,9 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     if (record.supersedes.has_value()) {
         object.emplace_back("supersedes", record.supersedes->to_string());
     }
+    if (record.alternative_of.has_value()) {
+        object.emplace_back("alternative_of", record.alternative_of->to_string());
+    }
     if (record.expires_at.has_value()) {
         object.emplace_back("expires_at", wall_nanos(*record.expires_at));
     }
@@ -935,6 +974,12 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
             record.supersedes = *parsed;
         }
     }
+    if (const auto *alternative = json.find("alternative_of");
+        alternative != nullptr && alternative->is_string()) {
+        if (auto parsed = MemoryId::parse(*alternative->as_string()); parsed) {
+            record.alternative_of = *parsed;
+        }
+    }
     const auto *expires = json.find("expires_at");
     if (expires != nullptr && expires->is_integer()) {
         record.expires_at = wall_from_nanos(expires->as_integer().value());
@@ -1012,8 +1057,15 @@ Result<MemoryMutation> memory_mutation_from_json(const JsonValue &json) {
         return memory_error(MemoryDomainCode::InvalidMutation, "memory mutation id is malformed");
     }
     mutation.id = *parsed_id;
-    if (auto type = enum_from_json<MemoryMutationType>(json, "type", memory_mutation_type_from)) {
-        mutation.type = *type;
+    if (const auto *type = json.find("type"); type != nullptr && type->is_string()) {
+        auto parsed = memory_mutation_type_from(*type->as_string());
+        if (!parsed) {
+            // Fail closed (DEC-115): an unknown mutation type used to fall
+            // back to Add, which would apply arbitrary payloads as adds.
+            return memory_error(MemoryDomainCode::SchemaUnsupported,
+                                "memory mutation type is unknown");
+        }
+        mutation.type = *parsed;
     }
     const auto *scope = json.find("scope");
     if (scope != nullptr) {

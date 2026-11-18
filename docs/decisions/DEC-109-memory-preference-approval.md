@@ -1,6 +1,7 @@
 # DEC-109：长期偏好的持久提案与显式确认
 
 > 状态：Accepted（用户要求在最新 master 上继续推进 M30）
+> 2026-11-18 修订注记：DEC-115（write-path-decoupling）把 ConsolidationPolicy::approval_required_kinds 的默认值从 {Preference} 改为空——管道默认不再按 kind 强制审批；本决策的 propose/decide API、require_explicit_approval 强制覆盖与工具面 语义全部不变（其路径仍走提案-审批）。
 > 日期：2026-11-10
 > 负责人：Mira Maintainers
 > 冻结里程碑：M30-03/05 首批偏好管理增量

@@ -81,7 +81,16 @@ inline bool approve_preference(IMemory &memory, const MemoryScope &scope, std::s
     candidate.proposed.confidence = 1.F;
     const auto proposed =
         MemoryConsolidator{}.consolidate_candidates(memory, {candidate}, scope, Timestamp::now());
-    return proposed && proposed.value().pending_approval.size() == 1 &&
-           MemoryConsolidator::apply_pending(memory, proposed.value().pending_approval.front());
+    // DEC-115: under the default policy a HumanConfirmed preference applies
+    // directly; hosts that re-arm kind approval still route via
+    // apply_pending. Both paths must end with the preference stored.
+    if (!proposed) {
+        return false;
+    }
+    if (proposed.value().pending_approval.size() == 1) {
+        return static_cast<bool>(
+            MemoryConsolidator::apply_pending(memory, proposed.value().pending_approval.front()));
+    }
+    return proposed.value().count_of(CandidateDisposition::Applied) == 1;
 }
 } // namespace mira::testing

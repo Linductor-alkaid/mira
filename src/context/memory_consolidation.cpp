@@ -6,6 +6,7 @@
 #include <mira/verified_fact.hpp>
 
 #include <algorithm>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -217,11 +218,13 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
     if (!valid_policy) {
         return valid_policy.error();
     }
+    ConsolidationReport report;
+    // DEC-115: the report counts what arrived, and truncation is explicit.
+    report.candidates_examined = candidates.size();
     if (candidates.size() > policy_.max_candidates_per_run) {
+        report.candidates_truncated = candidates.size() - policy_.max_candidates_per_run;
         candidates.resize(policy_.max_candidates_per_run);
     }
-    ConsolidationReport report;
-    report.candidates_examined = candidates.size();
 
     for (auto &candidate : candidates) {
         MemoryRecord proposed = std::move(candidate.proposed);
@@ -231,6 +234,11 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         if (proposed.recorded_at.time_since_epoch().count() == 0) {
             proposed.recorded_at =
                 std::chrono::time_point_cast<std::chrono::system_clock::duration>(now.wall);
+        }
+        // The fact-validity era must exist too: a zero valid_from would make
+        // every era comparison call this candidate historical (DEC-115).
+        if (proposed.validity.valid_from.time_since_epoch().count() == 0) {
+            proposed.validity.valid_from = proposed.recorded_at;
         }
         const std::string key = memory_kind_name(proposed.kind) + ":" +
                                 context_text::to_lower_ascii(proposed.statement);
@@ -277,18 +285,21 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             continue;
         }
 
-        // 4. Conflict retrieval inside the same scope: two records conflict
-        // when they make the same claim — the same normalized subject
-        // ("volume=30" and "volume = 30" are one claim, "volume=30" and
-        // "volume_level=high" are two), so a new value supersedes the old
-        // record instead of duplicating it (design Context/Memory §13.5).
+        // 4. DEC-115 conflict analysis: same-key actives split into
+        // duplicates (the same normalized claim — "volume=30" and
+        // "volume = 30") and alternatives (same subject, different value).
+        // Retention and authority are separate decisions: evidence
+        // accumulates on duplicates, conflicting views coexist as preserved
+        // alternatives, and only era succession replaces the authoritative
+        // claim (design Context/Memory §13.5).
         const auto claim = memory_claim_key(proposed.statement);
         MemoryQuery conflict_query;
         conflict_query.scopes = {scope};
         conflict_query.kinds = std::vector<MemoryKind>{proposed.kind};
         conflict_query.claim_key = claim.key;
-        conflict_query.max_results = 16;
-        std::optional<MemoryRecord> conflict;
+        conflict_query.max_results = 64;
+        std::vector<MemoryRecord> duplicates;
+        std::vector<MemoryRecord> alternatives;
         {
             auto found = memory.query(conflict_query);
             if (!found) {
@@ -307,37 +318,184 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                 if (memory_claim_key(record.statement).key != claim.key) {
                     continue;
                 }
-                // The live claim is the most recent one about the subject.
-                if (!conflict.has_value() || record.recorded_at > conflict->recorded_at) {
-                    conflict = record;
+                if (memory_same_claim(record.statement, proposed.statement)) {
+                    duplicates.push_back(record);
+                } else {
+                    alternatives.push_back(record);
                 }
             }
         }
-        if (conflict.has_value() && memory_same_claim(conflict->statement, proposed.statement) &&
-            conflict->verification >= proposed.verification) {
-            // The same claim with a stored copy at least as verified as the
-            // proposal: no new memory, no churn — and never a downgrade (an
-            // Unverified promotion candidate must not supersede a
+        // Duplicate incumbent: the newest observation of the same claim —
+        // observation time orders records that state the identical fact.
+        std::optional<MemoryRecord> conflict;
+        for (const auto &record : duplicates) {
+            if (!conflict.has_value() || record.recorded_at > conflict->recorded_at) {
+                conflict = record;
+            }
+        }
+        // Era head: the newest fact-validity era among all same-key claims.
+        // Succession replaces it; alternatives join beside it.
+        std::optional<MemoryRecord> era_head;
+        for (const auto *family : {&duplicates, &alternatives}) {
+            for (const auto &record : *family) {
+                if (!era_head.has_value() ||
+                    record.validity.valid_from > era_head->validity.valid_from ||
+                    (record.validity.valid_from == era_head->validity.valid_from &&
+                     record.recorded_at > era_head->recorded_at)) {
+                    era_head = record;
+                }
+            }
+        }
+
+        if (conflict.has_value()) {
+            // Duplicate family: evidence and verification ride on the same
+            // claim without approval — nothing new is claimed, so nothing
+            // needs human sign-off. Entry outcomes: duplicate-noop,
+            // evidence-appended, verification-promoted.
+            const auto &candidate_evidence =
+                candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
+            std::vector<EventId> fresh_evidence;
+            std::set<std::string> known_evidence;
+            for (const auto &event : conflict->provenance) {
+                known_evidence.insert(event.to_string());
+            }
+            for (const auto &event : candidate_evidence) {
+                if (known_evidence.insert(event.to_string()).second) {
+                    fresh_evidence.push_back(event);
+                }
+            }
+            const bool strictly_higher =
+                memory_verification_rank(proposed.verification) >
+                    memory_verification_rank(conflict->verification) &&
+                conflict->verification != MemoryVerification::HumanConfirmed;
+            if (strictly_higher && !fresh_evidence.empty()) {
+                // Strict authoritative promotion (DEC-115): same claim, more
+                // verified, evidence-backed — raised in place, never lowered,
+                // HumanConfirmed incumbents are terminal.
+                MemoryMutation mutation;
+                mutation.id = entry.mutation;
+                mutation.scope = scope;
+                mutation.type = MemoryMutationType::Update;
+                mutation.target = conflict->id;
+                mutation.expected_version = conflict->version;
+                mutation.proposed = *conflict;
+                mutation.proposed.verification = proposed.verification;
+                for (const auto &event : fresh_evidence) {
+                    mutation.proposed.provenance.push_back(event);
+                }
+                mutation.evidence = fresh_evidence;
+                mutation.reason = candidate.reason;
+                const auto mutation_valid = mutation.validate();
+                if (!mutation_valid) {
+                    entry.disposition = CandidateDisposition::RejectedInvalid;
+                    entry.reason_code = "invalid-mutation";
+                    report.entries.push_back(std::move(entry));
+                    continue;
+                }
+                auto applied = memory.apply(mutation);
+                if (!applied) {
+                    entry.disposition = CandidateDisposition::RejectedConflict;
+                    entry.reason_code = "store-rejected-mutation";
+                    report.entries.push_back(std::move(entry));
+                    continue;
+                }
+                entry.disposition = CandidateDisposition::Applied;
+                entry.reason_code = "verification-promoted";
+                entry.resulting_version = applied.value().new_version;
+                entry.incumbent = conflict->id;
+                report.entries.push_back(std::move(entry));
+                continue;
+            }
+            if (!fresh_evidence.empty()) {
+                // New independent evidence for the same claim: accumulate it
+                // without disturbing the fact identity or version chain.
+                MemoryMutation mutation;
+                mutation.id = entry.mutation;
+                mutation.scope = scope;
+                mutation.type = MemoryMutationType::AppendEvidence;
+                mutation.target = conflict->id;
+                mutation.expected_version = conflict->version;
+                mutation.proposed = *conflict;
+                mutation.evidence = fresh_evidence;
+                mutation.reason = candidate.reason;
+                const auto mutation_valid = mutation.validate();
+                if (!mutation_valid) {
+                    entry.disposition = CandidateDisposition::RejectedInvalid;
+                    entry.reason_code = "invalid-mutation";
+                    report.entries.push_back(std::move(entry));
+                    continue;
+                }
+                auto applied = memory.apply(mutation);
+                if (!applied) {
+                    entry.disposition = CandidateDisposition::RejectedConflict;
+                    entry.reason_code = "store-rejected-mutation";
+                    report.entries.push_back(std::move(entry));
+                    continue;
+                }
+                entry.disposition = CandidateDisposition::Applied;
+                entry.reason_code = "evidence-appended";
+                entry.resulting_version = applied.value().new_version;
+                entry.incumbent = conflict->id;
+                report.entries.push_back(std::move(entry));
+                continue;
+            }
+            // Fully known repeat: no new memory, no churn — and never a
+            // downgrade (an Unverified candidate must not touch a
             // HumanConfirmed record, M23 plan §4.2).
             entry.disposition = CandidateDisposition::Applied;
             entry.reason_code = "duplicate-noop";
             entry.resulting_version = conflict->version;
+            entry.incumbent = conflict->id;
             report.entries.push_back(std::move(entry));
             continue;
         }
 
-        if (conflict && !candidate.model_assisted &&
-            candidate.reason == MutationReasonCode::VerifiedEvent) {
-            const bool bounded = proposed.validity.valid_until.has_value();
-            const bool previous_bounded = conflict->validity.valid_until.has_value();
-            if ((!bounded && previous_bounded) ||
-                (bounded == previous_bounded && conflict->recorded_at >= proposed.recorded_at)) {
-                entry.disposition = CandidateDisposition::RejectedConflict;
-                entry.reason_code = !bounded && previous_bounded
-                                        ? "legacy-over-bounded-fact"
-                                        : "stale-or-ambiguous-verified-event";
-                report.entries.push_back(std::move(entry));
-                continue;
+        // Alternative family / fresh key: supersede is earned only by era
+        // succession — a strictly later fact era at sufficient verification
+        // from an authoritative source (VerifiedEvent, an approved
+        // HumanCorrection, or a write behind require_explicit_approval).
+        // Everything else coexists as a preserved alternative; model text
+        // never supersedes an authoritative claim (DEC-114/DEC-115).
+        const bool approval_backed = candidate.reason == MutationReasonCode::HumanCorrection ||
+                                     policy_.require_explicit_approval;
+        const bool era_succession =
+            era_head.has_value() &&
+            (candidate.reason == MutationReasonCode::VerifiedEvent || approval_backed) &&
+            (!candidate.model_assisted || approval_backed) &&
+            memory_verification_rank(proposed.verification) >=
+                memory_verification_rank(era_head->verification) &&
+            proposed.validity.valid_from > era_head->validity.valid_from &&
+            !(!proposed.validity.valid_until.has_value() &&
+              era_head->validity.valid_until.has_value());
+        std::optional<MemoryId> preserve_incumbent;
+        std::string preserve_reason = "alternative-preserved";
+        if (era_head.has_value()) {
+            if (era_succession) {
+                // Supersede targets the era head, not merely the newest
+                // observation.
+                conflict = era_head;
+            } else {
+                // The era head is the authoritative view, not an
+                // alternative: the cap bounds the coexisting alternatives
+                // beside it.
+                const std::size_t existing_alternatives = alternatives.size() - 1;
+                if (existing_alternatives >= policy_.max_alternatives_per_claim) {
+                    entry.disposition = CandidateDisposition::RejectedConflict;
+                    entry.reason_code = "alternative-cap-reached";
+                    entry.incumbent = era_head->id;
+                    report.entries.push_back(std::move(entry));
+                    continue;
+                }
+                // An unbounded proposal cannot succeed a bounded era, but it
+                // is still preserved: the information is not lost, only the
+                // overwrite is forbidden.
+                const bool boundedness_blocked = !proposed.validity.valid_until.has_value() &&
+                                                 era_head->validity.valid_until.has_value();
+                if (boundedness_blocked) {
+                    preserve_reason = "legacy-coexists-bounded";
+                }
+                preserve_incumbent = era_head->id;
+                conflict = era_head;
             }
         }
 
@@ -355,7 +513,10 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             mutation.evidence =
                 candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
             mutation.reason = candidate.reason;
-            if (conflict.has_value()) {
+            if (preserve_incumbent.has_value()) {
+                mutation.type = MemoryMutationType::PreserveAlternative;
+                mutation.proposed.alternative_of = preserve_incumbent;
+            } else if (conflict.has_value()) {
                 mutation.type = MemoryMutationType::Supersede;
                 mutation.target = conflict->id;
                 mutation.expected_version = conflict->version;
@@ -384,7 +545,10 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         mutation.proposed = proposed;
         mutation.evidence = candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
         mutation.reason = candidate.reason;
-        if (conflict.has_value()) {
+        if (preserve_incumbent.has_value()) {
+            mutation.type = MemoryMutationType::PreserveAlternative;
+            mutation.proposed.alternative_of = preserve_incumbent;
+        } else if (conflict.has_value()) {
             mutation.type = MemoryMutationType::Supersede;
             mutation.target = conflict->id;
             mutation.expected_version = conflict->version;
@@ -409,8 +573,13 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             continue;
         }
         entry.disposition = CandidateDisposition::Applied;
-        entry.reason_code = conflict.has_value() ? "superseded-existing" : "added";
+        entry.reason_code = preserve_incumbent.has_value() ? preserve_reason
+                            : conflict.has_value()         ? "superseded-existing"
+                                                           : "added";
         entry.resulting_version = applied.value().new_version;
+        entry.incumbent = preserve_incumbent.has_value() ? preserve_incumbent
+                          : conflict.has_value()         ? conflict->id
+                                                         : std::optional<MemoryId>{};
         entry.idempotent_replay = applied.value().idempotent_replay;
         report.entries.push_back(std::move(entry));
     }

@@ -327,9 +327,63 @@ class FaithfulMemory final : public IMemory {
             result.applied = MemoryMutationType::Supersede;
             result.record = stored.id;
             result.new_version = 1;
+        } else if (mutation.type == MemoryMutationType::AppendEvidence) {
+            // DEC-115: evidence merge on the same claim — CAS checked but
+            // not consumed, version chain untouched.
+            auto target =
+                std::find_if(records_.begin(), records_.end(), [&](const MemoryRecord &record) {
+                    return record.id == *mutation.target;
+                });
+            if (target == records_.end()) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "append-evidence target does not exist");
+            }
+            if (target->version != *mutation.expected_version) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "memory version moved on; re-read and re-plan");
+            }
+            if (target->statement != mutation.proposed.statement) {
+                return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                         "append-evidence must restate the incumbent claim");
+            }
+            for (const auto &event : mutation.evidence) {
+                if (std::find(target->provenance.begin(), target->provenance.end(), event) ==
+                    target->provenance.end()) {
+                    target->provenance.push_back(event);
+                }
+            }
+            result.applied = MemoryMutationType::AppendEvidence;
+            result.record = target->id;
+            result.new_version = target->version;
+        } else if (mutation.type == MemoryMutationType::PreserveAlternative) {
+            // DEC-115: the alternative joins as a fresh Active record linked
+            // to its incumbent; the incumbent is not modified or CAS-checked.
+            auto incumbent =
+                std::find_if(records_.begin(), records_.end(), [&](const MemoryRecord &record) {
+                    return record.id == mutation.proposed.alternative_of;
+                });
+            if (incumbent == records_.end() || incumbent->status != MemoryStatus::Active) {
+                return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                         "preserve-alternative incumbent must be active");
+            }
+            for (const auto &stored : records_) {
+                if (stored.id == mutation.proposed.id) {
+                    return make_memory_error(MemoryDomainCode::VersionConflict,
+                                             "alternative record id already exists");
+                }
+            }
+            MemoryRecord stored = mutation.proposed;
+            stored.scope = mutation.scope;
+            stored.status = MemoryStatus::Active;
+            stored.version = 1;
+            records_.push_back(stored);
+            result.applied = MemoryMutationType::PreserveAlternative;
+            result.record = stored.id;
+            result.new_version = 1;
         } else {
             return make_memory_error(MemoryDomainCode::InvalidMutation,
-                                     "fixture supports Add and Supersede only");
+                                     "fixture supports Add, Supersede, AppendEvidence and "
+                                     "PreserveAlternative");
         }
         replay_log_.emplace_back(mutation.id, result);
         ++applies_completed_;

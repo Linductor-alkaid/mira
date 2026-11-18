@@ -106,6 +106,7 @@ add_library(mira_core
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
     src/context/memory_consolidation.cpp
+    src/context/extraction_model_provider.cpp
     src/context/memory_embedding.cpp
     src/context/memory_agent.cpp
     src/context/memory_agent_jobs.cpp
@@ -546,6 +547,23 @@ if(MIRA_BUILD_TESTS)
     add_test(NAME mira_hybrid_retrieval_host_consumer_test
              COMMAND mira_hybrid_retrieval_host_consumer)
     set_tests_properties(mira_hybrid_retrieval_host_consumer_test
+                         PROPERTIES LABELS "consumer" TIMEOUT 60)
+endif()
+
+# MNT-202611-ME (DEC-114): offline extraction supply chain - one-call wiring,
+# consolidate() with deterministic + model candidates through one policy
+# pipeline, explicit approval of the pending preference, and the degrade round.
+add_executable(mira_extraction_supply_host_consumer examples/extraction_supply_host_consumer.cpp)
+target_link_libraries(mira_extraction_supply_host_consumer PRIVATE
+    Mira::core Mira::state_store kairo::kairo)
+target_include_directories(mira_extraction_supply_host_consumer SYSTEM PRIVATE
+    ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_extraction_supply_host_consumer)
+mira_enable_sanitizers(mira_extraction_supply_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_extraction_supply_host_consumer_test
+             COMMAND mira_extraction_supply_host_consumer)
+    set_tests_properties(mira_extraction_supply_host_consumer_test
                          PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 

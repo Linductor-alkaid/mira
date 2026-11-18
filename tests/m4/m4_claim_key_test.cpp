@@ -187,9 +187,12 @@ int one_fact_two_phrasings_stay_one_record() {
 
     auto second = consolidator.consolidate_candidates(
         *fixture.store, {candidate(scope, "volume = 30")}, scope, Timestamp::now());
+    // DEC-115: the second phrasing arrives with its own event, so the same
+    // claim accumulates evidence instead of being a zero-write no-op.
     MIRA_CHECK(second.has_value());
-    MIRA_CHECK(second.value().entries.front().reason_code == "duplicate-noop");
+    MIRA_CHECK(second.value().entries.front().reason_code == "evidence-appended");
     MIRA_CHECK(second.value().count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(second.value().entries.front().incumbent.has_value());
 
     MemoryQuery check;
     check.scopes = {scope};
@@ -200,9 +203,11 @@ int one_fact_two_phrasings_stay_one_record() {
     return 0;
 }
 
-// A changed value about the same subject still supersedes — across
-// phrasings, because the subject is normalized on both sides.
-int changed_value_supersedes_across_phrasings() {
+// A changed value about the same subject from a consolidation source is
+// preserved as a coexisting alternative (DEC-115): only era succession from
+// an authoritative source supersedes. Both claims stay retrievable under the
+// same claim key.
+int changed_value_is_preserved_as_alternative() {
     Fixture fixture("changed");
     const auto scope = env_scope("device-42");
     MemoryConsolidator consolidator;
@@ -215,15 +220,47 @@ int changed_value_supersedes_across_phrasings() {
     auto second = consolidator.consolidate_candidates(
         *fixture.store, {candidate(scope, "volume = 60")}, scope, Timestamp::now());
     MIRA_CHECK(second.has_value());
-    MIRA_CHECK(second.value().entries.front().reason_code == "superseded-existing");
+    MIRA_CHECK(second.value().entries.front().reason_code == "alternative-preserved");
+    MIRA_CHECK(second.value().entries.front().incumbent.has_value());
 
     MemoryQuery check;
     check.scopes = {scope};
+    check.claim_key = memory_claim_key("volume=30").key;
     auto visible = fixture.store->query(check);
     MIRA_CHECK(visible.has_value());
-    MIRA_CHECK(visible.value().records.size() == 1);
-    MIRA_CHECK(visible.value().records.front().statement == "volume = 60");
-    MIRA_CHECK(visible.value().records.front().supersedes.has_value());
+    MIRA_CHECK(visible.value().records.size() == 2);
+    bool incumbent_seen = false;
+    bool alternative_seen = false;
+    for (const auto &record : visible.value().records) {
+        incumbent_seen |= record.statement == "volume=30";
+        alternative_seen |= record.statement == "volume = 60" && record.alternative_of.has_value();
+    }
+    MIRA_CHECK(incumbent_seen && alternative_seen);
+
+    // Era succession: a verified event at a strictly later fact era still
+    // supersedes the authoritative claim.
+    auto third_candidate = candidate(scope, "volume = 45");
+    third_candidate.reason = MutationReasonCode::VerifiedEvent;
+    auto third = consolidator.consolidate_candidates(*fixture.store, {third_candidate}, scope,
+                                                     Timestamp::now());
+    MIRA_CHECK(third.has_value());
+    MIRA_CHECK(third.value().entries.front().reason_code == "superseded-existing");
+    // Era succession replaced the era head ("volume = 60"); the older-era
+    // claim ("volume=30") stays Active beside the new era — history is not
+    // rewritten beyond the replaced era.
+    auto after = fixture.store->query(check);
+    MIRA_CHECK(after.has_value());
+    MIRA_CHECK(after.value().records.size() == 2);
+    const MemoryRecord *successor = nullptr;
+    for (const auto &record : after.value().records) {
+        if (record.statement == "volume = 45") {
+            successor = &record;
+        } else {
+            MIRA_CHECK(record.statement == "volume=30" && record.status == MemoryStatus::Active);
+        }
+    }
+    MIRA_CHECK(successor != nullptr && successor->status == MemoryStatus::Active);
+    MIRA_CHECK(successor->supersedes.has_value());
     return 0;
 }
 
@@ -264,8 +301,9 @@ int unkeyed_statements_conflict_on_normalized_equality() {
 
     auto second = consolidator.consolidate_candidates(
         *fixture.store, {candidate(scope, "prefer  dark  mode")}, scope, Timestamp::now());
+    // DEC-115: fresh event evidence accumulates on the same claim.
     MIRA_CHECK(second.has_value());
-    MIRA_CHECK(second.value().entries.front().reason_code == "duplicate-noop");
+    MIRA_CHECK(second.value().entries.front().reason_code == "evidence-appended");
 
     MemoryQuery check;
     check.scopes = {scope};
@@ -282,7 +320,7 @@ int main() {
     failures += claim_key_normalizes_the_subject();
     failures += claim_key_filter_narrows_the_store();
     failures += one_fact_two_phrasings_stay_one_record();
-    failures += changed_value_supersedes_across_phrasings();
+    failures += changed_value_is_preserved_as_alternative();
     failures += different_subjects_do_not_conflict();
     failures += unkeyed_statements_conflict_on_normalized_equality();
     std::filesystem::remove_all(temp_dir());

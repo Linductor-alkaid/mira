@@ -299,30 +299,24 @@ int promotion_routes_preference_through_approval() {
     MIRA_CHECK(promotion.has_value());
     const ConsolidationReport &report = promotion.value().consolidation;
     MIRA_CHECK(report.candidates_examined == 2);
-    MIRA_CHECK(report.count_of(CandidateDisposition::PendingApproval) == 1);
-    MIRA_CHECK(report.count_of(CandidateDisposition::Applied) == 1);
+    // DEC-115: promotion candidates write automatically at their source
+    // trust level (Unverified, working-context namespace) — no kind-based
+    // approval default remains in the pipeline.
+    MIRA_CHECK(report.count_of(CandidateDisposition::PendingApproval) == 0);
+    MIRA_CHECK(report.count_of(CandidateDisposition::Applied) == 2);
     MIRA_CHECK(report.entries.size() == 2);
-    MIRA_CHECK(report.entries[0].disposition == CandidateDisposition::PendingApproval);
-    MIRA_CHECK(report.entries[0].reason_code == "awaiting-human-approval");
+    MIRA_CHECK(report.entries[0].disposition == CandidateDisposition::Applied);
+    MIRA_CHECK(report.entries[0].reason_code == "added");
     MIRA_CHECK(report.entries[0].key ==
                memory_kind_name(MemoryKind::Preference) + ":deploy only on tuesdays");
     MIRA_CHECK(report.entries[1].reason_code == "added");
-    MIRA_CHECK(report.pending_approval.size() == 1);
-
-    const MemoryMutation &pending = report.pending_approval.front();
-    MIRA_CHECK(pending.type == MemoryMutationType::Add);
-    MIRA_CHECK(pending.proposed.kind == MemoryKind::Preference);
-    MIRA_CHECK(pending.proposed.statement == "deploy only on tuesdays");
-    MIRA_CHECK(pending.proposed.verification == MemoryVerification::Unverified);
-    MIRA_CHECK(pending.proposed.source_namespace.has_value());
-    MIRA_CHECK(pending.proposed.source_namespace.value() == "working-context");
-    MIRA_CHECK(pending.evidence == snapshot.constraints.front().source_events);
-    MIRA_CHECK(pending.proposed.recorded_at == m23_fixed_now().wall);
-    // Only the decision applied so far; the Preference is parked for approval.
-    MIRA_CHECK(memory.stored_records() == 1);
-    const auto applied = MemoryConsolidator::apply_pending(memory, pending);
-    MIRA_CHECK(applied.has_value());
-    MIRA_CHECK(applied.value().applied == MemoryMutationType::Add);
+    MIRA_CHECK(report.pending_approval.empty());
+    // Both promotion candidates carry the RULE-09 trust boundary.
+    for (const auto &record : memory.records()) {
+        MIRA_CHECK(record.verification == MemoryVerification::Unverified);
+        MIRA_CHECK(record.source_namespace.has_value() &&
+                   record.source_namespace.value() == "working-context");
+    }
     MIRA_CHECK(memory.stored_records() == 2);
     const auto stored = memory.records();
     std::size_t preference_records = 0;
@@ -385,33 +379,41 @@ int promotion_supersedes_conflict_and_reports_store_rejection() {
     MIRA_CHECK(stored.size() == 1);
     const MemoryId original_id = stored.front().id;
 
-    // A promoted changed value supersedes instead of duplicating.
+    // DEC-115: a promoted changed value coexists as a preserved alternative
+    // — promotion candidates (Unverified) never supersede an authoritative
+    // claim. The incumbent stays untouched beside the alternative.
     WorkingContextSnapshot snapshot = m23_snapshot(13);
     snapshot.verified_facts.push_back(m23_item("volume=60", 131, 0.8));
     const auto promotion =
         promote_working_context_to_memory(consolidator, memory, snapshot, scope, m23_fixed_now());
     MIRA_CHECK(promotion.has_value());
+    for (const auto &entry : promotion.value().consolidation.entries) {
+        std::cerr << "[dbg] m23 entry " << candidate_disposition_name(entry.disposition) << " "
+                  << entry.reason_code << "\n";
+    }
     MIRA_CHECK(promotion.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
     MIRA_CHECK(promotion.value().consolidation.entries.front().reason_code ==
-               "superseded-existing");
+               "alternative-preserved");
     stored = memory.records();
     MIRA_CHECK(stored.size() == 2);
-    const MemoryRecord *successor = nullptr;
-    const MemoryRecord *predecessor = nullptr;
+    const MemoryRecord *incumbent = nullptr;
+    const MemoryRecord *alternative = nullptr;
     for (const auto &record : stored) {
         if (record.id == original_id) {
-            predecessor = &record;
+            incumbent = &record;
         } else {
-            successor = &record;
+            alternative = &record;
         }
     }
-    MIRA_CHECK(predecessor != nullptr && successor != nullptr);
-    MIRA_CHECK(predecessor->status == MemoryStatus::Superseded);
-    MIRA_CHECK(predecessor->version == 2);
-    MIRA_CHECK(successor->status == MemoryStatus::Active);
-    MIRA_CHECK(successor->statement == "volume=60");
-    MIRA_CHECK(successor->supersedes.has_value() && successor->supersedes.value() == original_id);
-    MIRA_CHECK(successor->verification == MemoryVerification::Unverified);
+    MIRA_CHECK(incumbent != nullptr && alternative != nullptr);
+    MIRA_CHECK(incumbent->status == MemoryStatus::Active);
+    MIRA_CHECK(incumbent->version == 1);
+    MIRA_CHECK(incumbent->statement == "volume=30");
+    MIRA_CHECK(alternative->status == MemoryStatus::Active);
+    MIRA_CHECK(alternative->statement == "volume=60");
+    MIRA_CHECK(alternative->alternative_of.has_value() &&
+               alternative->alternative_of.value() == original_id);
+    MIRA_CHECK(alternative->verification == MemoryVerification::Unverified);
 
     // Store rejection: the pipeline reports it instead of hiding the loss.
     WorkingContextSnapshot rejected_snapshot = m23_snapshot(15);
@@ -534,12 +536,10 @@ int repeated_promotion_is_duplicate_noop() {
     const auto first =
         promote_working_context_to_memory(consolidator, memory, snapshot, scope, m23_fixed_now());
     MIRA_CHECK(first.has_value());
-    MIRA_CHECK(first.value().consolidation.count_of(CandidateDisposition::PendingApproval) == 1);
-    MIRA_CHECK(first.value().consolidation.count_of(CandidateDisposition::Applied) == 3);
-    MIRA_CHECK(memory.stored_records() == 3);
-    // Land the approval so every statement has a stored copy.
-    MIRA_CHECK(MemoryConsolidator::apply_pending(
-        memory, first.value().consolidation.pending_approval.front()));
+    // DEC-115: all four promotion candidates write automatically.
+    MIRA_CHECK(first.value().consolidation.count_of(CandidateDisposition::PendingApproval) == 0);
+    MIRA_CHECK(first.value().consolidation.count_of(CandidateDisposition::Applied) == 4);
+    MIRA_CHECK(memory.stored_records() == 4);
     MIRA_CHECK(memory.stored_records() == 4);
 
     // Second run: every candidate hits its stored copy — including the
@@ -612,7 +612,11 @@ int promotion_never_downgrades_stored_verification() {
         MIRA_CHECK(promotion.value().consolidation.entries.size() == 1);
         MIRA_CHECK(promotion.value().consolidation.entries.front().disposition ==
                    CandidateDisposition::Applied);
-        MIRA_CHECK(promotion.value().consolidation.entries.front().reason_code == "duplicate-noop");
+        // DEC-115: the replayed constraint carries its own source events, so
+        // the same claim accumulates them (AppendEvidence) — the incumbent's
+        // version, verification, status and recording time stay untouched.
+        MIRA_CHECK(promotion.value().consolidation.entries.front().reason_code ==
+                   "evidence-appended");
         MIRA_CHECK(promotion.value().consolidation.pending_approval.empty());
 
         // The stored copy is untouched: same version, level, status and
@@ -682,8 +686,8 @@ int promotion_is_read_only_on_snapshot_store() {
     const auto promotion = promote_working_context_to_memory(
         consolidator, memory, snapshot, m23_env_scope("env-42"), m23_fixed_now());
     MIRA_CHECK(promotion.has_value());
-    // Only the verified fact applied; the constraint waits for approval.
-    MIRA_CHECK(memory.stored_records() == 1);
+    // DEC-115: both promotion candidates write automatically.
+    MIRA_CHECK(memory.stored_records() == 2);
 
     // The store is byte-identical: same snapshot, same count, no new
     // snapshot, no watermark advance.
@@ -701,7 +705,7 @@ int promotion_is_read_only_on_snapshot_store() {
     MIRA_CHECK(erased.has_value() && erased.value() == 1);
     const auto count_erased = store.count(session);
     MIRA_CHECK(count_erased.has_value() && count_erased.value() == 0);
-    MIRA_CHECK(memory.stored_records() == 1);
+    MIRA_CHECK(memory.stored_records() == 2);
     for (const auto &record : memory.records()) {
         MIRA_CHECK(record.status == MemoryStatus::Active);
     }

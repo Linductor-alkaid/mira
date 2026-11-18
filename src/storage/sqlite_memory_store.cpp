@@ -867,6 +867,112 @@ class SqliteMemoryStore::Impl final {
             new_version = *existing_version.value() + 1;
             break;
         }
+        case MemoryMutationType::AppendEvidence: {
+            // DEC-115 evidence accumulation: merge new event ids into the
+            // incumbent's provenance. CAS is checked but not consumed — the
+            // fact identity, its statement and its version chain stay
+            // untouched, so concurrent evidence merges cannot clobber each
+            // other's content (the merge itself is idempotent by event id).
+            auto incumbent = read_record(db, *mutation.target);
+            if (!incumbent) {
+                return incumbent.error();
+            }
+            if (!incumbent.value().has_value()) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "append-evidence target does not exist");
+            }
+            if (scope_key_of(incumbent.value()->scope) != scope_key) {
+                return make_memory_error(MemoryDomainCode::ScopeDenied,
+                                         "append-evidence crosses scopes");
+            }
+            auto incumbent_version = current_version(db, *mutation.target);
+            if (!incumbent_version) {
+                return incumbent_version.error();
+            }
+            if (!incumbent_version.value().has_value() ||
+                *incumbent_version.value() != *mutation.expected_version) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "memory version moved on; re-read and re-plan");
+            }
+            if (incumbent.value()->statement != proposed.statement) {
+                return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                         "append-evidence must restate the incumbent claim");
+            }
+            MemoryRecord merged = std::move(incumbent).value().value();
+            std::set<std::string> known;
+            for (const auto &event : merged.provenance) {
+                known.insert(event.to_string());
+            }
+            for (const auto &event : mutation.evidence) {
+                if (known.insert(event.to_string()).second) {
+                    merged.provenance.push_back(event);
+                }
+            }
+            merged.alternative_of.reset();
+            const auto written = write_record(db, merged, scope_key, *incumbent_version.value());
+            if (!written) {
+                return written.error();
+            }
+            {
+                Statement log(db, "INSERT INTO memory_mutations(mutation_id, scope_key,"
+                                  " applied_type, record_id, result_version, applied_at)"
+                                  " VALUES(?1, ?2, ?3, ?4, ?5, ?6)");
+                if (!log.valid()) {
+                    return store_error(ErrorCode::Internal, "mutation log failed to prepare");
+                }
+                const std::string record_id = merged.id.to_string();
+                sqlite3_bind_text(log.get(), 1, mutation_id.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(log.get(), 2, scope_key.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(log.get(), 3, memory_mutation_type_name(mutation.type).c_str(),
+                                  -1, storage::transient_copy());
+                sqlite3_bind_text(log.get(), 4, record_id.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_int64(log.get(), 5,
+                                   static_cast<std::int64_t>(*incumbent_version.value()));
+                sqlite3_bind_int64(log.get(), 6, wall_nanos(std::chrono::system_clock::now()));
+                if (sqlite3_step(log.get()) != SQLITE_DONE) {
+                    return store_error(ErrorCode::Internal, "mutation log failed");
+                }
+            }
+            const auto append_commit = transaction.commit();
+            if (!append_commit) {
+                return append_commit.error();
+            }
+            MemoryMutationResult append_result;
+            append_result.applied = MemoryMutationType::AppendEvidence;
+            append_result.record = merged.id;
+            append_result.new_version = *incumbent_version.value();
+            return append_result;
+        }
+        case MemoryMutationType::PreserveAlternative: {
+            // DEC-115 coexistence: the alternative joins as a fresh Active
+            // record linked to its incumbent. The incumbent is neither read
+            // for CAS nor modified — preserving a view must not fail because
+            // the incumbent's version moved.
+            auto incumbent = read_record(db, *proposed.alternative_of);
+            if (!incumbent) {
+                return incumbent.error();
+            }
+            if (!incumbent.value().has_value() ||
+                incumbent.value()->status != MemoryStatus::Active) {
+                return make_memory_error(MemoryDomainCode::InvalidMutation,
+                                         "preserve-alternative incumbent must be active");
+            }
+            if (scope_key_of(incumbent.value()->scope) != scope_key) {
+                return make_memory_error(MemoryDomainCode::ScopeDenied,
+                                         "preserve-alternative crosses scopes");
+            }
+            const auto clash = current_version(db, proposed.id);
+            if (!clash) {
+                return clash.error();
+            }
+            if (clash.value().has_value()) {
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "alternative record id already exists");
+            }
+            proposed.status = MemoryStatus::Active;
+            new_version = 1;
+            break;
+        }
         case MemoryMutationType::Noop:
             break;
         }

@@ -159,19 +159,20 @@ int forbidden_and_injection_content_rejected() {
     MemoryConsolidator with_model(ConsolidationPolicy{}, &model);
     auto poisoned_proposals = with_model.consolidate(*fixture.store, {}, scope, Timestamp::now());
     MIRA_CHECK(poisoned_proposals.has_value());
-    for (const auto &entry : poisoned_proposals.value().entries) {
-        std::cerr << "[dbg] entry " << candidate_disposition_name(entry.disposition) << " "
-                  << entry.reason_code << "\n";
-    }
     MIRA_CHECK(poisoned_proposals.value().count_of(CandidateDisposition::RejectedInjection) == 1);
-    MIRA_CHECK(poisoned_proposals.value().count_of(CandidateDisposition::PendingApproval) == 1);
 
-    // Model output never keeps a HumanConfirmed claim; the pending candidate
-    // waits for a human decision.
-    MIRA_CHECK(poisoned_proposals.value().pending_approval.size() == 1);
-    const auto &pending = poisoned_proposals.value().pending_approval.front();
-    MIRA_CHECK(pending.proposed.verification != MemoryVerification::HumanConfirmed);
-    MIRA_CHECK(pending.proposed.source_namespace.has_value());
+    // DEC-115: with kind approval defaults removed, the surviving model
+    // preference writes automatically — at its source trust level. Model
+    // output never keeps a HumanConfirmed claim and always carries its
+    // import namespace (the trust boundary the old pending round enforced).
+    MIRA_CHECK(poisoned_proposals.value().count_of(CandidateDisposition::Applied) == 1);
+    MemoryQuery stored;
+    stored.scopes = {scope};
+    stored.text = "players prefer inverted controls";
+    auto written = fixture.store->query(stored);
+    MIRA_CHECK(written.has_value() && written.value().records.size() == 1);
+    MIRA_CHECK(written.value().records.front().verification != MemoryVerification::HumanConfirmed);
+    MIRA_CHECK(written.value().records.front().source_namespace.has_value());
     return 0;
 }
 
@@ -227,11 +228,19 @@ int custom_markers_and_candidate_keys_use_ascii_folding() {
                memory_kind_name(MemoryKind::EnvironmentFact) + ":mixed_É=value");
     auto replay = consolidator.consolidate_candidates(
         *fixture.store, {candidate("MiXeD_É=VaLuE", false)}, scope, Timestamp::now());
-    MIRA_CHECK(replay && replay.value().entries.front().reason_code == "duplicate-noop");
+    // DEC-115: the replay carries a fresh event id, so it accumulates as
+    // evidence on the same claim instead of being a zero-write no-op.
+    MIRA_CHECK(replay && replay.value().entries.front().reason_code == "evidence-appended");
+    MemoryQuery settled_query;
+    settled_query.scopes = {scope};
+    settled_query.claim_key = memory_claim_key("MiXeD_É=VaLuE").key;
+    auto settled = fixture.store->query(settled_query);
+    MIRA_CHECK(settled.has_value() && settled.value().records.size() == 1);
+    MIRA_CHECK(settled.value().records.front().provenance.size() == 2);
     return 0;
 }
 
-int preference_requires_human_approval_then_applies() {
+int preference_writes_automatically_and_policy_keeps_approval() {
     Fixture fixture;
     const auto scope = user_scope();
     const auto task = TaskId::generate();
@@ -239,25 +248,44 @@ int preference_requires_human_approval_then_applies() {
 
     std::vector<EventEnvelope> preference{fact_event(task, session, "preference", "dark mode", 1)};
     MemoryConsolidator consolidator;
-    auto gated = consolidator.consolidate(*fixture.store, preference, scope, Timestamp::now());
+
+    // DEC-115: the default policy writes user-stated preferences
+    // automatically — at the deterministic extractor's Verified trust level.
+    auto applied_directly =
+        consolidator.consolidate(*fixture.store, preference, scope, Timestamp::now());
+    MIRA_CHECK(applied_directly.has_value());
+    MIRA_CHECK(applied_directly.value().count_of(CandidateDisposition::Applied) == 1);
+    MemoryQuery check;
+    check.scopes = {scope};
+    auto visible = fixture.store->query(check);
+    MIRA_CHECK(visible.has_value() && visible.value().records.size() == 1);
+    MIRA_CHECK(visible.value().records.front().statement == "preference=dark mode");
+
+    // Re-arming the kind keeps the explicit-approval machinery intact for
+    // hosts that want it.
+    ConsolidationPolicy armed;
+    armed.approval_required_kinds = {MemoryKind::Preference};
+    MemoryConsolidator gated_consolidator(armed);
+    std::vector<EventEnvelope> second{fact_event(task, session, "preference", "light mode", 2)};
+    auto gated = gated_consolidator.consolidate(*fixture.store, second, scope, Timestamp::now());
     MIRA_CHECK(gated.has_value());
     MIRA_CHECK(gated.value().count_of(CandidateDisposition::PendingApproval) == 1);
     MIRA_CHECK(gated.value().pending_approval.size() == 1);
 
     // Nothing was written before approval.
-    MemoryQuery check;
-    check.scopes = {scope};
-    auto empty = fixture.store->query(check);
+    MemoryQuery pending_check;
+    pending_check.scopes = {scope};
+    pending_check.text = "light mode";
+    auto empty = fixture.store->query(pending_check);
     MIRA_CHECK(empty.has_value() && empty.value().records.empty());
 
     // Explicit approval applies the exact pending mutation.
     const MemoryMutation approved = gated.value().pending_approval.front();
     auto applied = MemoryConsolidator::apply_pending(*fixture.store, approved);
     MIRA_CHECK(applied.has_value());
-    auto visible = fixture.store->query(check);
-    MIRA_CHECK(visible.has_value());
-    MIRA_CHECK(visible.value().records.size() == 1);
-    MIRA_CHECK(visible.value().records.front().statement == "preference=dark mode");
+    auto after = fixture.store->query(pending_check);
+    MIRA_CHECK(after.has_value() && after.value().records.size() == 1);
+    MIRA_CHECK(after.value().records.front().statement == "preference=light mode");
     return 0;
 }
 
@@ -288,7 +316,7 @@ int main() {
     failures += verified_fact_becomes_memory_and_supersedes_on_change();
     failures += forbidden_and_injection_content_rejected();
     failures += custom_markers_and_candidate_keys_use_ascii_folding();
-    failures += preference_requires_human_approval_then_applies();
+    failures += preference_writes_automatically_and_policy_keeps_approval();
     failures += completed_loop_becomes_episode();
     std::filesystem::remove_all(temp_dir());
     return failures == 0 ? 0 : 1;

@@ -661,10 +661,19 @@ File v1 的 UnavailableLegacy flat fact/Completed episode 不可自动固化：�
 返回明确错误，不把默认时间补成 now。新事实协议的 payload 时间仍可独立使用，
 旧缓存不自动补造或重写，迁移边界见[文件日志 v2](../compatibility/file-event-log-v2.md)。
 
-同值重放不刷新 TTL；旧或同时间冲突证明不覆盖新证明。带期限证明可以替换无期限
-legacy 行；无期限 legacy 不覆盖带期限事实。该排序只约束非模型 VerifiedEvent，
-HumanCorrection、模型提案和其他原有策略保留。宿主自动提案、主体映射和跨会话
-选择仍由 M30 承接，本入口不启用它们。详细 schema/owner 和回退边界见
+同值重放不刷新 TTL。（DEC-115 修订）冲突不再必然意味着覆盖或拒绝——留存、
+证据积累与权威更新解耦：同 claim 同值的重复投递按证据处理（新独立事件经
+`AppendEvidence` 合并 provenance，版本链不动；验证级别严格更高且有证据时按
+`Update` 原地晋升，只升不降，HumanConfirmed 终态不可触碰）；同 claim 不同值
+的候选默认并存为 alternative（`PreserveAlternative`，`alternative_of` 链接到
+在位者，`max_alternatives_per_claim` 有界、超限显式报告）；只有**纪元接续**
+（`validity.valid_from` 严格晚于在位纪元、验证级别不低于在位者、来源为
+VerifiedEvent/HumanCorrection/审批背书写入）才走 Supersede；模型候选永不取代
+权威主张。陈旧性按事实纪元（valid_from）判定，观察时间只用于同值重复内选择
+在位者；无期限提案不再覆盖有期限纪元而是并存。每轮超限候选计数进
+`ConsolidationReport.candidates_truncated`，不再静默。Preference 的 kind 级
+审批默认取消（DEC-109 提案-审批 API 原样保留）。宿主自动提案、主体映射和跨
+会话选择仍由 M30 承接，本入口不启用它们。详细 schema/owner 和回退边界见
 [迁移说明](../compatibility/verified-fact-v1-and-checkpoint-v2.md)。
 
 
@@ -683,6 +692,14 @@ Verified Event Range
 
 候选提取可以使用模型，但最终 mutation 必须通过 Core policy。高风险 user preference、跨 tenant
 共享和安全策略相关内容默认要求 HumanConfirmed。
+
+模型供给（DEC-114）：`extraction_model_provider.hpp` 提供 `IConsolidationModel` 的
+provider 适配器（`ProviderConsolidationModel`：编号事件转录 + StrictJsonSchema 输出 +
+fail-closed 解析 + 引用越界丢弃）与一呼式装配 `wire_extraction_supply`（consolidate
+直驱面 + MemoryAgentService processor 面）。降级语义：provider 失败/畸形输出默认
+返回空候选集（`degrade_on_error=true`），确定性抽取照常生效——模型是增强不是依赖；
+适配器只做形状与引用绑定，信任门（model_assisted 强制、HumanConfirmed 剥离、注入
+标记、claim-key 冲突、审批）单源在管道内。模型供给是宿主 opt-in，缺省仍为纯确定性路径。
 
 ### 13.4 MemoryMutation
 
@@ -708,7 +725,11 @@ struct MemoryMutation {
 ```
 
 普通事实变化使用 Supersede，保留历史和有效时间。Tombstone 表示不再参与检索。隐私 Erasure
-走独立的物理删除/crypto-shredding 流程，不能只用 Tombstone 冒充删除。
+走独立的物理删除/crypto-shredding 流程，不能只用 Tombstone 冒充删除。DEC-115 扩展两个
+变异类型：`AppendEvidence`（同 claim 的证据追加——CAS 核对但不消费版本，provenance
+幂等合并，事实身份与版本链不动）与 `PreserveAlternative`（并存主张——fresh id 加
+`alternative_of` 链接在位者，不触碰在位者、无 CAS）。冲突因此不再必然意味着覆盖或
+拒绝：纪元接续走 Supersede，其余冲突走 PreserveAlternative（见 §13.5）。
 
 宿主责任：需要「这条记忆被忘记」时必须调用 `IMemory::erase()`，不能用 `Tombstone`
 替代。Tombstone 只把记录移出检索结果，记录行与其 payload 仍保留在其 scope 内，可由
@@ -767,6 +788,14 @@ statement（`volume=30` 与 `volume is 30`）仍然是两条 claim，会并存�
 冲突检测的一处已知边界：**存量**数据里可能已经存在多条同主语的活记录（修复前的
 `=` 前缀启发式留下的）。新写入只会取代其中最新的一条，更旧的同主语记录仍然留在活跃面
 上。修复既有数据需要一次专门的清扫（类似 §14.4 的向量修复 pass），本轮不做。
+
+**冲突处置（DEC-115 修订）**：同主语命中集先按 `memory_same_claim`（key+value 全等）
+分类为 duplicate 族与 alternative 族。duplicate 族内按观察时间选在位者，做证据追加
+（`AppendEvidence`）或严格晋升（只升不降，HumanConfirmed 终态）；alternative 族按
+纪元接续判据决定 Supersede（`valid_from` 严格更晚 + 验证级别不低于在位者 + 来源
+VerifiedEvent/HumanCorrection/审批背书）或 PreserveAlternative 并存
+（`alternative_of` 链接，`max_alternatives_per_claim` 有界、超限显式报告）。冲突分析
+在有界候选集（64 条）内完成；模型候选永不取代权威主张。
 
 ## 14. 混合检索
 

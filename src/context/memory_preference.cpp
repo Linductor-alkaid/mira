@@ -124,8 +124,12 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
                                                                     Timestamp::now());
     if (!report)
         return report.error();
+    // DEC-115: a same-claim re-proposal whose fresh source event merely
+    // accumulated on the incumbent is still "no change" — the claim itself
+    // did not move.
     const bool no_change = report.value().entries.size() == 1 &&
-                           report.value().entries.front().reason_code == "duplicate-noop";
+                           (report.value().entries.front().reason_code == "duplicate-noop" ||
+                            report.value().entries.front().reason_code == "evidence-appended");
     if (!no_change && report.value().pending_approval.size() != 1)
         return error(ErrorCode::SafetyRejected,
                      "preference candidate was rejected by consolidation");

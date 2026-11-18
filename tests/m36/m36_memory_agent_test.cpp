@@ -74,10 +74,10 @@ int terminal_event_recording_uses_existing_write_and_approval_gates() {
     MIRA_CHECK(handle && handle.value().result.wait_for(3s) == std::future_status::ready);
     const auto &result = handle.value().result.get();
     MIRA_CHECK(result);
-    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
-    MIRA_CHECK(result.value().consolidation.pending_approval.size() == 1);
-    MIRA_CHECK(result.value().consolidation.pending_approval.front().proposed.verification ==
-               MemoryVerification::Unverified);
+    // DEC-115: the model-recorded preference writes automatically at its
+    // Unverified source trust level.
+    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
+    MIRA_CHECK(result.value().consolidation.pending_approval.empty());
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::RejectedInvalid) == 1);
     auto snapshot = fixture.service->context_supplier()(memory_request(binding.work),
                                                         memory_context(binding.work));

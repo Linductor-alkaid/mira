@@ -335,9 +335,12 @@ int memory_scope_expiry_approval_and_replay_boundaries() {
     MIRA_CHECK(memory.writes == 1);
     memory.existing.front().statement = "screen.width=641";
     memory.existing.front().recorded_at += 1s;
+    // DEC-115: a same-era conflicting value coexists as a preserved
+    // alternative instead of being rejected as stale.
     auto stale = consolidator.consolidate(memory, events, f.scope, Timestamp::now());
-    MIRA_CHECK(stale && stale.value().count_of(CandidateDisposition::RejectedConflict) == 1);
-    MIRA_CHECK(memory.writes == 1);
+    MIRA_CHECK(stale && stale.value().count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(stale.value().entries.front().reason_code == "alternative-preserved");
+    MIRA_CHECK(memory.writes == 2);
     auto legacy_conflict = events.back();
     legacy_conflict.timestamp_origin = EventTimestampOrigin::AppendProcess;
     legacy_conflict.timestamp = Timestamp::now();
@@ -345,17 +348,19 @@ int memory_scope_expiry_approval_and_replay_boundaries() {
         "TaskFactVerified",
         to_json_string(JsonValue::Object{{"key", "screen.width"}, {"value", "642"}}),
         EventClass::State};
+    // An unbounded flat proof cannot succeed a bounded era — but the fact is
+    // preserved beside it instead of being rejected.
     auto legacy_rejected =
         consolidator.consolidate(memory, std::span(&legacy_conflict, 1), f.scope, Timestamp::now());
     MIRA_CHECK(legacy_rejected &&
-               legacy_rejected.value().entries.front().reason_code == "legacy-over-bounded-fact");
-    MIRA_CHECK(memory.writes == 1);
-    // A bounded new proof can replace an unbounded legacy row whose envelope
-    // time was regenerated on reopen; envelope time must not override proof.
+               legacy_rejected.value().entries.front().reason_code == "legacy-coexists-bounded");
+    MIRA_CHECK(memory.writes == 3);
+    // A same-era bounded proof likewise coexists with the unbounded row;
+    // era succession needs a strictly later fact-validity time.
     memory.existing.front().validity.valid_until.reset();
     auto upgraded = consolidator.consolidate(memory, events, f.scope, Timestamp::now());
     MIRA_CHECK(upgraded && upgraded.value().count_of(CandidateDisposition::Applied) == 1);
-    MIRA_CHECK(memory.writes == 2);
+    MIRA_CHECK(memory.writes == 4);
     auto other = f.scope;
     other.tenant_id = "tenant-b";
     const auto calls = memory.queries;
@@ -376,9 +381,12 @@ int memory_scope_expiry_approval_and_replay_boundaries() {
     user.scope = MemoryScope{MemoryScopeKind::User, "user-fixture", "tenant-a"};
     MIRA_CHECK(user.publisher().publish(user.claim, user.context));
     Memory approvals;
+    // DEC-115: the default pipeline writes user-stated preferences directly
+    // at their source trust level; kind approval is a policy opt-in (see
+    // m4_consolidation's policy-armed case).
     auto pending = consolidator.consolidate(approvals, user.events(), user.scope, Timestamp::now());
-    MIRA_CHECK(pending && pending.value().count_of(CandidateDisposition::PendingApproval) == 1);
-    MIRA_CHECK(approvals.writes == 0);
+    MIRA_CHECK(pending && pending.value().count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(approvals.writes == 1);
     auto legacy = events.back();
     legacy.payload = {"TaskFactVerified",
                       to_json_string(JsonValue::Object{{"key", "legacy"}, {"value", "fixture"}}),
