@@ -194,6 +194,10 @@ Core 协议适配器，实现记忆向量腿的 `IEmbeddingProvider`（DEC-111�
   0.40·minmax(retrieval)，全等集 0.5，稳定排序保检索序）。
 - **语义边界**：reranker 只排主题相关，不裁决记忆冲突，无准入权
   （设计 Context Intelligence §5.6）。250ms 记忆代理路径不接远端 rerank。
+- **默认接线**（DEC-113）：宿主可经 `hybrid_retrieval_wiring.hpp` 的
+  `wire_hybrid_retrieval` 一次构建本适配器（与 embedding producer、投影
+  indexer、store 侧 RRF+去重默认一起），也可如上手工装配；两条路径等价，
+  接线器只做校验前置的组合。
 
 ## model_provider.hpp 与 model_transport.hpp
 

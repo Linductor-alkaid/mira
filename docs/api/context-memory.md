@@ -130,15 +130,16 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - 混合检索三腿：exact（`exact_terms`，强制过滤）、FTS5（`text`，短语引用，操作符
   注入被拒绝）、有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并
   去重、多样性与 token packing。
-- **融合模式**（DEC-112，`SqliteMemoryStoreOptions::fusion`）：默认 `WeightedSum`
-  （历史行为）；`ReciprocalRank` = weighted-RRF（FTS+cosine 排名投票，k=60，候选集
-  内 min-max 归一化）叠加先验项——词面序不被向量腿翻转，先验只做次级信号。
+- **融合模式**（DEC-112，默认经 DEC-113 修订）：`SqliteMemoryStoreOptions::fusion`
+  默认 `ReciprocalRank` = weighted-RRF（FTS+cosine 排名投票，k=60，候选集内
+  min-max 归一化）叠加先验项——词面序不被向量腿翻转，先验只做次级信号；无查询
+  向量时与词法序完全一致。`WeightedSum` 保留为显式 opt-in（历史加权混合形态）。
   `RetrievalWeights`（含 `importance`，默认 0.0）经 options 配置。
 - **结构化元数据**（schema 1.3，纯加法迁移）：`MemoryRecord.labels`（≤16×64 字节，
   any-of 硬预过滤 `MemoryQuery::labels`）与 `importance`（[0,1] 中性默认 0.5）。
-- **近重去重**（`near_dup_threshold`，默认关）：排序后 top-64 内按查询身份嵌入
-  余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed` 计数；无向量候选豁免，
-  阈值按 embedder 实测标定。
+- **近重去重**（`near_dup_threshold`，store 默认关、接线器默认 0.85）：排序后
+  top-64 内按查询身份嵌入余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed`
+  计数；无向量候选豁免，阈值按 embedder 实测标定。
 - FTS 的 512 条额度和向量的 `max_vector_scan` 在已做 scope、生命周期、敏感度与 claim
   过滤的候选 ID 集合内消耗，其他 scope 不会占用额度。候选池仍最多取 scope 内最新
   4096 条，并非任意规模的全历史召回保证。部署、重启示例及剩余索引缺口见
@@ -176,6 +177,31 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   被清扫释放。只读诊断模式下清扫返回错误。
 - 版本是存储侧的事实：读回的记录带的是存储自己的版本号（乐观并发的令牌），不是调用方
   写进来的那个——否则一次读改写会拿着过期版本号去比对，凭空撞上 `VersionConflict`。
+
+## hybrid_retrieval_wiring.hpp：混合检索一呼式默认接线（DEC-113）
+
+DEC-111/112 检索能力的默认装配面。配置是纯 struct `HybridRetrievalConfig`（两条
+provider 腿的 endpoint/model、共用 `credential_secret_name`——仅 SecretRef 名，
+deadline、store 侧 `fusion`（默认 `ReciprocalRank`）与 `near_dup_threshold`
+（默认 0.85，bge-m3 标定值；换 embedder 须重标定，0 = 关））；每条腿仅在
+endpoint 与 model 成对出现时生效，双腿皆缺被 `validate()` 拒绝。
+
+- `hybrid_retrieval_store_options(config, base)`：**open() 之前**调用，把融合模式
+  与近重阈值写入 store options（值在 open 时由既有校验兜底）。
+- `wire_hybrid_retrieval(config, transport, index*, agent*)`：**open() 之后**调用，
+  返回 `HybridRetrievalStack`（持有 `OpenAiCompatibleEmbeddingProvider`、
+  `OpenAiCompatibleReranker`、`MemoryEmbeddingIndexer` 与 `embedder_id` 观测字段；
+  未配置的腿为空）。校验完全前置：两条 Profile 全部构建并验证通过后才执行不可逆
+  的 `set_recall_embedder`，失败的调用对 agent 零触碰。HTTP 栈由宿主注入
+  `IHttpTransport`（Core 不做 socket）；`index`/`agent` 任一可为 null 跳过对应面。
+  store 必须后亡于 stack（indexer 持有引用）。
+- `HybridRetrievalStack::schedule_embedding_repair(supervisor, memory, scope, options)`
+  与 `schedule_context_rerank(supervisor, query, candidates)`：便捷路由，直接转发
+  supervisor 既有路径（Deferrable / Interactive）；腿未接线时解析为
+  `InvalidArgument`。250ms recall 路径不挂 rerank（DEC-112 纪律）；Layer 2 生产链
+  整合另立维护轮。
+- 示例：`examples/hybrid_retrieval_host_consumer.cpp`（离线 scripted 全链：接线 →
+  repair → 语义 recall → Layer 2 rerank → 降级轮）。
 
 ## content_markers.hpp
 

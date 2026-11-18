@@ -1,10 +1,17 @@
 # Mira 实施总计划
 
+2026-11-18：[DEC-113](../decisions/DEC-113-hybrid-retrieval-default-wiring.md)
+落地混合检索默认接线——store 默认融合翻转为 `ReciprocalRank`（执行 DEC-112
+预授权路径，量化依据为 HR-11 质量基准；无向量查询行为零变化）＋ 一呼式组合
+辅助器 `hybrid_retrieval_wiring.hpp`（校验前置的 `wire_hybrid_retrieval`、
+便捷路由经 supervisor 既有路径）。范围与验证见
+[默认接线维护记录](maintenance-2026-11-hybrid-default-wiring.md)。
+
 2026-11-17（二）：[DEC-112](../decisions/DEC-112-hybrid-retrieval-fusion.md) 落地
-混合检索——store 层 RRF 融合模式（默认 WeightedSum 零变化）、schema 1.3 结构化
-元数据（labels/importance）、近重去重选项、`OpenAiCompatibleReranker`
-（`/v1/rerank` 协议适配，真实供应商冒烟通过）。范围与验证见
-[混合检索维护记录](maintenance-2026-11-hybrid-retrieval.md)。
+混合检索——store 层 RRF 融合模式（当时默认 WeightedSum 零变化，后经 DEC-113
+翻转）、schema 1.3 结构化元数据（labels/importance）、近重去重选项、
+`OpenAiCompatibleReranker`（`/v1/rerank` 协议适配，真实供应商冒烟通过）。范围与
+验证见[混合检索维护记录](maintenance-2026-11-hybrid-retrieval.md)。
 
 2026-11-17：[DEC-111](../decisions/DEC-111-memory-embedding-producer-and-vector-identity.md)
 落地记忆向量腿的 embedding 生产者与向量身份——Core 新增 OpenAI 兼容

@@ -139,7 +139,12 @@ Memory retrieval gained hybrid fusion in the 2026-11 maintenance round
 fusion mode over the FTS5 + bounded-cosine legs, structured metadata columns
 (labels/importance, store schema 1.3), near-duplicate suppression, and an
 OpenAI/Cohere-style `/v1/rerank` adapter behind the host-injected
-`IContextReranker` contract (live-provider smoke verified).
+`IContextReranker` contract (live-provider smoke verified). The default-wiring
+round ([DEC-113](docs/decisions/DEC-113-hybrid-retrieval-default-wiring.md))
+then made the benchmark-backed E-configuration the shipped default: store
+fusion defaults to ReciprocalRank (identical to the lexical ordering when no
+query vector is present), and `wire_hybrid_retrieval` installs the embedding
+producer, the remote reranker and near-dup suppression in one validated call.
 
 Still open — and honestly reported rather than claimed: on-device Android
 runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the

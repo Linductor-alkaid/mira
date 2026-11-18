@@ -22,6 +22,7 @@ foreach(HEADER IN ITEMS
         mira/embedding_math.hpp
         mira/embedding_provider.hpp
         mira/reranker_provider.hpp
+        mira/hybrid_retrieval_wiring.hpp
         mira/action_dispatcher.hpp
         mira/artifact_store.hpp
         mira/security.hpp

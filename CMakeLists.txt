@@ -113,6 +113,7 @@ add_library(mira_core
     src/context/memory_agent_seams.cpp
     src/context/memory_agent_artifacts.cpp
     src/context/memory_agent_binding.cpp
+    src/context/hybrid_retrieval_wiring.cpp
     src/context/memory_preference.cpp
     src/context/memory_preference_storage.cpp
     src/context/memory_preference_tool.cpp
@@ -528,6 +529,23 @@ if(MIRA_BUILD_TESTS)
     add_test(NAME mira_embedding_recall_host_consumer_test
              COMMAND mira_embedding_recall_host_consumer)
     set_tests_properties(mira_embedding_recall_host_consumer_test
+                         PROPERTIES LABELS "consumer" TIMEOUT 60)
+endif()
+
+# MNT-202611-HRW (DEC-113): offline one-call hybrid wiring chain - store-side
+# E-configuration, provider legs over one scripted transport, repair, semantic
+# recall, a Layer 2 rerank through the stack routing and the degrade round.
+add_executable(mira_hybrid_retrieval_host_consumer examples/hybrid_retrieval_host_consumer.cpp)
+target_link_libraries(mira_hybrid_retrieval_host_consumer PRIVATE
+    Mira::core Mira::state_store kairo::kairo)
+target_include_directories(mira_hybrid_retrieval_host_consumer SYSTEM PRIVATE
+    ${PROJECT_SOURCE_DIR}/third_party/kairo/include)
+mira_enable_warnings(mira_hybrid_retrieval_host_consumer)
+mira_enable_sanitizers(mira_hybrid_retrieval_host_consumer)
+if(MIRA_BUILD_TESTS)
+    add_test(NAME mira_hybrid_retrieval_host_consumer_test
+             COMMAND mira_hybrid_retrieval_host_consumer)
+    set_tests_properties(mira_hybrid_retrieval_host_consumer_test
                          PROPERTIES LABELS "consumer" TIMEOUT 60)
 endif()
 

@@ -44,6 +44,12 @@
 - **环境**：Ubuntu 24.04 x86_64、GCC 13.3.0、SQLite 3.53.4、硅基流动端点经
   本地代理；harness `tests/benchmark/hybrid-retrieval/`。
 
+> 2026-11-18 注记（[DEC-113](../decisions/DEC-113-hybrid-retrieval-default-wiring.md)）：
+> 本轮对照评估是默认翻转的量化依据——C/D/E 档组合（RRF 默认融合、近重去重 0.85、
+> reranker 注入面）经 DEC-113 成为交付默认形态（`hybrid_retrieval_wiring.hpp`
+> 一呼式接线器 + store 默认 `ReciprocalRank`）；A/B 档降为显式 opt-in 覆盖
+> （`WeightedSum` 保留可选）。
+
 ## 3. 结果
 
 ### 3.1 总体（dup-aware，20 查询）
