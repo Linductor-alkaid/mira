@@ -95,12 +95,18 @@ int preserves_native_protocol_and_accounts_for_whole_request() {
     }
 
     auto budget = profile;
+    const ModelContextAdmissionConfig admission_config;
     budget.capabilities.limits.max_context_tokens =
-        admitted.value().context.total_estimate.upper_bound + 128;
+        admitted.value().context.total_estimate.upper_bound +
+        admission_config.safety_margin_tokens + *request.generation.max_output_tokens + 256;
     snapshot.candidates[0].content = {TextPart{std::string(8192, 'x')}};
     const auto reduced = admit_model_request(request, budget, spec.session_id, snapshot);
     MIRA_CHECK(reduced && reduced.value().request.input.size() == request.input.size() + 1);
     MIRA_CHECK(reduced.value().context.budget.dropped_items == 2);
+    MIRA_CHECK(std::count_if(reduced.value().context.item_audit.begin(),
+                             reduced.value().context.item_audit.end(), [](const auto &item) {
+                                 return item.reason == "native_history_did_not_fit";
+                             }) == 2);
     return 0;
 }
 
