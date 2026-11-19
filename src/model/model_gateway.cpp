@@ -89,6 +89,7 @@ void ModelGateway::set_context_supplier(ModelContextSupplier supplier) {
 }
 
 CircuitState ModelGateway::circuit_state(const ModelProfileId &profile) const {
+    const std::lock_guard lock(circuit_mutex_);
     const auto found = circuits_.find(profile);
     return found == circuits_.end() ? CircuitState::Unknown : found->second.state();
 }
@@ -286,17 +287,6 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
     for (std::size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index) {
         const auto provider = candidates[candidate_index];
         const auto &profile = provider->profile();
-        auto &circuit = circuits_[profile.id];
-        if (circuit.state() == CircuitState::Unknown) {
-            circuit = ProviderCircuit(config_.circuit_config);
-        }
-        if (!circuit.admits_requests()) {
-            last_failure =
-                make_model_error(ModelDomainCode::ProviderOverloaded, "provider circuit is open",
-                                 false, request.operation_id);
-            continue; // Open circuits fall through to the next candidate.
-        }
-
         ModelCallOutcome outcome;
         outcome.route.selected_profile = profile.id;
         outcome.route.dialect = profile.dialect;
@@ -319,7 +309,6 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                                         "model context was interrupted before dispatch", false,
                                         request.operation_id);
             }
-            outcome.attempts = ++total_attempts;
             ModelRequest attempt_request = prepared_requests[candidate_index].request;
             attempt_request.request_id = ModelRequestId::generate();
 
@@ -339,11 +328,51 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             provider_options.preview_sink = options.preview_sink;
             provider_options.thinking_preview_sink = options.thinking_preview_sink;
             provider_options.capture_raw_response = options.capture_raw_response;
-            auto response = provider->infer(attempt_request, context, provider_options);
+            std::optional<std::uint64_t> circuit_attempt;
+            {
+                const std::lock_guard lock(circuit_mutex_);
+                auto &entry =
+                    circuits_.try_emplace(profile.id, config_.circuit_config).first->second;
+                circuit_attempt = entry.begin_request();
+            }
+            if (!circuit_attempt) {
+                last_failure = make_model_error(ModelDomainCode::ProviderOverloaded,
+                                                "provider circuit is open or probing", false,
+                                                request.operation_id);
+                break;
+            }
+            outcome.attempts = ++total_attempts;
+            auto response = [&]() -> Result<ModelResponse> {
+                try {
+                    return provider->infer(attempt_request, context, provider_options);
+                } catch (...) {
+                    Error error;
+                    error.code = ErrorCode::Internal;
+                    error.domain = "mira.model.gateway";
+                    error.safe_message = "model provider raised an exception";
+                    error.operation_id = request.operation_id;
+                    return error;
+                }
+            }();
+            const bool cancelled =
+                context.cancelled() ||
+                (!response && response.error().code == ErrorCode::Cancelled) ||
+                (response && response.value().status == ModelCompletionStatus::Cancelled);
+            const auto circuit = [&] {
+                const std::lock_guard lock(circuit_mutex_);
+                auto &entry = circuits_.at(profile.id);
+                entry.finish_request(*circuit_attempt, cancelled
+                                                           ? std::optional<bool>{}
+                                                           : std::optional<bool>{bool(response)});
+                return entry;
+            }();
             if (response) {
                 outcome.response = std::move(response).value();
-                outcome.sse_stats = provider->last_sse_stats();
-                circuit.record_success();
+                try {
+                    outcome.sse_stats = provider->last_sse_stats();
+                } catch (...) {
+                    outcome.sse_stats = {};
+                }
                 outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
 
                 auto settlement = ledger_.reconcile(
@@ -386,27 +415,30 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             }
 
             auto failure = response.error();
-            circuit.record_failure();
+            RequestStage stage = RequestStage::LocalRejection;
+            std::optional<std::chrono::milliseconds> retry_after;
+            try {
+                stage = classify_provider_stage(provider->last_trace(), failure);
+                retry_after = provider->last_retry_after_hint();
+            } catch (...) {
+                stage = RequestStage::LocalRejection;
+            }
             outcome.wire_request_digest = model_request_canonical_digest(attempt_request);
 
             emit(request, "ModelAttemptFailed",
-                 JsonValue::Object{{"code", domain_code_text(failure)},
-                                   {"stage", std::string(classify_provider_stage(
-                                                             provider->last_trace(), failure) ==
-                                                                 RequestStage::PreWriteFailure
-                                                             ? "pre-write"
-                                                             : "post-write")},
-                                   {"attempt", static_cast<std::int64_t>(attempt)},
-                                   {"total_attempts", static_cast<std::int64_t>(total_attempts)}},
+                 JsonValue::Object{
+                     {"code", domain_code_text(failure)},
+                     {"stage", std::string(stage == RequestStage::PreWriteFailure ? "pre-write"
+                                                                                  : "post-write")},
+                     {"attempt", static_cast<std::int64_t>(attempt)},
+                     {"total_attempts", static_cast<std::int64_t>(total_attempts)}},
                  EventClass::Diagnostic);
 
             RetryBudget budget = config_.retry_budget;
             budget.attempts_used = attempt;
             budget.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - attempt_started);
-            const auto decision = supervisor.evaluate(
-                failure, classify_provider_stage(provider->last_trace(), failure),
-                provider->last_retry_after_hint(), budget, circuit);
+            const auto decision = supervisor.evaluate(failure, stage, retry_after, budget, circuit);
             if (decision.action == RetryAction::GiveUp) {
                 // Bounded provider fallback: only retryable, non-ambiguous
                 // failures may switch profiles, and only while candidates and
@@ -456,6 +488,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                     }
                 }
                 if (context.cancelled()) {
+                    (void)ledger_.release(request.task_id, reservation.value());
                     return make_model_error(ModelDomainCode::ModelCancelled,
                                             "model call was cancelled during retry backoff", false,
                                             request.operation_id);
@@ -463,6 +496,7 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             }
         }
     }
+    (void)ledger_.release(request.task_id, reservation.value());
     return last_failure;
 }
 

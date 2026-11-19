@@ -276,6 +276,9 @@ route -> provider -> retry/circuit 监督 -> 预算结算 -> 本地决策解析�
 
 - `model_supervisor.hpp`：`RequestStage` 分类（`classify_stage()`）驱动重试表
   （`RetryBudget`/`RetryAction`）；`ProviderCircuit`（`CircuitState`）提供熔断。
+  达到失败阈值时开启，以单调时钟计算 `cooldown`。期满后只准入一个半开探针，
+  其成功关闭、失败重新冷却，取消释放探针。Gateway 按 profile 单独接纳并尝试
+  合格的 fallback。熔断跳过不消耗一次 provider 调用。
 - `model_budget.hpp`：`PriceTable` + `estimate_input_tokens()` 预估、
   `BudgetReservation`/`BudgetSettlement`/`BudgetLedger` 结算。库的
   `ModelGatewayConfig::require_known_price` 默认 **false**；严格宿主须显式设 true。

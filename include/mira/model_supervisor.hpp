@@ -69,19 +69,28 @@ class ProviderCircuit final {
   public:
     explicit ProviderCircuit(CircuitConfig config = CircuitConfig{});
 
+    using Clock = std::chrono::steady_clock;
+
     void record_success();
-    void record_failure();
+    void record_failure(Clock::time_point now = Clock::now());
     [[nodiscard]] CircuitState state() const noexcept { return state_; }
     [[nodiscard]] std::uint32_t consecutive_failures() const noexcept { return failures_; }
 
-    // Requests admission: open circuits reject except in probing state.
-    [[nodiscard]] bool admits_requests() const noexcept;
+    // A half-open probe owns one slot until its outcome settles. The
+    // caller serializes admission and settlement, never the provider call.
+    [[nodiscard]] std::optional<std::uint64_t> begin_request(Clock::time_point now = Clock::now());
+    void finish_request(std::uint64_t generation, std::optional<bool> succeeded,
+                        Clock::time_point now = Clock::now());
+    [[nodiscard]] bool admits_requests(Clock::time_point now = Clock::now()) const noexcept;
 
   private:
     CircuitConfig config_;
     CircuitState state_ = CircuitState::Unknown;
     std::uint32_t failures_ = 0;
     std::uint32_t successes_ = 0;
+    std::uint64_t generation_ = 0;
+    Clock::time_point opened_{};
+    bool probe_in_flight_ = false;
 };
 
 // Pure, table-driven retry evaluation (design LLM API §10.2). The caller
