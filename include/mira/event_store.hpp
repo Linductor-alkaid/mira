@@ -142,7 +142,9 @@ class MemoryEventStore final : public IEventStore {
 
 class FileEventStore final : public IEventStore {
   public:
-    FileEventStore(std::filesystem::path root, std::size_t max_events = 100'000);
+    // For an exclusively owned log, zero leaves the file-length cap disabled.
+    FileEventStore(std::filesystem::path root, std::size_t max_events = 100'000,
+                   std::uint64_t max_log_bytes = 0);
     ~FileEventStore() override;
     FileEventStore(const FileEventStore &) = delete;
     FileEventStore &operator=(const FileEventStore &) = delete;
@@ -154,6 +156,7 @@ class FileEventStore final : public IEventStore {
     Result<void> flush(Durability) override;
     [[nodiscard]] const std::filesystem::path &root() const noexcept;
     [[nodiscard]] bool read_only() const noexcept;
+    [[nodiscard]] Result<std::uint64_t> log_bytes() const;
 
   private:
     class Impl;

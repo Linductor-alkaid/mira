@@ -1,9 +1,11 @@
 #include <mira/artifact_store.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -44,6 +46,62 @@ std::string manifest_line(const ArtifactDescriptor &descriptor) {
            << descriptor.content_schema.major << ' ' << descriptor.content_schema.minor << ' '
            << std::quoted(descriptor.media_type) << '\n';
     return output.str();
+}
+
+bool same_descriptor(const ArtifactDescriptor &a, const ArtifactDescriptor &b) {
+    return a.id == b.id && a.digest == b.digest && a.byte_size == b.byte_size &&
+           a.media_type == b.media_type && a.encoding == b.encoding &&
+           a.sensitivity == b.sensitivity && a.content_schema == b.content_schema;
+}
+
+bool matches_object(const std::filesystem::path &path, std::span<const std::byte> expected) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(std::filesystem::symlink_status(path, ec)) || ec ||
+        std::filesystem::file_size(path, ec) != expected.size() || ec)
+        return false;
+    std::ifstream input(path, std::ios::binary);
+    std::array<char, 4096> buffer{};
+    if (!input)
+        return false;
+    while (!expected.empty()) {
+        const auto size = std::min(expected.size(), buffer.size());
+        if (!input.read(buffer.data(), static_cast<std::streamsize>(size)) ||
+            std::memcmp(buffer.data(), expected.data(), size) != 0)
+            return false;
+        expected = expected.subspan(size);
+    }
+    return true;
+}
+
+Result<FileArtifactCapacity> scan_directory(const std::filesystem::path &root) {
+    constexpr std::size_t max_scan_entries = 65'536;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(std::filesystem::symlink_status(root, ec)) || ec)
+        return error(ErrorCode::Unavailable, "artifact directory root is unavailable");
+    std::filesystem::recursive_directory_iterator entry(root, ec);
+    const std::filesystem::recursive_directory_iterator end;
+    FileArtifactCapacity result;
+    for (; !ec && entry != end; entry.increment(ec)) {
+        if (++result.entries_scanned > max_scan_entries)
+            return error(ErrorCode::ResourceExhausted, "artifact directory scan limit exceeded");
+        const auto status = entry->symlink_status(ec);
+        if (ec)
+            break;
+        if (std::filesystem::is_directory(status))
+            continue;
+        if (!std::filesystem::is_regular_file(status))
+            return error(ErrorCode::DataLoss, "artifact directory contains a non-regular entry");
+        const auto bytes = entry->file_size(ec);
+        if (ec)
+            break;
+        if (bytes > std::numeric_limits<std::uint64_t>::max() - result.file_bytes)
+            return error(ErrorCode::ResourceExhausted,
+                         "artifact directory size is not representable");
+        result.file_bytes += bytes;
+    }
+    if (ec)
+        return error(ErrorCode::Unavailable, "artifact directory cannot be measured", true);
+    return result;
 }
 
 bool parse_digest(std::string_view text, Sha256Digest &digest) {
@@ -183,8 +241,9 @@ std::size_t MemoryArtifactStore::size() const noexcept {
 
 class FileArtifactStore::Impl final {
   public:
-    Impl(std::filesystem::path directory, std::size_t max)
-        : root(std::move(directory)), memory(max) {
+    Impl(std::filesystem::path directory, std::size_t max,
+         FileArtifactDirectoryBudget configured_budget)
+        : root(std::move(directory)), memory(max), budget(configured_budget) {
         std::error_code error_code;
         std::filesystem::create_directories(root / "objects", error_code);
         std::filesystem::create_directories(root / "temp", error_code);
@@ -194,16 +253,34 @@ class FileArtifactStore::Impl final {
     std::filesystem::path root;
     mutable std::mutex mutex;
     MemoryArtifactStore memory;
+    FileArtifactDirectoryBudget budget;
     std::unordered_map<ArtifactId, std::filesystem::path, StrongIdHash<ArtifactId>> paths;
     std::unordered_map<ArtifactId, ArtifactDescriptor, StrongIdHash<ArtifactId>> descriptors;
     std::unordered_set<ArtifactId, StrongIdHash<ArtifactId>> tombstones;
     bool loaded = false;
     bool read_only = false;
 
-    void ensure_loaded() {
+    Result<void> check_growth(std::uint64_t growth, bool maintenance) const {
+        if (budget.erase_reserve_bytes > budget.limit_bytes)
+            return error(ErrorCode::InvalidArgument, "invalid artifact directory reserve");
+        if (budget.limit_bytes == 0)
+            return {};
+        const auto used = scan_directory(root);
+        if (!used)
+            return used.error();
+        const auto limit = budget.limit_bytes - (maintenance ? 0 : budget.erase_reserve_bytes);
+        if (used.value().file_bytes > limit || growth > limit - used.value().file_bytes)
+            return error(ErrorCode::ResourceExhausted, "artifact directory capacity exhausted",
+                         true);
+        return {};
+    }
+
+    Result<void> ensure_loaded() {
         std::lock_guard lock(mutex);
         if (loaded)
-            return;
+            return {};
+        if (const auto admitted = check_growth(0, true); !admitted)
+            return admitted.error();
         std::error_code tombstone_error;
         for (const auto &entry :
              std::filesystem::directory_iterator(root / "tombstones", tombstone_error)) {
@@ -239,8 +316,10 @@ class FileArtifactStore::Impl final {
                     read_only = true;
                     continue;
                 }
-                if (tombstones.contains(*id))
+                if (tombstones.contains(*id)) {
+                    paths[*id] = object_path(root, digest);
                     continue;
+                }
                 ArtifactDescriptor descriptor{*id,
                                               digest,
                                               byte_size,
@@ -284,15 +363,18 @@ class FileArtifactStore::Impl final {
             }
         }
         loaded = true;
+        return {};
     }
 };
 
-FileArtifactStore::FileArtifactStore(std::filesystem::path root, std::size_t max_total_bytes)
-    : impl_(std::make_unique<Impl>(std::move(root), max_total_bytes)) {}
+FileArtifactStore::FileArtifactStore(std::filesystem::path root, std::size_t max_total_bytes,
+                                     FileArtifactDirectoryBudget budget)
+    : impl_(std::make_unique<Impl>(std::move(root), max_total_bytes, budget)) {}
 FileArtifactStore::~FileArtifactStore() = default;
 
 Result<ArtifactWriter> FileArtifactStore::begin(const ArtifactWriteSpec &spec) {
-    impl_->ensure_loaded();
+    if (const auto loaded = impl_->ensure_loaded(); !loaded)
+        return loaded.error();
     {
         std::lock_guard lock(impl_->mutex);
         if (impl_->read_only)
@@ -301,87 +383,107 @@ Result<ArtifactWriter> FileArtifactStore::begin(const ArtifactWriteSpec &spec) {
     return impl_->memory.begin(spec);
 }
 
-Result<ArtifactDescriptor> FileArtifactStore::commit(ArtifactWriter &writer) {
-    impl_->ensure_loaded();
-    {
-        std::lock_guard lock(impl_->mutex);
-        if (impl_->read_only)
-            return error(ErrorCode::DataLoss, "artifact store is read-only after recovery");
-    }
+Result<ArtifactDescriptor>
+FileArtifactStore::planned_descriptor(const ArtifactWriter &writer) const {
     if (!writer.valid())
         return error(ErrorCode::InvalidArgument, "invalid artifact writer");
     const auto digest = digest_bytes(std::span<const std::byte>(*writer.bytes_));
-    const ArtifactDescriptor planned{id_from_digest(digest),
-                                     digest,
-                                     writer.size(),
-                                     writer.spec_.media_type,
-                                     writer.spec_.encoding,
-                                     writer.spec_.sensitivity,
-                                     writer.spec_.content_schema};
-    {
-        std::lock_guard lock(impl_->mutex);
-        if (impl_->tombstones.contains(planned.id)) {
-            return error(ErrorCode::AlreadyExists, "artifact digest has an erasure tombstone");
-        }
+    return ArtifactDescriptor{id_from_digest(digest),
+                              digest,
+                              writer.size(),
+                              writer.spec_.media_type,
+                              writer.spec_.encoding,
+                              writer.spec_.sensitivity,
+                              writer.spec_.content_schema};
+}
+
+Result<ArtifactDescriptor> FileArtifactStore::commit(ArtifactWriter &writer) {
+    if (const auto loaded = impl_->ensure_loaded(); !loaded)
+        return loaded.error();
+    const auto candidate = planned_descriptor(writer);
+    if (!candidate)
+        return candidate.error();
+    const auto &planned = candidate.value();
+    const auto &digest = planned.digest;
+    const std::lock_guard lock(impl_->mutex);
+    if (impl_->read_only)
+        return error(ErrorCode::DataLoss, "artifact store is read-only after recovery");
+    if (impl_->tombstones.contains(planned.id))
+        return error(ErrorCode::AlreadyExists, "artifact digest has an erasure tombstone");
+    if (const auto existing = impl_->descriptors.find(planned.id);
+        existing != impl_->descriptors.end()) {
+        if (!same_descriptor(existing->second, planned))
+            return error(ErrorCode::DataLoss, "artifact identity has conflicting metadata");
+        return existing->second;
     }
+    const auto line = manifest_line(planned);
     const auto object = object_path(impl_->root, digest);
     std::error_code error_code;
-    std::filesystem::create_directories(object.parent_path(), error_code);
+    const bool published = std::filesystem::exists(object, error_code);
     if (error_code)
-        return error(ErrorCode::Unavailable, "artifact directory cannot be created", true);
-    const auto digest_text = digest.to_string();
-    const auto temp_path = impl_->root / "temp" / (digest_text + ".tmp");
-    {
+        return error(ErrorCode::Unavailable, "artifact object cannot be inspected", true);
+    const auto payload_growth = published ? 0 : writer.size();
+    if (line.size() > std::numeric_limits<std::uint64_t>::max() - payload_growth)
+        return error(ErrorCode::ResourceExhausted, "artifact write size is not representable");
+    if (const auto admitted = impl_->check_growth(payload_growth + line.size(), false); !admitted)
+        return admitted.error();
+
+    const auto &bytes = *writer.bytes_;
+    if (published) {
+        // An explicit retry may index a previously published, byte-identical object.
+        if (!matches_object(object, bytes))
+            return error(ErrorCode::DataLoss, "unindexed artifact bytes do not match");
+    } else {
+        std::filesystem::create_directories(object.parent_path(), error_code);
+        if (error_code)
+            return error(ErrorCode::Unavailable, "artifact directory cannot be created", true);
+        const auto temp_path = impl_->root / "temp" / (digest.to_string() + ".tmp");
         std::ofstream output(temp_path, std::ios::binary | std::ios::trunc);
         if (!output)
             return error(ErrorCode::Unavailable, "artifact temp cannot be opened", true);
-        const auto &bytes = *writer.bytes_;
         output.write(reinterpret_cast<const char *>(bytes.data()),
                      static_cast<std::streamsize>(bytes.size()));
-        output.flush();
+        output.close();
         if (!output)
             return error(ErrorCode::Unavailable, "artifact temp write failed", true);
-    }
-    if (!std::filesystem::exists(object, error_code)) {
         std::filesystem::rename(temp_path, object, error_code);
         if (error_code)
             return error(ErrorCode::Unavailable, "artifact atomic publish failed", true);
-    } else {
-        std::filesystem::remove(temp_path, error_code);
     }
     auto descriptor = impl_->memory.commit(writer);
     if (!descriptor) {
-        std::error_code cleanup_error;
-        std::filesystem::remove(object, cleanup_error);
+        if (!published) {
+            std::error_code cleanup_error;
+            std::filesystem::remove(object, cleanup_error);
+        }
         return descriptor.error();
     }
-    std::ofstream manifest(manifest_path(impl_->root), std::ios::app);
+    // Binary mode avoids platform newline translation invalidating the byte budget.
+    std::ofstream manifest(manifest_path(impl_->root), std::ios::app | std::ios::binary);
     if (!manifest) {
         (void)impl_->memory.erase({descriptor.value().id, "manifest open failed"});
-        std::error_code cleanup_error;
-        std::filesystem::remove(object, cleanup_error);
         impl_->read_only = true;
         return error(ErrorCode::Unavailable, "artifact manifest cannot be opened", true);
     }
-    manifest << manifest_line(planned);
-    manifest.flush();
+    manifest << line;
+    manifest.close();
     if (!manifest) {
         (void)impl_->memory.erase({descriptor.value().id, "manifest write failed"});
-        std::error_code cleanup_error;
-        std::filesystem::remove(object, cleanup_error);
         impl_->read_only = true;
         return error(ErrorCode::Unavailable, "artifact manifest write failed", true);
     }
-    std::lock_guard lock(impl_->mutex);
     impl_->paths[descriptor.value().id] = object;
     impl_->descriptors[descriptor.value().id] = descriptor.value();
     return descriptor;
 }
 
 Result<ArtifactReader> FileArtifactStore::open(const ArtifactDescriptor &descriptor) const {
-    impl_->ensure_loaded();
+    if (const auto loaded = impl_->ensure_loaded(); !loaded)
+        return loaded.error();
     {
         std::lock_guard lock(impl_->mutex);
+        if (impl_->tombstones.contains(descriptor.id))
+            return error(ErrorCode::NotFound, "artifact was erased");
         const auto found = impl_->paths.find(descriptor.id);
         if (found != impl_->paths.end()) {
             const auto metadata = impl_->descriptors.find(descriptor.id);
@@ -407,43 +509,81 @@ Result<ArtifactReader> FileArtifactStore::open(const ArtifactDescriptor &descrip
             return ArtifactReader(std::make_shared<const std::vector<std::byte>>(std::move(bytes)));
         }
     }
-    {
-        std::lock_guard lock(impl_->mutex);
-        if (impl_->tombstones.contains(descriptor.id))
-            return error(ErrorCode::NotFound, "artifact was erased");
-    }
     return error(ErrorCode::NotFound, "artifact is not present in the persistent manifest");
 }
 
 Result<ErasureReceipt> FileArtifactStore::erase(const ArtifactErasureRequest &request) {
-    impl_->ensure_loaded();
-    auto result = impl_->memory.erase(request);
-    if (!result)
-        return result.error();
-    std::filesystem::path path;
-    {
-        std::lock_guard lock(impl_->mutex);
-        const auto found = impl_->paths.find(request.id);
-        if (found != impl_->paths.end())
-            path = found->second;
-    }
-    std::error_code error_code;
-    if (!path.empty())
-        std::filesystem::remove(path, error_code);
-    std::ofstream tombstone(impl_->root / "tombstones" / (request.id.to_string() + ".json"),
-                            std::ios::trunc);
-    if (!tombstone)
-        return error(ErrorCode::Unavailable, "artifact tombstone cannot be written", true);
-    tombstone << "{\"artifact_id\":\"" << request.id.to_string()
-              << "\",\"reason\":" << std::quoted(request.reason) << "}\n";
-    tombstone.flush();
-    {
-        std::lock_guard lock(impl_->mutex);
+    if (const auto loaded = impl_->ensure_loaded(); !loaded)
+        return loaded.error();
+    const std::lock_guard lock(impl_->mutex);
+    const auto found = impl_->paths.find(request.id);
+    const bool already_erased = impl_->tombstones.contains(request.id);
+    if (found == impl_->paths.end() && !already_erased)
+        return error(ErrorCode::NotFound, "artifact is not available");
+    if (!already_erased) {
+        const auto tombstone_text =
+            to_json_string(JsonValue::Object{{"artifact_id", request.id.to_string()},
+                                             {"reason", request.reason}}) +
+            "\n";
+        if (const auto admitted = impl_->check_growth(tombstone_text.size(), true); !admitted)
+            return admitted.error();
+        const std::string filename = request.id.to_string() + ".json";
+        const auto temp = impl_->root / "temp" / (filename + ".erase");
+        const auto path = impl_->root / "tombstones" / filename;
+        std::ofstream tombstone(temp, std::ios::binary | std::ios::trunc);
+        if (!tombstone)
+            return error(ErrorCode::Unavailable, "artifact tombstone cannot be written", true);
+        tombstone << tombstone_text;
+        tombstone.close();
+        if (!tombstone)
+            return error(ErrorCode::Unavailable, "artifact tombstone write failed", true);
+        std::error_code publish_error;
+        std::filesystem::rename(temp, path, publish_error);
+        if (publish_error)
+            return error(ErrorCode::Unavailable, "artifact tombstone publish failed", true);
+        (void)impl_->memory.erase(request);
         impl_->tombstones.insert(request.id);
-        impl_->paths.erase(request.id);
         impl_->descriptors.erase(request.id);
     }
-    return result;
+    if (found != impl_->paths.end()) {
+        std::error_code ec;
+        std::filesystem::remove(found->second, ec);
+        if (ec)
+            return error(ErrorCode::Unavailable,
+                         "artifact tombstone committed but payload removal failed", true);
+        impl_->paths.erase(found);
+    }
+    return ErasureReceipt{request.id, true, true};
+}
+
+Result<FileArtifactCommitState>
+FileArtifactStore::inspect_commit(const ArtifactDescriptor &descriptor) const {
+    if (descriptor.id.is_nil() || id_from_digest(descriptor.digest) != descriptor.id)
+        return error(ErrorCode::InvalidArgument, "invalid artifact commit identity");
+    if (auto loaded = impl_->ensure_loaded(); !loaded)
+        return loaded.error();
+    const std::lock_guard lock(impl_->mutex);
+    if (impl_->tombstones.contains(descriptor.id))
+        return FileArtifactCommitState::Erased;
+    const auto known = impl_->descriptors.find(descriptor.id);
+    if (known != impl_->descriptors.end()) {
+        if (!same_descriptor(known->second, descriptor))
+            return error(ErrorCode::DataLoss, "artifact commit metadata mismatch");
+        return FileArtifactCommitState::Committed;
+    }
+    if (impl_->read_only)
+        return error(ErrorCode::DataLoss, "artifact commit state is unavailable after recovery");
+    std::error_code ec;
+    const auto path = object_path(impl_->root, descriptor.digest);
+    const bool exists = std::filesystem::exists(path, ec);
+    if (ec)
+        return error(ErrorCode::Unavailable, "artifact commit state cannot be inspected", true);
+    return exists ? FileArtifactCommitState::UnindexedObject : FileArtifactCommitState::Missing;
+}
+
+Result<FileArtifactCapacity> FileArtifactStore::directory_capacity() const {
+    const std::lock_guard lock(impl_->mutex);
+    return scan_directory(impl_->root);
 }
 
 } // namespace mira

@@ -358,8 +358,8 @@ std::optional<EventEnvelope> MemoryEventStore::find(EventId id) const {
 
 class FileEventStore::Impl final {
   public:
-    Impl(std::filesystem::path directory, std::size_t max)
-        : root(std::move(directory)), memory(max) {
+    Impl(std::filesystem::path directory, std::size_t max, std::uint64_t byte_limit)
+        : root(std::move(directory)), memory(max), max_events(max), max_log_bytes(byte_limit) {
         std::error_code error_code;
         std::filesystem::create_directories(root, error_code);
         log_path = root / "events.log";
@@ -368,6 +368,8 @@ class FileEventStore::Impl final {
     std::filesystem::path log_path;
     mutable std::mutex mutex;
     MemoryEventStore memory;
+    const std::size_t max_events;
+    const std::uint64_t max_log_bytes;
     bool loaded = false;
     bool v2 = false;
     bool needs_separator = false;
@@ -377,10 +379,25 @@ class FileEventStore::Impl final {
     std::unordered_map<SessionId, SessionSequence, StrongIdHash<SessionId>> next_session;
     std::unordered_map<TaskId, TaskSequence, StrongIdHash<TaskId>> next_task;
     std::unordered_map<EventId, Sha256Digest, StrongIdHash<EventId>> integrity_by_id;
+
+    Result<std::uint64_t> measure_log() const {
+        std::error_code ec;
+        const auto status = std::filesystem::symlink_status(log_path, ec);
+        if (status.type() == std::filesystem::file_type::not_found &&
+            (!ec || ec == std::errc::no_such_file_or_directory))
+            return std::uint64_t{0};
+        if (ec || !std::filesystem::is_regular_file(status))
+            return error(ErrorCode::Unavailable, "event log is not a readable regular file", true);
+        const auto size = std::filesystem::file_size(log_path, ec);
+        if (ec)
+            return error(ErrorCode::Unavailable, "event log length cannot be measured", true);
+        return size;
+    }
 };
 
-FileEventStore::FileEventStore(std::filesystem::path root, std::size_t max_events)
-    : impl_(std::make_unique<Impl>(std::move(root), max_events)) {}
+FileEventStore::FileEventStore(std::filesystem::path root, std::size_t max_events,
+                               std::uint64_t max_log_bytes)
+    : impl_(std::make_unique<Impl>(std::move(root), max_events, max_log_bytes)) {}
 FileEventStore::~FileEventStore() = default;
 
 Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
@@ -428,17 +445,34 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
         return AppendReceipt{event->event_id, event->session_sequence, event->task_sequence, 0,
                              Durability::ProcessCrash};
     }
-    const auto session_sequence = impl_->next_session[request.session_id] + 1;
+    if (impl_->integrity_by_id.size() >= impl_->max_events)
+        return error(ErrorCode::ResourceExhausted, "event store capacity exhausted", true);
+    const auto session = impl_->next_session.find(request.session_id);
+    const auto session_sequence = session == impl_->next_session.end() ? 1 : session->second + 1;
     std::optional<TaskSequence> task_sequence;
-    if (request.task_id)
-        task_sequence = impl_->next_task[*request.task_id] + 1;
-    std::ofstream output(impl_->log_path, std::ios::binary | std::ios::app);
-    if (!output)
-        return error(ErrorCode::Unavailable, "event log cannot be opened", true);
+    if (request.task_id) {
+        const auto task = impl_->next_task.find(*request.task_id);
+        task_sequence = task == impl_->next_task.end() ? 1 : task->second + 1;
+    }
     const auto timestamp = Timestamp::now();
     event_log_wire::Record record{
         request, session_sequence, task_sequence, requested_integrity, timestamp, true};
     const auto encoded = event_log_wire::encode(record);
+    if (impl_->max_log_bytes != 0) {
+        const auto bytes = impl_->measure_log();
+        if (!bytes)
+            return bytes.error();
+        const auto framing =
+            (impl_->v2 ? 0 : event_log_wire::header.size() + event_log_wire::records.size() + 2) +
+            (impl_->needs_separator ? 2U : 1U);
+        if (bytes.value() > impl_->max_log_bytes ||
+            framing > impl_->max_log_bytes - bytes.value() ||
+            encoded.size() > impl_->max_log_bytes - bytes.value() - framing)
+            return error(ErrorCode::ResourceExhausted, "event log byte capacity exhausted", true);
+    }
+    std::ofstream output(impl_->log_path, std::ios::binary | std::ios::app);
+    if (!output)
+        return error(ErrorCode::Unavailable, "event log cannot be opened", true);
     if (impl_->needs_separator)
         output << '\n';
     if (!impl_->v2)
@@ -515,6 +549,13 @@ Result<StoreRecoveryReport> FileEventStore::recover(const RecoveryOptions &optio
             return memory_report.error();
         return StoreRecoveryReport{impl_->recovery_status, memory_report.value().events_recovered,
                                    0, impl_->recovery_diagnostic};
+    }
+    if (impl_->max_log_bytes != 0) {
+        const auto bytes = impl_->measure_log();
+        if (!bytes)
+            return bytes.error();
+        if (bytes.value() > impl_->max_log_bytes)
+            return error(ErrorCode::ResourceExhausted, "existing event log is over budget");
     }
     std::ifstream input(impl_->log_path, std::ios::binary);
     if (!input) {
@@ -655,6 +696,10 @@ const std::filesystem::path &FileEventStore::root() const noexcept { return impl
 bool FileEventStore::read_only() const noexcept {
     std::lock_guard lock(impl_->mutex);
     return impl_->read_only;
+}
+Result<std::uint64_t> FileEventStore::log_bytes() const {
+    const std::lock_guard lock(impl_->mutex);
+    return impl_->measure_log();
 }
 
 } // namespace mira
