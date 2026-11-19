@@ -248,5 +248,7 @@ docs/sbom/platform-boundary）；合并提交 master pipeline run
 
 2026-11-19：M14-08 在主线 `3c8b671` 上合流，决策重新编号为 DEC-117。扩展
 `mira_m14_recovery_test`，覆盖 Text 和 JsonObject 拒绝带额外字段的非法决策、
-同协议内修复、同源 schema、生成预算及无工具约束。主线验收以本次 PR CI 为准。
+同协议内修复、同源 schema、生成预算及无工具约束。Ubuntu 24.04.5 x86-64 /
+GCC 13.3 的 Release 定向测试已通过，主线矩阵见
+[PR #131 Checks](https://github.com/Linductor-alkaid/mira/pull/131/checks)。
 实际目标设备桌面和在线模型仍由 Mira/Mirage 维护者按宿主场景补验。

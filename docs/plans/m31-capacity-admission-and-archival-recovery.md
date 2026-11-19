@@ -157,8 +157,8 @@ Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weak
       份额已配置而该值为 0 即为键未流过接纳点），并检查事件与诊断输出中
       **不出现主体身份原文**（上游 R-2 脱敏约定）。
 - [ ] `M31-12` 文档同步。
-- [ ] `M31-13` 独占 SQLite 文件总量准入和快照。原分支已在下游完成限定验收，
-      主线合流需验证旧库迁移、向量修复与配额共存，并通过 PR CI。
+- [x] `M31-13` 独占 SQLite 文件总量准入和快照（Linux 下游限定增量，2026-11-14）。
+      主线合流的旧库迁移与向量修复验证见 2026-11-19 记录及 PR #131。
 
 ## 6. 测试与退出条件
 
@@ -228,7 +228,9 @@ Mirage M15-17；未把其他项目仍开放的设备/断电验收改为通过。
 旧格式数据库启用配额，检查迁移、重建向量、实际容量与重开后投影。SQLite 回滚结束后
 恢复硬水位，让关闭时的 checkpoint 可以使用预留。
 
-验证入口为 `mira_m31_memory_capacity_test`、`mira_m4_sqlite_memory_test`、
-`mira_hybrid_retrieval_host_consumer_test`、`mira_extraction_supply_host_consumer_test`
-及 PR CI。跨 store 回收、物理块占用和真实断电需由 Mira Maintainers 在相应接口与
-故障注入环境就绪后补验。
+本地 Ubuntu 24.04.5 x86-64 / GCC 13.3 / CMake 3.28.3 的 Release 定向测试
+6/6 通过。构建容量、SQLite、恢复及两个离线宿主示例后运行
+`ctest --test-dir build/release --output-on-failure -R 'mira_(m14_recovery|m31_memory_capacity|m4_sqlite_memory|hybrid_retrieval_host_consumer|extraction_supply_host_consumer|architecture_paths)_test'`。
+格式、文档、SBOM、平台边界、架构检查通过。主线矩阵见
+[PR #131 Checks](https://github.com/Linductor-alkaid/mira/pull/131/checks)。
+跨 store 回收、物理块占用和真实断电需由 Mira Maintainers 在相应接口与故障注入环境就绪后补验。

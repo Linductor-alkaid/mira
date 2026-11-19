@@ -250,7 +250,7 @@ int explicit_output_modes_use_the_same_local_schema() {
             MIRA_CHECK(request.generation.max_output_tokens == 512);
             MIRA_CHECK(request.generation.thinking == ThinkingMode::Disabled);
             MIRA_CHECK(request.tools.empty());
-            MIRA_CHECK(request.tool_choice == ToolChoice::None);
+            MIRA_CHECK(request.tool_choice.mode == ToolChoiceMode::None);
             const auto &prompt = std::get<TextPart>(request.input.front().content.front());
             MIRA_CHECK(prompt.text.find(canonical_json_string(
                            request.output_contract.schema.root)) != std::string::npos);
