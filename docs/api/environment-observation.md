@@ -91,6 +91,13 @@ class IEnvironment {
 
 ## Adapters
 
+### PNG（`mira/adapters/image/png.hpp`）
+
+宿主可使用 `-DMIRA_WITH_PNG=ON` 构建并链接 `Mira::png_adapter`。目标环境提供
+libpng ≥ 1.6。同步 `encode_rgba8_png` 接受从顶行开始的 straight-alpha RGBA8、
+宽高和按字节计的行 stride。适配器限制像素数并执行宿主指定的输出字节上限；超限在返回任何 PNG 之前
+报错。宿主负责预先脱敏和选择 sRGB 输入，并可把结果作为 `image/png` 工件保存。
+
 ### Simulator（`mira/adapters/simulator/simulator_environment.hpp`）
 
 参考环境 `SimulatorEnvironment`：`SimulatorSetup::single_display()` 等脚本化场景，

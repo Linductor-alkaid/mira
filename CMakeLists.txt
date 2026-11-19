@@ -23,6 +23,7 @@ option(MIRA_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(MIRA_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(MIRA_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(MIRA_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Mira targets" OFF)
+option(MIRA_WITH_PNG "Build the optional system-libpng adapter" OFF)
 option(MIRA_WITH_OPENSSL "Build the OpenSSL-backed TLS channel adapter" ON)
 option(MIRA_WITH_MBEDTLS "Build the pinned cross-platform Mbed TLS channel adapter" ON)
 
@@ -363,6 +364,20 @@ mira_enable_sanitizers(mira_net_transport)
 set_target_properties(mira_net_transport PROPERTIES EXPORT_NAME net_transport)
 if(WIN32)
     target_link_libraries(mira_net_transport PRIVATE ws2_32)
+endif()
+
+if(MIRA_WITH_PNG)
+    find_package(PNG 1.6 REQUIRED)
+    add_library(mira_png_adapter adapters/image/png.cpp)
+    add_library(Mira::png_adapter ALIAS mira_png_adapter)
+    target_include_directories(mira_png_adapter PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(mira_png_adapter PUBLIC Mira::core PRIVATE PNG::PNG)
+    target_compile_features(mira_png_adapter PUBLIC cxx_std_20)
+    mira_enable_warnings(mira_png_adapter)
+    mira_enable_sanitizers(mira_png_adapter)
+    set_target_properties(mira_png_adapter PROPERTIES EXPORT_NAME png_adapter)
 endif()
 
 # Optional OpenSSL-backed TLS channel for https endpoints. Built only where
@@ -723,6 +738,12 @@ install(TARGETS sqlite3
     EXPORT MiraTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+if(TARGET mira_png_adapter)
+    install(TARGETS mira_png_adapter EXPORT MiraTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 if(TARGET mira_openssl_transport)
     install(TARGETS mira_openssl_transport
         EXPORT MiraTargets

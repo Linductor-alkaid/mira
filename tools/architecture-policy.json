@@ -28,6 +28,11 @@
       "requires": ["core", "kairo"]
     },
     {
+      "id": "png_adapter",
+      "roots": ["adapters/image", "include/mira/adapters/image"],
+      "requires": ["core", "libpng"]
+    },
+    {
       "id": "net_transport",
       "roots": ["adapters/net", "include/mira/adapters/net"],
       "requires": ["core", "kairo", "mbedtls", "openssl", "platform_posix", "platform_windows"]
@@ -51,6 +56,8 @@
         "simulator_adapter",
         "android_adapter",
         "net_transport",
+        "png_adapter",
+        "libpng",
         "platform_posix",
         "platform_windows"
       ]
@@ -61,6 +68,7 @@
     "sqlite": { "headers": ["sqlite3.h", "sqlite3ext.h"] },
     "mbedtls": { "headers": ["mbedtls/", "psa/", "test/test_certs.h"] },
     "openssl": { "headers": ["openssl/"] },
+    "libpng": { "headers": ["png.h"] },
     "platform_posix": {
       "headers": [
         "sys/",
