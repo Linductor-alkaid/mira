@@ -74,6 +74,17 @@ revise 更新 task/environment epoch 并失效缓存；input_sink 会在成功�
 自动失效旧操作。投递失败保持暂停请求准入。retire 封闭请求装配但保留显式 Record；
 revoke 用于接管/撤权，关闭全部模式。宿主必须同步 Runtime 的生命周期变化。
 
+外部 owner 在 terminal Record 结算后调用 `release_work(task)` 回收绑定槽。
+活跃绑定或仍有在途作业时返回 InvalidState。保留的作业回执已结算，后续通过服务查询
+会报告绑定已失效，宿主仍按既有流程消费 future 并 `reap()`。Task ID 由 Runtime
+唯一分配，宿主释放后不得再次绑定该 ID。已擦除 scope 的持久屏障继续生效。
+
+`ModelContextSnapshot::prepend_history` 允许把保留原生角色的召回轮次装入 System /
+Developer 前缀与当前首个 User 之间，默认关闭。普通记忆候选继续按现有位置追加，
+宿主须保持每组历史的序号及角色顺序。最终预算、审计和 digest 由 Gateway 按实际
+wire 请求结算。预算只容纳部分原生历史时，整组省略并重新分配给其它可选候选。
+启用时，原请求必须以 User 开始对话，并保留可选的宿主指令前缀。
+
 erase_scope 是已鉴权宿主 API：持久屏障、派生 Artifact 删除、既有 IMemory::erase
 共用提交串行化边界。失败不表示已经删除。受影响工作封闭，删除 scope 在重启后仍
 不可重新绑定；同 scope 重新接收新知识的世代协议留待 M30/M31，不得手工抹掉屏障。

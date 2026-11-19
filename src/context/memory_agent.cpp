@@ -226,6 +226,21 @@ Result<void> MemoryAgentService::revoke(TaskId task) {
     return {};
 }
 
+Result<void> MemoryAgentService::release_work(TaskId task) {
+    auto &s = *state_;
+    const std::lock_guard serialize(s.commit_mutex);
+    const std::lock_guard lock(s.mutex);
+    const auto found = s.works.find(task);
+    if (found == s.works.end())
+        return error(ErrorCode::NotFound, "memory work is not bound");
+    if (found->second.active || std::any_of(s.jobs.begin(), s.jobs.end(), [&](const auto &entry) {
+            return entry.second->request.task == task && !entry.second->done;
+        }))
+        return error(ErrorCode::InvalidState, "memory work has not retired and drained");
+    s.works.erase(found);
+    return {};
+}
+
 Result<void> MemoryAgentService::invalidate_scope(const MemoryScope &scope) {
     auto &s = *state_;
     const std::lock_guard serialize(s.commit_mutex);

@@ -20,6 +20,9 @@ struct ModelContextSnapshot final {
     // Optional: the same task identity remains active and may rebuild after
     // a revision/expiry. False for terminal, takeover, deletion or pending input.
     std::function<bool()> refreshable;
+    // Wire-role replay items may precede the first original User message.
+    // Other candidates retain their normal trailing position.
+    bool prepend_history = false;
 };
 using ModelContextSupplier =
     std::function<Result<ModelContextSnapshot>(const ModelRequest &, const OperationContext &)>;

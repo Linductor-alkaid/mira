@@ -33,6 +33,29 @@ int correction_and_takeover_discard_late_model_results() {
     return 0;
 }
 
+int terminal_bindings_release_capacity_without_reviving_old_work() {
+    MemoryAgentFixture fixture;
+    MemoryAgentConfig config;
+    config.max_works = 1;
+    fixture.start({}, config);
+    auto binding = fixture.binding();
+    const auto supplier = fixture.service->context_supplier();
+    for (int i = 0; i < 3; ++i) {
+        MIRA_CHECK(fixture.service->bind(binding));
+        const auto old = supplier(memory_request(binding.work), memory_context(binding.work));
+        MIRA_CHECK(old && old.value().current());
+        MIRA_CHECK(!fixture.service->release_work(binding.work.task_id));
+        MIRA_CHECK(fixture.service->retire(binding.work.task_id));
+        MIRA_CHECK(fixture.service->release_work(binding.work.task_id));
+        MIRA_CHECK(!old.value().current() && !old.value().refreshable());
+        MemoryAgentRequest request;
+        request.task = binding.work.task_id;
+        MIRA_CHECK(!fixture.service->submit(request, memory_context(binding.work)));
+        binding.work.task_id = TaskId::generate();
+    }
+    return 0;
+}
+
 int erase_fences_inflight_writes_and_survives_service_restart() {
     MemoryAgentProbe probe;
     probe.proposal.memories = {{MemoryKind::Preference, {"tone=old", {0}}}};
@@ -46,13 +69,16 @@ int erase_fences_inflight_writes_and_survives_service_restart() {
     request.mode = MemoryAgentMode::Record;
     request.task = binding.work.task_id;
     request.write_scope = binding.scopes.front();
+    MIRA_CHECK(fixture.service->retire(binding.work.task_id));
     auto handle = fixture.service->submit(request, memory_context(binding.work));
     MIRA_CHECK(handle && probe.wait());
+    MIRA_CHECK(!fixture.service->release_work(binding.work.task_id));
     auto erased = fixture.service->erase_scope(binding.scopes.front());
     probe.release();
     MIRA_CHECK(erased && erased.value().status == ErasureStatus::Complete);
     MIRA_CHECK(handle.value().result.wait_for(3s) == std::future_status::ready);
     MIRA_CHECK(!handle.value().result.get());
+    MIRA_CHECK(fixture.service->release_work(binding.work.task_id));
     MemoryQuery query;
     query.scopes = binding.scopes;
     MIRA_CHECK(fixture.memory->query(query).value().records.empty());
@@ -163,6 +189,8 @@ int failed_input_delivery_suspends_context_until_retry() {
 } // namespace
 int main() {
     if (correction_and_takeover_discard_late_model_results())
+        return 1;
+    if (terminal_bindings_release_capacity_without_reviving_old_work())
         return 1;
     if (erase_fences_inflight_writes_and_survives_service_restart())
         return 1;
