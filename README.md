@@ -187,6 +187,13 @@ focus, autonomy and interruption budgets) remain planned
 ([implementation plan](docs/plans/mira-implementation-plan.md)).
 Routing quality and capacity figures are **not** yet measured.
 
+The M31 metadata increment now offers optional exclusive SQLite file-length
+admission and capacity snapshots
+([DEC-116](docs/decisions/DEC-116-bounded-sqlite-memory-files.md)). Workflow
+recovery defaults to strict JSON output and supports explicit Text or JsonObject
+with the same local validation and bounded generation
+([DEC-117](docs/decisions/DEC-117-recovery-output-mode.md)).
+
 ## Getting started
 
 Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja. Executor, Mbed TLS, and

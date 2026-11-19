@@ -1010,6 +1010,10 @@ memory_erasure_log
 SQLite 使用单 writer 策略和 bounded request channel；读取可以使用独立只读连接/快照。数据库
 迁移在 Runtime 接受 Task 前完成，不能由第一个随机请求隐式触发。
 
+启用 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md) 的文件总量准入时，
+SQLite Memory 库由单一 Store 独占，禁止另开只读连接。数据库、WAL、SHM 和回滚日志在
+打开和迁移时共用硬限额。常规变异为清理保留容量，已有幂等台账先于容量检查读取。
+
 `memory_mutations` 是幂等台账，主键为 `mutation_id`；每个条目同时记录写入时所属的
 scope（`scope_key`）。重放只在该 scope 内被承认：条目 scope 与调用方声明的 scope 不一致
 时返回 `ScopeDenied`，不披露条目指向的记录 id 与版本。归属固化在条目上而不是在重放时

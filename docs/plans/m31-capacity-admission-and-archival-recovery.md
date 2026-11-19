@@ -1,6 +1,7 @@
 # M31：容量准入、自动归档与可恢复清理
 
-> 状态：Planned（2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
+> 状态：In Progress（M31-13 元数据首增量；完整 M31-01～12 仍待跑前冻结）
+> 原范围 2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
 > 一并登记；**跑前冻结待本里程碑立项时完成**，本文件当前只冻结范围边界与非目标）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
@@ -11,9 +12,35 @@
 > 价值信号是淘汰裁决的输入）；DEC-069 数值档位冻结（本立项完成）；
 > [`EXE-20261028-001`](../executor_feedback/ledger.md) 的临时边界确定
 > 建议发布点：非发布物；部署档位与有限容量契约的冻结锚点
-> 更新日期：2026-10-28（登记）
+> 更新日期：2026-11-19
 
 ## 1. 目标
+
+2026-11-14：维护者明确授权 Mirage 需求的元数据首增量。
+`M31-13`（Completed，Linux 元数据首增量）按 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md)
+冻结 SqliteMemoryStore 的独占文件总量接纳/预留/快照与重开语义；不提前关闭 M31-01～12
+或宣称 Artifact/EventStore 与完整遗忘生命周期已交付。
+
+验收（2026-11-14）：Mirage 下游工作树以相同公开头/实现构建并执行
+mira_memory_capacity_contract_test（本仓库 tests/m31/sqlite_memory_capacity_test.cpp）。
+Debug/ASAN/UBSAN/TSAN 均通过，TSAN 以 setarch x86_64 -R 执行；每配置 58 次检查，
+独立 directory_iterator 文件长度测量与 snapshot 一致，满额拒绝、保留记录/幂等重放、
+独占冲突、关闭/重开、擦除、无效预算与超限旧文件不截断通过。四配置完整下游矩阵
+各 15/15（13 个业务测试和 2 个隔离 fixture），无 sanitizer 报告。Ubuntu 24.04.5
+x86_64、GCC 13.3、CMake 3.28.3/Ninja。架构/平台边界/379 文件格式检查通过，移除
+本次触及文件的陈旧 baseline 项，未新增例外。初版测试使用错误的宏返回类型、未设置
+Episode 所需 Verified 等级，修正测试后重建；未把失败构建后的旧结果计入验收。
+真实断电/磁盘故障、Windows、物理块峰值、跨 store 回收和 M31-01～12 尚未验收；
+负责人 Mira/Mirage 维护者，待相应接口/目标设备就绪补跑。原始日志在下游本机
+build/m15-persistent-<preset>-checked-build.log / -test.log。
+
+同日分支 CI 首轮：Windows Debug 的容量测试在 open 返回 SQLITE_CANTOPEN，其余已完成
+Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weakly_canonical
+字符串，而 SQLite 使用原生 VFS 的 xFullPathname；改为复用原生 VFS 的文件名规范化，
+同时保留原最终文件计量以拒绝符号链接。容量测试增加带 `.` 的原始路径写法；修正后的
+本机 Debug 已重新构建容量/owner/Runtime Service 与服务程序，定向含隔离 fixture
+5/5 通过，格式/架构/平台边界通过；其余本机矩阵与目标 CI 另行记录，首轮 Windows
+失败不计为通过。下游日志 build/m15-native-vfs-debug-build.log / -test.log。
 
 把「持续交互」从「能一直聊」变成「**能一直聊且资源有界**」：
 
@@ -130,6 +157,8 @@
       份额已配置而该值为 0 即为键未流过接纳点），并检查事件与诊断输出中
       **不出现主体身份原文**（上游 R-2 脱敏约定）。
 - [ ] `M31-12` 文档同步。
+- [x] `M31-13` 独占 SQLite 文件总量准入和快照（Linux 下游限定增量，2026-11-14）。
+      主线合流的旧库迁移与向量修复验证见 2026-11-19 记录及 PR #131。
 
 ## 6. 测试与退出条件
 
@@ -176,4 +205,32 @@
 
 ## 8. 验证记录
 
-> 尚无记录。
+### 2026-11-16：CI 与嵌入式架构检查修正
+
+232c9d1 的 Linux/Windows Debug/Release、Android 两 ABI 与 ASAN/UBSAN/TSAN job
+全部通过；quality 的静态分析构建、格式、文档、SBOM、平台边界均通过，架构检查
+拒绝 sqlite_memory_store.cpp 的文件规模。排查发现 check_architecture 用绝对路径
+过滤 third_party/build，令 Mirage 嵌入式本地检查跳过所有源码，错误显示所有 baseline
+已消失。此前“本地架构通过/移除陈旧项”的结果不能作为真实扫描证据。
+
+改为相对 Mira 仓库根过滤，增加普通目录及 third_party/build 父目录的检查器回归：
+自研源码必须被扫描、仓库内 vendor/generated 仍排除、真实规模违规必须检出。
+人工恢复 be44e36 已存在的 sqlite_memory_store.cpp 规模基线，非新增豁免或提高预算；
+该文件既有拆分债务仍保留。修正后直接运行检查器回归通过（3 种父路径），真实扫描
+显示 16 项既有债务、0 stale、0 新违规。文档/SBOM/平台边界检查通过。CI 结果另记
+Mirage M15-17；未把其他项目仍开放的设备/断电验收改为通过。
+
+
+### 2026-11-19：M31-13 主线合流
+
+以主线 `3c8b671` 为基线，移植旧 pin `2c42627` 的独占文件准入和嵌入式架构扫描。
+合流保留主线的检索权重、向量生产者身份和 1.1 → 1.3 schema 迁移。新增回归从
+旧格式数据库启用配额，检查迁移、重建向量、实际容量与重开后投影。SQLite 回滚结束后
+恢复硬水位，让关闭时的 checkpoint 可以使用预留。
+
+本地 Ubuntu 24.04.5 x86-64 / GCC 13.3 / CMake 3.28.3 的 Release 定向测试
+6/6 通过。构建容量、SQLite、恢复及两个离线宿主示例后运行
+`ctest --test-dir build/release --output-on-failure -R 'mira_(m14_recovery|m31_memory_capacity|m4_sqlite_memory|hybrid_retrieval_host_consumer|extraction_supply_host_consumer|architecture_paths)_test'`。
+格式、文档、SBOM、平台边界、架构检查通过。主线矩阵见
+[PR #131 Checks](https://github.com/Linductor-alkaid/mira/pull/131/checks)。
+跨 store 回收、物理块占用和真实断电需由 Mira Maintainers 在相应接口与故障注入环境就绪后补验。

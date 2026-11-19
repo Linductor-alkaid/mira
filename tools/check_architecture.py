@@ -156,7 +156,7 @@ def iter_source_files(root: Path, policy: dict):
             for path in base.rglob("*"):
                 if path.suffix not in SOURCE_SUFFIXES:
                     continue
-                if skip_parts & set(path.parts):
+                if skip_parts & set(path.relative_to(root).parts):
                     continue
                 prev = assignments.get(path)
                 if prev is None or depth > prev[0]:

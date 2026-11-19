@@ -639,6 +639,8 @@ int migration_adds_embedder_identity() {
                                     nullptr, nullptr, nullptr) == SQLITE_OK);
             sqlite3_close(db);
         }
+        // A previous host database may be opened with the exclusive budget.
+        options.max_storage_bytes = 1024 * 1024;
         const EmbedderId producer = EmbedderId::generate();
         {
             auto store = SqliteMemoryStore::open(exec, options);
@@ -656,6 +658,10 @@ int migration_adds_embedder_identity() {
                 store.value()->index_embedding(fact.id, producer, legacy_vector).has_value());
             const auto covered = store.value()->index_lag(producer);
             MIRA_CHECK(covered.has_value() && covered.value() == 0);
+            const auto capacity = store.value()->capacity_snapshot();
+            MIRA_CHECK(capacity.has_value());
+            MIRA_CHECK(capacity.value().file_bytes <= options.max_storage_bytes);
+            MIRA_CHECK(capacity.value().peak_admitted_file_bytes <= options.max_storage_bytes);
             MIRA_CHECK(store.value()->close().has_value());
         }
         {
@@ -663,6 +669,8 @@ int migration_adds_embedder_identity() {
             MIRA_CHECK(store.has_value());
             MIRA_CHECK(store.value()->diagnostics().disposition ==
                        StoreSchemaDisposition::UpToDate);
+            const auto present = store.value()->has_embedding(fact.id, producer);
+            MIRA_CHECK(present.has_value() && present.value());
             MIRA_CHECK(store.value()->close().has_value());
         }
     }
