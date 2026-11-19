@@ -191,6 +191,7 @@ add_library(mira_workflow
     src/workflow/workflow_tools.cpp
     src/workflow/workflow_runtime.cpp
     src/workflow/workflow_compiler.cpp
+    src/workflow/workflow_trajectory_capture.cpp
     src/workflow/workflow_navigation.cpp
     src/workflow/workflow_learning.cpp
     src/workflow/workflow_recovery.cpp

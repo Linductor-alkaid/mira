@@ -7,6 +7,8 @@
 
 #include "support/m11_support.hpp"
 
+#include <mira/workflow_trajectory_capture.hpp>
+
 namespace {
 
 using namespace mira;
@@ -255,13 +257,66 @@ int host_built_trajectory_compiles_without_source() {
     return 0;
 }
 
+int conversation_capture_requires_attested_matching_tool_evidence() {
+    MemoryEventStore events;
+    const auto runtime = RuntimeId::generate();
+    OperationContext context;
+    context.task = TaskId::generate();
+    context.session = SessionId::generate();
+    context.task_epoch = 1;
+    auto append = [&](const char *type, JsonValue::Object detail) {
+        AppendRequest request;
+        request.event_id = EventId::generate();
+        request.runtime_id = runtime;
+        request.session_id = context.session;
+        request.task_id = context.task;
+        request.payload = {
+            type, to_json_string(JsonValue::Object{{"task_id", context.task.to_string()},
+                                                   {"task_epoch", 1},
+                                                   {"detail", JsonValue(std::move(detail))}})};
+        return events.append(request);
+    };
+    VerifiedTrajectoryTool evidence;
+    evidence.operation = OperationId::generate();
+    evidence.arguments = JsonValue::Object{{"payload", "fixture"}, {"count", 2}};
+    const auto verified = append("HostVerification", {});
+    MIRA_CHECK(verified);
+    evidence.verification_event = verified.value().event_id;
+    const auto executed = append(
+        "ToolExecuted",
+        {{"wire_name", "counter"},
+         {"operation_id", evidence.operation.to_string()},
+         {"failed", false},
+         {"arguments_digest", digest_string(to_json_string(evidence.arguments)).to_string()}});
+    MIRA_CHECK(executed);
+    MIRA_CHECK(!capture_conversation_trajectory(events, context, std::span(&evidence, 1)));
+    const auto settled =
+        append("ConversationSettled", {{"outcome", "Answered"}, {"tool_executions", 1}});
+    MIRA_CHECK(settled);
+    const auto captured = capture_conversation_trajectory(events, context, std::span(&evidence, 1));
+    MIRA_CHECK(captured);
+    MIRA_CHECK(captured.value().settlement_event == settled.value().event_id);
+    MIRA_CHECK(captured.value().execution_events.front() == executed.value().event_id);
+    WorkflowCompileOptions options;
+    options.workflow_id = WorkflowId::generate();
+    options.name = "captured";
+    MIRA_CHECK(compile_workflow(captured.value().trajectory, options));
+    MIRA_CHECK(!capture_conversation_trajectory(events, context, std::span(&evidence, 1), 1));
+    evidence.arguments.set("payload", "different");
+    MIRA_CHECK(!capture_conversation_trajectory(events, context, std::span(&evidence, 1)));
+    context.cancellation_requested = [] { return true; };
+    const auto stopped = capture_conversation_trajectory(events, context, std::span(&evidence, 1));
+    MIRA_CHECK(!stopped && stopped.error().code == ErrorCode::Cancelled);
+    return 0;
+}
 } // namespace
 
 int main() {
     const auto scenarios = std::to_array(
         {capture_requires_completed_dispatching_run, capture_reflects_patch_effective_state,
          compile_bakes_defaults_and_preserves_structure, compile_is_deterministic_and_fail_closed,
-         host_built_trajectory_compiles_without_source});
+         host_built_trajectory_compiles_without_source,
+         conversation_capture_requires_attested_matching_tool_evidence});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;
