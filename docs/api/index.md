@@ -48,11 +48,12 @@ Workflow 终态、Layer 0 请求与持久化恢复规划的实际下游消费见
 - `Result<T>` 持有值或 `Error`，二选一；`has_value()` / `operator bool` 判别，
   `value()` / `error()` 取用。
 - `Result<void>` 只表达成功或错误。
+- 对未激活的一侧调用 `value()` 或 `error()` 会抛出 `std::bad_optional_access`。
 - `Error` 携带 `ErrorCode`（稳定枚举，如 `Cancelled`、`DeadlineExceeded`、
   `SafetyRejected`、`ExecutionUncertain`）、`domain`/`domain_code`（分层定位）、
   `retryable`、`safe_message`（已脱敏、可直接入日志）以及可选
   `diagnostic_artifact` / `operation_id`。
-- API 不抛异常来表达失败；错误必须被检查，不允许静默吞掉。
+- 正常操作失败通过 `Result` 返回；调用方先判别结果再取用。
 
 ### 标识与时间
 

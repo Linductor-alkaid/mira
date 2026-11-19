@@ -93,6 +93,30 @@ int check_interrupt_and_cancellation() {
     return 0;
 }
 
+int check_inactive_result_access() {
+    mira::Error error;
+    mira::Result<int> failure(error);
+    mira::Result<int> success(42);
+    mira::Result<void> done;
+    const auto rejects = [](auto read) {
+        try {
+            read();
+        } catch (const std::bad_optional_access &) {
+            return true;
+        }
+        return false;
+    };
+    MIRA_CHECK(rejects([&] { (void)failure.value(); }));
+    MIRA_CHECK(rejects([&] { (void)std::move(failure).value(); }));
+    MIRA_CHECK(rejects([&] { (void)success.error(); }));
+    MIRA_CHECK(rejects([&] { (void)done.error(); }));
+    MIRA_CHECK(success.value() == 42);
+    const auto time = mira::timestamp_from_nanos(123, 456);
+    MIRA_CHECK(mira::wall_nanos(time) == 123);
+    MIRA_CHECK(mira::monotonic_nanos(time) <= 456);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -102,5 +126,5 @@ int main() {
         return code;
     if (const int code = check_interrupt_and_cancellation(); code != 0)
         return code;
-    return 0;
+    return check_inactive_result_access();
 }

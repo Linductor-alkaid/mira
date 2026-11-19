@@ -180,8 +180,8 @@ struct Timestamp final {
 template <typename Duration>
 [[nodiscard]] inline std::int64_t
 wall_nanos(std::chrono::time_point<std::chrono::system_clock, Duration> stamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(stamp.time_since_epoch()).count());
+    using Nanoseconds = std::chrono::duration<std::int64_t, std::nano>;
+    return std::chrono::duration_cast<Nanoseconds>(stamp.time_since_epoch()).count();
 }
 
 [[nodiscard]] inline std::int64_t wall_nanos(const Timestamp &timestamp) {
@@ -189,9 +189,8 @@ wall_nanos(std::chrono::time_point<std::chrono::system_clock, Duration> stamp) {
 }
 
 [[nodiscard]] inline std::int64_t monotonic_nanos(const Timestamp &timestamp) {
-    return static_cast<std::int64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp.monotonic.time_since_epoch())
-            .count());
+    using Nanoseconds = std::chrono::duration<std::int64_t, std::nano>;
+    return std::chrono::duration_cast<Nanoseconds>(timestamp.monotonic.time_since_epoch()).count();
 }
 
 [[nodiscard]] inline Timestamp timestamp_from_nanos(std::int64_t wall, std::int64_t monotonic) {
@@ -259,11 +258,12 @@ template <typename T> class Result final {
 
     [[nodiscard]] bool has_value() const noexcept { return value_.has_value(); }
     explicit operator bool() const noexcept { return has_value(); }
-    [[nodiscard]] const T &value() const & { return *value_; }
-    [[nodiscard]] T &value() & { return *value_; }
-    [[nodiscard]] T &&value() && { return std::move(*value_); }
-    [[nodiscard]] const Error &error() const & { return *error_; }
-    [[nodiscard]] Error &error() & { return *error_; }
+    // Accessing the inactive alternative throws std::bad_optional_access.
+    [[nodiscard]] const T &value() const & { return value_.value(); }
+    [[nodiscard]] T &value() & { return value_.value(); }
+    [[nodiscard]] T &&value() && { return std::move(value_).value(); }
+    [[nodiscard]] const Error &error() const & { return error_.value(); }
+    [[nodiscard]] Error &error() & { return error_.value(); }
 
   private:
     std::optional<T> value_;
@@ -277,7 +277,7 @@ template <> class Result<void> final {
     Result(Error &&error) : error_(std::move(error)) {}
     [[nodiscard]] bool has_value() const noexcept { return !error_.has_value(); }
     explicit operator bool() const noexcept { return has_value(); }
-    [[nodiscard]] const Error &error() const & { return *error_; }
+    [[nodiscard]] const Error &error() const & { return error_.value(); }
 
   private:
     std::optional<Error> error_;
