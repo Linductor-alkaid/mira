@@ -34,6 +34,11 @@ Linux x86-64 GCC 13.3 Release 构建开启系统 libpng 1.6.43，CTest 195/195�
 使用 clang-tidy 18.1.8 检查通过。独立 CMake 消费项目从安装前缀导入
 `Mira::png_adapter` 并运行 1×1 RGBA 编码。跨平台 CI 由 PR 跟踪。
 
+PR 首轮 quality 在检查既有 WorkingContextAutoCurator 析构时报告异常逃逸。
+同时检查 WorkflowRuntime，修正了同类关停边界。两个改动翻译单元通过 clang-tidy
+18.1.8，格式、文档和架构门禁复跑通过；Release 重建后 CTest 195/195。
+首轮失败见 [quality job](https://github.com/Linductor-alkaid/mira/actions/runs/44449790763/job/135310638164)。
+
 | 工作项 | 定向验证 |
 | --- | --- |
 | MNT-MRG-01 | GCC 消费头以 `-Wuseless-cast -Werror` 编译；`mira_contract_test` |
