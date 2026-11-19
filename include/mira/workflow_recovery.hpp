@@ -102,6 +102,14 @@ struct WorkflowRecoveryAttempt final {
     std::uint32_t lessons_stale = 0;
     std::uint32_t lessons_unparseable = 0;
     std::uint32_t lessons_kept = 0;
+    // Also the id of the WorkflowRecoveryAttempted event envelope.
+    EventId attempt_id;
+};
+
+struct WorkflowRecoveryHandle final {
+    EventId attempt_id;
+    std::shared_future<Result<WorkflowRecoveryAttempt>> result;
+    [[nodiscard]] Result<WorkflowRecoveryAttempt> wait(std::chrono::milliseconds timeout) const;
 };
 
 // The four-action closed set of mira.workflow.recovery-decision.v1
@@ -199,6 +207,8 @@ class WorkflowRecoveryOrchestrator final {
     // attempt is already in flight for the run, or when the concurrent /
     // tracking capacity is exceeded (ResourceExhausted).
     [[nodiscard]] Result<void> start_recovery(const WorkflowRunId &run_id);
+    [[nodiscard]] Result<WorkflowRecoveryHandle>
+    start_recovery_tracked(const WorkflowRunId &run_id);
 
     // Bounded wait for the result of the most recent attempt of one run.
     // Returns the settled attempt (immediately when already settled),
@@ -248,9 +258,14 @@ class WorkflowRecoveryOrchestrator final {
     void evict_terminal_runs();
 
     [[nodiscard]] Result<WorkflowRecoveryAttempt>
-    run_pipeline(const WorkflowRunId &run_id, const std::shared_ptr<std::atomic_bool> &cancel);
+    run_pipeline(const WorkflowRunId &run_id, const std::shared_ptr<std::atomic_bool> &cancel,
+                 EventId attempt_id);
+    [[nodiscard]] Result<WorkflowRecoveryAttempt>
+    guarded_pipeline(const WorkflowRunId &run_id, const std::shared_ptr<std::atomic_bool> &cancel,
+                     EventId attempt_id);
     void settle_tracking(const WorkflowRecoveryAttempt &attempt);
-    void record_early_result(const WorkflowRecoveryAttempt &attempt);
+    void record_early_result(const WorkflowRecoveryAttempt &attempt,
+                             const std::shared_ptr<std::atomic_bool> &cancel);
     // carrier is the run's carrier task when known (nil for admission
     // rejections of unknown carriers).
     void emit_attempt(const WorkflowRecoveryAttempt &attempt, const TaskId &carrier);
@@ -268,7 +283,6 @@ class WorkflowRecoveryOrchestrator final {
 
     mutable std::mutex mutex_;
     std::unordered_map<WorkflowRunId, RunTracking, StrongIdHash<WorkflowRunId>> tracking_;
-    std::size_t async_in_flight_ = 0;
     bool accepting_ = true;
     // Atomic mirror of the shutdown decision for the cooperative cancellation
     // probes (read on model-call paths without the mutex).

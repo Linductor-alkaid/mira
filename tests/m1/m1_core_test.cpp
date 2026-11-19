@@ -96,6 +96,35 @@ int main() {
     }
     std::filesystem::remove_all(root, ignored);
 
+    const auto durable_event = event_request(event_id, runtime_id, session_id);
+    std::uint64_t durable_bytes = 0;
+    {
+        mira::FileEventStore capped(root, 1, 4096);
+        MIRA_CHECK(capped.append(durable_event));
+        durable_bytes = capped.log_bytes().value();
+        const auto exhausted =
+            capped.append(event_request(mira::EventId::generate(), runtime_id, session_id));
+        MIRA_CHECK(!exhausted && exhausted.error().code == mira::ErrorCode::ResourceExhausted);
+        MIRA_CHECK(!capped.read_only() && capped.log_bytes().value() == durable_bytes);
+        MIRA_CHECK(capped.append(durable_event));
+    }
+    {
+        mira::FileEventStore capped(root, 10, durable_bytes);
+        MIRA_CHECK(capped.append(durable_event));
+        const auto exhausted =
+            capped.append(event_request(mira::EventId::generate(), runtime_id, session_id));
+        MIRA_CHECK(!exhausted && exhausted.error().code == mira::ErrorCode::ResourceExhausted);
+        MIRA_CHECK(!capped.read_only() && capped.log_bytes().value() == durable_bytes);
+        MIRA_CHECK(capped.read({session_id, std::nullopt, 4}).value().events.size() == 1);
+    }
+    {
+        mira::FileEventStore capped(root, 10, durable_bytes - 1);
+        const auto too_large = capped.recover({});
+        MIRA_CHECK(!too_large && too_large.error().code == mira::ErrorCode::ResourceExhausted);
+        MIRA_CHECK(capped.log_bytes().value() == durable_bytes);
+    }
+    std::filesystem::remove_all(root, ignored);
+
     mira::MemoryArtifactStore artifacts(64);
     auto writer_result = artifacts.begin(
         {"text/plain", mira::ArtifactEncoding::Utf8, mira::Sensitivity::Internal, {}, 16});
@@ -133,6 +162,71 @@ int main() {
     {
         mira::FileArtifactStore reopened(artifact_root);
         MIRA_CHECK(!reopened.open(persistent_descriptor));
+    }
+    std::filesystem::remove_all(artifact_root, ignored);
+
+    mira::ArtifactDescriptor erased;
+    {
+        mira::FileArtifactStore artifact_files(artifact_root, 64, {640, 128});
+        bool refused = false;
+        for (int n = 0; n < 16; ++n) {
+            const auto contents = "fixture " + std::to_string(n);
+            auto writing = artifact_files.begin({});
+            MIRA_CHECK(writing && writing.value().write(contents.data(), contents.size()));
+            const auto planned = artifact_files.planned_descriptor(writing.value());
+            MIRA_CHECK(planned);
+            MIRA_CHECK(artifact_files.inspect_commit(planned.value()).value() ==
+                       mira::FileArtifactCommitState::Missing);
+            const auto committed = artifact_files.commit(writing.value());
+            if (!committed) {
+                MIRA_CHECK(committed.error().code == mira::ErrorCode::ResourceExhausted);
+                refused = true;
+                break;
+            }
+            MIRA_CHECK(artifact_files.inspect_commit(planned.value()).value() ==
+                       mira::FileArtifactCommitState::Committed);
+            const auto before = artifact_files.directory_capacity();
+            MIRA_CHECK(before && before.value().file_bytes <= 512);
+            MIRA_CHECK(artifact_files.commit(writing.value()));
+            MIRA_CHECK(artifact_files.directory_capacity().value().file_bytes ==
+                       before.value().file_bytes);
+            MIRA_CHECK(artifact_files.erase({planned.value().id, "fixture retention"}));
+            erased = planned.value();
+            MIRA_CHECK(artifact_files.directory_capacity().value().file_bytes <= 640);
+        }
+        MIRA_CHECK(refused && !erased.id.is_nil());
+    }
+    {
+        mira::FileArtifactStore reopened(artifact_root, 64, {640, 128});
+        MIRA_CHECK(reopened.inspect_commit(erased).value() ==
+                   mira::FileArtifactCommitState::Erased);
+        MIRA_CHECK(!reopened.open(erased));
+    }
+    std::filesystem::remove_all(artifact_root, ignored);
+
+    // Materialize the state left by an interruption between object publish
+    // and manifest append. Retry only with the same verified content.
+    {
+        mira::FileArtifactStore reopened(artifact_root, 64, {640, 128});
+        auto writing = reopened.begin({});
+        MIRA_CHECK(writing && writing.value().write(payload.data(), payload.size()));
+        const auto planned = reopened.planned_descriptor(writing.value());
+        MIRA_CHECK(planned);
+        const auto digest = planned.value().digest.to_string();
+        const auto object_dir =
+            artifact_root / "objects" / digest.substr(0, 2) / digest.substr(2, 2);
+        std::filesystem::create_directories(object_dir);
+        const auto object = object_dir / digest;
+        std::ofstream(object, std::ios::binary) << "wrong";
+        MIRA_CHECK(reopened.inspect_commit(planned.value()).value() ==
+                   mira::FileArtifactCommitState::UnindexedObject);
+        MIRA_CHECK(!reopened.open(planned.value()));
+        const auto rejected = reopened.commit(writing.value());
+        MIRA_CHECK(!rejected && rejected.error().code == mira::ErrorCode::DataLoss);
+        std::ofstream(object, std::ios::binary) << payload;
+        MIRA_CHECK(reopened.commit(writing.value()));
+        MIRA_CHECK(reopened.inspect_commit(planned.value()).value() ==
+                   mira::FileArtifactCommitState::Committed);
     }
     std::filesystem::remove_all(artifact_root, ignored);
 

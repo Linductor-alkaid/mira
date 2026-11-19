@@ -147,6 +147,7 @@ class ModelGateway final {
     ModelGatewayConfig config_;
     BudgetLedger ledger_;
     std::vector<std::shared_ptr<IModelProvider>> providers_;
+    mutable std::mutex circuit_mutex_;
     std::map<ModelProfileId, ProviderCircuit> circuits_;
     std::shared_ptr<const TaskAdmissionGate> admission_;
     std::shared_ptr<IEventStore> events_;

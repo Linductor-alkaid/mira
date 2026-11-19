@@ -3812,10 +3812,15 @@ WorkflowShutdownReport WorkflowRuntime::shutdown() {
         }
     }
     report.cancelled_runs = tasks.size();
+    report.clean = true;
     for (const auto &task : tasks) {
-        const auto command = runtime_.cancel_task(task);
-        if (command.has_value()) {
-            static_cast<void>(command.value().outcome(config_.command_timeout));
+        try {
+            const auto command = runtime_.cancel_task(task);
+            if (command.has_value()) {
+                static_cast<void>(command.value().outcome(config_.command_timeout));
+            }
+        } catch (...) {
+            report.clean = false;
         }
     }
     // Settle runs without an active drive directly through the frozen table;
@@ -3827,18 +3832,21 @@ WorkflowShutdownReport WorkflowRuntime::shutdown() {
             active = run->drive_active;
         }
         if (!active && !is_terminal(run_state(*run))) {
-            static_cast<void>(settle_terminal(*run, WorkflowRunState::Cancelled,
-                                              "run cancelled by runtime shutdown"));
+            try {
+                static_cast<void>(settle_terminal(*run, WorkflowRunState::Cancelled,
+                                                  "run cancelled by runtime shutdown"));
+            } catch (...) {
+                report.clean = false;
+            }
         }
     }
-    report.clean = true;
     const auto budget = config_.command_timeout + config_.step_deadline;
     for (auto &future : futures) {
         if (future.wait_for(budget) == std::future_status::ready) {
             ++report.drained_drives;
             try {
                 static_cast<void>(future.get());
-            } catch (const std::exception &) {
+            } catch (...) {
                 report.clean = false;
             }
         } else {
@@ -3853,9 +3861,9 @@ WorkflowShutdownReport WorkflowRuntime::shutdown() {
             "; task settlement failures: " + std::to_string(task_settlement_failures_.load()) +
             "; monitor failures: " + std::to_string(monitor_failures_.load());
     }
-    if (report.clean && report.diagnostic.empty()) {
-        report.diagnostic = "workflow runtime stopped";
-    }
+    if (report.diagnostic.empty())
+        report.diagnostic = report.clean ? "workflow runtime stopped"
+                                         : "workflow runtime work did not drain cleanly";
     return report;
 }
 

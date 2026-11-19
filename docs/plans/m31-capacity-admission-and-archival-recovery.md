@@ -1,6 +1,6 @@
 # M31：容量准入、自动归档与可恢复清理
 
-> 状态：In Progress（M31-13 元数据首增量；完整 M31-01～12 仍待跑前冻结）
+> 状态：In Progress（已交付 M31-13 元数据；推进 MNT-MRG-08 工件与事件日志准入）
 > 原范围 2026-10-28 随 [M28](m28-interaction-coordinator-first-stage.md)
 > 一并登记；**跑前冻结待本里程碑立项时完成**，本文件当前只冻结范围边界与非目标）
 > 负责人：Mira Maintainers
@@ -41,6 +41,11 @@ Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weak
 本机 Debug 已重新构建容量/owner/Runtime Service 与服务程序，定向含隔离 fixture
 5/5 通过，格式/架构/平台边界通过；其余本机矩阵与目标 CI 另行记录，首轮 Windows
 失败不计为通过。下游日志 build/m15-native-vfs-debug-build.log / -test.log。
+
+2026-11-19：[MNT-MRG-08](maintenance-2026-11-mirage-upstream-gaps.md) 为独占
+FileArtifactStore 添加目录准入、按计划 descriptor 探测重开结算及校验后补写索引。
+FileEventStore 在写入前检查事件条数和可选的日志字节预算。跨存储预留、引用保护、
+分段回收和归档仍按 M31-01～12 跟踪。
 
 把「持续交互」从「能一直聊」变成「**能一直聊且资源有界**」：
 

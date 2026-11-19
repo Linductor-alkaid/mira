@@ -343,8 +343,13 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
   Task）→ 四动作闭集决策解析 → 经既有 `patch_run`/`resume_run`/`cancel_run` 出口提交 →
   `WorkflowRecoveryAttempted` 审计事件。依赖 `WorkflowRuntime`/`ModelGateway`/
   `MiraRuntime`/`IEventStore` 公开接口，不接触平台 API 与 `IMemory`；由宿主装配，
-  唯一触发面是通知（`attempt_recovery` 同步原语 / `start_recovery` + `wait_recovery`
+  唯一触发面是通知（`attempt_recovery` 同步原语 / `start_recovery_tracked`
   异步面，后者经 `submit_auto` 承载并受 `max_concurrent_attempts` 约束）。
+- 每次异步准入返回独立 `WorkflowRecoveryHandle`。工具/模型异常经安全结果结算，
+  `handle.wait(timeout)` 可重复读取同一尝试，超时可继续等待。其 `attempt_id`
+  同时是本次审计 envelope 的 EventId，即使两次未推进 attempt ordinal 也可区分。
+  兼容 `start_recovery` / `wait_recovery(run, timeout)`，按 Run 等待读取最新一次
+  已接受的尝试。未知 Run、饱和或 Executor 拒绝在启动入口返回错误。
 - `WorkflowRecoveryConfig`（构造时 fail closed：零/负值、空 profile 拒绝）：
   `max_attempts_per_run`（默认 8，耗尽 `DeferredToHost`）、`model_call_deadline`
   （默认 30 s，经 `OperationContext.deadline` 传达，同时构成 shutdown drain 预算）、
@@ -413,8 +418,19 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
   在锁外）；`shutdown()` 拒绝新通知 → 置位全部取消 → 有界 drain 在途 future（预算 =
   `model_call_deadline × (2 + max_decision_repairs) + 2 s`）→ 报告
   （clean/cancelled/drained 与诊断计数器）；编排器是 WorkflowRuntime 的任务生产者，
-  必须在其之前完成 `shutdown()`。Verify 归运行时（resume 后每步验证照常）、lesson 记录
+  必须在其之前完成 `shutdown()`；若排空超时继续保留依赖并重试，析构等待已接受的
+  工作释放。Verify 归运行时（resume 后每步验证照常）、lesson 记录
   归宿主（`record_recovery_lesson` 不变，DEC-030 §4）。
+
+## 普通会话执行到草稿（`workflow_trajectory_capture.hpp`）
+
+`capture_conversation_trajectory` 读取宿主有权访问的同一 Session / Task /
+epoch 的有界 ConversationLoop 事件。完整成功终态中，每次工具成功须有匹配
+的 OperationId、已获准保留的原始 JSON 实参（序列化后须匹配执行 digest），以及
+宿主验证事件。返回轨迹和对应的执行、验证、结算 EventId，可交给现有编译器。
+缺页、失败、缺证据、取消和超时均通过 Result 报告。宿主管理 EventStore 的读取
+生命周期，并负责验证证据真实、权限有效和保留内容经过审查。输出需要产品审阅和
+Workflow 版本发布门禁，不能从仅存摘要的旧历史还原实参。
 
 ## 兼容性与限制
 

@@ -40,6 +40,29 @@ mutation-id/WAL 恢复沿既有实现。capacity_snapshot() 在 StoreChannel 上
 先停止生产/排空调用，再 close 并销毁实际 Store，最后关闭外部 Executor。这里只是
 M31-13 的元数据首增量，跨层清理、自动归档、价值遗忘、工件共享回收仍按 M31 推进。
 
+### 有界工件目录
+
+给独占的 `FileArtifactStore` 设置 `FileArtifactDirectoryBudget`，可按目录内文件
+逻辑长度总和接纳正文、manifest、临时文件和墓碑。常规提交保留
+`erase_reserve_bytes`；写墓碑可使用预留。目录原有文件超预算时返回
+ResourceExhausted。`directory_capacity()` 返回当前总量和扫描计数，有界盘点拒绝
+符号链接和异常目录项。
+
+提交前可保留 `planned_descriptor(writer)`，失败后或重开通过 `inspect_commit`
+区分 Missing、Committed、UnindexedObject、Erased。获准重试的相同 writer 可以
+为字节一致的未索引对象追加账本记录；异常账本以 DataLoss 暴露。先发布墓碑再删除
+正文，重试 erase 可以清理残留正文。预算覆盖逻辑长度，跨存储引用、回收策略和
+断电物理持久性仍由 M31 及宿主部署验收。
+
+### 事件日志准入
+
+`FileEventStore(root, max_events, max_log_bytes)` 对独占日志提供可选逻辑字节上限，
+0 保留原有配置。写入前同时检查索引条目和完整编码记录的容量。达到上限后读取、
+既有 EventId 的幂等重放仍可用。重开时立刻拒绝超过上限的旧日志，保留源文件。
+`log_bytes()` 可查询实际文件长度；分段归档和共享引用回收由 M31 跟踪。
+
+## 宿主身份
+
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次
 启动时生成新的 user ID，也不要把 QQ 号码或群号直接当授权。真实平台的鉴权、路由和
 账号映射由 Adapter/宿主处理，Core 不依赖 QQ SDK。

@@ -143,14 +143,34 @@ int circuit_state_machine() {
     MIRA_CHECK(circuit.state() == CircuitState::OpenCircuit);
     MIRA_CHECK(!circuit.admits_requests());
 
-    // The open circuit only leaves through probing (modeled by the caller
-    // recreating admission after cooldown); probing failures reopen.
+    config.consecutive_successes_to_close = 2;
     ProviderCircuit probing(config);
-    probing.record_failure();
-    probing.record_failure();
-    probing.record_success(); // still open: success only closes from probing
-    MIRA_CHECK(probing.state() == CircuitState::OpenCircuit ||
-               probing.state() == CircuitState::Degraded);
+    const auto t = ProviderCircuit::Clock::time_point{};
+    const auto stale = probing.begin_request(t);
+    MIRA_CHECK(stale);
+    probing.record_failure(t);
+    probing.record_failure(t);
+    MIRA_CHECK(!probing.begin_request(t + config.cooldown - std::chrono::milliseconds{1}));
+    const auto failed = probing.begin_request(t + config.cooldown);
+    MIRA_CHECK(failed && probing.state() == CircuitState::Probing);
+    probing.finish_request(*stale, true);
+    MIRA_CHECK(!probing.begin_request(t + config.cooldown));
+    probing.finish_request(*failed, false, t + config.cooldown);
+    MIRA_CHECK(!probing.begin_request(t + config.cooldown));
+    const auto resumed = t + 2 * config.cooldown;
+    const auto cancelled = probing.begin_request(resumed);
+    MIRA_CHECK(cancelled);
+    probing.finish_request(*cancelled, std::nullopt);
+    const auto first = probing.begin_request(resumed);
+    MIRA_CHECK(first);
+    probing.finish_request(*first, true);
+    MIRA_CHECK(probing.state() == CircuitState::Probing);
+    const auto second = probing.begin_request(resumed);
+    MIRA_CHECK(second);
+    probing.finish_request(*first, false);
+    MIRA_CHECK(!probing.begin_request(resumed));
+    probing.finish_request(*second, true);
+    MIRA_CHECK(probing.state() == CircuitState::Healthy);
     MIRA_CHECK(circuit_state_name(CircuitState::OpenCircuit) == "OpenCircuit");
     MIRA_CHECK(classify_stage(false, false, false) == RequestStage::PreWriteFailure);
     MIRA_CHECK(classify_stage(false, false, true) == RequestStage::StreamBroken);

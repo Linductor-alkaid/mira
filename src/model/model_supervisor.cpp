@@ -31,37 +31,60 @@ std::string circuit_state_name(CircuitState state) {
 ProviderCircuit::ProviderCircuit(CircuitConfig config) : config_(config) {}
 
 void ProviderCircuit::record_success() {
-    ++successes_;
+    if (state_ == CircuitState::OpenCircuit)
+        return;
     failures_ = 0;
-    switch (state_) {
-    case CircuitState::Unknown:
-    case CircuitState::Degraded:
-    case CircuitState::Probing:
-        state_ = successes_ >= config_.consecutive_successes_to_close ? CircuitState::Healthy
-                                                                      : CircuitState::Degraded;
-        break;
-    case CircuitState::Healthy:
-    case CircuitState::OpenCircuit:
-        break;
-    }
+    if (state_ == CircuitState::Healthy)
+        return;
+    if (++successes_ >= config_.consecutive_successes_to_close)
+        state_ = CircuitState::Healthy;
+    else if (state_ != CircuitState::Probing)
+        state_ = CircuitState::Degraded;
 }
 
-void ProviderCircuit::record_failure() {
+void ProviderCircuit::record_failure(Clock::time_point now) {
+    if (state_ == CircuitState::OpenCircuit)
+        return;
     ++failures_;
     successes_ = 0;
-    if (state_ == CircuitState::Probing) {
+    if (state_ == CircuitState::Probing || failures_ >= config_.consecutive_failures_to_open) {
         state_ = CircuitState::OpenCircuit;
-        return;
+        opened_ = now;
+        ++generation_;
+    } else {
+        state_ = CircuitState::Degraded;
     }
-    if (failures_ >= config_.consecutive_failures_to_open) {
-        state_ = CircuitState::OpenCircuit;
-        return;
-    }
-    state_ = CircuitState::Degraded;
 }
 
-bool ProviderCircuit::admits_requests() const noexcept {
-    return state_ != CircuitState::OpenCircuit;
+std::optional<std::uint64_t> ProviderCircuit::begin_request(Clock::time_point now) {
+    if (!admits_requests(now))
+        return {};
+    if (state_ == CircuitState::OpenCircuit)
+        state_ = CircuitState::Probing;
+    if (state_ == CircuitState::Probing) {
+        ++generation_;
+        probe_in_flight_ = true;
+    }
+    return generation_;
+}
+
+void ProviderCircuit::finish_request(std::uint64_t generation, std::optional<bool> succeeded,
+                                     Clock::time_point now) {
+    if (generation != generation_)
+        return;
+    probe_in_flight_ = false;
+    if (!succeeded)
+        return;
+    if (*succeeded)
+        record_success();
+    else
+        record_failure(now);
+}
+
+bool ProviderCircuit::admits_requests(Clock::time_point now) const noexcept {
+    if (state_ == CircuitState::OpenCircuit)
+        return now - opened_ >= config_.cooldown;
+    return !probe_in_flight_;
 }
 
 RequestStage classify_stage(bool write_started, bool write_completed,

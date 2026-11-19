@@ -2,8 +2,10 @@
 #include "support/test.hpp"
 
 #include <mira/context_contracts.hpp>
+#include <mira/model_dialect.hpp>
 
 #include <algorithm>
+#include <array>
 #include <string>
 
 namespace {
@@ -14,6 +16,7 @@ int preserves_native_protocol_and_accounts_for_whole_request() {
     const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
     AgentLoopSpec spec{TaskId::generate(), SessionId::generate(), 1, "goal", profile.id};
     auto request = memory_request(spec);
+    request.generation.max_output_tokens = 64;
     request.input.insert(request.input.begin(), history_text("host system", ModelRole::System));
     request.input.insert(request.input.begin() + 1,
                          history_text("host developer", ModelRole::Developer));
@@ -44,6 +47,66 @@ int preserves_native_protocol_and_accounts_for_whole_request() {
     MIRA_CHECK(admitted.value().request.input.back().authority == Sensitivity::Public);
     MIRA_CHECK(admitted.value().context.total_estimate.upper_bound > 0);
     MIRA_CHECK(admitted.value().request.prompt_provenance.context_selection_digest != Hash{});
+    ContextItem old_user = candidate;
+    old_user.id = ContextItemId::generate();
+    old_user.sequence = 1;
+    old_user.wire_role = ModelRole::User;
+    old_user.content = {TextPart{"prior user"}};
+    ContextItem old_assistant = old_user;
+    old_assistant.id = ContextItemId::generate();
+    old_assistant.sequence = 2;
+    old_assistant.wire_role = ModelRole::Assistant;
+    old_assistant.content = {TextPart{"prior assistant"}};
+    snapshot.candidates = {old_user, old_assistant, candidate};
+    snapshot.prepend_history = true;
+    const auto prepended = admit_model_request(request, profile, spec.session_id, snapshot);
+    MIRA_CHECK(prepended);
+    auto input = prepended.value().request.input;
+    MIRA_CHECK(input.size() == request.input.size() + 3);
+    const auto original_user =
+        std::find_if(request.input.begin(), request.input.end(),
+                     [](const auto &item) { return item.role == ModelRole::User; });
+    const auto offset = std::distance(request.input.begin(), original_user);
+    const auto replay = input.begin() + offset;
+    MIRA_CHECK(replay->role == ModelRole::User && (replay + 1)->role == ModelRole::Assistant);
+    input.erase(replay, replay + 2);
+    input.pop_back();
+    MIRA_CHECK(prompt_digest(input) == prompt_digest(request.input));
+
+    ResponsesV1Mapper responses;
+    ChatCompletionsV1Mapper chat;
+    AnthropicMessagesV1Mapper messages;
+    NullArtifactSource artifacts;
+    const std::array<const IDialectMapper *, 3> dialects{&responses, &chat, &messages};
+    for (const auto *mapper : dialects) {
+        auto wire_profile = profile;
+        wire_profile.dialect = mapper->dialect();
+        const auto wire =
+            mapper->encode_request(prepended.value().request, wire_profile, false, artifacts);
+        MIRA_CHECK(wire);
+        const auto *turns = wire.value().find(mapper == &responses ? "input" : "messages");
+        MIRA_CHECK(turns && turns->as_array() && turns->as_array()->size() >= 3);
+        const auto serialized = to_json_string(*turns);
+        const auto old_question = serialized.find("prior user");
+        const auto old_answer = serialized.find("prior assistant");
+        const auto tool_round = serialized.find("native-1");
+        MIRA_CHECK(old_question < old_answer && old_answer < tool_round);
+        MIRA_CHECK(tool_round != std::string::npos);
+    }
+
+    auto budget = profile;
+    const ModelContextAdmissionConfig admission_config;
+    budget.capabilities.limits.max_context_tokens =
+        admitted.value().context.total_estimate.upper_bound +
+        admission_config.safety_margin_tokens + *request.generation.max_output_tokens + 256;
+    snapshot.candidates[0].content = {TextPart{std::string(8192, 'x')}};
+    const auto reduced = admit_model_request(request, budget, spec.session_id, snapshot);
+    MIRA_CHECK(reduced && reduced.value().request.input.size() == request.input.size() + 1);
+    MIRA_CHECK(reduced.value().context.budget.dropped_items == 2);
+    MIRA_CHECK(std::count_if(reduced.value().context.item_audit.begin(),
+                             reduced.value().context.item_audit.end(), [](const auto &item) {
+                                 return item.reason == "native_history_did_not_fit";
+                             }) == 2);
     return 0;
 }
 

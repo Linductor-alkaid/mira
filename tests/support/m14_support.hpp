@@ -48,6 +48,8 @@ class RecoveryScriptProvider final : public IModelProvider {
                 block_signal_.wait_for(lock, std::chrono::milliseconds(10));
             }
         }
+        if (throws_.load())
+            throw std::runtime_error("private provider diagnostic");
         if (context.cancelled()) {
             return make_model_error(ModelDomainCode::ModelCancelled, "recovery provider cancelled",
                                     false, request.operation_id);
@@ -76,6 +78,7 @@ class RecoveryScriptProvider final : public IModelProvider {
     // Race-scenario gate: park the next (and following) infer() calls until
     // release(); the cancellation probe still unblocks them.
     void block() { blocking_.store(true); }
+    void throw_on_infer() { throws_.store(true); }
     void release() {
         released_.store(true);
         block_signal_.notify_all();
@@ -101,6 +104,7 @@ class RecoveryScriptProvider final : public IModelProvider {
     std::size_t cursor_ = 0;
     std::vector<ModelRequest> requests_;
     std::atomic<bool> blocking_{false};
+    std::atomic<bool> throws_{false};
     std::atomic<bool> released_{false};
     std::atomic<bool> entered_{false};
     std::mutex block_mutex_;

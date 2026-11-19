@@ -365,9 +365,20 @@ WorkflowRecoveryOrchestrator::WorkflowRecoveryOrchestrator(kairo::Executor &exec
 }
 
 WorkflowRecoveryOrchestrator::~WorkflowRecoveryOrchestrator() {
-    if (!shut_down_.load()) {
-        static_cast<void>(shutdown());
+    if (shutdown().clean)
+        return;
+    // The bounded shutdown report lets an owner keep the orchestrator and
+    // retry. Destruction cannot release its state while an accepted job
+    // still uses it, even if an adapter ignored cooperative cancellation.
+    std::vector<std::shared_future<Result<WorkflowRecoveryAttempt>>> pending;
+    {
+        const std::lock_guard lock(mutex_);
+        for (const auto &entry : tracking_)
+            if (entry.second.pending.valid())
+                pending.push_back(entry.second.pending);
     }
+    for (const auto &future : pending)
+        future.wait();
 }
 
 void WorkflowRecoveryOrchestrator::set_event_store(std::shared_ptr<IEventStore> events) {
@@ -382,69 +393,107 @@ void WorkflowRecoveryOrchestrator::set_hooks(WorkflowRecoveryHooks hooks) {
 
 bool WorkflowRecoveryOrchestrator::shut_down() const noexcept { return shut_down_.load(); }
 
+namespace {
+bool recovery_pending(const std::shared_future<Result<WorkflowRecoveryAttempt>> &future) {
+    return future.valid() &&
+           future.wait_for(std::chrono::milliseconds::zero()) != std::future_status::ready;
+}
+} // namespace
+
+Result<WorkflowRecoveryAttempt>
+WorkflowRecoveryHandle::wait(std::chrono::milliseconds timeout) const {
+    if (!result.valid())
+        return recovery_error(ErrorCode::NotFound, "no recovery attempt was started");
+    if (result.wait_for(timeout) != std::future_status::ready)
+        return recovery_error(ErrorCode::DeadlineExceeded, "recovery attempt still in flight");
+    try {
+        return result.get();
+    } catch (...) {
+        return recovery_error(ErrorCode::Unavailable, "recovery executor did not settle the task");
+    }
+}
+
 Result<WorkflowRecoveryAttempt>
 WorkflowRecoveryOrchestrator::attempt_recovery(const WorkflowRunId &run_id) {
     auto cancel = std::make_shared<std::atomic_bool>(false);
-    return run_pipeline(run_id, cancel);
+    return guarded_pipeline(run_id, cancel, EventId::generate());
 }
 
 Result<void> WorkflowRecoveryOrchestrator::start_recovery(const WorkflowRunId &run_id) {
+    const auto started = start_recovery_tracked(run_id);
+    return started ? Result<void>{} : Result<void>{started.error()};
+}
+
+Result<WorkflowRecoveryHandle>
+WorkflowRecoveryOrchestrator::start_recovery_tracked(const WorkflowRunId &run_id) {
+    if (!runtime_.run_snapshot(run_id))
+        return recovery_error(ErrorCode::NotFound, "workflow run was not found");
+    evict_terminal_runs();
     auto cancel = std::make_shared<std::atomic_bool>(false);
-    {
-        std::lock_guard lock(mutex_);
-        if (!accepting_ || shut_down_.load()) {
-            return recovery_error(ErrorCode::Unavailable, "recovery orchestrator is shutting down");
-        }
-        const auto tracked = tracking_.find(run_id);
-        if (tracked != tracking_.end() &&
-            (tracked->second.in_flight || tracked->second.pending.valid())) {
-            return recovery_error(ErrorCode::InvalidState,
-                                  "a recovery attempt is already in flight for the run");
-        }
-        if (async_in_flight_ >= config_.max_concurrent_attempts) {
-            return recovery_error(ErrorCode::ResourceExhausted,
-                                  "concurrent recovery attempt capacity is exhausted", true);
-        }
-    }
-    std::shared_future<Result<WorkflowRecoveryAttempt>> shared;
+    const auto attempt_id = EventId::generate();
+    const std::lock_guard lock(mutex_);
+    if (!accepting_)
+        return recovery_error(ErrorCode::Unavailable, "recovery orchestrator is shutting down");
+    const auto tracked = tracking_.find(run_id);
+    if (tracked != tracking_.end() &&
+        (tracked->second.in_flight || recovery_pending(tracked->second.pending)))
+        return recovery_error(ErrorCode::InvalidState, "a recovery attempt is already in flight");
+    if ((tracked == tracking_.end() && tracking_.size() >= config_.max_tracked_runs) ||
+        static_cast<std::size_t>(
+            std::count_if(tracking_.begin(), tracking_.end(), [](const auto &entry) {
+                return recovery_pending(entry.second.pending);
+            })) >= config_.max_concurrent_attempts)
+        return recovery_error(ErrorCode::ResourceExhausted, "recovery attempt capacity exhausted",
+                              true);
+
+    const bool new_run = tracked == tracking_.end();
     try {
-        auto future =
-            executor_.submit_auto([this, run_id, cancel] { return run_pipeline(run_id, cancel); });
-        shared = future.share();
-    } catch (const std::exception &exception) {
-        return recovery_error(ErrorCode::ResourceExhausted, exception.what(), true);
-    }
-    {
-        std::lock_guard lock(mutex_);
         auto &entry = tracking_[run_id];
-        entry.pending = std::move(shared);
-        ++async_in_flight_;
+        auto future = executor_
+                          .submit_auto([this, run_id, cancel, attempt_id] {
+                              // Publish this submission before its worker can settle.
+                              { const std::lock_guard admitted(mutex_); }
+                              return guarded_pipeline(run_id, cancel, attempt_id);
+                          })
+                          .share();
+        if (!future.valid() ||
+            future.wait_for(std::chrono::milliseconds::zero()) == std::future_status::ready) {
+            // The worker cannot publish while the admission lock is held.
+            // An immediately ready future is the Executor rejecting submission.
+            if (new_run)
+                tracking_.erase(run_id);
+            return recovery_error(ErrorCode::ResourceExhausted,
+                                  "recovery executor rejected submission", true);
+        }
+        entry.cancel_flag = cancel;
+        entry.pending = future;
+        entry.last_result.reset();
+        return WorkflowRecoveryHandle{attempt_id, std::move(future)};
+    } catch (...) {
+        // Re-check by key since insertion could have rehashed the table.
+        if (auto entry = tracking_.find(run_id);
+            entry != tracking_.end() && !entry->second.last_result &&
+            !entry->second.pending.valid() && entry->second.ordinal == 0)
+            tracking_.erase(entry);
+        return recovery_error(ErrorCode::ResourceExhausted, "recovery executor rejected submission",
+                              true);
     }
-    return Result<void>{};
 }
 
 Result<WorkflowRecoveryAttempt>
 WorkflowRecoveryOrchestrator::wait_recovery(const WorkflowRunId &run_id,
                                             std::chrono::milliseconds timeout) {
-    std::shared_future<Result<WorkflowRecoveryAttempt>> pending;
+    WorkflowRecoveryHandle handle;
     {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         const auto tracked = tracking_.find(run_id);
-        if (tracked == tracking_.end()) {
+        if (tracked == tracking_.end())
             return recovery_error(ErrorCode::NotFound, "no recovery attempt was started");
-        }
-        if (tracked->second.last_result.has_value()) {
-            return tracked->second.last_result.value();
-        }
-        if (!tracked->second.pending.valid()) {
-            return recovery_error(ErrorCode::NotFound, "no recovery attempt was started");
-        }
-        pending = tracked->second.pending;
+        if (!recovery_pending(tracked->second.pending) && tracked->second.last_result)
+            return *tracked->second.last_result;
+        handle.result = tracked->second.pending;
     }
-    if (pending.wait_for(timeout) != std::future_status::ready) {
-        return recovery_error(ErrorCode::DeadlineExceeded, "recovery attempt still in flight");
-    }
-    return pending.get();
+    return handle.wait(timeout);
 }
 
 Result<void> WorkflowRecoveryOrchestrator::cancel_recovery(const WorkflowRunId &run_id) {
@@ -452,7 +501,7 @@ Result<void> WorkflowRecoveryOrchestrator::cancel_recovery(const WorkflowRunId &
     {
         std::lock_guard lock(mutex_);
         const auto tracked = tracking_.find(run_id);
-        if (tracked != tracking_.end() && tracked->second.in_flight) {
+        if (tracked != tracking_.end()) {
             flag = tracked->second.cancel_flag;
         }
     }
@@ -470,10 +519,10 @@ WorkflowRecoveryShutdownReport WorkflowRecoveryOrchestrator::shutdown() {
         accepting_ = false;
         shut_down_.store(true);
         for (auto &entry : tracking_) {
-            if (entry.second.in_flight && entry.second.cancel_flag != nullptr) {
+            if (entry.second.cancel_flag != nullptr) {
                 entry.second.cancel_flag->store(true);
             }
-            if (entry.second.pending.valid()) {
+            if (recovery_pending(entry.second.pending)) {
                 pending.push_back(entry.second.pending);
             }
         }
@@ -495,7 +544,8 @@ WorkflowRecoveryShutdownReport WorkflowRecoveryOrchestrator::shutdown() {
             continue;
         }
         ++report.drained_attempts;
-        const auto settled = future.get();
+        const auto settled =
+            WorkflowRecoveryHandle{{}, future}.wait(std::chrono::milliseconds::zero());
         if (settled.has_value() && (settled.value().reason_code == "cancelled" ||
                                     settled.value().reason_code == "shutdown")) {
             ++report.cancelled_attempts;
@@ -515,7 +565,7 @@ void WorkflowRecoveryOrchestrator::evict_terminal_runs() {
     {
         std::lock_guard lock(mutex_);
         for (auto &entry : tracking_) {
-            if (!entry.second.in_flight && !entry.second.pending.valid()) {
+            if (!entry.second.in_flight && !recovery_pending(entry.second.pending)) {
                 candidates.push_back(entry.first);
             }
         }
@@ -534,7 +584,7 @@ void WorkflowRecoveryOrchestrator::evict_terminal_runs() {
     for (const auto &run_id : terminal) {
         const auto tracked = tracking_.find(run_id);
         if (tracked != tracking_.end() && !tracked->second.in_flight &&
-            !tracked->second.pending.valid()) {
+            !recovery_pending(tracked->second.pending)) {
             tracking_.erase(tracked);
         }
     }
@@ -564,7 +614,9 @@ WorkflowRecoveryOrchestrator::admit(const WorkflowRunId &run_id, WorkflowRunStat
             settled_rejection(WorkflowRecoveryOutcome::Aborted, "not-waiting-agent", existing);
             return admission;
         }
-        if (tracked != tracking_.end() && tracked->second.in_flight) {
+        if (tracked != tracking_.end() &&
+            (tracked->second.in_flight || (recovery_pending(tracked->second.pending) &&
+                                           tracked->second.cancel_flag != cancel))) {
             settled_rejection(WorkflowRecoveryOutcome::Aborted, "attempt-in-progress", existing);
             return admission;
         }
@@ -598,19 +650,17 @@ void WorkflowRecoveryOrchestrator::settle_tracking(const WorkflowRecoveryAttempt
     }
     tracked->second.in_flight = false;
     tracked->second.cancel_flag = nullptr;
-    if (tracked->second.pending.valid()) {
-        --async_in_flight_;
-        tracked->second.pending = {};
-    }
     tracked->second.last_result = attempt;
 }
 
-void WorkflowRecoveryOrchestrator::record_early_result(const WorkflowRecoveryAttempt &attempt) {
+void WorkflowRecoveryOrchestrator::record_early_result(
+    const WorkflowRecoveryAttempt &attempt, const std::shared_ptr<std::atomic_bool> &cancel) {
     std::lock_guard lock(mutex_);
     const auto tracked = tracking_.find(attempt.run_id);
     // Never shadow an in-flight attempt: a duplicate notification's
     // rejection is a side observation, not the pending attempt's result.
-    if (tracked != tracking_.end() && !tracked->second.in_flight) {
+    if (tracked != tracking_.end() && !tracked->second.in_flight &&
+        (!recovery_pending(tracked->second.pending) || tracked->second.cancel_flag == cancel)) {
         tracked->second.last_result = attempt;
     }
 }
@@ -640,12 +690,15 @@ void WorkflowRecoveryOrchestrator::emit_attempt(const WorkflowRecoveryAttempt &a
     event.lessons_unparseable = attempt.lessons_unparseable;
     event.lessons_kept = attempt.lessons_kept;
     AppendRequest append;
-    append.event_id = EventId::generate();
+    append.event_id = attempt.attempt_id;
     append.runtime_id = runtime_id_;
     append.session_id = session_;
     append.task_id = carrier.is_nil() ? std::optional<TaskId>{} : std::optional<TaskId>{carrier};
     append.payload = to_event_payload(event);
-    if (!events->append(append).has_value()) {
+    try {
+        if (!events->append(append))
+            ++event_emit_failures_;
+    } catch (...) {
         ++event_emit_failures_;
     }
 }
@@ -775,10 +828,39 @@ WorkflowRecoveryOrchestrator::assemble_context(const WorkflowAgentContinuation &
 }
 
 Result<WorkflowRecoveryAttempt>
+WorkflowRecoveryOrchestrator::guarded_pipeline(const WorkflowRunId &run_id,
+                                               const std::shared_ptr<std::atomic_bool> &cancel,
+                                               EventId attempt_id) {
+    try {
+        return run_pipeline(run_id, cancel, attempt_id);
+    } catch (...) {
+        WorkflowRecoveryAttempt attempt;
+        attempt.run_id = run_id;
+        attempt.attempt_id = attempt_id;
+        attempt.reason_code = "recovery-exception";
+        {
+            const std::lock_guard lock(mutex_);
+            if (auto tracked = tracking_.find(run_id);
+                tracked != tracking_.end() && tracked->second.cancel_flag == cancel) {
+                attempt.ordinal = tracked->second.ordinal;
+                tracked->second.in_flight = false;
+                tracked->second.cancel_flag.reset();
+                tracked->second.last_result = attempt;
+            }
+        }
+        emit_attempt(attempt, {});
+        notify_hooks(attempt);
+        return attempt;
+    }
+}
+
+Result<WorkflowRecoveryAttempt>
 WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
-                                           const std::shared_ptr<std::atomic_bool> &cancel) {
+                                           const std::shared_ptr<std::atomic_bool> &cancel,
+                                           EventId attempt_id) {
     WorkflowRecoveryAttempt attempt;
     attempt.run_id = run_id;
+    attempt.attempt_id = attempt_id;
 
     // --- Stage 1: trigger & admission (design §4.1) -------------------------
     const auto snapshot = runtime_.run_snapshot(run_id);
@@ -796,8 +878,9 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
         }
         if (retried.settled.has_value()) {
             attempt = retried.settled.value();
+            attempt.attempt_id = attempt_id;
             attempt.workflow_id = snapshot.value().workflow_id;
-            record_early_result(attempt);
+            record_early_result(attempt, cancel);
             emit_attempt(attempt, TaskId{});
             notify_hooks(attempt);
             return attempt;
@@ -805,6 +888,7 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
         attempt.ordinal = retried.ordinal;
     } else if (admission.settled.has_value()) {
         attempt = admission.settled.value();
+        attempt.attempt_id = attempt_id;
         attempt.workflow_id = snapshot.value().workflow_id;
         // The carrier is known when the run is still WaitingAgent; late or
         // duplicate notifications for moved-on runs carry a nil carrier.
@@ -815,7 +899,7 @@ WorkflowRecoveryOrchestrator::run_pipeline(const WorkflowRunId &run_id,
                 carrier = continuation.value().carrier_task_id;
             }
         }
-        record_early_result(attempt);
+        record_early_result(attempt, cancel);
         emit_attempt(attempt, carrier);
         notify_hooks(attempt);
         return attempt;

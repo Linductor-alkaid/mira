@@ -2,6 +2,7 @@
 #include <mira/model_digest.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <tuple>
@@ -108,9 +109,30 @@ Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
         }
         build.items.push_back(candidate);
     }
-    auto selected = StandardContextManager{counter}.prepare(build);
+    const StandardContextManager manager{counter};
+    auto selected = manager.prepare(build);
     if (!selected)
         return selected.error();
+    std::vector<std::pair<std::size_t, ContextItemAudit>> omitted_history;
+    if (snapshot.prepend_history) {
+        for (std::size_t i = original_count; i < build.items.size(); ++i)
+            if (build.items[i].wire_role)
+                omitted_history.emplace_back(i, selected.value().item_audit[i]);
+        const auto dropped =
+            std::count_if(omitted_history.begin(), omitted_history.end(), [](const auto &entry) {
+                return entry.second.disposition == ContextItemDisposition::Dropped;
+            });
+        if (dropped != 0 && dropped != std::ssize(omitted_history)) {
+            // A partial native transcript can replay an answer without its
+            // question. Give the freed budget to the other candidates.
+            std::erase_if(build.items, [](const auto &item) { return item.wire_role.has_value(); });
+            selected = manager.prepare(build);
+            if (!selected)
+                return selected.error();
+        } else {
+            omitted_history.clear();
+        }
+    }
     if (selected.value().tools.size() != request.tools.size())
         return make_context_error(ContextDomainCode::MinimumSetTooLarge,
                                   "selected tool schemas exceed the complete request budget");
@@ -127,13 +149,43 @@ Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
         return std::tuple{partition_of(build.items[a].kind), build.items[a].sequence, a} <
                std::tuple{partition_of(build.items[b].kind), build.items[b].sequence, b};
     });
-    for (std::size_t i = 0; i < order.size(); ++i)
-        if (order[i] >= original_count)
-            admitted.request.input.push_back(admitted.context.input[i]);
+    std::vector<ModelInputItem> prefix;
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        if (order[i] < original_count)
+            continue;
+        auto &destination = snapshot.prepend_history && build.items[order[i]].wire_role
+                                ? prefix
+                                : admitted.request.input;
+        destination.push_back(admitted.context.input[i]);
+    }
+    if (!prefix.empty()) {
+        // Work with the validated original envelope, never with the compacted
+        // Layer 0 copy. Insertion cannot split an existing tool round trip.
+        const auto current =
+            std::find_if(request.input.begin(), request.input.end(), [](const auto &item) {
+                return item.role != ModelRole::System && item.role != ModelRole::Developer;
+            });
+        if (current == request.input.end() || current->role != ModelRole::User ||
+            std::any_of(current->content.begin(), current->content.end(), [](const auto &part) {
+                return std::holds_alternative<ToolResultPart>(part);
+            }))
+            return invalid("recalled history requires an original leading user message");
+        admitted.request.input.insert(
+            admitted.request.input.begin() + std::distance(request.input.begin(), current),
+            std::make_move_iterator(prefix.begin()), std::make_move_iterator(prefix.end()));
+    }
     if (admitted.request.input.size() > profile.capabilities.limits.max_input_items)
         return invalid("complete request exceeds profile input item capacity");
     if (auto valid = validate_model_request(admitted.request); !valid)
         return valid.error();
+    for (auto &[index, audit] : omitted_history) {
+        audit.disposition = ContextItemDisposition::Dropped;
+        audit.reason = "native_history_did_not_fit";
+        const auto offset = static_cast<std::ptrdiff_t>(index);
+        admitted.context.item_audit.insert(admitted.context.item_audit.begin() + offset,
+                                           std::move(audit));
+        ++admitted.context.budget.dropped_items;
+    }
     admitted.context.selection_digest =
         digest_string(admitted.context.selection_digest.to_string() +
                       model_request_canonical_digest(admitted.request).to_string());

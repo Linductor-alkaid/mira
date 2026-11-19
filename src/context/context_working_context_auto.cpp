@@ -372,10 +372,13 @@ class WorkingContextAutoCurator::Impl final {
             if (elapsed >= budget) {
                 return;
             }
-            (void)chain.in_flight->wait_for(budget - elapsed);
-            if (chain.in_flight->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                record_outcome(chain, chain.in_flight->get());
-                chain.in_flight.reset();
+            try {
+                if (chain.in_flight->wait_for(budget - elapsed) == std::future_status::ready) {
+                    (void)chain.in_flight->get();
+                }
+            } catch (...) {
+                // Explicit drain reports outcomes. Teardown has no observer
+                // and must remain safe even if the executor future failed.
             }
         }
     }

@@ -206,6 +206,10 @@ class MemoryAgentService final {
     [[nodiscard]] Result<void> retire(TaskId task);
     // Takeover/revocation: closes every mode including Record.
     [[nodiscard]] Result<void> revoke(TaskId task);
+    // Permanently relinquish a retired/revoked binding once its work has
+    // settled. Keeps scope erasure barriers and any outstanding result futures.
+    // The trusted host must never reuse TaskIds. Pending jobs reject release.
+    [[nodiscard]] Result<void> release_work(TaskId task);
     // Must precede out-of-service mutations; invalidates all dependent work.
     [[nodiscard]] Result<void> invalidate_scope(const MemoryScope &scope);
     [[nodiscard]] Result<ErasureResult> erase_scope(const MemoryScope &scope);

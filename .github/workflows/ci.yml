@@ -28,8 +28,13 @@ jobs:
             echo "CXX=g++" >> "$GITHUB_ENV"
             echo "CC=gcc" >> "$GITHUB_ENV"
           fi
+      - name: Install optional PNG dependency
+        if: matrix.compiler == 'gcc' && matrix.build_type == 'Release'
+        run: sudo apt-get update && sudo apt-get install -y libpng-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        env:
+          MIRA_PNG: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' && 'ON' || 'OFF' }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DMIRA_WITH_PNG="$MIRA_PNG"
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test

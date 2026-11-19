@@ -136,15 +136,35 @@ class MemoryArtifactStore final : public IArtifactStore {
     std::unique_ptr<Impl> impl_;
 };
 
+struct FileArtifactDirectoryBudget final {
+    // Exclusive owner file-length budget. Zero preserves legacy behavior.
+    std::uint64_t limit_bytes = 0;
+    std::uint64_t erase_reserve_bytes = 0;
+};
+
+struct FileArtifactCapacity final {
+    std::uint64_t file_bytes = 0;
+    std::size_t entries_scanned = 0;
+};
+
+enum class FileArtifactCommitState : std::uint8_t { Missing, Committed, UnindexedObject, Erased };
+
 class FileArtifactStore final : public IArtifactStore {
   public:
     FileArtifactStore(std::filesystem::path root,
-                      std::size_t max_total_bytes = 2ULL * 1024ULL * 1024ULL * 1024ULL);
+                      std::size_t max_total_bytes = 2ULL * 1024ULL * 1024ULL * 1024ULL,
+                      FileArtifactDirectoryBudget directory_budget = {});
     ~FileArtifactStore() override;
     Result<ArtifactWriter> begin(const ArtifactWriteSpec &) override;
     Result<ArtifactDescriptor> commit(ArtifactWriter &) override;
     Result<ArtifactReader> open(const ArtifactDescriptor &) const override;
     Result<ErasureReceipt> erase(const ArtifactErasureRequest &) override;
+
+    // Get the stable descriptor before commit and inspect its outcome after
+    // restart. Neither call adopts or removes an unindexed object.
+    [[nodiscard]] Result<ArtifactDescriptor> planned_descriptor(const ArtifactWriter &) const;
+    [[nodiscard]] Result<FileArtifactCommitState> inspect_commit(const ArtifactDescriptor &) const;
+    [[nodiscard]] Result<FileArtifactCapacity> directory_capacity() const;
 
   private:
     class Impl;
