@@ -3,7 +3,7 @@
 > 状态：Completed（原 M14-01～07；M14-08 已完成 Linux 源码/下游验收，目标平台另列）
 
 2026-11-14：`M14-08`（Completed，Linux 下游增量）按
-[DEC-112](../decisions/DEC-112-recovery-output-mode.md) 补齐显式 Text/JsonObject 决策协议、
+[DEC-117](../decisions/DEC-117-recovery-output-mode.md) 补齐显式 Text/JsonObject 决策协议、
 同源 schema 供给、生成预算与本地校验回归；旧严格模式保持默认，不自动降级。
 
 验证：下游 Mirage 直接编译本仓库 m14_recovery_test.cpp 的
@@ -23,7 +23,7 @@ Ubuntu 24.04.5 x86_64/GCC 13.3/CMake 3.28.3/Ninja；TSAN 用 setarch -R。
 > [M10](m10-workflow-intervention-and-policy-set.md)（patch 管线与准入矩阵）、
 > 设计与决策已由 `MNT-202609-23` 冻结（DEC-031）
 > 建议发布点：Workflow recovery alpha
-> 更新日期：2026-09-10
+> 更新日期：2026-11-19
 
 ## 1. 目标
 
@@ -244,3 +244,9 @@ docs/sbom/platform-boundary）；合并提交 master pipeline run
 记录保留）。限制：Android 设备运行与真实 Provider 消费证据仍归 `MNT-202609-27`，
 本轮不外推为运行支持；恢复率/成本收益无 `MNT-202609-29` 对照前不作声明
 （`RISK-2026-052`）。里程碑退出条件逐项复核后关闭（`Completed`）。
+
+
+2026-11-19：M14-08 在主线 `3c8b671` 上合流，决策重新编号为 DEC-117。扩展
+`mira_m14_recovery_test`，覆盖 Text 和 JsonObject 拒绝带额外字段的非法决策、
+同协议内修复、同源 schema、生成预算及无工具约束。主线验收以本次 PR CI 为准。
+实际目标设备桌面和在线模型仍由 Mira/Mirage 维护者按宿主场景补验。

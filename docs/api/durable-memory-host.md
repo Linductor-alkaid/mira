@@ -21,7 +21,9 @@ Mira 不会因为宿主保存了聊天事件就自动启用长期记忆。需要
 返回明确错误；不可悄悄换成 MemoryEventStore/InMemoryContextIndex 后继续宣称持久化。
 应用构建需链接 `Mira::core`、`Mira::state_store` 与宿主使用的 kairo 目标。
 
-### 有界 SQLite 文件（DEC-111）
+### 有界 SQLite 文件
+
+见 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md)。
 
 SqliteMemoryStoreOptions.max_storage_bytes 默认为 0（保持旧行为）；设为 1 MiB～1 TiB
 开启独占文件接纳，capacity_reserve_bytes 必须小于限额。范围是数据库、WAL、SHM、

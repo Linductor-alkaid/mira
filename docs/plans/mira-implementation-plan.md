@@ -1,5 +1,11 @@
 # Mira 实施总计划
 
+2026-11-19：将 Mirage 已使用的 Mira 分支增量整合入主线。
+[DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md) 将有界 SQLite 文件
+准入与主线混合检索及 schema 迁移合流，[DEC-117](../decisions/DEC-117-recovery-output-mode.md)
+提供显式 Workflow 恢复输出协议与生成预算；嵌入式架构扫描按 Mira 根目录计算排除路径。
+主线验收见 [M31-13](m31-capacity-admission-and-archival-recovery.md) 与
+[M14-08](m14-recovery-orchestration.md)。
 2026-11-18（三）：[DEC-115](../decisions/DEC-115-write-path-decoupling.md)
 落地 Memory Core 写入面分层解耦——变异模型扩展（`AppendEvidence`/
 `PreserveAlternative`）、冲突分类处置（纪元接续 Supersede vs 有界并存）、

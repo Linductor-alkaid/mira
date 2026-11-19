@@ -77,7 +77,7 @@ struct SqliteMemoryStoreOptions final {
     // shipped ranking unless the host opts in.
     RetrievalWeights weights;
 
-    // DEC-111: optional aggregate file-length budget for this exclusively
+    // DEC-116: optional aggregate file-length budget for this exclusively
     // owned database and its WAL/SHM/rollback journal. Zero preserves legacy
     // unbounded behavior. Does not include artifacts, events or filesystem
     // block/directory overhead. Existing oversized files fail open unchanged.

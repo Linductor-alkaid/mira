@@ -382,8 +382,18 @@ class SqliteMemoryStore::Impl final {
 
     template <class T, class Op> Result<T> run(Op op) const {
         return channel_->run<T>([this, op = std::move(op)](sqlite3 *db) -> Result<T> {
-            if (capacity_)
+            struct ResetCapacity {
+                storage::MemoryCapacityVfs *capacity;
+                ~ResetCapacity() {
+                    if (capacity) {
+                        capacity->reset_rejection();
+                    }
+                }
+            };
+            ResetCapacity reset{capacity_.get()};
+            if (capacity_) {
                 capacity_->reset_rejection();
+            }
             auto result = op(db);
             if (!result && capacity_ && capacity_->rejected())
                 return storage::memory_capacity_error();
@@ -2560,12 +2570,7 @@ std::size_t SqliteMemoryStore::pending_requests() const { return impl_->channel_
 
 void SqliteMemoryStore::set_worker_paused(bool paused) { impl_->channel_->set_paused(paused); }
 
-Result<void> SqliteMemoryStore::close() noexcept {
-    const auto closed = impl_->channel_->close();
-    if (closed && impl_->capacity_)
-        impl_->capacity_->reset_rejection(); // Final connection checkpoint may use reserve.
-    return closed;
-}
+Result<void> SqliteMemoryStore::close() noexcept { return impl_->channel_->close(); }
 
 Result<SqliteMemoryCapacitySnapshot> SqliteMemoryStore::capacity_snapshot() const {
     return impl_->run<SqliteMemoryCapacitySnapshot>(

@@ -1,8 +1,9 @@
-# DEC-111：SQLite Memory 文件总量边界
+# DEC-116：SQLite Memory 文件总量边界
 
 > 状态：Accepted（M31 的元数据首增量，非完整容量/遗忘交付）
 > 日期：2026-11-14；工作项：M31-13
 > 来源：Mirage MIRA-20261112-001；维护者已明确授权补齐 Mira 并升级 pin
+> 编号沿革：Mirage 原 pin 分支使用 DEC-111；主线合入时调整为 DEC-116。
 
 ## 决策
 

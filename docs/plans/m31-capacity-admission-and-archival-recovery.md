@@ -12,12 +12,12 @@
 > 价值信号是淘汰裁决的输入）；DEC-069 数值档位冻结（本立项完成）；
 > [`EXE-20261028-001`](../executor_feedback/ledger.md) 的临时边界确定
 > 建议发布点：非发布物；部署档位与有限容量契约的冻结锚点
-> 更新日期：2026-10-28（登记）
+> 更新日期：2026-11-19
 
 ## 1. 目标
 
 2026-11-14：维护者明确授权 Mirage 需求的元数据首增量。
-`M31-13`（Completed，Linux 元数据首增量）按 [DEC-111](../decisions/DEC-111-bounded-sqlite-memory-files.md)
+`M31-13`（Completed，Linux 元数据首增量）按 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md)
 冻结 SqliteMemoryStore 的独占文件总量接纳/预留/快照与重开语义；不提前关闭 M31-01～12
 或宣称 Artifact/EventStore 与完整遗忘生命周期已交付。
 
@@ -157,6 +157,8 @@ Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weak
       份额已配置而该值为 0 即为键未流过接纳点），并检查事件与诊断输出中
       **不出现主体身份原文**（上游 R-2 脱敏约定）。
 - [ ] `M31-12` 文档同步。
+- [ ] `M31-13` 独占 SQLite 文件总量准入和快照。原分支已在下游完成限定验收，
+      主线合流需验证旧库迁移、向量修复与配额共存，并通过 PR CI。
 
 ## 6. 测试与退出条件
 
@@ -217,3 +219,16 @@ Linux/Android/sanitizer job 通过。文件白名单原用 std::filesystem::weak
 该文件既有拆分债务仍保留。修正后直接运行检查器回归通过（3 种父路径），真实扫描
 显示 16 项既有债务、0 stale、0 新违规。文档/SBOM/平台边界检查通过。CI 结果另记
 Mirage M15-17；未把其他项目仍开放的设备/断电验收改为通过。
+
+
+### 2026-11-19：M31-13 主线合流
+
+以主线 `3c8b671` 为基线，移植旧 pin `2c42627` 的独占文件准入和嵌入式架构扫描。
+合流保留主线的检索权重、向量生产者身份和 1.1 → 1.3 schema 迁移。新增回归从
+旧格式数据库启用配额，检查迁移、重建向量、实际容量与重开后投影。SQLite 回滚结束后
+恢复硬水位，让关闭时的 checkpoint 可以使用预留。
+
+验证入口为 `mira_m31_memory_capacity_test`、`mira_m4_sqlite_memory_test`、
+`mira_hybrid_retrieval_host_consumer_test`、`mira_extraction_supply_host_consumer_test`
+及 PR CI。跨 store 回收、物理块占用和真实断电需由 Mira Maintainers 在相应接口与
+故障注入环境就绪后补验。

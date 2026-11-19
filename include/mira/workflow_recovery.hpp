@@ -65,7 +65,7 @@ struct WorkflowRecoveryConfig final {
     std::size_t max_tracked_runs = 32;
     // Profile routing the recovery decision request; required.
     ModelProfileId profile_id;
-    // DEC-112: explicit wire contract; local decision/patch validation is
+    // DEC-117: explicit wire contract; local decision/patch validation is
     // identical in every mode. No implicit downgrade or protocol retry.
     OutputMode decision_output_mode = OutputMode::StrictJsonSchema;
     std::uint64_t max_output_tokens = 2048;

@@ -3,7 +3,7 @@
 #include <mira/sqlite_memory_store.hpp>
 
 namespace mira::storage {
-// DEC-111: lifetime encloses the SQLite connection. Initial open is serial;
+// DEC-116: lifetime encloses the SQLite connection. Initial open is serial;
 // after opening, all access is on the existing StoreChannel worker.
 class MemoryCapacityVfs final {
   public:

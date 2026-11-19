@@ -218,6 +218,52 @@ int malformed_decisions_repair_then_defer() {
     return 0;
 }
 
+int explicit_output_modes_use_the_same_local_schema() {
+    for (const auto mode : {OutputMode::Text, OutputMode::JsonObject}) {
+        RecoveryFixture fixture;
+        ScriptedTool tool{std::vector<int>{1}};
+        MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted"))
+                       .has_value());
+        const auto run = fixture.workflow_->create_run(
+            escalate_definition(WorkflowPolicy::Recoverable), JsonValue{}, std::nullopt);
+        MIRA_CHECK(run.has_value());
+        MIRA_CHECK(
+            fixture.workflow_->execute_run(run.value().run_id, run_context(fixture)).has_value());
+
+        // The extra property violates the shared schema. The run may resume only
+        // after the next, valid decision, without switching the wire contract.
+        fixture.provider_->add_response(
+            text_response(R"({"action":"resume","rationale":"invalid","unexpected":true})"));
+        fixture.provider_->add_response(text_response(resume_decision("valid recovery")));
+        auto orchestrator = fixture.make_orchestrator([mode](WorkflowRecoveryConfig &config) {
+            config.decision_output_mode = mode;
+            config.max_output_tokens = 512;
+            config.thinking = ThinkingMode::Disabled;
+        });
+        const auto attempt = orchestrator->attempt_recovery(run.value().run_id);
+        MIRA_CHECK(attempt.has_value());
+        MIRA_CHECK(attempt.value().outcome == WorkflowRecoveryOutcome::ResumedWithoutPatch);
+        const auto requests = fixture.provider_->requests();
+        MIRA_CHECK(requests.size() == 2);
+        for (const auto &request : requests) {
+            MIRA_CHECK(request.output_contract.mode == mode);
+            MIRA_CHECK(request.generation.max_output_tokens == 512);
+            MIRA_CHECK(request.generation.thinking == ThinkingMode::Disabled);
+            MIRA_CHECK(request.tools.empty());
+            MIRA_CHECK(request.tool_choice == ToolChoice::None);
+            const auto &prompt = std::get<TextPart>(request.input.front().content.front());
+            MIRA_CHECK(prompt.text.find(canonical_json_string(
+                           request.output_contract.schema.root)) != std::string::npos);
+        }
+        const auto settled =
+            fixture.workflow_->wait_run(run.value().run_id, std::chrono::seconds(10));
+        MIRA_CHECK(settled.has_value() && settled.value().state == WorkflowRunState::Completed);
+        MIRA_CHECK(orchestrator->shutdown().clean);
+        MIRA_CHECK(fixture.workflow_->shutdown().clean);
+    }
+    return 0;
+}
+
 int refused_decisions_never_repair() {
     RecoveryFixture fixture;
     ScriptedTool tool{std::vector<int>{1}};
@@ -1018,6 +1064,14 @@ int config_validation_fails_closed() {
     broken = base;
     broken.profile_id = ModelProfileId{};
     MIRA_CHECK(!broken.validate().has_value());
+    broken = base;
+    broken.decision_output_mode = OutputMode::StrictFunctionTool;
+    MIRA_CHECK(!broken.validate().has_value());
+    broken = base;
+    broken.max_output_tokens = 127;
+    MIRA_CHECK(!broken.validate().has_value());
+    broken.max_output_tokens = 8193;
+    MIRA_CHECK(!broken.validate().has_value());
     bool threw = false;
     try {
         WorkflowRecoveryConfig empty;
@@ -1039,9 +1093,9 @@ int main() {
     const auto scenarios = std::to_array(
         {continuation_exposes_recovery_identity,
          decision_matrix_four_actions_reach_the_runtime_exits,
-         malformed_decisions_repair_then_defer, refused_decisions_never_repair,
-         unavailable_models_abort_without_touching_the_run, lesson_matrix_counts_filtering_layers,
-         cancellation_mid_request_aborts_and_keeps_the_run,
+         malformed_decisions_repair_then_defer, explicit_output_modes_use_the_same_local_schema,
+         refused_decisions_never_repair, unavailable_models_abort_without_touching_the_run,
+         lesson_matrix_counts_filtering_layers, cancellation_mid_request_aborts_and_keeps_the_run,
          host_cancellation_drift_discards_the_late_decision,
          host_patch_in_flight_does_not_invalidate_a_valid_decision,
          takeover_blocks_recovery_admission, attempt_budget_and_tracking_capacity_bound_the_loop,

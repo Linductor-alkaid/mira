@@ -171,6 +171,11 @@ lesson 数据经 continuation 透出）。
 
 ### 4.5 决策解析与校验
 
+[DEC-117](../decisions/DEC-117-recovery-output-mode.md) 为宿主提供显式协议和
+生成预算配置。默认 `StrictJsonSchema`，也可选择 `JsonObject` 或 `Text`。
+后两种将同源 schema 加入系统约束，三种均按同一闭集 schema 在本地验证。生成上限
+默认 2048 token，宿主可在 128～8192 内配置，并可显式设置思考模式。
+
 决策 schema（`mira.workflow.recovery-decision.v1`，JSON Schema 子集，
 `gate_schema_subset` 约束，草案）：
 

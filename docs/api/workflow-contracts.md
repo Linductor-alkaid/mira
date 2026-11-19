@@ -418,7 +418,9 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
 
 ## 兼容性与限制
 
-### 显式恢复输出协议（DEC-112 / M14-08）
+### 显式恢复输出协议（DEC-117 / M14-08）
+
+见 [DEC-117](../decisions/DEC-117-recovery-output-mode.md)。
 
 WorkflowRecoveryConfig.decision_output_mode 默认 StrictJsonSchema，也可显式指定
 JsonObject 或 Text；StrictFunctionTool 拒绝。非严格模式提供同一决策 schema 的系统
