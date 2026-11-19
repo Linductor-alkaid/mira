@@ -740,6 +740,57 @@ int shutdown_matrix_drains_and_rejects() {
     return 0;
 }
 
+int tracked_recovery_reuses_a_run_without_reusing_a_receipt() {
+    RecoveryFixture fixture;
+    ScriptedTool tool{std::vector<int>{1}};
+    MIRA_CHECK(register_registration(*fixture.fixture_.registry_, tool.registration("scripted")));
+    const auto run = fixture.workflow_->create_run(escalate_definition(WorkflowPolicy::Recoverable),
+                                                   JsonValue{}, std::nullopt);
+    MIRA_CHECK(run);
+    const auto id = run.value().run_id;
+    MIRA_CHECK(fixture.workflow_->execute_run(id, run_context(fixture)));
+    auto orchestrator =
+        fixture.make_orchestrator([](auto &config) { config.max_attempts_per_run = 2; });
+
+    fixture.provider_->add_response(text_response(need_user_decision("wait")));
+    const auto first = orchestrator->start_recovery_tracked(id);
+    MIRA_CHECK(first);
+    const auto first_result = first.value().wait(std::chrono::seconds(3));
+    MIRA_CHECK(first_result && first_result.value().reason_code == "decision-need-user");
+    MIRA_CHECK(first_result.value().attempt_id == first.value().attempt_id);
+
+    fixture.provider_->block();
+    fixture.provider_->throw_on_infer();
+    const auto second = orchestrator->start_recovery_tracked(id);
+    MIRA_CHECK(second && second.value().attempt_id != first.value().attempt_id);
+    const auto pending = orchestrator->wait_recovery(id, std::chrono::milliseconds(5));
+    fixture.provider_->release();
+    MIRA_CHECK(!pending && pending.error().code == ErrorCode::DeadlineExceeded);
+    const auto thrown = second.value().wait(std::chrono::seconds(3));
+    MIRA_CHECK(thrown && thrown.value().reason_code == "model-unavailable");
+    MIRA_CHECK(thrown.value().attempt_id == second.value().attempt_id);
+
+    const auto exhausted = orchestrator->start_recovery_tracked(id);
+    MIRA_CHECK(exhausted);
+    const auto newest = orchestrator->wait_recovery(id, std::chrono::seconds(3));
+    MIRA_CHECK(newest && newest.value().reason_code == "attempt-budget-exhausted");
+    MIRA_CHECK(newest.value().attempt_id == exhausted.value().attempt_id);
+    MIRA_CHECK(first.value().wait(std::chrono::milliseconds(0)).value().attempt_id ==
+               first.value().attempt_id);
+    EventQuery query;
+    query.session_id = fixture.fixture_.session_id_;
+    const auto events = fixture.fixture_.events_->read(query);
+    MIRA_CHECK(events);
+    MIRA_CHECK(std::any_of(events.value().events.begin(), events.value().events.end(),
+                           [&](const auto &event) {
+                               return event.event_id == newest.value().attempt_id &&
+                                      event.payload.type == "WorkflowRecoveryAttempted";
+                           }));
+    MIRA_CHECK(orchestrator->shutdown().clean);
+    MIRA_CHECK(fixture.workflow_->shutdown().clean);
+    return 0;
+}
+
 int event_emission_failure_never_breaks_the_attempt() {
     class FailingEventStore final : public IEventStore {
       public:
@@ -1099,7 +1150,9 @@ int main() {
          host_cancellation_drift_discards_the_late_decision,
          host_patch_in_flight_does_not_invalidate_a_valid_decision,
          takeover_blocks_recovery_admission, attempt_budget_and_tracking_capacity_bound_the_loop,
-         shutdown_matrix_drains_and_rejects, event_emission_failure_never_breaks_the_attempt,
+         shutdown_matrix_drains_and_rejects,
+         tracked_recovery_reuses_a_run_without_reusing_a_receipt,
+         event_emission_failure_never_breaks_the_attempt,
          end_to_end_lesson_reuse_with_full_event_correlation, security_negatives_fail_closed,
          recovery_event_payload_round_trips_fail_closed, config_validation_fails_closed});
     for (const auto scenario : scenarios) {
