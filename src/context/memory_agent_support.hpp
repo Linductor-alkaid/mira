@@ -53,6 +53,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
         MemoryWorkBinding binding;
         std::uint64_t revision = 1;
         std::uint64_t recorded_through = 0;
+        std::optional<SessionSequence> record_snapshot;
         bool active = true;
         bool revoked = false;
         bool input_pending = false;
@@ -68,6 +69,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
         MemoryWorkBinding binding;
         std::uint64_t revision = 0;
         std::uint64_t after_sequence = 0;
+        std::optional<SessionSequence> record_snapshot;
         OperationContext context;
         std::atomic<bool> cancelled{false};
         bool done = false;

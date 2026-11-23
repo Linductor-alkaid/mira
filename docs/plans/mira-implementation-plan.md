@@ -1,5 +1,18 @@
 # Mira 实施总计划
 
+2026-11-23：[DEC-122](../decisions/DEC-122-durable-conversation-index.md) 接通 SQLite
+会话片段与 FTS5 召回，并将其纳入 Session scope 擦除重放，见 [M30-12](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-20：[DEC-121](../decisions/DEC-121-indexed-event-slices.md) 在 M30 下接通事件
+切片和受管 Record 水位，详见 [M30-17](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-20：[DEC-120](../decisions/DEC-120-agent-persona-admission.md) 接通按租户及
+Agent ID 加载人格的目录与模型准入，详见 [M30-11](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-20：[DEC-119](../decisions/DEC-119-six-memory-systems.md) 冻结 M30 的六类记忆
+及其写入、检索与索引边界。首个增量按已交付 MemoryKind 接入宿主可配置的分类召回；
+实体、专用索引及验收进度见 [M30-10～16](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-19：将 Mirage 已使用的 Mira 分支增量整合入主线。
 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md) 将有界 SQLite 文件
 准入与主线混合检索及 schema 迁移合流，[DEC-117](../decisions/DEC-117-recovery-output-mode.md)

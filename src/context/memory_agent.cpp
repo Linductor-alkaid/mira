@@ -1,5 +1,7 @@
 #include "memory_agent_support.hpp"
 
+#include <mira/context_retrieval.hpp>
+
 #include <algorithm>
 
 namespace mira {
@@ -15,10 +17,13 @@ bool owns_scope(const MemoryWorkBinding &binding, const MemoryScope &scope) {
 } // namespace
 
 std::string memory_agent_support::scope_key(const MemoryScope &scope) {
+    return memory_erasure_scope_digest(scope).to_string();
+}
+
+Sha256Digest memory_erasure_scope_digest(const MemoryScope &scope) {
     return canonical_json_digest(JsonValue::Object{{"kind", memory_scope_kind_name(scope.kind)},
                                                    {"subject", scope.subject_id},
-                                                   {"tenant", scope.tenant_id.value_or("")}})
-        .to_string();
+                                                   {"tenant", scope.tenant_id.value_or("")}});
 }
 
 MemoryScope memory_user_scope(const PrincipalContext &principal) {
@@ -60,6 +65,21 @@ Result<void> MemoryAgentService::State::validate() const {
         config.preference_proposal_ttl > std::chrono::hours(24 * 30) ||
         !config.consolidation.validate())
         return error(ErrorCode::InvalidArgument, "invalid memory agent configuration");
+    std::set<MemoryKind> kinds;
+    std::size_t remaining_records = config.max_records;
+    std::size_t remaining_bytes = config.max_result_bytes;
+    for (const auto &group : config.recall_groups) {
+        if (group.kinds.empty() || group.max_records == 0 ||
+            group.max_records > remaining_records || group.max_bytes < 64 ||
+            group.max_bytes > remaining_bytes)
+            return error(ErrorCode::InvalidArgument, "invalid memory recall group limits");
+        for (const auto kind : group.kinds) {
+            if (memory_kind_policy(kind).kind != kind || !kinds.insert(kind).second)
+                return error(ErrorCode::InvalidArgument, "invalid or repeated recall group kind");
+        }
+        remaining_records -= group.max_records;
+        remaining_bytes -= group.max_bytes;
+    }
     return {};
 }
 
@@ -81,6 +101,7 @@ Result<void> MemoryAgentService::initialize() {
     if (s.initialized)
         return {};
     EventQuery query{memory_agent_support::control_partition(), std::nullopt, 256};
+    std::set<std::string> conversation_erasure;
     do {
         auto page = s.events->read(query);
         if (!page)
@@ -107,6 +128,13 @@ Result<void> MemoryAgentService::initialize() {
             const auto *key = payload ? payload.value().find("scope_digest") : nullptr;
             if (!key || !key->is_string() || !digest_from_hex(*key->as_string()))
                 return error(ErrorCode::DataLoss, "memory erasure barrier is malformed");
+            if (s.config.conversation_index) {
+                const auto *kind = payload.value().find("scope_kind");
+                if (kind && (!kind->is_string() || !memory_scope_kind_from(*kind->as_string())))
+                    return error(ErrorCode::DataLoss, "memory erasure scope kind is malformed");
+                if (!kind || *kind->as_string() == "session")
+                    conversation_erasure.insert(*key->as_string());
+            }
             s.blocked_scopes.insert(*key->as_string());
             if (auto erased = s.erase_projections(*key->as_string()); !erased)
                 return erased;
@@ -121,6 +149,10 @@ Result<void> MemoryAgentService::initialize() {
         if (page.value().events.empty())
             return error(ErrorCode::DataLoss, "memory erasure barrier scan made no progress");
     } while (true);
+    for (const auto &scope : conversation_erasure)
+        if (auto erased = s.config.conversation_index->erase_scope(*digest_from_hex(scope));
+            !erased)
+            return erased;
     for (const auto &scope : s.blocked_scopes) {
         if (auto erased = s.erase_projections(scope); !erased)
             return erased;
@@ -284,12 +316,17 @@ Result<ErasureResult> MemoryAgentService::erase_scope(const MemoryScope &scope) 
     barrier.session_id = memory_agent_support::control_partition();
     barrier.payload = {
         "mira.memory-agent.scope-erased.v1",
-        to_json_string(JsonValue::Object{{"scope_digest", memory_agent_support::scope_key(scope)}}),
+        to_json_string(JsonValue::Object{{"scope_digest", memory_agent_support::scope_key(scope)},
+                                         {"scope_kind", memory_scope_kind_name(scope.kind)}}),
         EventClass::Critical};
     barrier.required = Durability::ProcessCrash;
     auto stored = s.events->append(barrier);
     if (!stored || stored.value().achieved < Durability::ProcessCrash)
         return error(ErrorCode::DataLoss, "memory erasure barrier was not durably stored");
+    Result<void> conversation_erasure;
+    if (scope.kind == MemoryScopeKind::Session && s.config.conversation_index)
+        conversation_erasure =
+            s.config.conversation_index->erase_scope(memory_erasure_scope_digest(scope));
     if (auto erased = s.erase_projections(memory_agent_support::scope_key(scope)); !erased)
         return erased.error();
     if (auto erased = s.erase_preference_bodies(memory_agent_support::scope_key(scope), true);
@@ -298,7 +335,12 @@ Result<ErasureResult> MemoryAgentService::erase_scope(const MemoryScope &scope) 
     ErasureRequest request;
     request.scope = scope;
     request.reason = "memory-agent-host-erasure";
-    return s.memory->erase(request);
+    auto erased = s.memory->erase(request);
+    if (!erased)
+        return erased.error();
+    if (!conversation_erasure)
+        return conversation_erasure.error();
+    return erased;
 }
 
 bool MemoryAgentService::State::current(const Job &job) const {

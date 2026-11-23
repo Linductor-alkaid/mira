@@ -296,41 +296,6 @@ struct Row final {
     return decoded;
 }
 
-[[nodiscard]] std::string fts_match_expression(const std::string &text) {
-    // Neutralize FTS5 syntax: every whitespace token becomes a quoted
-    // phrase and terms combine with AND, so user text can never inject
-    // operators while multi-word queries still match like a keyword AND.
-    std::string expression;
-    std::string token;
-    const auto flush = [&expression, &token]() {
-        if (token.empty()) {
-            return;
-        }
-        std::string escaped;
-        for (const char character : token) {
-            if (character == '"') {
-                escaped += "\"\"";
-            } else {
-                escaped += character;
-            }
-        }
-        if (!expression.empty()) {
-            expression += " AND ";
-        }
-        expression += "\"" + escaped + "\"";
-        token.clear();
-    };
-    for (const char character : text) {
-        if (std::isspace(static_cast<unsigned char>(character)) != 0) {
-            flush();
-        } else {
-            token += character;
-        }
-    }
-    flush();
-    return expression;
-}
-
 } // namespace
 
 Result<void> RetrievalWeights::validate() const {
@@ -1310,7 +1275,7 @@ class SqliteMemoryStore::Impl final {
                               " ORDER BY rank LIMIT 512");
             if (fts.valid()) {
                 result.quality.fts_leg_ran = true;
-                const std::string expression = fts_match_expression(request.text);
+                const std::string expression = storage::fts_match_expression(request.text);
                 sqlite3_bind_text(fts.get(), 1, expression.c_str(), -1, storage::transient_copy());
                 sqlite3_bind_text(fts.get(), 2, eligible_json.c_str(), -1,
                                   storage::transient_copy());

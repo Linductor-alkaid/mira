@@ -19,6 +19,7 @@ class Executor;
 }
 namespace mira {
 class IUserInputSink;
+class IConversationContextIndex;
 
 // Stable internal scope mapping, domain-separated by tenant and identity.
 [[nodiscard]] MemoryScope memory_user_scope(const PrincipalContext &principal);
@@ -26,6 +27,7 @@ class IUserInputSink;
                                                SessionId session);
 [[nodiscard]] MemoryScope memory_application_scope(const PrincipalContext &principal,
                                                    std::string_view application_id);
+[[nodiscard]] Sha256Digest memory_erasure_scope_digest(const MemoryScope &scope);
 
 enum class MemoryAgentMode : std::uint8_t { Recall, Record, Compress };
 
@@ -150,6 +152,14 @@ struct MemoryAgentHandle final {
     std::shared_future<Result<MemoryAgentResult>> result;
 };
 
+// A host-configured candidate pool for Recall. Each kind may appear in only
+// one group. Limits apply across the initial query and all follow-up queries.
+struct MemoryRecallGroup final {
+    std::vector<MemoryKind> kinds;
+    std::size_t max_records = 0;
+    std::size_t max_bytes = 0; // Includes the framed context item.
+};
+
 struct MemoryAgentConfig final {
     std::size_t max_works = 64;
     std::size_t max_jobs = 64;
@@ -167,6 +177,11 @@ struct MemoryAgentConfig final {
     ConsolidationPolicy consolidation;
     std::size_t max_preference_proposals = 256;
     std::chrono::seconds preference_proposal_ttl{std::chrono::hours(24)};
+    // Empty preserves the existing unfiltered recall. Nonempty groups run in
+    // order within the same work scopes. Their limits must fit the job limits.
+    std::vector<MemoryRecallGroup> recall_groups;
+    // Optional durable participant in session-scope erasure and startup replay.
+    std::shared_ptr<IConversationContextIndex> conversation_index;
 };
 
 // DEC-101: host owner, not a perpetual child of the frontend run. Stores and

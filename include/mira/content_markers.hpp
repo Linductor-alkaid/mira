@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mira {
@@ -11,5 +12,7 @@ namespace mira {
 // Matching folds ASCII A-Z only. These defaults do not replace ACL or approval.
 [[nodiscard]] std::vector<std::string> default_forbidden_content_markers();
 [[nodiscard]] std::vector<std::string> default_injection_content_markers();
+[[nodiscard]] bool matches_content_marker(std::string_view text,
+                                          const std::vector<std::string> &markers);
 
 } // namespace mira

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <stdexcept>
 
@@ -10,6 +11,41 @@ namespace mira::storage {
 // ---------------------------------------------------------------------------
 // Database helpers
 // ---------------------------------------------------------------------------
+
+[[nodiscard]] std::string fts_match_expression(const std::string &text) {
+    // Neutralize FTS5 syntax: every whitespace token becomes a quoted
+    // phrase and terms combine with AND, so user text can never inject
+    // operators while multi-word queries still match like a keyword AND.
+    std::string expression;
+    std::string token;
+    const auto flush = [&expression, &token]() {
+        if (token.empty()) {
+            return;
+        }
+        std::string escaped;
+        for (const char character : token) {
+            if (character == '"') {
+                escaped += "\"\"";
+            } else {
+                escaped += character;
+            }
+        }
+        if (!expression.empty()) {
+            expression += " AND ";
+        }
+        expression += "\"" + escaped + "\"";
+        token.clear();
+    };
+    for (const char character : text) {
+        if (std::isspace(static_cast<unsigned char>(character)) != 0) {
+            flush();
+        } else {
+            token += character;
+        }
+    }
+    flush();
+    return expression;
+}
 
 std::string sqlite_error_message(int code, sqlite3 *database) {
     std::string message = "sqlite error ";

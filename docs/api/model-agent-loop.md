@@ -5,11 +5,33 @@
 > `model_sse.hpp`、`model_dialect.hpp`、`model_transport.hpp`、`model_upload.hpp`、
 > `embedding_provider.hpp`、
 > `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
-> `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`
+> `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`、`mira/agent_persona.hpp`
 
 模型层采用 API-first 设计：Core 依赖显式 HTTP 模型方言（OpenAI / Anthropic Messages），不依赖任何供应商
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
 （[DEC-007](../decisions/DEC-007-llm-api-protocol-strategy.md)）。
+
+## 宿主管理的人格（DEC-120）
+
+宿主验证并提交持久配置后，调用 `AgentPersonaCatalog::activate(key, revision)` 加载
+生效人格。key 由租户和稳定 Agent ID 组成。版本为正整数，指令上限 8 KiB；目录默认
+可存 64 个生效配置，宿主可在构造时指定容量。重复加载当前相同版本和正文幂等，当前
+版本对应不同正文会拒绝。回滚使用宿主恢复的已提交版本。每次更换或撤销都使上一次
+激活的快照永久失效。
+
+配置 `ModelGateway::set_persona_supplier` 后，宿主从已认证的 Task/Session/epoch
+绑定取得 key，再从目录读快照。探针绑定本次授权和任务归属的版本，替换或撤销后
+旧探针始终返回 false。供应器和探针均只做有界内存读取。空绑定表示该任务有意使用
+原始请求。对已绑定身份，生效版本
+缺失、探针失效、供应失败或上下文预算不足都会阻止发送。
+
+Gateway 在原有宿主指令前缀中增加一个 Internal System 项，重新按完整请求预算准入。
+原有工具与用户、历史角色保持原权限。每次 infer 使用同一激活版本，使用本地组装并
+清除旧的远端续接状态。失效后停止转发新的预览，迟到完成只保留诊断和用量。已经发出
+的请求及已经传给 UI 的预览由其外部生命周期管理。审计记录版本与提示摘要。
+
+可运行接线见[记忆宿主示例](../../examples/memory_agent_host_consumer.cpp)，其中两个已绑定
+工作在同一 Gateway 分别使用初始与新激活版本。
 
 ## 每请求工具选择（DEC-097）
 

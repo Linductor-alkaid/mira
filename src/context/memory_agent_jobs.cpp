@@ -4,7 +4,10 @@
 #include <mira/context_retrieval.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <set>
+#include <span>
+#include <string_view>
 
 namespace mira {
 using memory_agent_support::error;
@@ -15,19 +18,29 @@ namespace {
 // per-record speaker labels would only re-spend tokens. Verbatim conversation
 // replay never goes through here — that path expands speaker-tagged turns
 // into native roles via `context_items_from_candidate`.
-ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation) {
+constexpr std::string_view kRecallHeader = "[recalled memory v1|count=";
+constexpr std::string_view kRecallSeparator = "\n- ";
+constexpr const char *kMemoryAuditPrefix = "mira.memory-agent.";
+// The group cap is at most 64 records, so the count and closing bracket use
+// at most three bytes.
+constexpr std::size_t kRecallHeaderMaxBytes = kRecallHeader.size() + 3;
+
+ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation,
+                         std::optional<std::size_t> group_index) {
     ContextItem item;
-    item.id =
-        ContextItemId{context_asset_id_from_seed("mira.memory.recall|" + operation.to_string() +
-                                                 "|" + std::to_string(records.size()))
-                          .value};
+    auto seed =
+        "mira.memory.recall|" + operation.to_string() + "|" + std::to_string(records.size());
+    if (group_index)
+        seed += "|" + std::to_string(*group_index);
+    item.id = ContextItemId{context_asset_id_from_seed(seed).value};
     item.kind = ContextItemKind::RetrievedMemory;
     item.authority = ContextAuthority::RetrievedMemory;
-    item.sequence = 0;
+    item.sequence = group_index.value_or(0);
     Sensitivity authority = Sensitivity::Public;
-    std::string text = "[recalled memory v1|count=" + std::to_string(records.size()) + "]";
+    std::string text = std::string{kRecallHeader} + std::to_string(records.size()) + "]";
     for (const auto &record : records) {
-        text += "\n- " + record.statement;
+        text += kRecallSeparator;
+        text += record.statement;
         authority = std::max(authority, record.sensitivity);
         item.provenance.insert(item.provenance.end(), record.provenance.begin(),
                                record.provenance.end());
@@ -37,6 +50,16 @@ ContextItem memory_block(const std::vector<MemoryRecord> &records, const Operati
 }
 bool in_scopes(const MemoryRecord &record, const std::vector<MemoryScope> &scopes) {
     return std::find(scopes.begin(), scopes.end(), record.scope) != scopes.end();
+}
+bool in_group(const MemoryRecord &record, const MemoryRecallGroup &group) {
+    return group.kinds.empty() ||
+           std::find(group.kinds.begin(), group.kinds.end(), record.kind) != group.kinds.end();
+}
+bool group_uses_embedding(const MemoryRecallGroup &group) {
+    return std::all_of(group.kinds.begin(), group.kinds.end(), [](MemoryKind kind) {
+        const auto &legs = memory_kind_policy(kind).retrieval_legs;
+        return std::find(legs.begin(), legs.end(), MemoryRetrievalLeg::Semantic) != legs.end();
+    });
 }
 class ProposedMemories final : public IConsolidationModel {
   public:
@@ -139,6 +162,7 @@ Result<MemoryAgentHandle> MemoryAgentService::State::submit(MemoryAgentRequest r
     job->binding = found->second.binding;
     job->revision = found->second.revision;
     job->after_sequence = found->second.recorded_through;
+    job->record_snapshot = found->second.record_snapshot;
     job->context = std::move(context);
     const auto deadline = std::chrono::steady_clock::now() + config.timeout;
     if (!job->context.deadline || deadline < *job->context.deadline)
@@ -220,6 +244,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
     input.work = job->binding.work;
     input.user_constraints = job->binding.user_constraints;
     MemoryAgentResult result;
+    std::optional<SessionSequence> pending_record_snapshot;
     auto cache_until = std::chrono::system_clock::now() + config.cache_ttl;
     result.operation = job->id;
     result.mode = input.mode;
@@ -233,13 +258,16 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         const std::lock_guard lock(mutex);
         return recall_embedder;
     }();
-    bool embed_failed = false;
-    const auto query_records = [&](const std::string &text) -> Result<MemoryQueryResult> {
+    const bool grouped = !config.recall_groups.empty();
+    const MemoryRecallGroup default_group{{}, config.max_records, config.max_result_bytes};
+    const auto groups = grouped ? std::span<const MemoryRecallGroup>{config.recall_groups}
+                                : std::span<const MemoryRecallGroup>{&default_group, 1};
+    const auto query_records = [&](const std::string &text, const auto &consume) -> Result<void> {
+        if (auto valid = interrupted(); !valid)
+            return valid.error();
         MemoryQuery query;
         query.scopes = job->binding.scopes;
         query.text = text;
-        query.max_results = config.max_records;
-        query.token_budget = config.max_result_bytes / 4;
         query.max_sensitivity = Sensitivity::Sensitive;
         query.deadline = std::min(config.timeout, std::chrono::milliseconds{250});
         // DEC-112 wiring: the work's label prefilter narrows the recall
@@ -247,49 +275,114 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         if (!job->binding.labels.empty()) {
             query.labels = job->binding.labels;
         }
-        if (embedder != nullptr) {
+        MemoryEmbedding embedding;
+        if (embedder && std::any_of(groups.begin(), groups.end(), group_uses_embedding)) {
             auto embedded = embedder->embed(text);
             if (embedded) {
-                query.query_embedding =
-                    MemoryEmbedding{std::move(embedded).value(), embedder->embedder_id()};
+                embedding = MemoryEmbedding{std::move(embedded).value(), embedder->embedder_id()};
             } else {
-                embed_failed = true;
+                result.degraded = true;
             }
         }
-        auto queried = memory->query(query);
-        if (!queried)
-            return queried.error();
-        if (queried.value().records.size() > config.max_records)
-            return error(ErrorCode::ResourceExhausted, "memory store exceeded result capacity");
-        for (const auto &record : queried.value().records) {
-            if (!in_scopes(record, job->binding.scopes) || record.status != MemoryStatus::Active ||
-                record.sensitivity == Sensitivity::Secret)
-                return error(ErrorCode::PermissionDenied,
-                             "memory store returned unauthorized data");
-            if (record.expires_at)
-                cache_until = std::min(cache_until, *record.expires_at);
-            if (record.validity.valid_until)
-                cache_until = std::min(cache_until, *record.validity.valid_until);
+        const auto cutoff =
+            std::min(std::chrono::steady_clock::now() + query.deadline, *context.deadline);
+        for (std::size_t index = 0; index < groups.size(); ++index) {
+            if (auto valid = interrupted(); !valid)
+                return valid.error();
+            const auto &group = groups[index];
+            if (grouped) {
+                query.deadline = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    cutoff - std::chrono::steady_clock::now());
+                if (query.deadline.count() <= 0) {
+                    result.degraded = true;
+                    break;
+                }
+                query.kinds = group.kinds;
+            }
+            query.max_results = group.max_records;
+            query.token_budget = group.max_bytes / 4;
+            query.query_embedding = group_uses_embedding(group) ? embedding : MemoryEmbedding{};
+            auto queried = memory->query(query);
+            if (!queried)
+                return queried.error();
+            if (queried.value().records.size() > group.max_records)
+                return error(ErrorCode::ResourceExhausted, "memory store exceeded result capacity");
+            for (const auto &record : queried.value().records) {
+                if (!in_scopes(record, job->binding.scopes) || !in_group(record, group) ||
+                    record.status != MemoryStatus::Active ||
+                    record.sensitivity == Sensitivity::Secret)
+                    return error(ErrorCode::PermissionDenied,
+                                 "memory store returned unauthorized data");
+                if (record.expires_at)
+                    cache_until = std::min(cache_until, *record.expires_at);
+                if (record.validity.valid_until)
+                    cache_until = std::min(cache_until, *record.validity.valid_until);
+            }
+            result.degraded |= queried.value().quality.degraded ||
+                               (grouped && std::chrono::steady_clock::now() >= cutoff);
+            consume(std::move(queried.value().records));
         }
-        return queried;
+        return interrupted();
     };
     if (input.mode == MemoryAgentMode::Recall) {
-        auto recalled =
-            query_records(job->request.query.empty() ? input.work.goal : job->request.query);
+        auto recalled = query_records(
+            job->request.query.empty() ? input.work.goal : job->request.query,
+            [&](std::vector<MemoryRecord> records) {
+                input.records.insert(input.records.end(), std::make_move_iterator(records.begin()),
+                                     std::make_move_iterator(records.end()));
+            });
         if (!recalled)
             return recalled.error();
-        input.records = std::move(recalled.value().records);
-        result.degraded = recalled.value().quality.degraded || embed_failed;
     } else if (input.mode == MemoryAgentMode::Record) {
-        auto page = events->read({input.work.session_id, job->after_sequence, config.max_events});
-        if (!page)
-            return page.error();
-        result.more_pending = page.value().has_more;
-        for (auto &event : page.value().events) {
-            result.through_event_sequence =
-                std::max(result.through_event_sequence, event.session_sequence);
-            if (event.task_id == input.work.task_id)
-                input.events.push_back(std::move(event));
+        EventSliceQuery query;
+        query.session_id = input.work.session_id;
+        query.task_id = input.work.task_id;
+        query.excluded_type_prefix = kMemoryAuditPrefix;
+        query.after_sequence = job->after_sequence;
+        query.through_sequence = job->record_snapshot;
+        query.limit = config.max_events;
+        query.byte_limit = config.max_source_bytes;
+        auto slice = events->read_slice(query);
+        if (slice) {
+            auto &page = slice.value();
+            if (page.scanned_through < query.after_sequence ||
+                page.snapshot_through < page.scanned_through ||
+                (query.through_sequence && page.snapshot_through != *query.through_sequence) ||
+                page.has_more != (page.scanned_through < page.snapshot_through) ||
+                (page.has_more && page.scanned_through == query.after_sequence) ||
+                page.events.size() > query.limit)
+                return error(ErrorCode::DataLoss, "event slice returned an invalid watermark");
+            auto previous = query.after_sequence;
+            for (const auto &event : page.events) {
+                if (event.session_id != query.session_id || event.task_id != query.task_id ||
+                    event.session_sequence <= previous ||
+                    event.session_sequence > page.scanned_through ||
+                    event.payload.type.starts_with(kMemoryAuditPrefix))
+                    return error(ErrorCode::DataLoss, "event slice returned invalid task evidence");
+                previous = event.session_sequence;
+            }
+            result.through_event_sequence = page.scanned_through;
+            result.more_pending = page.has_more;
+            if (page.has_more)
+                pending_record_snapshot = page.snapshot_through;
+            input.events = std::move(page.events);
+        } else {
+            if (slice.error().code != ErrorCode::UnsupportedCapability || query.through_sequence)
+                return slice.error();
+            auto page =
+                events->read({input.work.session_id, job->after_sequence, config.max_events});
+            if (!page)
+                return page.error();
+            result.more_pending = page.value().has_more;
+            for (auto &event : page.value().events) {
+                if (event.session_id != query.session_id)
+                    return error(ErrorCode::DataLoss, "event store returned another session");
+                result.through_event_sequence =
+                    std::max(result.through_event_sequence, event.session_sequence);
+                if (event.task_id == input.work.task_id &&
+                    !event.payload.type.starts_with(kMemoryAuditPrefix))
+                    input.events.push_back(std::move(event));
+            }
         }
     } else
         input.history = job->request.history;
@@ -322,35 +415,41 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         return valid.error();
 
     if (input.mode == MemoryAgentMode::Recall) {
-        // Selection keeps the previous semantics: the first batch honors the
-        // model's memory_ids filter (empty keeps all), expansion queries
-        // dedupe against everything already admitted and respect the record
-        // cap. All admitted facts then render as one framed block.
-        std::vector<MemoryRecord> selected;
+        std::vector<std::vector<MemoryRecord>> selected(groups.size());
+        std::vector<std::size_t> sizes(groups.size(), kRecallHeaderMaxBytes);
         std::set<MemoryId> seen;
-        const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter, bool capped) {
+        const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter) {
             for (const auto &record : records) {
-                if (capped && selected.size() >= config.max_records)
-                    break;
                 if (filter && !proposal.selected_memories.empty() &&
                     std::find(proposal.selected_memories.begin(), proposal.selected_memories.end(),
                               record.id) == proposal.selected_memories.end())
                     continue;
-                if (!seen.insert(record.id).second)
+                const auto group = std::find_if(groups.begin(), groups.end(),
+                                                [&](const auto &g) { return in_group(record, g); });
+                const auto index = static_cast<std::size_t>(group - groups.begin());
+                if (selected[index].size() >= group->max_records || seen.contains(record.id))
                     continue;
-                selected.push_back(record);
+                const auto size = kRecallSeparator.size() + record.statement.size();
+                if (grouped && size > group->max_bytes - sizes[index]) {
+                    result.degraded = true;
+                    continue;
+                }
+                sizes[index] += size;
+                seen.insert(record.id);
+                selected[index].push_back(record);
             }
         };
-        admit(input.records, true, false);
+        admit(input.records, true);
         for (const auto &query : proposal.queries) {
-            auto extra = query_records(query);
+            auto extra = query_records(query, [&](const auto &records) { admit(records, false); });
             if (!extra)
                 return extra.error();
-            result.degraded |= extra.value().quality.degraded;
-            admit(extra.value().records, false, true);
         }
-        if (!selected.empty())
-            result.candidates.push_back(memory_block(selected, job->id));
+        for (std::size_t index = 0; index < groups.size(); ++index) {
+            if (!selected[index].empty())
+                result.candidates.push_back(memory_block(
+                    selected[index], job->id, grouped ? std::optional{index} : std::nullopt));
+        }
         std::size_t bytes = 0;
         for (const auto &item : result.candidates)
             bytes += std::get<TextPart>(item.content.front()).text.size();
@@ -416,9 +515,10 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         if (input.mode == MemoryAgentMode::Recall) {
             work.candidates = result.candidates;
             work.cache_until = cache_until;
-        } else if (input.mode == MemoryAgentMode::Record)
+        } else if (input.mode == MemoryAgentMode::Record) {
             work.recorded_through = std::max(work.recorded_through, result.through_event_sequence);
-        else {
+            work.record_snapshot = pending_record_snapshot;
+        } else {
             std::string text = "[Memory agent checkpoint: untrusted historical data]\n";
             for (const auto &note : proposal.summary) {
                 text += note.text + " [source";

@@ -224,6 +224,13 @@ class IContextRetriever {
     retrieve(const ContextQuery &query, const RetrievalBudget &budget) = 0;
 };
 
+// Optional session-asset erasure participant. The scope digest is the same
+// durable identity used by the MemoryAgent erasure barrier.
+class IConversationContextIndex : public IContextRetriever {
+  public:
+    [[nodiscard]] virtual Result<void> erase_scope(const Sha256Digest &) = 0;
+};
+
 // ---------------------------------------------------------------------------
 // Reference index (volatile, rebuildable projection)
 // ---------------------------------------------------------------------------

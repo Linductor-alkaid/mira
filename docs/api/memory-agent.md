@@ -1,12 +1,13 @@
 # 记忆代理与完整请求准入
 
 > 状态：Active
-> 更新日期：2026-11-10
+> 更新日期：2026-11-20
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
 > 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
 > [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
 > [DEC-108](../decisions/DEC-108-native-role-memory-recall.md)、
-> [DEC-109](../decisions/DEC-109-memory-preference-approval.md)
+> [DEC-109](../decisions/DEC-109-memory-preference-approval.md)、
+> [DEC-119](../decisions/DEC-119-six-memory-systems.md)
 > 设计：[记忆代理](../design/memory_agent_design.md)
 
 ## 宿主接线
@@ -43,9 +44,31 @@ session/task/epoch 必须与 binding 一致。submit 返回 MemoryAgentHandle，
 result；调用 result(operation) 是零等待查询，空 optional 代表 pending。
 
 Recall 的 query 只在绑定 scope 中检索，返回类型化候选，实际装载由 Gateway 再裁决。
-选中的事实 statement 合并为单个带框架头的 user 消息（DEC-108）；逐字会话回放候选
+默认把事实 statement 合并为单个带框架头的 user 消息（DEC-108）。逐字会话回放候选
 按原始说话人展开为原生 User/Assistant 消息，永不 System/Developer。
+
+宿主可在构造服务前配置召回组。每组独立按 kinds 查询并形成一个候选，组序即供给顺序。
+kind 在全部组内唯一，单组 max_records 为正、max_bytes 至少 64。各组配额之和分别
+受 max_records 与 max_result_bytes 限制。配额覆盖初始及模型补充查询，max_bytes
+包含最终框架。每个查询文本的组调用共享最多 250ms 的存储软时限，返回的部分结果或
+文本裁剪通过 degraded 可见。显式存储错误与硬截止通过 future 返回。全部使用工作既有
+scope、标签和撤权探针。组内所有 kind 允许语义检索时才使用该文本的查询向量；关键词
+召回沿现有策略。空配置保留默认行为。
+
+```cpp
+config.recall_groups = {
+    {{MemoryKind::Episode}, 4, 4096},
+    {{MemoryKind::EnvironmentFact, MemoryKind::ApplicationFact}, 6, 8192},
+    {{MemoryKind::Procedure, MemoryKind::SkillHint, MemoryKind::RecoveryLesson}, 6, 8192},
+};
+```
+
 Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型伪造的事件正文。
+支持事件切片时按绑定 Session/Task 读取，在进程内工作绑定保留同轮分页的扫描水位与
+上界，跳过记忆服务自身的审计事件。旧 EventStore 后端通过 UnsupportedCapability
+回退到会话分页。
+存储错误、超限和不一致的水位作为失败返回，已擦除 scope 的屏障继续封闭记录。
+见[事件切片](events-recovery.md#有界事件切片)。
 结果 consolidation 给出 Applied、PendingApproval、Rejected 等状态；待审批 mutation
 只有经过宿主当前权限/删除屏障复核后，才可通过既有 apply_pending 提交。
 
@@ -89,6 +112,10 @@ erase_scope 是已鉴权宿主 API：持久屏障、派生 Artifact 删除、既
 共用提交串行化边界。失败不表示已经删除。受影响工作封闭，删除 scope 在重启后仍
 不可重新绑定；同 scope 重新接收新知识的世代协议留待 M30/M31，不得手工抹掉屏障。
 out-of-service mutation 必须先 invalidate_scope；ArtifactStore 不能对未授权主体开放。
+
+启用 `MemoryAgentConfig::conversation_index` 时，Session scope 的擦除还清理持久
+会话片段并提交该索引的重建屏障。初始化会重放持久意图。宿主在回放成功后才开放
+片段检索，并在关闭 Executor 前关闭索引。见[持久片段接线](durable-memory-host.md#持久会话片段索引)。
 
 外部 owner 定期 reap，保留并消费操作 future；close 后才关闭存储/Executor。close 超时
 没有强杀语义，资源须保留并重试。服务不负责启动/关闭 Executor，也不自动恢复旧模型

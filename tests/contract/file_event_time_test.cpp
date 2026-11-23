@@ -138,6 +138,12 @@ int legacy_transition_preserves_unknown_time() {
                EventTimestampOrigin::UnavailableLegacy);
     MIRA_CHECK(page.value().events.back().timestamp_origin == EventTimestampOrigin::PersistedWall);
     MIRA_CHECK(page.value().events.back().timestamp.wall == new_wall);
+    EventSliceQuery slice;
+    slice.session_id = f.session;
+    slice.recorded_from = WallTimePoint::min();
+    const auto timed = events.read_slice(slice);
+    MIRA_CHECK(timed && timed.value().events.size() == 1 &&
+               timed.value().events.front().session_sequence == 2);
     return 0;
 }
 
@@ -255,6 +261,9 @@ int corrupt_and_future_records_do_not_repair() {
         auto recovered = events.recover({});
         MIRA_CHECK(recovered && recovered.value().status == change.expected && events.read_only());
         MIRA_CHECK(!events.append(f.request()) && !events.read({f.session, {}, 8}));
+        EventSliceQuery query;
+        query.session_id = f.session;
+        MIRA_CHECK(!events.read_slice(query));
         MIRA_CHECK(f.bytes() == bad);
     }
     return 0;

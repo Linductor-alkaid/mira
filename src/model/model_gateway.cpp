@@ -48,6 +48,38 @@ namespace {
     return result;
 }
 
+[[nodiscard]] bool persona_current(const AgentPersonaBinding &binding) noexcept {
+    try {
+        return binding.snapshot.current() && binding.current && binding.current();
+    } catch (...) {
+        return false;
+    }
+}
+
+[[nodiscard]] ModelRequest with_persona(const ModelRequest &request,
+                                        const AgentPersonaSnapshot &persona) {
+    auto rendered = request;
+    const auto &revision = persona.revision();
+    ModelInputItem instruction;
+    instruction.role = ModelRole::System;
+    instruction.authority = Sensitivity::Internal;
+    instruction.provenance.source = "mira.agent-persona.v1";
+    instruction.content.emplace_back(TextPart{revision.instructions, Sensitivity::Internal});
+    const auto position =
+        std::find_if(rendered.input.begin(), rendered.input.end(), [](const ModelInputItem &item) {
+            return item.role != ModelRole::System && item.role != ModelRole::Developer;
+        });
+    rendered.input.insert(position, std::move(instruction));
+    rendered.prompt_provenance.system_template_digest = canonical_json_digest(JsonValue::Object{
+        {"base", request.prompt_provenance.system_template_digest.to_string()},
+        {"tenant", persona.key().tenant.to_string()},
+        {"agent", persona.key().agent.to_string()},
+        {"version", revision.version},
+        {"instructions_digest", digest_string(revision.instructions).to_string()}});
+    rendered.continuation.reset();
+    return rendered;
+}
+
 } // namespace
 
 ModelGateway::ModelGateway(kairo::Executor &executor, ModelRouter router,
@@ -88,6 +120,10 @@ void ModelGateway::set_context_supplier(ModelContextSupplier supplier) {
     context_supplier_ = std::move(supplier);
 }
 
+void ModelGateway::set_persona_supplier(AgentPersonaSupplier supplier) {
+    persona_supplier_ = std::move(supplier);
+}
+
 CircuitState ModelGateway::circuit_state(const ModelProfileId &profile) const {
     const std::lock_guard lock(circuit_mutex_);
     const auto found = circuits_.find(profile);
@@ -118,16 +154,50 @@ void ModelGateway::emit(const ModelRequest &request, std::string type, JsonValue
     (void)events_->append(append);
 }
 
-Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
+Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &original_request,
                                              const OperationContext &context,
                                              const InferOptions &options) {
-    if (auto valid = validate_model_request(request); !valid) {
+    if (auto valid = validate_model_request(original_request); !valid) {
         return valid.error();
     }
-    if (admission_ != nullptr && !admission_->admit(request.task_id, request.task_epoch)) {
+    if (admission_ != nullptr &&
+        !admission_->admit(original_request.task_id, original_request.task_epoch)) {
         return make_model_error(ModelDomainCode::ModelCancelled,
-                                "request task epoch is not admitted", false, request.operation_id);
+                                "request task epoch is not admitted", false,
+                                original_request.operation_id);
     }
+
+    std::optional<AgentPersonaBinding> persona;
+    std::optional<ModelRequest> rendered_request;
+    if (persona_supplier_) {
+        if (context.task != original_request.task_id ||
+            context.task_epoch != original_request.task_epoch || context.session.is_nil())
+            return make_context_error(ContextDomainCode::InvalidItem,
+                                      "persona requires a bound task context");
+        if (context.cancelled_or_expired(Timestamp::now()))
+            return make_model_error(ModelDomainCode::ModelCancelled,
+                                    "persona request was interrupted", false,
+                                    original_request.operation_id);
+        try {
+            auto bound = persona_supplier_(context);
+            if (!bound)
+                return bound.error();
+            persona = std::move(bound).value();
+        } catch (...) {
+            return make_context_error(ContextDomainCode::InvalidItem,
+                                      "persona supplier raised an exception");
+        }
+        if (persona) {
+            if (!persona_current(*persona))
+                return make_context_error(ContextDomainCode::StaleBuild,
+                                          "persona binding is no longer current");
+            rendered_request = with_persona(original_request, persona->snapshot);
+            if (auto valid = validate_model_request(*rendered_request); !valid)
+                return valid.error();
+        }
+    }
+    const auto &request = rendered_request ? *rendered_request : original_request;
+    const auto persona_valid = [&]() { return !persona || persona_current(*persona); };
 
     ModelContextSnapshot snapshot;
     try {
@@ -152,12 +222,13 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         try {
             return snapshot.refreshable && snapshot.refreshable() &&
                    !context.cancelled_or_expired(Timestamp::now()) &&
-                   (!admission_ || admission_->admit(request.task_id, request.task_epoch));
+                   (!admission_ || admission_->admit(request.task_id, request.task_epoch)) &&
+                   persona_valid();
         } catch (...) {
             return false;
         }
     };
-    if (!context_current()) {
+    if (!context_current() || !persona_valid()) {
         if (context_refreshable()) {
             ModelCallOutcome stale;
             stale.attempts = 0;
@@ -168,6 +239,13 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         } else
             return make_context_error(ContextDomainCode::StaleBuild,
                                       "context snapshot is no longer current");
+    }
+    if (persona) {
+        emit(request, "ModelPersonaSelected",
+             JsonValue::Object{{"version", persona->snapshot.revision().version},
+                               {"system_template_digest",
+                                request.prompt_provenance.system_template_digest.to_string()}},
+             EventClass::Diagnostic);
     }
 
     RouteQuery query;
@@ -296,7 +374,8 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
         outcome.context_admission = prepared_requests[candidate_index].context;
 
         for (std::uint32_t attempt = 1;; ++attempt) {
-            if (!context_current() || context.cancelled_or_expired(Timestamp::now())) {
+            if (!context_current() || context.cancelled_or_expired(Timestamp::now()) ||
+                !persona_valid()) {
                 (void)ledger_.release(request.task_id, reservation.value());
                 if (context_refreshable()) {
                     outcome.admitted = false;
@@ -328,6 +407,22 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
             provider_options.preview_sink = options.preview_sink;
             provider_options.thinking_preview_sink = options.thinking_preview_sink;
             provider_options.capture_raw_response = options.capture_raw_response;
+            if (persona && options.preview_sink) {
+                provider_options.preview_sink = [binding = *persona, sink = options.preview_sink](
+                                                    const ModelRequestId &id,
+                                                    const UnvalidatedModelPreview &preview) {
+                    if (persona_current(binding))
+                        sink(id, preview);
+                };
+            }
+            if (persona && options.thinking_preview_sink) {
+                provider_options.thinking_preview_sink =
+                    [binding = *persona, sink = options.thinking_preview_sink](
+                        const ModelRequestId &id, const UnvalidatedModelThinkingPreview &preview) {
+                        if (persona_current(binding))
+                            sink(id, preview);
+                    };
+            }
             std::optional<std::uint64_t> circuit_attempt;
             {
                 const std::lock_guard lock(circuit_mutex_);
@@ -341,8 +436,12 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                                                 request.operation_id);
                 break;
             }
-            outcome.attempts = ++total_attempts;
             auto response = [&]() -> Result<ModelResponse> {
+                if (!persona_valid())
+                    return make_model_error(ModelDomainCode::ModelCancelled,
+                                            "persona binding expired before dispatch", false,
+                                            request.operation_id);
+                outcome.attempts = ++total_attempts;
                 try {
                     return provider->infer(attempt_request, context, provider_options);
                 } catch (...) {
@@ -392,14 +491,24 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &request,
                         outcome.tool_proposals = std::move(batch).value();
                     }
                 }
-                if (!context_current() ||
-                    (admission_ != nullptr &&
-                     !admission_->admit(request.task_id, request.task_epoch))) {
+                const bool current_work =
+                    context_current() && (admission_ == nullptr ||
+                                          admission_->admit(request.task_id, request.task_epoch));
+                const bool current_persona = persona_valid();
+                if (!current_work || !current_persona) {
                     // The response settles as a late diagnostic; no decision or
                     // action follows from it.
                     outcome.admitted = false;
-                    outcome.context_refreshable = context_refreshable();
+                    outcome.context_refreshable = current_persona && context_refreshable();
                     outcome.rejection_reason = "task epoch or lifecycle rejected the completion";
+                    if (!current_persona) {
+                        outcome.rejection_reason = "persona binding rejected the completion";
+                        outcome.response.output.clear();
+                        outcome.response.continuation.reset();
+                        outcome.response.protected_raw_response.reset();
+                        outcome.parse = {};
+                        outcome.tool_proposals.reset();
+                    }
                 }
                 emit(request, "ModelResponseReceived",
                      JsonValue::Object{

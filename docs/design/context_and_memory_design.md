@@ -11,6 +11,9 @@
 
 ## 0. M4 实现状态注记
 
+M30 的六类事实源、读写和索引边界见 [六类记忆设计](m30-memory-systems.md)。
+现有 MemoryKind 与 DEC-029 四域映射用于首轮分类召回。
+
 本文档 CM0–CM3 所述核心面已于 M4 落地（对照
 [M4 计划](../plans/m4-context-memory-recovery.md)）；以下实现语义是对本文的细化，
 不改变既有约束：

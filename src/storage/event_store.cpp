@@ -6,7 +6,9 @@
 #include <array>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <mutex>
+#include <new>
 #include <sstream>
 #include <unordered_map>
 
@@ -242,15 +244,33 @@ std::optional<Sha256Digest> digest_from_hex(std::string_view text) noexcept {
 
 class MemoryEventStore::Impl final {
   public:
+    using Postings = std::vector<std::size_t>;
+    struct Partition final {
+        Postings all;
+        std::map<TaskId, Postings> tasks;
+        std::map<std::string, Postings> types;
+    };
+
     explicit Impl(std::size_t max) : max_events(max) {}
     mutable std::mutex mutex;
     std::size_t max_events;
     std::vector<EventEnvelope> events;
     std::unordered_map<EventId, std::size_t, StrongIdHash<EventId>> by_id;
-    std::unordered_map<SessionId, SessionSequence, StrongIdHash<SessionId>> next_session;
+    std::map<SessionId, Partition> sessions;
     std::unordered_map<TaskId, TaskSequence, StrongIdHash<TaskId>> next_task;
     DurableSequence durable_watermark = 0;
+
+    auto after(const Postings &postings, SessionSequence sequence) const {
+        return std::upper_bound(postings.begin(), postings.end(), sequence,
+                                [&](SessionSequence cursor, std::size_t position) {
+                                    return cursor < events[position].session_sequence;
+                                });
+    }
 };
+
+Result<EventSlicePage> IEventStore::read_slice(const EventSliceQuery &) const {
+    return error(ErrorCode::UnsupportedCapability, "event store does not support indexed reads");
+}
 
 MemoryEventStore::MemoryEventStore(std::size_t max_events)
     : impl_(std::make_unique<Impl>(max_events)) {}
@@ -286,20 +306,62 @@ Result<AppendReceipt> MemoryEventStore::append_stamped(const AppendRequest &requ
     event.runtime_id = request.runtime_id;
     event.session_id = request.session_id;
     event.task_id = request.task_id;
-    event.session_sequence = ++impl_->next_session[request.session_id];
-    if (request.task_id)
-        event.task_sequence = ++impl_->next_task[*request.task_id];
     event.cause_control_sequence = request.cause;
     event.timestamp = timestamp;
     event.timestamp_origin = origin;
-    event.payload = request.payload;
-    event.integrity = digest_string(canonical(request));
     const auto index = impl_->events.size();
-    impl_->events.push_back(event);
-    impl_->by_id.emplace(event.event_id, index);
+    try {
+        event.payload = request.payload;
+        event.integrity = digest_string(canonical(request));
+        auto &partition = impl_->sessions[request.session_id];
+        event.session_sequence = partition.all.size() + 1;
+        TaskSequence *task_sequence = nullptr;
+        if (request.task_id) {
+            task_sequence = &impl_->next_task[*request.task_id];
+            event.task_sequence = *task_sequence + 1;
+            partition.tasks[*request.task_id].push_back(index);
+        }
+        partition.types[request.payload.type].push_back(index);
+        partition.all.push_back(index);
+        impl_->by_id.emplace(event.event_id, index);
+        impl_->events.push_back(std::move(event));
+        if (task_sequence)
+            ++*task_sequence;
+    } catch (const std::bad_alloc &) {
+        impl_->by_id.erase(request.event_id);
+        const auto found = impl_->sessions.find(request.session_id);
+        if (found != impl_->sessions.end()) {
+            auto &partition = found->second;
+            const auto unpost = [index](Impl::Postings &postings) {
+                if (!postings.empty() && postings.back() == index)
+                    postings.pop_back();
+            };
+            const auto rollback = [&](auto &lists, const auto &key) {
+                const auto list = lists.find(key);
+                if (list != lists.end()) {
+                    unpost(list->second);
+                    if (list->second.empty())
+                        lists.erase(list);
+                }
+            };
+            if (request.task_id)
+                rollback(partition.tasks, *request.task_id);
+            rollback(partition.types, request.payload.type);
+            unpost(partition.all);
+            if (partition.all.empty())
+                impl_->sessions.erase(found);
+        }
+        if (request.task_id) {
+            const auto task = impl_->next_task.find(*request.task_id);
+            if (task != impl_->next_task.end() && task->second == 0)
+                impl_->next_task.erase(task);
+        }
+        return error(ErrorCode::ResourceExhausted, "event index allocation failed", true);
+    }
+    const auto &committed = impl_->events.back();
     const auto watermark = ++impl_->durable_watermark;
-    return AppendReceipt{event.event_id, event.session_sequence, event.task_sequence, watermark,
-                         Durability::Buffered};
+    return AppendReceipt{committed.event_id, committed.session_sequence, committed.task_sequence,
+                         watermark, Durability::Buffered};
 }
 
 Result<std::vector<AppendReceipt>>
@@ -318,17 +380,93 @@ MemoryEventStore::append_batch(std::span<const AppendRequest> requests) {
 Result<EventPage> MemoryEventStore::read(const EventQuery &query) const {
     std::lock_guard lock(impl_->mutex);
     EventPage page;
-    const auto after = query.after_sequence.value_or(0);
-    for (const auto &event : impl_->events) {
-        if (event.session_id != query.session_id || event.session_sequence <= after)
-            continue;
-        if (page.events.size() == query.limit) {
-            page.has_more = true;
-            break;
-        }
-        page.events.push_back(event);
-    }
+    const auto found = impl_->sessions.find(query.session_id);
+    if (found == impl_->sessions.end())
+        return page;
+    const auto &postings = found->second.all;
+    auto cursor = impl_->after(postings, query.after_sequence.value_or(0));
+    for (; cursor != postings.end() && page.events.size() < query.limit; ++cursor)
+        page.events.push_back(impl_->events[*cursor]);
+    page.has_more = cursor != postings.end();
     return page;
+}
+
+Result<EventSlicePage> MemoryEventStore::read_slice(const EventSliceQuery &query) const {
+    if (query.session_id.is_nil() || (query.task_id && query.task_id->is_nil()) ||
+        (query.event_type && (query.event_type->empty() || query.event_type->size() > 256)) ||
+        (query.excluded_type_prefix &&
+         (query.excluded_type_prefix->empty() || query.excluded_type_prefix->size() > 256)) ||
+        (query.recorded_from && query.recorded_before &&
+         *query.recorded_from >= *query.recorded_before) ||
+        (query.through_sequence && query.after_sequence > *query.through_sequence) ||
+        query.limit == 0 || query.limit > 1024 || query.scan_limit == 0 ||
+        query.scan_limit > 4096 || query.byte_limit == 0 || query.byte_limit > 64 * 1024 * 1024) {
+        return error(ErrorCode::InvalidArgument, "invalid indexed event query");
+    }
+
+    std::lock_guard lock(impl_->mutex);
+    const auto found = impl_->sessions.find(query.session_id);
+    const SessionSequence head = found == impl_->sessions.end() ? 0 : found->second.all.size();
+    EventSlicePage result;
+    result.snapshot_through = query.through_sequence.value_or(head);
+    if (query.after_sequence > head || result.snapshot_through > head)
+        return error(ErrorCode::InvalidState, "event query window is ahead of the source");
+    result.scanned_through = result.snapshot_through;
+    if (found == impl_->sessions.end())
+        return result;
+    const auto &partition = found->second;
+    const auto *postings = &partition.all;
+    if (query.task_id) {
+        const auto by_task = partition.tasks.find(*query.task_id);
+        if (by_task == partition.tasks.end())
+            return result;
+        postings = &by_task->second;
+    }
+    if (query.event_type) {
+        const auto by_type = partition.types.find(*query.event_type);
+        if (by_type == partition.types.end())
+            return result;
+        if (by_type->second.size() < postings->size())
+            postings = &by_type->second;
+    }
+    auto cursor = impl_->after(*postings, query.after_sequence);
+    const auto end = impl_->after(*postings, result.snapshot_through);
+    result.scanned_through = query.after_sequence;
+    const auto matches = [&](const EventEnvelope &event) {
+        if (query.task_id && event.task_id != query.task_id)
+            return false;
+        if (query.event_type && event.payload.type != *query.event_type)
+            return false;
+        if (query.excluded_type_prefix &&
+            event.payload.type.starts_with(*query.excluded_type_prefix))
+            return false;
+        if ((query.recorded_from || query.recorded_before) &&
+            event.timestamp_origin == EventTimestampOrigin::UnavailableLegacy)
+            return false;
+        return (!query.recorded_from || event.timestamp.wall >= *query.recorded_from) &&
+               (!query.recorded_before || event.timestamp.wall < *query.recorded_before);
+    };
+    std::size_t scanned = 0;
+    auto bytes_left = query.byte_limit;
+    for (; cursor != end && scanned < query.scan_limit && result.events.size() < query.limit;
+         ++cursor, ++scanned) {
+        const auto &event = impl_->events[*cursor];
+        if (matches(event)) {
+            if (event.payload.type.size() > bytes_left ||
+                event.payload.data.size() > bytes_left - event.payload.type.size()) {
+                if (result.events.empty())
+                    return error(ErrorCode::ResourceExhausted, "event exceeds slice byte budget");
+                break;
+            }
+            bytes_left -= event.payload.type.size() + event.payload.data.size();
+            result.events.push_back(event);
+        }
+        result.scanned_through = event.session_sequence;
+    }
+    result.has_more = cursor != end;
+    if (!result.has_more)
+        result.scanned_through = result.snapshot_through;
+    return result;
 }
 
 Result<StoreRecoveryReport> MemoryEventStore::recover(const RecoveryOptions &) {
@@ -488,21 +626,27 @@ Result<AppendReceipt> FileEventStore::append(const AppendRequest &request) {
     }
     impl_->v2 = true;
     impl_->needs_separator = false;
-    auto result =
-        impl_->memory.append_stamped(request, timestamp, EventTimestampOrigin::AppendProcess);
-    if (!result || result.value().session_sequence != session_sequence ||
-        result.value().task_sequence != task_sequence) {
+    const auto index_failed = [&]() {
         impl_->read_only = true;
         impl_->recovery_status = RecoveryStatus::DataLoss;
         impl_->recovery_diagnostic = "event index update failed after durable append";
         return error(ErrorCode::DataLoss, "event index update failed after durable append");
+    };
+    try {
+        auto result =
+            impl_->memory.append_stamped(request, timestamp, EventTimestampOrigin::AppendProcess);
+        if (!result || result.value().session_sequence != session_sequence ||
+            result.value().task_sequence != task_sequence)
+            return index_failed();
+        impl_->next_session[request.session_id] = session_sequence;
+        if (request.task_id && task_sequence)
+            impl_->next_task[*request.task_id] = task_sequence.value();
+        impl_->integrity_by_id.emplace(request.event_id, requested_integrity);
+        result.value().achieved = Durability::ProcessCrash;
+        return result;
+    } catch (const std::bad_alloc &) {
+        return index_failed();
     }
-    impl_->next_session[request.session_id] = session_sequence;
-    if (request.task_id && task_sequence)
-        impl_->next_task[*request.task_id] = task_sequence.value();
-    impl_->integrity_by_id.emplace(request.event_id, requested_integrity);
-    result.value().achieved = Durability::ProcessCrash;
-    return result;
 }
 
 Result<std::vector<AppendReceipt>>
@@ -518,27 +662,34 @@ FileEventStore::append_batch(std::span<const AppendRequest> requests) {
     return result;
 }
 
-Result<EventPage> FileEventStore::read(const EventQuery &query) const {
-    bool loaded;
+Result<void> FileEventStore::ensure_loaded() const {
     {
         std::lock_guard lock(impl_->mutex);
-        loaded = impl_->loaded;
-        if (!impl_->loaded) {
-            // Recovery performs the one-time file scan outside this lock.
-        } else if (impl_->read_only) {
-            return error(ErrorCode::DataLoss, "event store is read-only after recovery");
-        }
+        if (impl_->loaded)
+            return {};
     }
-    if (!loaded) {
-        auto recovery = const_cast<FileEventStore *>(this)->recover({});
-        if (!recovery)
-            return recovery.error();
-        if (recovery.value().status == RecoveryStatus::DataLoss ||
-            recovery.value().status == RecoveryStatus::ReadOnlyDiagnostic) {
-            return error(ErrorCode::DataLoss, "event store is read-only after recovery");
-        }
-    }
+    const auto recovered = const_cast<FileEventStore *>(this)->recover({});
+    if (!recovered)
+        return recovered.error();
+    return {};
+}
+
+Result<EventPage> FileEventStore::read(const EventQuery &query) const {
+    if (auto loaded = ensure_loaded(); !loaded)
+        return loaded.error();
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->read_only)
+        return error(ErrorCode::DataLoss, "event store is read-only after recovery");
     return impl_->memory.read(query);
+}
+
+Result<EventSlicePage> FileEventStore::read_slice(const EventSliceQuery &query) const {
+    if (auto loaded = ensure_loaded(); !loaded)
+        return loaded.error();
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->read_only)
+        return error(ErrorCode::DataLoss, "event store is read-only after recovery");
+    return impl_->memory.read_slice(query);
 }
 
 Result<StoreRecoveryReport> FileEventStore::recover(const RecoveryOptions &options) {

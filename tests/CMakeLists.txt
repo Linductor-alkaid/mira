@@ -889,11 +889,12 @@ mira_add_m29_test(mira_m29_recovery_faults_test m29/m29_recovery_faults_test.cpp
 mira_add_m29_test(mira_m29_recovery_lifecycle_test m29/m29_recovery_lifecycle_test.cpp)
 
 # M30 / DEC-107: principal scopes and automatic interaction memory work.
-foreach(mira_m30_case scope_binding lifecycle recording lifecycle_faults
+foreach(mira_m30_case scope_binding lifecycle recording lifecycle_faults recall_groups event_slices conversation_index
                      preference_approval preference_security preference_recovery preference_lifecycle)
     mira_add_test(mira_m30_${mira_m30_case}_test m30/m30_${mira_m30_case}_test.cpp "contract;m30")
     target_link_libraries(mira_m30_${mira_m30_case}_test PRIVATE Mira::state_store)
 endforeach()
+mira_add_test(mira_m30_persona_test m30/m30_persona_test.cpp "contract;m30")
 
 
 

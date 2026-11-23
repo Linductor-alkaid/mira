@@ -628,6 +628,9 @@ Accessibility -> OCR -> CV / Detector -> VLM
 
 ## 10. Memory 架构
 
+后续分类读写与事实源由 [M30 六类记忆设计](m30-memory-systems.md) 冻结。
+下列四域供现有 MemoryKind 消费方使用。
+
 ### 10.1 四类记忆
 
 ```text

@@ -60,6 +60,40 @@ ResourceExhausted。`directory_capacity()` 返回当前总量和扫描计数，�
 0 保留原有配置。写入前同时检查索引条目和完整编码记录的容量。达到上限后读取、
 既有 EventId 的幂等重放仍可用。重开时立刻拒绝超过上限的旧日志，保留源文件。
 `log_bytes()` 可查询实际文件长度；分段归档和共享引用回收由 M31 跟踪。
+对已授权任务取证时，可使用[事件切片](events-recovery.md#有界事件切片)分批读取任务、
+事件类型和时间窗口。FileEventStore 重开时从日志重建位置索引。
+
+## 持久会话片段索引
+
+将 `SqliteConversationIndex` 接到宿主的授权会话和现有 Executor。使用独占 SQLite
+数据库文件。宿主选定已授权 Session 和 Tenant，消费有限重建任务的 future，再按精确
+Session 和其配对的 Session scope 走 IContextRetriever。重建要求支持
+`read_slice` 的事件源并固定本轮来源上界。它处理本会话的完整有界前缀，超过配置的
+事件或字节上限时返回 ResourceExhausted 并保留旧索引。扫描与提交之间检查协作取消。
+SQLite 已接纳的写入可能在等待超时后完成；按相同身份和水位重试可核对结果。
+
+```cpp
+auto built = executor.submit_auto([&] {
+    return conversation_index->rebuild(principal.tenant_id, session, *events, task_context);
+}).get();
+// 确认 built 成功，随后从已授权会话构造查询。
+ContextQuery query;
+query.session = session;
+query.scopes = {memory_session_scope(principal, session)};
+query.text = "project update";
+auto recalled = conversation_index->retrieve(query, RetrievalBudget{});
+```
+
+召回包含原生角色、来源事件和片段水位。FTS5 使用作用域词项和 Unicode61，
+按最近片段序号及 ID 排序。所有 exact_terms 都必须命中。角色转换及最终准入使用
+现有 `context_items_from_candidate` 和 Gateway。重建触发、授权复核与发布候选由
+宿主管理。
+
+将同一个索引赋给 `MemoryAgentConfig::conversation_index`，先初始化 MemoryAgent
+重放持久擦除意图，再对外开放索引。会话擦除会持久封闭索引 scope，旧日志重建被拒。
+索引擦除失败时当前实例封闭读取与重建。宿主处理失败原因，关闭服务和索引，重开后
+重放擦除意图。原始事件、备份与磁盘回收由各自生命周期管理。
+参见 [DEC-122](../decisions/DEC-122-durable-conversation-index.md)。
 
 ## 宿主身份
 

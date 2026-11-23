@@ -40,6 +40,7 @@ struct DbOpenOptions final {
 };
 
 [[nodiscard]] std::string sqlite_error_message(int code, sqlite3 *database);
+[[nodiscard]] std::string fts_match_expression(const std::string &text);
 
 // SQLITE_TRANSIENT expands to an old-style cast; wrap the constant once so
 // Mira warning policy stays clean at every bind site.

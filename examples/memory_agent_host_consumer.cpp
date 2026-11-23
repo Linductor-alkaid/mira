@@ -1,10 +1,12 @@
 #include <mira/adapters/simulator/simulator_environment.hpp>
+#include <mira/agent_persona.hpp>
 #include <mira/interaction_coordinator.hpp>
 #include <mira/memory_agent.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include <kairo/executor.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 
@@ -73,7 +75,13 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
         return false;
     auto memory = std::shared_ptr<SqliteMemoryStore>{std::move(opened).value()};
     const auto runtime_id = RuntimeId::generate();
-    MemoryAgentService service(executor, memory, events, runtime_id);
+    MemoryAgentConfig memory_config;
+    memory_config.recall_groups = {
+        {{MemoryKind::Episode}, 4, 4096},
+        {{MemoryKind::EnvironmentFact, MemoryKind::ApplicationFact}, 6, 8192},
+        {{MemoryKind::Procedure, MemoryKind::SkillHint, MemoryKind::RecoveryLesson}, 6, 8192},
+    };
+    MemoryAgentService service(executor, memory, events, runtime_id, {}, memory_config);
     if (!service.initialize())
         return false;
     MiraRuntime runtime;
@@ -150,6 +158,28 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
     ModelGateway gateway(executor, router, nullptr, PriceTable{});
     gateway.register_provider(provider);
     gateway.set_context_supplier(service.context_supplier());
+    AgentPersonaCatalog personas;
+    const AgentPersonaKey persona_key{principal.tenant_id, Id128::generate()};
+    if (!personas.activate(persona_key, {1, "Use the initial host persona."}))
+        return false;
+    gateway.set_persona_supplier([&](const OperationContext &operation)
+                                     -> Result<std::optional<AgentPersonaBinding>> {
+        const auto bound = std::find_if(bindings.begin(), bindings.end(), [&](const auto &work) {
+            return work.work.task_id == operation.task && work.work.session_id == operation.session;
+        });
+        if (bound == bindings.end())
+            return std::optional<AgentPersonaBinding>{};
+        auto revision = personas.read(persona_key);
+        if (!revision)
+            return revision.error();
+        return std::optional{
+            AgentPersonaBinding{std::move(revision).value(),
+                                [&runtime, task = operation.task, epoch = operation.task_epoch] {
+                                    const auto snapshot = runtime.task_snapshot(task);
+                                    return snapshot && snapshot.value().epoch == epoch &&
+                                           !is_terminal(snapshot.value().state);
+                                }}};
+    });
     ConversationLoop first_loop(gateway), second_loop(gateway);
     first_loop.set_event_store(events, runtime_id, bindings[0].work.session_id);
     second_loop.set_event_store(events, runtime_id, bindings[1].work.session_id);
@@ -216,6 +246,8 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
         return false;
     }
     auto answer1 = first_loop.run(bindings[0].work, context_for(bindings[0].work));
+    if (!personas.activate(persona_key, {2, "Use the updated host persona."}))
+        return false;
     auto answer2 = second_loop.run(bindings[1].work, context_for(bindings[1].work));
     if (!answer1 || !answer2 || answer1.value().outcome != ConversationOutcome::Answered ||
         answer2.value().outcome != ConversationOutcome::Answered ||
@@ -228,7 +260,9 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
     }
     const bool correct =
         text(provider->requests[0]).find("target volume must be 20") != std::string::npos &&
+        text(provider->requests[0]).find("initial host persona") != std::string::npos &&
         text(provider->requests[1]).find("network=offline") != std::string::npos &&
+        text(provider->requests[1]).find("updated host persona") != std::string::npos &&
         text(provider->requests[1]).find("target volume") == std::string::npos &&
         environment->executed_inputs().empty();
     coordinator.shutdown();
@@ -247,9 +281,15 @@ int main() {
         return 1;
     const auto root = std::filesystem::temp_directory_path() /
                       ("mira-memory-host-" + Id128::generate().to_string());
-    std::filesystem::create_directories(root);
-    const bool passed = run(executor, root);
-    (void)executor.shutdown(true);
+    bool passed = false;
+    try {
+        std::filesystem::create_directories(root);
+        passed = run(executor, root);
+    } catch (...) {
+        std::cerr << "memory host: unexpected failure\n";
+    }
+    if (executor.shutdown(true) != kairo::ShutdownResult::Completed)
+        passed = false;
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
     std::cout << (passed ? "memory host: two work scopes, correction fence and final admission OK\n"

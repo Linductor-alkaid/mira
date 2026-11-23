@@ -34,6 +34,35 @@ ProcessCrash（请求 Buffered 也如此）；PowerLoss 的 append/flush 在写�
 当前无系统级掉电同步，不能把成功回执解释成 PowerLoss。裸内存 store 不能满足
 ActionJournal/VerifiedFactPublisher 的强确认门槛；测试模拟回执不用于真实宿主。
 
+### 有界事件切片
+
+`IEventStore::read_slice(EventSliceQuery)` 按精确 Session 和序号读取证据，可收窄到
+Task、精确事件类型和墙钟区间 `[recorded_from, recorded_before)`，也可排除类型前缀。
+MemoryEventStore 使用 Session、Session/Task、Session/type 索引。时间条件在有界扫描
+中校验，缺失墙钟的旧事件只参加无时间条件的查询。FileEventStore 从原日志重建索引。
+
+读者把上一页的 `snapshot_through` 作为后续 `through_sequence`，并把
+`scanned_through` 作为新的 `after_sequence`。只要 `has_more` 为真，就可继续，
+包括经过条件过滤的空页。固定上界和游标都使用会话序号。超出源末尾的上界或游标
+返回 InvalidState，请求的筛选字段在分页期间应保持一致。每页独立限制返回条数
+（1～1024）、扫描位置数（1～4096）和载荷类型与正文的字节和（1～64 MiB）。
+遇到超出剩余额度的下一条匹配事件时留给下一页；单条无法装入空页则明确返回
+ResourceExhausted。索引查询不改变源事件及原 `read(EventQuery)` 的语义。
+
+```cpp
+mira::EventSliceQuery query;
+query.session_id = authorized_session;
+query.task_id = authorized_task;
+query.event_type = "TaskFactVerified";
+query.limit = 32;
+auto page = event_store.read_slice(query);
+// 消费成功页后以 snapshot_through 和 scanned_through 继续。
+```
+
+宿主在调用前负责会话、任务与载荷读取权限。切片水位只描述本次来源覆盖。旧适配器
+默认返回 UnsupportedCapability，消费者与库需按新头重新编译。参见
+[DEC-121](../decisions/DEC-121-indexed-event-slices.md)。
+
 ## artifact_store.hpp
 
 大体积载荷（截图、原始模型响应）不进事件流：`ArtifactDescriptor`（含

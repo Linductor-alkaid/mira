@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mira/agent_persona.hpp>
 #include <mira/event_store.hpp>
 #include <mira/model_budget.hpp>
 #include <mira/model_context_admission.hpp>
@@ -121,6 +122,9 @@ class ModelGateway final {
     void set_admission_gate(std::shared_ptr<const TaskAdmissionGate> gate);
     // Configure before infer(); bounded cache read, no blocking/model calls.
     void set_context_supplier(ModelContextSupplier supplier);
+    // Configure before infer(). Supplies only from current authenticated
+    // task bindings and an already loaded host-owned catalog.
+    void set_persona_supplier(AgentPersonaSupplier supplier);
 
     [[nodiscard]] Result<ModelCallOutcome> infer(const ModelRequest &request,
                                                  const OperationContext &context,
@@ -155,6 +159,7 @@ class ModelGateway final {
     SessionId session_;
     RepairPolicy repair_policy_;
     ModelContextSupplier context_supplier_;
+    AgentPersonaSupplier persona_supplier_;
 };
 
 } // namespace mira

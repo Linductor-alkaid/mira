@@ -26,6 +26,11 @@ struct ConversationEntry final {
     SessionSequence session_sequence = 0;
 };
 
+// Shared reducer for bounded consumers of conversation evidence. Unrelated
+// event types produce an empty optional.
+[[nodiscard]] Result<std::optional<ConversationEntry>>
+project_conversation_entry(const EventEnvelope &envelope);
+
 // Rebuilds the conversation view for one session from `UserMessageInjected`,
 // `AssistantSpeech` (both ConversationLoop, DEC-104) and both `LoopSettled`
 // (AgentLoop) and `ConversationSettled` (ConversationLoop) events in session

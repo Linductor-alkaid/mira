@@ -156,6 +156,7 @@ add_library(mira_core
     src/model/reranker_provider.cpp
     src/model/model_upload.cpp
     src/model/model_gateway.cpp
+    src/model/agent_persona.cpp
     src/model/model_context_admission.cpp
     src/model/model_replay.cpp
     src/model/tool_executor.cpp
@@ -233,6 +234,7 @@ add_library(mira_state_store
     src/storage/sqlite_store_open.cpp
     src/storage/sqlite_checkpoint_store.cpp
     src/storage/sqlite_memory_store.cpp
+    src/storage/sqlite_conversation_index.cpp
 )
 add_library(Mira::state_store ALIAS mira_state_store)
 target_include_directories(mira_state_store

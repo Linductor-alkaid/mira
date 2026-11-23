@@ -95,6 +95,30 @@ struct EventPage final {
     bool has_more = false;
 };
 
+// The caller authorizes the exact session before reading. Sequence bounds
+// apply to that session even when filtering by task, type, or wall time.
+struct EventSliceQuery final {
+    SessionId session_id;
+    std::optional<TaskId> task_id;
+    std::optional<std::string> event_type;
+    std::optional<std::string> excluded_type_prefix;
+    std::optional<WallTimePoint> recorded_from;   // Inclusive.
+    std::optional<WallTimePoint> recorded_before; // Exclusive.
+    SessionSequence after_sequence = 0;
+    std::optional<SessionSequence> through_sequence;
+    std::size_t limit = 128;
+    std::size_t scan_limit = 1024;
+    std::size_t byte_limit = 1024 * 1024; // Payload type and data bytes.
+};
+
+struct EventSlicePage final {
+    std::vector<EventEnvelope> events;
+    SessionSequence snapshot_through = 0;
+    SessionSequence scanned_through = 0;
+    // There are more candidates to examine, even if this page is empty.
+    bool has_more = false;
+};
+
 enum class RecoveryStatus : std::uint8_t { Clean, TailTruncated, ReadOnlyDiagnostic, DataLoss };
 
 struct StoreRecoveryReport final {
@@ -114,6 +138,8 @@ class IEventStore {
     virtual Result<AppendReceipt> append(const AppendRequest &) = 0;
     virtual Result<std::vector<AppendReceipt>> append_batch(std::span<const AppendRequest>) = 0;
     virtual Result<EventPage> read(const EventQuery &) const = 0;
+    // Optional indexed read. Older adapters report UnsupportedCapability.
+    virtual Result<EventSlicePage> read_slice(const EventSliceQuery &) const;
     virtual Result<StoreRecoveryReport> recover(const RecoveryOptions &) = 0;
     virtual Result<void> flush(Durability) = 0;
 };
@@ -128,6 +154,7 @@ class MemoryEventStore final : public IEventStore {
     Result<AppendReceipt> append(const AppendRequest &) override;
     Result<std::vector<AppendReceipt>> append_batch(std::span<const AppendRequest>) override;
     Result<EventPage> read(const EventQuery &) const override;
+    Result<EventSlicePage> read_slice(const EventSliceQuery &) const override;
     Result<StoreRecoveryReport> recover(const RecoveryOptions &) override;
     Result<void> flush(Durability) override;
     [[nodiscard]] std::size_t size() const noexcept;
@@ -152,6 +179,7 @@ class FileEventStore final : public IEventStore {
     Result<AppendReceipt> append(const AppendRequest &) override;
     Result<std::vector<AppendReceipt>> append_batch(std::span<const AppendRequest>) override;
     Result<EventPage> read(const EventQuery &) const override;
+    Result<EventSlicePage> read_slice(const EventSliceQuery &) const override;
     Result<StoreRecoveryReport> recover(const RecoveryOptions &) override;
     Result<void> flush(Durability) override;
     [[nodiscard]] const std::filesystem::path &root() const noexcept;
@@ -159,6 +187,7 @@ class FileEventStore final : public IEventStore {
     [[nodiscard]] Result<std::uint64_t> log_bytes() const;
 
   private:
+    Result<void> ensure_loaded() const;
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

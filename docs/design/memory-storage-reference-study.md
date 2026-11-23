@@ -4,6 +4,10 @@
 > 日期：2026-11-10
 > 负责人：Mira Maintainers
 > 基线：`1bc162e`；关联工作：[记忆存储维护](../plans/maintenance-2026-11-memory-storage.md)
+> 后续增量：DEC-121 已为 FileEventStore 增加可重建的 Session/Task/type 事件索引及有界
+> 分页。持久会话资产索引和事件后端迁移仍按各自计划验收。
+> DEC-122 接入 SQLite 持久会话片段与 FTS5，并把片段纳入 Session scope 擦除重放。
+> 其他资产类型和大规模增量修复按维护计划推进。
 
 ## 1. 结论
 

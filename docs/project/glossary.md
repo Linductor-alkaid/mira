@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.12
-> 更新日期：2026-11-10
+> 版本：1.16
+> 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -299,6 +299,22 @@ _Avoid_: 会话记忆、缓存
 不新造 Task 状态机。见[记忆代理设计](../design/memory_agent_design.md)。
 _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 
+**Memory Recall Group（记忆召回组）**：
+宿主配置的一组互斥 MemoryKind，在当前工作的 scope 内使用独立记录与文本配额。
+每组输出独立的请求候选，实际准入由 Gateway 决定。见[分类读写契约](../design/m30-memory-systems.md)。
+
+**Agent Persona（Agent 人格）**：
+宿主按租户及 Agent ID 管理的版本化角色约定。由已授权任务绑定加载生效配置，按具体
+激活版本进入模型请求。见[DEC-120](../decisions/DEC-120-agent-persona-admission.md)。
+
+**Event Slice（事件切片）**：
+按精确会话和有界序号窗口查询事件证据，可按任务、类型和墙钟范围收窄。
+读取回执携带快照上界与扫描水位，供继续分页。见[DEC-121](../decisions/DEC-121-indexed-event-slices.md)。
+
+**Durable Conversation Index（持久会话片段索引）**：
+按授权会话及匹配的 Session scope 召回 SQLite 会话片段。片段由固定事件水位重建，
+保留来源事件和角色，且受会话擦除屏障约束。见[DEC-122](../decisions/DEC-122-durable-conversation-index.md)。
+
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定
 实际载荷，快照本身不等于已装载请求。见[API](../api/memory-agent.md)。
@@ -306,7 +322,8 @@ _Avoid_: 完整系统提示词、授权快照、供应商 continuation
 
 **原生角色回放（Native Role Replay）**:
 逐字会话记忆按原始说话人以原生 User/Assistant 消息角色回放（说话人由
-`wire_role` 结构承载，DEC-108）；事实召回合并为单个带框架头的 user 消息。
+`wire_role` 结构承载，DEC-108）。事实召回默认使用单个带框架头的 user 消息，
+配置召回组时每个有内容的组各供给一条。
 不可信召回永不获得 System/Developer 角色。
 _Avoid_: 文本前缀标注说话人、把召回提升为系统消息
 

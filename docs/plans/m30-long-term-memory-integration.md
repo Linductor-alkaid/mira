@@ -1,6 +1,6 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
-> 状态：In Progress（DEC-107 首批 scope/生命周期增量；其余工作项继续细化）
+> 状态：In Progress（已交付分组召回、人格接线、事件切片及持久会话片段的 Linux 增量）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -12,7 +12,7 @@
 > M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）；
 > DEC-070 契约冻结（已满足，2026-10-28 随 M28 登记一并冻结）
 > 建议发布点：非发布物；M31 价值驱动淘汰的输入侧前提
-> 更新日期：2026-11-10（DEC-109 持久偏好提案与显式确认增量）
+> 更新日期：2026-11-23
 
 ## 1. 目标
 
@@ -26,6 +26,8 @@
    经既有权限与 policy 处理；冲突、来源、有效期与删除状态**可解释**。
 4. **召回排序（可选增量）**：可验证回忆反馈、importance/使用信号与查询相关性分离的排序。
    **是否新增 API、分几步做由立项评审决定**——不得先冻结激活公式而遗漏完整交互闭环。
+5. **分类读写**：按 [DEC-119](../decisions/DEC-119-six-memory-systems.md) 的六类契约接入
+   人格、事件记忆、社交对象画像、世界模型记忆、目标记忆与技能记忆。
 
 ## 2. 范围与非目标
 
@@ -40,9 +42,7 @@
 
 ### 2.2 非目标
 
-- **不做** 向量索引生产化：`IEmbeddingProvider` 生产实现、ANN 索引
-  （当前向量腿是**有界线性余弦扫描**，`max_vector_scan=1'024`，
-  [`include/mira/sqlite_memory_store.hpp:26`](../../include/mira/sqlite_memory_store.hpp#L26)）。
+- 向量召回复用 DEC-111/113 的供给与混合检索，ANN 与规模优化在专项验证后立项。
 - **不做** 容量准入、归档与遗忘（归 M31）。
 - **不做** 记忆中的授权描述替代当前有效授权：记忆里的 grant 描述**不能**当作授权来源。
 - **不做** 跨 session/tenant 泄漏；跨会话召回继续服从**精确 scope/tenant ACL**。
@@ -51,6 +51,11 @@
 
 ## 3. 设计与决策依据
 
+- [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
+- [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
+- [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
+- [DEC-119](../decisions/DEC-119-six-memory-systems.md) 与
+  [六类记忆设计](../design/m30-memory-systems.md)：分类、事实源、写入、索引和读取契约。
 - [记忆存储研究](../design/memory-storage-reference-study.md)与
   [维护计划](maintenance-2026-11-memory-storage.md)：SQLite 宿主接入、检索额度隔离和
   跨进程示例；持久会话资产索引及旧 JSON 导入仍待后续冻结，不代替 M30 生命周期验收。
@@ -107,7 +112,8 @@
 
 ## 5. 工作项
 
-- [ ] `M30-01` 立项与跑前冻结（DEC-107/109 增量已冻结；承诺、完整记忆意图、价值信号与删除世代细则待冻结）。
+- [ ] `M30-01` 立项与跑前冻结（DEC-107/109 增量及 DEC-119 六类契约已冻结；承诺存储、
+      完整记忆意图、价值信号与删除世代的实施细则待冻结）。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
 - [ ] `M30-03` 记忆候选提出与经既有管线的写入路径（终态 Session Record 及显式 User 偏好提案/持久审批已接通；其他候选报告的统一持久收集与触发仍待完成）。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
@@ -118,6 +124,19 @@
 - [ ] `M30-09` 冻结并实现删除后的同 scope 新知识接纳：区分新世代与已删除来源，
       旧事件、摘要和在途提案不得回灌；有新的明确用户输入时可重新记忆。与 M31
       的屏障保留/回收协同验收，不能直接删除 M36 的屏障来重新开放 scope。
+- [x] `M30-10` 冻结六类契约并交付宿主可配置的独立召回组，验证类别配额、ACL、
+      追加查询、去重和 Gateway 候选失效（Linux 离线首增量）。
+- [x] `M30-11` 提供按租户与 Agent ID 读取生效人格的宿主 API 及 Gateway 接线，
+      验证重载、回滚、授权、角色边界、预算和在途失效（Linux 离线）。
+- [x] `M30-12` 接通事件取证水位与 Session/Task/type 查询，以及持久会话片段召回，
+      验证时间过滤、重建、重开和联合擦除（Linux 离线）。
+- [ ] `M30-13` 提供社交对象与关系的稳定身份、属性级证据和环境内索引，验证同名歧义和跨域隔离。
+- [ ] `M30-14` 接通环境/应用事实的实体、属性与时态查询，验证环境隔离及过期重新观察。
+- [ ] `M30-15` 持久化目标和承诺的状态、授权、到期索引及重复计划身份，验证兑现、取消、
+      重启和幂等恢复；主动派发与打断预算归 M33。
+- [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
+- [x] `M30-17` 交付 M30-12 的证据源增量，提供有界事件切片与 Record 水位，验证空页、
+      文件重开、时间边界、错误传播及擦除屏障（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -341,3 +360,159 @@ sanitizer、Windows Debug/Release（各 180/180 离线测试）、Android 双架
 消费交叉链接、quality 全部通过。具体 run、复现及历史分支核对见
 [存储维护记录](maintenance-2026-11-memory-storage.md)。原“远端 CI/Windows/NDK 待补跑”
 已由该证据补齐，真实设备/模型、强杀/断电及本里程碑其他工作项保持未完成。
+
+### 2026-11-20：六类契约与独立召回组
+
+基线为 `a70f10a`，分支 `feat/m30-memory-systems`。按维护者决定冻结人格、事件记忆、
+社交对象画像、世界模型记忆、目标记忆和技能记忆的来源、写入、索引、纠正与失效边界。
+依据为 DEC-119 与六类记忆设计。M30-10 通过 MemoryAgentConfig 的宿主配置将现有类型
+分组查询，独立消耗记录和文本额度，在同一次受管工作内去重并按组发布 P4 候选。
+SQLite 继续使用现有格式，实体和专用索引由 M30-11～16 各自验收。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake --build build/release -j 10
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 6 --target mira_m30_recall_groups_test \
+  mira_m30_lifecycle_faults_test mira_m36_memory_agent_lifecycle_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(recall_groups|lifecycle_faults)|m36_memory_agent_lifecycle)_test'
+clang-tidy -p build/release --warnings-as-errors='*' \
+  src/context/memory_agent.cpp src/context/memory_agent_jobs.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+```
+
+Linux Release 全量 **196/196**，ASAN 定向 **3/3**。定向集成测试经
+InteractionCoordinator 自动触发已授权工作的 Recall，以真实 SQLite 验证按类独立配额、
+追加查询去重、跨租户及未配置类型排除、空结果、无效配置和快照失效。
+宿主示例经 Gateway 使用分组召回。既有生命周期用例覆盖提交拒绝、异常、取消、超时、
+关停与接管。格式、文档、SBOM、平台边界、架构检查及生产变更单元严格 clang-tidy 通过。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 远端 CI、Windows、Android 和 Linux 其他 sanitizer | Mira Maintainers，分支提交后运行仓库完整矩阵，按对应 head 回填 |
+| 真实模型召回质量和规模延迟 | Mira Maintainers 与宿主集成者，固定数据集、部署硬件、授权与模型配置后执行分类召回与配额矩阵 |
+| 六类实体和专用索引 | Mira Maintainers，按 M30-11～16 实施并验证各自的读取、重启与失效路径 |
+
+### 2026-11-20：人格目录与 Gateway 准入
+
+在同一分支的 M30-10 基础上执行 M30-11。DEC-120 冻结宿主配置加载、按租户与 Agent
+ID 解析、具体激活版本失效、完整请求预算及角色边界。宿主以现有授权和持久配置作为
+事实源。Core 目录只保留有界的当前版本，不创建新任务、定时器或持久库。
+
+模型请求的宿主指令前缀内加入 Internal System 人格项，原历史及工具选择保持原权限。
+调用内的重试沿用已捕获人格，发送、预览和完成均复核版本与任务授权。失效完成结算用量
+并丢弃正文、工具提议及续接。宿主示例展示生效配置从 v1 到 v2 后在正常请求中切换。
+测试覆盖回滚不会复活旧快照、撤销、身份隔离、容量、预算和三种模型协议映射。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release
+cmake --build build/release -j 10
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_persona_test \
+  mira_m36_context_admission_test mira_m3_conversation_system_prompt_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_persona|m36_context_admission|m3_conversation_system_prompt)_test'
+clang-tidy -p build/release --warnings-as-errors='*' \
+  src/model/agent_persona.cpp src/model/model_gateway.cpp \
+  examples/memory_agent_host_consumer.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+```
+
+Linux Release 全量 **197/197**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、
+SBOM、平台边界及架构门禁通过。首轮静态检查发现宿主示例的异常退出路径，已在示例
+入口显式处理并复跑，异常仍按原 owner 顺序关闭 Executor。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| Mirage 持久配置与已认证任务映射接线 | Mirage Maintainers，在商定产品配置格式及授权来源后接线，验证配置保存、重启恢复与回滚 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，提交分支后运行 CI 矩阵，并以相应 head 回填 |
+| 在线模型人格效果 | Mira Maintainers 与宿主集成者，使用实际模型与固定场景验证配置合成和更新效果 |
+
+### 2026-11-20：事件切片与 Record 取证水位
+
+沿用 `feat/m30-memory-systems`。DEC-121 / M30-17 接通 M30-12 的证据源层。MemoryEventStore
+按 Session、Session/Task、Session/type 构建有界位置索引，FileEventStore 从原日志校验
+并重建。切片按会话序号分页，返回固定上界与已扫描水位，按墙钟过滤且跳过未知时间
+的旧事件。每页的返回数、扫描位置和载荷字节独立设限。原日志格式与幂等追加语义延续。
+
+MemoryAgent 的 Record 直接读取已绑定任务的证据，排除自己的审计记录。多页处理在
+进程内的工作绑定上保留原上界，即使本轮有空页也推进扫描水位。旧适配器显式返回 UnsupportedCapability
+时使用原有会话分页。读失败或后端水位不一致时作业失败，后续重试使用原水位。
+擦除屏障继续阻止已删除 scope 在重开后重新绑定与写入。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release
+cmake --build build/release -j 10
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_event_slices_test \
+  mira_file_event_time_test mira_m36_memory_agent_lifecycle_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_event_slices|file_event_time|m36_memory_agent_lifecycle)_test'
+clang-tidy -p build/release --warnings-as-errors='*' \
+  src/storage/event_store.cpp src/context/memory_agent_jobs.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+```
+
+Linux Release 全量 **198/198**、最终重开场景定向 **2/2**，ASAN 定向 **3/3**。
+严格 clang-tidy、格式、文档、SBOM、平台边界和架构门禁通过。
+定向覆盖跨 Session/Task、类型与时间条件、固定上界、空页、字节额度、重开和损坏
+拒绝。记录测试在每页一条的条件下穿过同会话的其他任务事件和自身审计事件，并验证
+后续追加、旧适配器、有错误的切片后端以及擦除后重开日志并重启服务。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 持久会话片段索引和派生物联合擦除 | Mira Maintainers，按 M30-12 和 MS-04 冻结派生物存储、时间索引与水位恢复后补测 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，分支提交后运行 CI，按被测 head 回填 |
+| 规模、驻留、分段归档与真实崩溃 | Mira Maintainers，在 M31 分段及回收契约与目标资料集就绪后补测 |
+
+### 2026-11-23：持久会话片段与联合擦除
+
+在 `feat/m30-memory-systems` 上按 DEC-122 实施 M30-12。SqliteConversationIndex 复用
+会话投影、窗口分段和 StoreChannel。宿主以授权 Session 及稳定租户 scope 从原日志
+重建固定水位，读取前及提交时核对会话归属与擦除屏障。SQLite 事务同时替换片段、
+全文索引及水位。按会话与精确 scope 过滤，保留来源事件和原生对话角色。
+
+MemoryAgent 把会话片段纳入已提交的 scope 擦除。索引失败时本实例封闭召回和重建，
+既有长期记忆清理仍执行。定向用例覆盖文件重开、全文/字面匹配、租户隔离、降级、超时、
+同水位冲突、容量回滚、内容门禁、已擦除源禁止重建，以及索引侧容量故障后的擦除重放。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release
+cmake --build build/release -j 10
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 5 --target mira_m30_conversation_index_test \
+  mira_m30_event_slices_test mira_m36_memory_agent_lifecycle_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(conversation_index|event_slices)|m36_memory_agent_lifecycle)_test'
+clang-tidy -p build/release --warnings-as-errors='*' \
+  src/storage/sqlite_conversation_index.cpp src/storage/sqlite_support.cpp \
+  src/storage/sqlite_memory_store.cpp src/context/memory_agent.cpp \
+  src/model/conversation_log.cpp src/support/content_markers.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+```
+
+Linux Release 全量 **199/199**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、
+SBOM、平台边界和架构门禁通过。架构检查的私有头引用已改为公开内容标记检查接口。
+一次构建期间更新源码使 Release 留下旧索引实现，强制重编后擦除前置检查与全量复跑均通过。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实 Mirage 宿主通过认证绑定挂载 | Mirage Maintainers，在产品采用本库版本后验证启动重放顺序、索引刷新与授权所有权 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，分支提交后运行完整矩阵，按被测 head 回填 |
+| 其他上下文资产、规模与联合物理回收 | Mira Maintainers，续按 MS-04/MS-06、M31 的负载与回收契约验证 |

@@ -173,6 +173,19 @@ namespace {
 
 } // namespace
 
+Result<std::optional<ConversationEntry>> project_conversation_entry(const EventEnvelope &envelope) {
+    const auto &type = envelope.payload.type;
+    if (type != "UserMessageInjected" && type != "AssistantSpeech" && type != "LoopSettled" &&
+        type != "ConversationSettled")
+        return std::optional<ConversationEntry>{};
+    auto projected = type == "UserMessageInjected" ? user_message_entry(envelope)
+                     : type == "AssistantSpeech"   ? assistant_speech_entry(envelope)
+                                                   : loop_outcome_entry(envelope);
+    if (!projected)
+        return projected.error();
+    return std::optional<ConversationEntry>{std::move(projected).value()};
+}
+
 Result<std::vector<ConversationEntry>> build_conversation_view(const IEventStore &store,
                                                                const SessionId &session) {
     std::vector<ConversationEntry> entries;
@@ -186,26 +199,11 @@ Result<std::vector<ConversationEntry>> build_conversation_view(const IEventStore
             return page.error();
         }
         for (const auto &envelope : page.value().events) {
-            if (envelope.payload.type == "UserMessageInjected") {
-                auto entry = user_message_entry(envelope);
-                if (!entry) {
-                    return entry.error();
-                }
-                entries.push_back(std::move(entry).value());
-            } else if (envelope.payload.type == "AssistantSpeech") {
-                auto entry = assistant_speech_entry(envelope);
-                if (!entry) {
-                    return entry.error();
-                }
-                entries.push_back(std::move(entry).value());
-            } else if (envelope.payload.type == "LoopSettled" ||
-                       envelope.payload.type == "ConversationSettled") {
-                auto entry = loop_outcome_entry(envelope);
-                if (!entry) {
-                    return entry.error();
-                }
-                entries.push_back(std::move(entry).value());
-            }
+            auto entry = project_conversation_entry(envelope);
+            if (!entry)
+                return entry.error();
+            if (entry.value())
+                entries.push_back(std::move(*entry.value()));
         }
         if (!page.value().has_more || page.value().events.empty()) {
             break;
