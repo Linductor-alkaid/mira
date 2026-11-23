@@ -15,6 +15,7 @@
 #include <mira/workflow_run.hpp>
 #include <mira/workflow_tools.hpp>
 #include <mira/workflow_versioning.hpp>
+#include <mira/world_fact.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -33,6 +34,22 @@ class Executor;
 } // namespace kairo
 
 namespace mira {
+
+// Opt-in navigation memory. The host supplies current authority and recognizes
+// the actual fresh observation passed by the runtime. All callbacks must be
+// bounded, and any blocking callback must honor its OperationContext.
+struct NavigationWorldFacts final {
+    TenantId tenant;
+    Id128 environment;
+    Id128 application;
+    std::string app_id;
+    WorldProperty screen_state;
+    ObservationRequest observation_request;
+    std::function<bool(const OperationContext &)> authorized;
+    std::function<Result<WorldFactLookup>(const WorldFactQuery &, const OperationContext &)> lookup;
+    std::function<Result<ScreenStateSnapshot>(const Observation &, const OperationContext &)>
+        recognize;
+};
 
 class SkillPublicationRegistry;
 
@@ -247,6 +264,7 @@ class WorkflowRuntime final {
     // Reinstalls the model projection (e.g. a decayed or host-edited
     // document); the screen state provider stays. Same validation rules.
     [[nodiscard]] Result<void> set_app_model(AppModel model);
+    [[nodiscard]] Result<void> set_navigation_world_facts(NavigationWorldFacts binding);
     // The confidence-evolved projection for host inspection and decay
     // workflows; nullopt when no context is installed.
     [[nodiscard]] std::optional<AppModel> app_model_snapshot() const;
@@ -549,12 +567,20 @@ class WorkflowRuntime final {
     // (DEC-028 §2): screen_state:<id> (true) for the current state plus
     // screen_state:current (id string); nothing injected without a snapshot.
     // The provider is invoked without holding the runtime mutex.
-    [[nodiscard]] JsonValue evaluation_context(const RunRecord &run) const;
+    [[nodiscard]] JsonValue evaluation_context(const RunRecord &run,
+                                               const ScreenStateSnapshot *known = nullptr) const;
     // Confidence write-back for one traversed edge (DEC-027 §2 pure update
     // under the mutex); events are emitted outside it.
     void note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
                                  const AppModelTransition &transition, bool success,
-                                 std::uint64_t now_ms);
+                                 std::uint64_t now_ms, std::uint64_t revision);
+    [[nodiscard]] Result<void>
+    check_navigation_authority(std::uint64_t revision, const NavigationWorldFacts *binding,
+                               const OperationContext &context,
+                               std::optional<std::uint64_t> epoch = {}) const;
+    [[nodiscard]] Result<ScreenStateSnapshot>
+    observe_navigation_screen(const NavigationWorldFacts &binding, const OperationContext &context,
+                              std::uint64_t revision, std::uint64_t epoch);
     [[nodiscard]] bool navigation_context_installed() const;
 
     // Stage F learning loop (DEC-030). record_episode runs on the settling
@@ -605,7 +631,8 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<ToolExecutionRecord>
     dispatch_tool_invocation(RunRecord &run, const ExposedToolSpec &tool, const JsonValue &input,
                              const std::string &call_id, const OperationContext &parent,
-                             const DriveFlags &flags, bool &cancelled);
+                             const DriveFlags &flags, bool &cancelled,
+                             std::function<Result<void>(const OperationContext &)> preflight = {});
     [[nodiscard]] Result<Observation> observe_for_verification(const RunRecord &run,
                                                                const WorkflowStep &step,
                                                                const OperationContext &parent);
@@ -666,6 +693,9 @@ class WorkflowRuntime final {
     // mutex_; the provider is copied out and invoked without the lock.
     std::optional<AppModel> app_model_;
     ScreenStateProvider screen_state_provider_;
+    Sha256Digest app_model_installed_digest_;
+    std::uint64_t navigation_revision_ = 0;
+    std::shared_ptr<const NavigationWorldFacts> navigation_world_facts_;
     // Stage F learning context (DEC-030 §1): the memory facade, its single
     // ACL scope and the retrieval bounds. Guarded by mutex_; the memory
     // facade is copied out and invoked without the lock.

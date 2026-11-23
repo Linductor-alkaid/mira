@@ -49,6 +49,8 @@ enum class WorkflowRuntimeError : std::int32_t {
     NavigatePlanFailed = 23,
     NavigateArrivalUnverified = 24,
     NavigateTargetInvalid = 25,
+    NavigateContextChanged = 26,
+    NavigateAuthorizationLost = 27,
 };
 
 Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
@@ -96,7 +98,11 @@ Error make_runtime_error(WorkflowRuntimeError code, const std::string &detail) {
         break;
     case WorkflowRuntimeError::DecisionNotPending:
     case WorkflowRuntimeError::DecisionMismatch:
+    case WorkflowRuntimeError::NavigateContextChanged:
         error.code = ErrorCode::InvalidState;
+        break;
+    case WorkflowRuntimeError::NavigateAuthorizationLost:
+        error.code = ErrorCode::PermissionDenied;
         break;
     case WorkflowRuntimeError::NavigateNoScreenState:
     case WorkflowRuntimeError::NavigatePlanFailed:
@@ -330,8 +336,11 @@ Result<void> WorkflowRuntime::set_navigation_context(AppModel model, ScreenState
     if (auto valid = validate_app_model(model); !valid.has_value()) {
         return valid.error();
     }
+    const auto digest = app_model_digest(model);
     std::lock_guard lock(mutex_);
     app_model_ = std::move(model);
+    app_model_installed_digest_ = digest;
+    ++navigation_revision_;
     screen_state_provider_ = std::move(provider);
     return Result<void>{};
 }
@@ -340,9 +349,35 @@ Result<void> WorkflowRuntime::set_app_model(AppModel model) {
     if (auto valid = validate_app_model(model); !valid.has_value()) {
         return valid.error();
     }
+    const auto digest = app_model_digest(model);
     std::lock_guard lock(mutex_);
     app_model_ = std::move(model);
+    app_model_installed_digest_ = digest;
+    ++navigation_revision_;
     return Result<void>{};
+}
+
+Result<void> WorkflowRuntime::set_navigation_world_facts(NavigationWorldFacts binding) {
+    const auto scope =
+        world_application_scope(binding.tenant, binding.environment, binding.application);
+    if (!scope)
+        return scope.error();
+    if (auto valid = WorldFactQuery{scope.value(), binding.screen_state, {}, {}}.validate(); !valid)
+        return valid.error();
+    binding.observation_request.max_age = std::chrono::milliseconds{0};
+    if (auto valid = validate_observation_request(binding.observation_request); !valid)
+        return valid.error();
+    if (!binding.authorized || !binding.lookup || !binding.recognize)
+        return workflow_error(ErrorCode::InvalidArgument,
+                              "navigation world fact callbacks are required");
+    auto prepared = std::make_shared<const NavigationWorldFacts>(std::move(binding));
+    std::lock_guard lock(mutex_);
+    if (!app_model_ || !screen_state_provider_ || app_model_->app_id != prepared->app_id)
+        return workflow_error(ErrorCode::InvalidState,
+                              "navigation world facts require the matching app model");
+    navigation_world_facts_ = std::move(prepared);
+    ++navigation_revision_;
+    return {};
 }
 
 std::optional<AppModel> WorkflowRuntime::app_model_snapshot() const {
@@ -1904,7 +1939,8 @@ bool WorkflowRuntime::step_tool_has_side_effects(const RunRecord &run, std::size
 
 Result<ToolExecutionRecord> WorkflowRuntime::dispatch_tool_invocation(
     RunRecord &run, const ExposedToolSpec &tool, const JsonValue &input, const std::string &call_id,
-    const OperationContext &parent, const DriveFlags &flags, bool &cancelled) {
+    const OperationContext &parent, const DriveFlags &flags, bool &cancelled,
+    std::function<Result<void>(const OperationContext &)> preflight) {
     ToolProposal proposal;
     proposal.provider_call_id = ProviderToolCallId{call_id};
     proposal.tool_id = tool.tool_id;
@@ -1918,24 +1954,31 @@ Result<ToolExecutionRecord> WorkflowRuntime::dispatch_tool_invocation(
     OperationContext context = parent;
     context.task_epoch = run.task_epoch;
     context.started_at = Timestamp::now();
-    context.deadline = std::chrono::steady_clock::now() + config_.step_deadline;
-    context.cancellation_requested = [&flags] {
-        return flags.withdrawn.load(std::memory_order_relaxed);
+    const auto step_deadline = context.started_at.monotonic + config_.step_deadline;
+    context.deadline = std::min(parent.deadline.value_or(step_deadline), step_deadline);
+    context.cancellation_requested = [&flags, probe = parent.cancellation_requested] {
+        return flags.withdrawn.load(std::memory_order_relaxed) || (probe && probe());
     };
 
     auto tools = tools_;
     std::future<Result<ToolExecutionRecord>> future;
     try {
-        future = executor_.submit_auto([tools, proposal, context, depth = run.skill_depth] {
-            // TR2 (DEC-040 §18.3): publish the dispatching run's Skill depth
-            // to the handler thread; the guard restores 0 no matter how the
-            // handler exits, so no pooled worker keeps a stale depth.
-            struct DepthGuard {
-                ~DepthGuard() { t_skill_dispatch_depth_ = 0; }
-            } guard;
-            t_skill_dispatch_depth_ = depth;
-            return tools->execute(proposal, context);
-        });
+        future = executor_.submit_auto(
+            [tools, proposal, context, depth = run.skill_depth,
+             preflight = std::move(preflight)]() -> Result<ToolExecutionRecord> {
+                if (preflight) {
+                    if (auto checked = preflight(context); !checked)
+                        return checked.error();
+                }
+                // TR2 (DEC-040 §18.3): publish the dispatching run's Skill depth
+                // to the handler thread; the guard restores 0 no matter how the
+                // handler exits, so no pooled worker keeps a stale depth.
+                struct DepthGuard {
+                    ~DepthGuard() { t_skill_dispatch_depth_ = 0; }
+                } guard;
+                t_skill_dispatch_depth_ = depth;
+                return tools->execute(proposal, context);
+            });
     } catch (const std::exception &exception) {
         return workflow_error(ErrorCode::ResourceExhausted, exception.what(), true);
     }
@@ -2028,23 +2071,23 @@ Result<void> WorkflowRuntime::dispatch_step(RunRecord &run, const WorkflowStep &
     }
 }
 
-JsonValue WorkflowRuntime::evaluation_context(const RunRecord &run) const {
+JsonValue WorkflowRuntime::evaluation_context(const RunRecord &run,
+                                              const ScreenStateSnapshot *known) const {
     JsonValue context;
     ScreenStateProvider provider;
     {
         std::lock_guard lock(mutex_);
         context = run.predicate_context;
-        provider = screen_state_provider_;
+        if (!known)
+            provider = screen_state_provider_;
     }
     // The provider is a host callback: never invoked under the runtime mutex
     // (DEC-027 §3); a missing or empty reading injects nothing, so every
     // screen_state predicate stays NotEvaluable (fail closed).
-    if (provider) {
-        const auto snapshot = provider();
-        if (snapshot.has_value() && !snapshot.value().state_id.empty()) {
-            context.set("screen_state:" + snapshot.value().state_id, true);
-            context.set("screen_state:current", snapshot.value().state_id);
-        }
+    const auto snapshot = known ? std::optional{*known} : (provider ? provider() : std::nullopt);
+    if (snapshot && !snapshot->state_id.empty()) {
+        context.set("screen_state:" + snapshot->state_id, true);
+        context.set("screen_state:current", snapshot->state_id);
     }
     return context;
 }
@@ -2085,11 +2128,11 @@ void WorkflowRuntime::emit_navigation_observed(const RunRecord &run, const Workf
 
 void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep &step,
                                               const AppModelTransition &transition, bool success,
-                                              std::uint64_t now_ms) {
+                                              std::uint64_t now_ms, std::uint64_t revision) {
     std::optional<AppModelTransition> updated;
     {
         std::lock_guard lock(mutex_);
-        if (!app_model_.has_value()) {
+        if (!app_model_ || navigation_revision_ != revision) {
             return;
         }
         const auto found = std::find_if(
@@ -2105,6 +2148,92 @@ void WorkflowRuntime::note_navigation_outcome(RunRecord &run, const WorkflowStep
     emit_navigation_observed(run, step, *updated, success);
 }
 
+Result<void> WorkflowRuntime::check_navigation_authority(std::uint64_t revision,
+                                                         const NavigationWorldFacts *binding,
+                                                         const OperationContext &context,
+                                                         std::optional<std::uint64_t> epoch) const {
+    if (context.cancelled())
+        return workflow_error(ErrorCode::Cancelled, "navigation operation cancelled");
+    if (context.expired(Timestamp::now()))
+        return workflow_error(ErrorCode::DeadlineExceeded, "navigation deadline exceeded");
+    if (binding) {
+        try {
+            if (!binding->authorized(context))
+                return make_runtime_error(WorkflowRuntimeError::NavigateAuthorizationLost,
+                                          "navigation world fact authorization is unavailable");
+        } catch (...) {
+            return make_runtime_error(WorkflowRuntimeError::NavigateAuthorizationLost,
+                                      "navigation authorization check failed");
+        }
+        const auto session = runtime_.session_snapshot(context.session);
+        if (!session || (!session.value().principal.tenant_id.is_nil() &&
+                         session.value().principal.tenant_id != binding->tenant))
+            return make_runtime_error(WorkflowRuntimeError::NavigateAuthorizationLost,
+                                      "navigation world fact tenant is unavailable");
+        if (epoch && session.value().environment_epoch != *epoch)
+            return make_runtime_error(WorkflowRuntimeError::NavigateContextChanged,
+                                      "navigation environment changed; re-observation required");
+    }
+    if (context.cancelled())
+        return workflow_error(ErrorCode::Cancelled, "navigation operation cancelled");
+    if (context.expired(Timestamp::now()))
+        return workflow_error(ErrorCode::DeadlineExceeded, "navigation deadline exceeded");
+    const auto task = runtime_.task_snapshot(context.task);
+    if (!task || task.value().epoch != context.task_epoch || task_withdrawn(task.value().state))
+        return workflow_error(ErrorCode::Cancelled, "navigation carrier withdrew");
+    std::lock_guard lock(mutex_);
+    if (navigation_revision_ != revision)
+        return make_runtime_error(WorkflowRuntimeError::NavigateContextChanged,
+                                  "navigation context changed; re-observation required");
+    return {};
+}
+
+Result<ScreenStateSnapshot>
+WorkflowRuntime::observe_navigation_screen(const NavigationWorldFacts &binding,
+                                           const OperationContext &parent, std::uint64_t revision,
+                                           std::uint64_t epoch) {
+    OperationContext context = parent;
+    context.operation = OperationId::generate();
+    context.started_at = Timestamp::now();
+    const auto deadline = context.started_at.monotonic + config_.step_deadline;
+    context.deadline = std::min(context.deadline.value_or(deadline), deadline);
+    std::future<Result<ScreenStateSnapshot>> result;
+    try {
+        result = executor_.submit_auto([this, environment = environment_, &binding, context,
+                                        revision, epoch]() -> Result<ScreenStateSnapshot> {
+            if (auto checked = check_navigation_authority(revision, &binding, context, epoch);
+                !checked)
+                return checked.error();
+            auto observed = environment->observe(binding.observation_request, context);
+            if (!observed)
+                return observed.error();
+            if (observed.value().id.is_nil() || observed.value().session_id != context.session ||
+                observed.value().aggregate_span.normalized_end.monotonic <
+                    context.started_at.monotonic)
+                return make_runtime_error(
+                    WorkflowRuntimeError::NavigateNoScreenState,
+                    "navigation observation is outside the current session snapshot");
+            if (auto checked = check_navigation_authority(revision, &binding, context, epoch);
+                !checked)
+                return checked.error();
+            return binding.recognize(observed.value(), context);
+        });
+    } catch (...) {
+        return workflow_error(ErrorCode::ResourceExhausted,
+                              "navigation observation submission failed", true);
+    }
+    try {
+        auto screen = result.get();
+        if (!screen)
+            return screen.error();
+        if (auto checked = check_navigation_authority(revision, &binding, context, epoch); !checked)
+            return checked.error();
+        return screen;
+    } catch (...) {
+        return workflow_error(ErrorCode::Internal, "navigation observation or recognition failed");
+    }
+}
+
 std::optional<Error>
 WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step, std::size_t index,
                                        const OperationContext &parent, const DriveFlags &flags,
@@ -2112,11 +2241,17 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
     JsonValue arguments;
     ScreenStateProvider provider;
     std::optional<AppModel> model;
+    std::shared_ptr<const NavigationWorldFacts> world;
+    Sha256Digest installed_digest;
+    std::uint64_t revision = 0;
     {
         std::lock_guard lock(mutex_);
         arguments = run.resolved_arguments[index];
         provider = screen_state_provider_;
         model = app_model_;
+        world = navigation_world_facts_;
+        installed_digest = app_model_installed_digest_;
+        revision = navigation_revision_;
     }
     const auto *target_member = arguments.is_object() ? arguments.find("target") : nullptr;
     if (target_member == nullptr || !target_member->is_string() ||
@@ -2140,8 +2275,87 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
         return std::nullopt;
     }
 
-    // 1. Screen read (DEC-028 §3): no current reading -> fail closed.
-    const auto snapshot = provider();
+    // 1. A memory result can corroborate a current host reading. Missing or
+    // unusable evidence triggers one explicit fresh observation.
+    OperationContext navigation = parent;
+    navigation.session = session_;
+    navigation.task = run.task;
+    navigation.task_epoch = run.task_epoch;
+    navigation.step = step.id;
+    navigation.cancellation_requested = [&flags, probe = parent.cancellation_requested] {
+        return flags.withdrawn.load(std::memory_order_relaxed) || (probe && probe());
+    };
+    const auto deadline = std::chrono::steady_clock::now() + config_.step_deadline;
+    if (world)
+        navigation.deadline = std::min(parent.deadline.value_or(deadline), deadline);
+    const auto stop = [&cancelled](const Error &error) -> std::optional<Error> {
+        if (error.code == ErrorCode::Cancelled) {
+            cancelled = true;
+            return std::nullopt;
+        }
+        return error;
+    };
+    std::optional<ScreenStateSnapshot> snapshot;
+    std::optional<std::chrono::system_clock::time_point> memory_valid_until;
+    std::optional<std::uint64_t> world_epoch;
+    if (world) {
+        if (model->app_id != world->app_id)
+            return make_runtime_error(WorkflowRuntimeError::NavigateContextChanged,
+                                      "navigation world fact app binding changed");
+        const auto session = runtime_.session_snapshot(session_);
+        if (!session)
+            return session.error();
+        world_epoch = session.value().environment_epoch;
+        if (auto checked =
+                check_navigation_authority(revision, world.get(), navigation, world_epoch);
+            !checked)
+            return stop(checked.error());
+        const auto scope = world_application_model_scope(world->tenant, world->environment,
+                                                         world->application, installed_digest);
+        if (!scope)
+            return scope.error();
+        const WorldFactQuery query{scope.value(), world->screen_state, {}, {}};
+        try {
+            auto looked_up = world->lookup(query, navigation);
+            if (!looked_up)
+                return stop(looked_up.error());
+            if (auto checked =
+                    check_navigation_authority(revision, world.get(), navigation, world_epoch);
+                !checked)
+                return stop(checked.error());
+            const auto &fact = looked_up.value().record;
+            const auto now = std::chrono::system_clock::now();
+            if (looked_up.value().state == WorldFactState::Current && fact && fact->validate() &&
+                fact->scope == query.scope && fact->world_property == query.property &&
+                fact->validity.valid_from <= now && fact->recorded_at <= now &&
+                fact->validity.valid_until && *fact->validity.valid_until > now) {
+                auto candidate = provider();
+                const auto from_ms = std::chrono::ceil<std::chrono::milliseconds>(
+                                         fact->validity.valid_from.time_since_epoch())
+                                         .count();
+                if (candidate && candidate->state_id == fact->statement &&
+                    candidate->observed_at_ms >= static_cast<std::uint64_t>(from_ms) &&
+                    candidate->observed_at_ms <= now_millis()) {
+                    snapshot = std::move(candidate);
+                    memory_valid_until = fact->validity.valid_until;
+                }
+            }
+        } catch (...) {
+            return workflow_error(ErrorCode::Internal,
+                                  "navigation world fact lookup or corroboration failed");
+        }
+        if (!snapshot) {
+            auto fresh = observe_navigation_screen(*world, navigation, revision, *world_epoch);
+            if (!fresh)
+                return stop(fresh.error());
+            snapshot = std::move(fresh).value();
+        }
+    } else {
+        snapshot = provider();
+    }
+    if (auto checked = check_navigation_authority(revision, world.get(), navigation, world_epoch);
+        !checked)
+        return stop(checked.error());
     if (!snapshot.has_value() || snapshot.value().state_id.empty()) {
         return make_runtime_error(WorkflowRuntimeError::NavigateNoScreenState,
                                   "no current screen state reading");
@@ -2161,13 +2375,17 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
     options.allow_agent_edges = false;
     options.max_edge_evaluations = config_.nav_max_edge_evaluations;
     options.max_path_edges = config_.nav_max_path_edges;
-    auto plan = plan_navigation(model.value(), snapshot.value().state_id, target,
-                                config_.nav_cost_profile, evaluation_context(run), options);
+    auto plan =
+        plan_navigation(model.value(), snapshot.value().state_id, target, config_.nav_cost_profile,
+                        evaluation_context(run, world ? &*snapshot : nullptr), options);
     if (!plan.has_value()) {
         return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed,
                                   plan.error().safe_message);
     }
     emit_navigation_planned(run, step, plan.value());
+    if (auto checked = check_navigation_authority(revision, world.get(), navigation, world_epoch);
+        !checked)
+        return stop(checked.error());
     record.safe_summary =
         "navigation planned: " + std::to_string(plan.value().transition_ids.size()) +
         " edge(s) to '" + target + "'";
@@ -2177,8 +2395,8 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
         // merged context; unevaluable ones are disclosed, never claimed
         // (RULE-10). No dispatch, no write-back, no Observed events.
         if (step.verification.has_value()) {
-            const auto verdict =
-                evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+            const auto verdict = evaluate_workflow_predicate(
+                *step.verification, evaluation_context(run, world ? &*snapshot : nullptr));
             record.verification = verification_name(verdict);
             if (verdict == WorkflowPredicateResult::NotSatisfied) {
                 return make_runtime_error(WorkflowRuntimeError::VerifyFailed,
@@ -2211,24 +2429,11 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
             return make_runtime_error(WorkflowRuntimeError::StepBudgetExceeded,
                                       "run step budget exhausted");
         }
-        // Resolve the edge against the live projection: a reinstall between
-        // planning and execution must not dispatch a stale action.
-        std::optional<AppModelTransition> edge;
-        {
-            std::lock_guard lock(mutex_);
-            if (app_model_.has_value()) {
-                const auto found = std::find_if(
-                    app_model_->transitions.begin(), app_model_->transitions.end(),
-                    [&](const AppModelTransition &candidate) { return candidate.id == edge_id; });
-                if (found != app_model_->transitions.end()) {
-                    edge = *found;
-                }
-            }
-        }
-        if (!edge.has_value()) {
+        const auto edge = std::ranges::find(model->transitions, edge_id, &AppModelTransition::id);
+        if (edge == model->transitions.end()) {
             std::string detail = "planned edge '";
             detail += edge_id;
-            detail += "' is no longer present in the app model";
+            detail += "' is not present in the planned app model";
             return make_runtime_error(WorkflowRuntimeError::NavigatePlanFailed, detail);
         }
         const auto *tool_member = edge->action.find("tool");
@@ -2268,23 +2473,51 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
         call_id += attempt_tag;
         call_id += ':';
         call_id += edge_id;
-        OperationContext context = parent;
-        context.step = step.id;
-        auto execution =
-            dispatch_tool_invocation(run, *tool, input, call_id, context, flags, cancelled);
+        bool admitted = false;
+        auto execution = dispatch_tool_invocation(
+            run, *tool, input, call_id, navigation, flags, cancelled,
+            [this, revision, world, memory_valid_until, world_epoch,
+             &admitted](const OperationContext &context) -> Result<void> {
+                if (auto checked =
+                        check_navigation_authority(revision, world.get(), context, world_epoch);
+                    !checked)
+                    return checked.error();
+                if (memory_valid_until && *memory_valid_until <= std::chrono::system_clock::now())
+                    return make_runtime_error(WorkflowRuntimeError::NavigateContextChanged,
+                                              "navigation fact expired before dispatch");
+                admitted = true;
+                return {};
+            });
         if (cancelled) {
             return std::nullopt;
         }
         if (!execution.has_value()) {
-            note_navigation_outcome(run, step, *edge, false, now_millis());
+            if (admitted)
+                note_navigation_outcome(run, step, *edge, false, now_millis(), revision);
             return execution.error();
         }
         last_edge_result = execution.value().result;
         // Arrival verification: one fresh read; the observed state must be
         // the edge target (W-02; navigate-arrival-unverified otherwise).
-        const auto arrival = provider();
+        if (auto checked =
+                check_navigation_authority(revision, world.get(), navigation, world_epoch);
+            !checked)
+            return stop(checked.error());
+        std::optional<ScreenStateSnapshot> arrival;
+        if (world) {
+            auto fresh = observe_navigation_screen(*world, navigation, revision, *world_epoch);
+            if (!fresh)
+                return stop(fresh.error());
+            arrival = std::move(fresh).value();
+        } else {
+            arrival = provider();
+        }
+        if (auto checked =
+                check_navigation_authority(revision, world.get(), navigation, world_epoch);
+            !checked)
+            return stop(checked.error());
         const bool arrived = arrival.has_value() && arrival.value().state_id == edge->to_state;
-        note_navigation_outcome(run, step, *edge, arrived, now_millis());
+        note_navigation_outcome(run, step, *edge, arrived, now_millis(), revision);
         if (!arrived) {
             std::string detail = "edge '";
             detail += edge_id;
@@ -2293,6 +2526,8 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
             detail += "'";
             return make_runtime_error(WorkflowRuntimeError::NavigateArrivalUnverified, detail);
         }
+        snapshot = std::move(arrival);
+        memory_valid_until.reset();
     }
     {
         std::lock_guard lock(mutex_);
@@ -2307,7 +2542,8 @@ WorkflowRuntime::execute_navigate_step(RunRecord &run, const WorkflowStep &step,
         record.verification = "none";
         return std::nullopt;
     }
-    const auto verdict = evaluate_workflow_predicate(*step.verification, evaluation_context(run));
+    const auto verdict = evaluate_workflow_predicate(
+        *step.verification, evaluation_context(run, world ? &*snapshot : nullptr));
     record.verification = verification_name(verdict);
     switch (verdict) {
     case WorkflowPredicateResult::Satisfied:

@@ -4,6 +4,7 @@
 #include <mira/memory_contracts.hpp>
 #include <mira/memory_embedding.hpp>
 #include <mira/state_store.hpp>
+#include <mira/world_fact.hpp>
 
 #include <memory>
 #include <span>
@@ -128,6 +129,10 @@ class SqliteMemoryStore final : public IMemory,
     [[nodiscard]] Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override;
     [[nodiscard]] Result<MemoryCompactionResult> compact(const MemoryScope &scope) override;
     [[nodiscard]] Result<ErasureResult> erase(const ErasureRequest &request) override;
+
+    // Exact address lookup with a freshness result. No record is supplied
+    // when a current fact cannot be established.
+    [[nodiscard]] Result<WorldFactLookup> lookup_world_fact(const WorldFactQuery &query) const;
 
     // ---- Index maintenance (rebuildable projections) ----
 

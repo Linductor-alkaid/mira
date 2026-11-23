@@ -1,5 +1,11 @@
 # Mira 实施总计划
 
+2026-11-23：[DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md) 接通 Navigate
+的重新观察及 AppModel 版本联动，见 [M30-23](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-23：[DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md) 接通 M30 的
+结构化世界事实及新鲜度读取，见 [M30-22](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-23：[DEC-126](../decisions/DEC-126-social-erasure-recovery.md) 接通 M30 的
 社交目录及记忆库擦除恢复，见 [M30-21](m30-long-term-memory-integration.md#5-工作项)。
 

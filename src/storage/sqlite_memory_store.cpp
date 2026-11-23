@@ -36,7 +36,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 6};
+constexpr SchemaVersion kMemoryStoreSchema{1, 7};
 constexpr const char *kStoreKind = "memory";
 constexpr const char *kSocialFieldIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
@@ -55,6 +55,11 @@ constexpr const char *kSocialEnvironmentIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_environment"
     " ON memory_records(tenant_id, subject_id)"
     " WHERE kind IN ('social-attribute', 'social-relationship');";
+constexpr const char *kWorldPropertyIndex =
+    "CREATE INDEX IF NOT EXISTS memory_records_by_world_property"
+    " ON memory_records(scope_key, json_extract(document, '$.world_property.entity'),"
+    " json_extract(document, '$.world_property.property'), valid_from DESC, recorded_at DESC, id)"
+    " WHERE scope_kind IN ('world-environment','world-application');";
 
 constexpr const char *kSchemaDdl =
     "CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
@@ -510,7 +515,8 @@ class SqliteMemoryStore::Impl final {
         if (sqlite3_step(drop_fts.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "fts sync failed");
         }
-        if (record.status == MemoryStatus::Active && !is_social_assertion(record.kind)) {
+        if (record.status == MemoryStatus::Active && !is_social_assertion(record.kind) &&
+            !record.world_property) {
             Statement insert_fts(db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
             if (!insert_fts.valid()) {
                 return store_error(ErrorCode::Internal, "fts insert failed to prepare");
@@ -646,7 +652,7 @@ class SqliteMemoryStore::Impl final {
         if (scope_key_of(existing.value()->scope) != scope_key) {
             return std::optional<MemoryRecord>{};
         }
-        if (is_social_scope(scope.kind)) {
+        if (is_social_scope(scope.kind) || is_world_scope(scope.kind)) {
             if (auto held = check_scope_holds(db, scope, scope_key); !held)
                 return held.error();
         }
@@ -823,7 +829,8 @@ class SqliteMemoryStore::Impl final {
                 return existing.error();
             }
             if (existing.value().has_value()) {
-                if (is_social_assertion(proposed.kind) && *existing.value() == 1) {
+                if ((is_social_assertion(proposed.kind) || proposed.world_property) &&
+                    *existing.value() == 1) {
                     auto prior = read_record(db, proposed.id);
                     if (!prior)
                         return prior.error();
@@ -1079,6 +1086,65 @@ class SqliteMemoryStore::Impl final {
     }
 
     // ---- retrieval ----
+
+    [[nodiscard]] static Result<WorldFactLookup> lookup_world_fact(sqlite3 *db,
+                                                                   const WorldFactQuery &request) {
+        if (auto valid = request.validate(); !valid)
+            return valid.error();
+        const auto scope_key = scope_key_of(request.scope);
+        if (auto held = check_no_hold(db, scope_key); !held)
+            return held.error();
+        const auto now = std::chrono::system_clock::now();
+        const auto valid_at = wall_nanos(request.as_of_valid.value_or(now));
+        Statement latest(
+            db, "SELECT id,valid_from,recorded_at,valid_until FROM memory_records"
+                " WHERE scope_key=?1 AND scope_kind IN ('world-environment','world-application')"
+                " AND json_extract(document, '$.world_property.entity')=?2"
+                " AND json_extract(document, '$.world_property.property')=?3"
+                " AND valid_from<=?4 AND recorded_at<=?5 AND expires_at>?6"
+                " ORDER BY valid_from DESC, recorded_at DESC, id LIMIT 2");
+        if (!latest.valid())
+            return store_error(ErrorCode::Internal, "world fact lookup failed to prepare");
+        const auto entity = request.property.entity.to_string();
+        sqlite3_bind_text(latest.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(latest.get(), 2, entity.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(latest.get(), 3, request.property.property.c_str(), -1,
+                          storage::transient_copy());
+        sqlite3_bind_int64(latest.get(), 4, valid_at);
+        sqlite3_bind_int64(latest.get(), 5, wall_nanos(request.as_of_recorded.value_or(now)));
+        sqlite3_bind_int64(latest.get(), 6, wall_nanos(now));
+        const auto first = sqlite3_step(latest.get());
+        if (first == SQLITE_DONE)
+            return WorldFactLookup{};
+        if (first != SQLITE_ROW)
+            return store_error(ErrorCode::Internal, "world fact lookup failed");
+        const auto *stored = reinterpret_cast<const char *>(sqlite3_column_text(latest.get(), 0));
+        const auto id = MemoryId::parse(stored != nullptr ? stored : "");
+        const auto seen_at = sqlite3_column_int64(latest.get(), 1);
+        const auto known_at = sqlite3_column_int64(latest.get(), 2);
+        const auto until = sqlite3_column_int64(latest.get(), 3);
+        if (!id || id->is_nil() || until <= seen_at)
+            return store_error(ErrorCode::DataLoss, "world fact index row is invalid");
+        const auto second = sqlite3_step(latest.get());
+        if (second != SQLITE_ROW && second != SQLITE_DONE)
+            return store_error(ErrorCode::Internal, "world fact lookup failed");
+        if (second == SQLITE_ROW && sqlite3_column_int64(latest.get(), 1) == seen_at &&
+            sqlite3_column_int64(latest.get(), 2) == known_at)
+            return WorldFactLookup{WorldFactState::Ambiguous, std::nullopt};
+        if (until <= valid_at)
+            return WorldFactLookup{WorldFactState::Expired, std::nullopt};
+        auto record = read_record(db, *id);
+        if (!record)
+            return record.error();
+        if (!record.value() || record.value()->world_property != request.property ||
+            record.value()->scope != request.scope ||
+            wall_nanos(record.value()->validity.valid_from) != seen_at ||
+            wall_nanos(record.value()->recorded_at) != known_at ||
+            !record.value()->validity.valid_until ||
+            wall_nanos(*record.value()->validity.valid_until) != until)
+            return store_error(ErrorCode::DataLoss, "world fact index does not match its record");
+        return WorldFactLookup{WorldFactState::Current, std::move(record).value()};
+    }
 
     [[nodiscard]] Result<MemoryQueryResult> query(sqlite3 *db, const MemoryQuery &request) const {
         const auto valid = request.validate();
@@ -2460,7 +2526,8 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
         db_options.exclusive_owner = true;
     }
     const std::string schema_ddl = std::string(kSchemaDdl) + kSocialFieldIndex +
-                                   kSocialRelationshipIndexes + kSocialEnvironmentIndex;
+                                   kSocialRelationshipIndexes + kSocialEnvironmentIndex +
+                                   kWorldPropertyIndex;
     auto opened = storage::open_reference_store(
         db_options, {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
@@ -2494,7 +2561,12 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                              if (!migrated)
                                  return migrated.error();
                          }
-                         return storage::exec_sql(db, kSocialEnvironmentIndex);
+                         if (previous.minor < 6) {
+                             auto migrated = storage::exec_sql(db, kSocialEnvironmentIndex);
+                             if (!migrated)
+                                 return migrated.error();
+                         }
+                         return storage::exec_sql(db, kWorldPropertyIndex);
                      }});
     if (!opened) {
         if (capacity && capacity->rejected())
@@ -2527,6 +2599,11 @@ SqliteMemoryStore::~SqliteMemoryStore() {
 Result<MemoryQueryResult> SqliteMemoryStore::query(const MemoryQuery &query) const {
     return impl_->run<MemoryQueryResult>(
         [this, &query](sqlite3 *db) { return impl_->query(db, query); });
+}
+
+Result<WorldFactLookup> SqliteMemoryStore::lookup_world_fact(const WorldFactQuery &query) const {
+    return impl_->run<WorldFactLookup>(
+        [query](sqlite3 *db) { return Impl::lookup_world_fact(db, query); });
 }
 
 Result<std::optional<MemoryRecord>> SqliteMemoryStore::get(MemoryId record,

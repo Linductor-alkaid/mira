@@ -19,6 +19,7 @@
 > [DEC-026](../decisions/DEC-026-task-induction-and-parameterization.md)、
 > [DEC-027](../decisions/DEC-027-app-model-contract-and-confidence.md)、
 > [DEC-028](../decisions/DEC-028-navigation-planner-and-navigate-resolution.md)、
+> [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)、
 > [DEC-029](../decisions/DEC-029-memory-domains-and-learning-contracts.md)、
 > [DEC-030](../decisions/DEC-030-learning-loop-runtime-semantics.md)、
 > [Workflow Runtime 设计](../design/workflow_runtime_design.md)
@@ -262,6 +263,10 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
 - `WorkflowRuntime::set_navigation_context(model, provider)` / `set_app_model(model)` /
   `app_model_snapshot()`：安装/重装（如衰减后内容）/读回置信度演化的投影。模型必须
   过 `validate_app_model`（fail closed，`Result<void>`）。
+- `set_navigation_world_facts(binding)`：在已安装的导航上下文中绑定宿主的世界事实
+  查询、授权探针、观察请求和实际观察识别器。Runtime 按安装时的 AppModel 内容摘要
+  构造应用 scope。事实失效或未获读屏佐证时，会主动观察并依识别结果规划。
+  到达验证也使用新观察。工具派发前复核世代和授权。见[宿主接入](durable-memory-host.md#导航重新观察)。
 - Navigate 步骤解析（DEC-028 §3）：准入——`arguments["target"]` 必须解析为非空字符串
   （`NavigateTargetInvalid`）；派发策略额外要求导航上下文已安装（否则维持 M9 的
   `navigate-unresolvable` 拒绝；policy patch 切入派发策略的门禁同条件放松）。执行——

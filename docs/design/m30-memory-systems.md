@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.6
+> 版本：1.8
 > 更新日期：2026-11-23
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -11,7 +11,9 @@
 > [DEC-123](../decisions/DEC-123-social-identity-directory.md)、
 > [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)、
 > [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)、
-> [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)
+> [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)、
+> [DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)、
+> [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -73,6 +75,12 @@ M30-18 接通社交身份目录。版本化别名按租户与经授权的社交�
 查询。对象擦除用两端索引在同一记忆库内清理出入关系，待擦除端点封闭相关读取与写入。
 M30-21 为目录和记忆库保存配对及擦除意图。目录先持久关闭对象或环境，记忆清理确认后
 结算意图。重开须先恢复未结算擦除。运行时的授权和撤权联动仍归 M30-13。
+
+M30-22 以独立环境和应用 scope 保存世界观察。实体和属性在精确 scope 内索引。读取先
+选择对应时点的最新已知观察，再核对有效区间。缺失、过期或歧义返回重新观察信号，旧观察
+保持可按历史时点查证。M30-23 将信号接入 WorkflowRuntime 的 Navigate 入口。
+安装时的 AppModel 内容摘要参与应用 scope，进程内的安装世代约束计划与派发。
+失效的事实或不一致的读屏快照触发新观察，再按该观察规划，派发前复核当前授权。
 
 ## 执行与验收
 

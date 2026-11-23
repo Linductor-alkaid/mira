@@ -166,6 +166,7 @@ int migration_and_version_stamp_roll_back_together() {
         MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_from"));
         MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_to"));
         MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_environment"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_world_property"));
         MIRA_CHECK(db.version("1.0"));
     }
     auto readonly = fixture.open(true, path, true);
@@ -189,6 +190,8 @@ int migration_and_version_stamp_roll_back_together() {
                            "name='memory_records_by_social_to'") == "0");
         MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
                            "name='memory_records_by_social_environment'") == "0");
+        MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                           "name='memory_records_by_world_property'") == "0");
         MIRA_CHECK(db.exec("DROP TRIGGER reject_stamp"));
     }
     auto migrated = fixture.open(true, path);
@@ -196,7 +199,7 @@ int migration_and_version_stamp_roll_back_together() {
     Database db(path);
     // The chained migration stamps the reader's
     // current store schema version, not an intermediate step.
-    MIRA_CHECK(db.text(kVersion) == "1.6");
+    MIRA_CHECK(db.text(kVersion) == "1.7");
     MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
                        "name='memory_records_by_social_field'") == "1");
     MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE name IN "
@@ -204,6 +207,8 @@ int migration_and_version_stamp_roll_back_together() {
                        " 'memory_records_by_social_to')") == "3");
     MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
                        "name='memory_records_by_social_environment'") == "1");
+    MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                       "name='memory_records_by_world_property'") == "1");
     MIRA_CHECK(
         db.text(
             "SELECT count(*) FROM pragma_table_info('memory_mutations') WHERE name='scope_key'") ==

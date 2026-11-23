@@ -147,6 +147,9 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - **社交环境擦除**（SQLite schema 1.6）：`social_environment_scope` 只用于整个环境的擦除，
   按租户和环境读取画像及关系的清理目标。环境擦除待完成时范围内的画像与关系读写封闭。
   见[擦除恢复](durable-memory-host.md#社交记忆擦除恢复)。
+- **结构化世界事实**（SQLite schema 1.7）：`lookup_world_fact` 按精确环境或应用 scope、
+  实体 ID 和属性定位观察，独立处理有效时间与记录时间。观察缺失、过期或歧义时返回
+  重新观察信号。见[宿主 API](durable-memory-host.md#世界事实的新鲜度)。
 - **近重去重**（`near_dup_threshold`，store 默认关、接线器默认 0.85）：排序后
   top-64 内按查询身份嵌入余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed`
   计数；无向量候选豁免，阈值按 embedder 实测标定。

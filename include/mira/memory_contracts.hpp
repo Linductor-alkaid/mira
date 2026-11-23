@@ -20,9 +20,9 @@ namespace mira {
 
 // {1,1} adds the labels/importance metadata fields (DEC-112); {1,2} adds the
 // optional `alternative_of` coexistence link (DEC-115). {1,3} adds social
-// attribute assertions (DEC-124) and {1,4} adds relationship assertions
-// (DEC-125). Readers accept previous compatible minors.
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 4}; }
+// attribute assertions (DEC-124), {1,4} adds relationship assertions
+// (DEC-125), and {1,5} adds structured world facts (DEC-127).
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 5}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -35,7 +35,13 @@ enum class MemoryScopeKind : std::uint8_t {
     SocialObject,
     SocialRelationship,
     SocialEnvironment, // Erasure-only scope.
+    WorldEnvironment,
+    WorldApplication,
 };
+
+[[nodiscard]] constexpr bool is_world_scope(MemoryScopeKind kind) noexcept {
+    return kind == MemoryScopeKind::WorldEnvironment || kind == MemoryScopeKind::WorldApplication;
+}
 
 [[nodiscard]] constexpr bool is_social_scope(MemoryScopeKind kind) noexcept {
     return kind == MemoryScopeKind::SocialObject || kind == MemoryScopeKind::SocialRelationship ||
@@ -184,6 +190,12 @@ struct SocialRelationship final {
     SocialAttributeSource source = SocialAttributeSource::Inferred;
 };
 
+struct WorldProperty final {
+    Id128 entity;
+    std::string property;
+    friend bool operator==(const WorldProperty &, const WorldProperty &) = default;
+};
+
 struct MemoryRecord final {
     MemoryId id;
     MemoryScope scope;
@@ -221,6 +233,7 @@ struct MemoryRecord final {
     // single source event. Each source event makes an independent assertion.
     std::optional<SocialAttribute> social_attribute;
     std::optional<SocialRelationship> social_relationship;
+    std::optional<WorldProperty> world_property;
 
     [[nodiscard]] Result<void> validate() const;
 

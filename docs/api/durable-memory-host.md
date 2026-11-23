@@ -202,6 +202,64 @@ auto erased = opened_directory.value()->erase_environment(authorized_environment
 恢复备份时以同一一致边界恢复两库。生产授权与撤权传播仍由宿主管理。
 见 [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)。
 
+## 世界事实的新鲜度
+
+宿主从授权范围构造稳定的租户、环境和应用键，从已提交的观察取来源事件。在一个环境或
+应用范围内，使用实体 ID 加属性标识符定位观察。属性为以 ASCII 小写字母开头的 1～48
+字节标识符，其余字符可含数字、下划线和连字符。观察需要明确的有效结束时间。
+
+```cpp
+auto scope = world_application_scope(principal.tenant_id, environment_id, application_id);
+// 检查 scope，并使用宿主确认的来源事件和有效时间。
+WorldProperty property{entity_id, "display_scale"};
+auto observed = make_world_observation(scope.value(), property, value, source_event,
+                                       {observed_at, expires_for_use}, recorded_at);
+// 检查 observed 后，通过 MemoryConsolidator 提交并消费结果。
+auto fact = memory_store->lookup_world_fact({scope.value(), property, {}, {}});
+// 检查 fact。requires_observation() 为真时，当前调用方应收集新的环境证据。
+```
+
+`lookup_world_fact` 先选截至查询时点已知的最新观察，再判断是否有效。`Current` 附带
+记录及事件引用，`Missing`、`Expired`、`Ambiguous` 需要重新观察且省略正文。最近一次
+观察过期时，即便还有有效期更长的旧观察，结果仍为 `Expired`。重新观察后用新的来源事件
+写入，即使新旧值相同也保留各自的有效期。调用方可独立指定 `as_of_valid` 和
+`as_of_recorded`，历史读取仍受保留期限约束。环境事实和应用事实分别使用各自的精确
+scope，擦除按所提交的 scope 执行。
+
+结构化观察通过宿主专用入口读取。宿主仍负责当前授权、观察和动作验证。
+见 [DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)。
+
+## 导航重新观察
+
+在 `set_navigation_context` 安装 AppModel 和读屏入口后，可使用
+`WorkflowRuntime::set_navigation_world_facts` 安装导航专用绑定。读和写使用同一个由
+`world_application_model_scope` 构造的应用 scope。传入宿主安装的 AppModel 摘要，
+运行中演化的置信度投影可通过 `app_model_snapshot()` 单独检查。
+
+```cpp
+const auto digest = app_model_digest(model);
+auto scope = world_application_model_scope(tenant, environment, application, digest);
+// 检查 scope，并按它提交后续的已核准观察。
+NavigationWorldFacts binding;
+binding.tenant = tenant;
+binding.environment = environment;
+binding.application = application;
+binding.app_id = model.app_id;
+binding.screen_state = {entity, "screen_state"};
+binding.observation_request.required.structure = true;
+binding.authorized = check_host_authorization;
+binding.lookup = lookup_authorized_world_fact;
+binding.recognize = identify_screen_from_observation;
+auto installed = workflow.set_navigation_world_facts(std::move(binding));
+```
+
+只在当前读屏快照与事实一致且时间落在有效区间内时复用该快照。其他情况下由现有
+`IEnvironment::observe` 请求新观察，再把观察交给识别器。识别器使用本次传入的观察，
+并尊重操作截止和取消。查询回调可使用 `SqliteMemoryStore::lookup_world_fact`。
+授权探针会在派发工作进入工具注册表时复核。AppModel 重新安装
+会废止旧计划；已接纳动作的结果也经过世代复核后才用于导航。见
+[DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次

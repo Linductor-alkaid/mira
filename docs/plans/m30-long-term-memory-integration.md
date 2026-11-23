@@ -1,6 +1,6 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
-> 状态：In Progress（召回分组、人格、事件、社交画像、关系及跨库擦除恢复已验收 Linux 增量）
+> 状态：In Progress（召回分组、人格、事件、社交记忆、世界事实与导航重新观察已验收 Linux 增量）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -55,6 +55,8 @@
 - [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)：画像字段断言与时态检索。
 - [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)：关系断言与双端点清理。
 - [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)：目录与记忆库的擦除恢复。
+- [DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)：世界事实地址与新鲜度。
+- [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)：导航重新观察和 AppModel 世代。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -135,7 +137,7 @@
 - [x] `M30-12` 接通事件取证水位与 Session/Task/type 查询，以及持久会话片段召回，
       验证时间过滤、重建、重开和联合擦除（Linux 离线）。
 - [ ] `M30-13` 提供社交对象与关系的稳定身份、属性级证据和环境内索引，验证同名歧义和跨域隔离。
-- [ ] `M30-14` 接通环境/应用事实的实体、属性与时态查询，验证环境隔离及过期重新观察。
+- [x] `M30-14` 接通环境/应用事实的实体、属性与时态查询，验证环境隔离及过期重新观察（Linux / Simulator）。
 - [ ] `M30-15` 持久化目标和承诺的状态、授权、到期索引及重复计划身份，验证兑现、取消、
       重启和幂等恢复；主动派发与打断预算归 M33。
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
@@ -145,6 +147,8 @@
 - [x] `M30-19` 交付 M30-13 的画像字段断言，验收来源、有效区间、记录时间、字段索引与跨域隔离。
 - [x] `M30-20` 交付有向关系断言，验收有序端点、谓词与时态索引、重开和对象双端擦除。
 - [x] `M30-21` 交付目录与记忆库的联合擦除恢复，验收重开、数据库绑定及环境范围隔离。
+- [x] `M30-22` 交付结构化世界事实写入及双时态读取，验收隔离、过期、刷新与重开。
+- [x] `M30-23` 交付导航重新观察及 AppModel 版本联动，验收过期、换版、取消和撤权。
 
 ## 6. 测试与退出条件
 
@@ -673,3 +677,79 @@ git diff --check
 
 Linux Release 全量 **203/203**，ASAN 定向 **5/5**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-cross-erase-{full-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-23：世界事实的结构化索引与新鲜度
+
+基线 `20d1579`，分支 `feat/m30-memory-systems`。按 DEC-127 实施 M30-22。宿主将
+已提交的观察转换为独立 `EnvironmentFact` 或 `ApplicationFact` 记录。SQLite schema
+1.7 按精确 scope、实体与属性索引。查询可独立选择有效时点及记录时点。最新观察过期
+时省略正文并要求重新观察，即使旧观察有效期更长。相同值的新观察保有自己的时态和证据。
+验证覆盖延迟写入、重复与冲突提交、歧义、重开、租户/环境/应用隔离、模型写入拒绝和
+作用域擦除。迁移测试覆盖新索引和 schema 标记的联合回滚。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_world_fact_test \
+  mira_m30_social_erasure_recovery_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(world_fact|social_erasure_recovery)|m4_store_open)_test'
+for unit in src/context/{world_fact,memory_contracts,memory_agent_binding,memory_consolidation}.cpp \
+  src/storage/sqlite_memory_store.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 运行时重新观察及 AppModel 版本联动 | Mira Maintainers，M30-14 接通真实观察入口后验证过期、应用更新和权限撤销时不会依旧事实推进动作 |
+| 生产宿主、目标平台与规模验证 | Mira Maintainers 和宿主集成者，产品接通稳定环境/实体键后按被测 head 执行 Windows/Android、远端 CI 和 M31 负载验证 |
+
+Linux Release 全量 **204/204**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-world-{full-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-23：导航重新观察与 AppModel 版本联动
+
+在 `feat/m30-memory-systems` 上承接 M30-22，按 DEC-128 实施 M30-23。WorkflowRuntime
+可安装导航世界事实绑定，以已安装模型摘要选择应用 scope。SQLite 时间证据须获现行读屏
+佐证，否则 Runtime 用 Executor 调用 `IEnvironment::observe` 并依新观察规划；到达验证
+也读取新观察。模型世代、授权、任务世代和截止在工具派发入口复核。AppModel 置信度回写
+不会改变当前安装的 scope，旧世代的在途动作结果不会回写新模型。
+
+在 SQLite 与 Simulator 组合中验证过期、当前读屏佐证、新模型隔离、识别缺失、取消、
+观察期间人工接管、工作线程入口撤权和在途换版。未安装世界事实绑定的导航以既有
+M12 测试复验。生产宿主的绑定和真机识别作为单独验证项保留。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_navigation_world_test \
+  mira_m12_navigation_test mira_m30_world_fact_test mira_m9_control_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(world_fact|navigation_world)|m12_navigation|m9_control)_test'
+for unit in src/context/world_fact.cpp src/workflow/workflow_runtime.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 产品授权及真机观察识别 | Mira Maintainers 与宿主集成者，在宿主接通授权探针及目标设备识别器后执行更新、撤权、重新观察与到达测试 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，提交后执行目标矩阵并按 head 回填 |
+
+Linux Release 全量 **205/205**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-nav-{full-test,asan-final,tidy,quality}.log`。

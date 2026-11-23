@@ -1,6 +1,7 @@
 #include <mira/memory_contracts.hpp>
 
 #include "social_profile_codec.hpp"
+#include "world_fact_codec.hpp"
 
 #include <algorithm>
 #include <array>
@@ -116,6 +117,10 @@ std::string memory_scope_kind_name(MemoryScopeKind kind) {
         return "social-relationship";
     case MemoryScopeKind::SocialEnvironment:
         return "social-environment";
+    case MemoryScopeKind::WorldEnvironment:
+        return "world-environment";
+    case MemoryScopeKind::WorldApplication:
+        return "world-application";
     }
     return "unknown";
 }
@@ -132,6 +137,8 @@ std::optional<MemoryScopeKind> memory_scope_kind_from(std::string_view name) {
         {"social-object", MemoryScopeKind::SocialObject},
         {"social-relationship", MemoryScopeKind::SocialRelationship},
         {"social-environment", MemoryScopeKind::SocialEnvironment},
+        {"world-environment", MemoryScopeKind::WorldEnvironment},
+        {"world-application", MemoryScopeKind::WorldApplication},
     };
     for (const auto &[kind_name, kind] : kKinds) {
         if (kind_name == name) {
@@ -333,15 +340,15 @@ const std::array<MemoryKindPolicy, 9> &kind_policy_table() {
             MemoryKind::EnvironmentFact,
             7 * kDay,
             MemoryVerification::Observed,
-            {MemoryScopeKind::Environment, MemoryScopeKind::Task, MemoryScopeKind::Session,
-             MemoryScopeKind::Agent, MemoryScopeKind::TaskSkill},
+            {MemoryScopeKind::Environment, MemoryScopeKind::WorldEnvironment, MemoryScopeKind::Task,
+             MemoryScopeKind::Session, MemoryScopeKind::Agent, MemoryScopeKind::TaskSkill},
             {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical, MemoryRetrievalLeg::Semantic}},
         MemoryKindPolicy{
             MemoryKind::ApplicationFact,
             30 * kDay,
             MemoryVerification::Observed,
-            {MemoryScopeKind::Application, MemoryScopeKind::Task, MemoryScopeKind::Session,
-             MemoryScopeKind::Agent},
+            {MemoryScopeKind::Application, MemoryScopeKind::WorldApplication, MemoryScopeKind::Task,
+             MemoryScopeKind::Session, MemoryScopeKind::Agent},
             {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical, MemoryRetrievalLeg::Semantic}},
         MemoryKindPolicy{MemoryKind::Episode,
                          30 * kDay,
@@ -569,6 +576,8 @@ Result<void> MemoryRecord::validate() const {
     if (version == 0) {
         return memory_error(MemoryDomainCode::InvalidRecord, "record version starts at one");
     }
+    if (world_property || is_world_scope(scope.kind))
+        return world_fact_detail::validate_record(*this);
     if (is_social_assertion(kind) || is_social_scope(scope.kind) || social_attribute ||
         social_relationship) {
         return validate_social_assertion();
@@ -593,6 +602,9 @@ Result<void> MemoryQuery::validate() const {
                             "memory queries must state an explicit scope allowlist");
     }
     for (const auto &scope : scopes) {
+        if (is_world_scope(scope.kind)) {
+            return memory_error(MemoryDomainCode::ScopeDenied, "world facts require exact lookup");
+        }
         if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
             scope.kind != MemoryScopeKind::Agent) {
             return memory_error(MemoryDomainCode::ScopeDenied,
@@ -682,6 +694,10 @@ Result<void> MemoryMutation::validate() const {
     if (proposed.scope != scope) {
         return memory_error(MemoryDomainCode::InvalidMutation,
                             "mutation scope must match the proposed record scope");
+    }
+    if (proposed.world_property &&
+        (type != MemoryMutationType::Add || evidence != proposed.provenance)) {
+        return memory_error(MemoryDomainCode::InvalidMutation, "world observations are immutable");
     }
     if (is_social_assertion(proposed.kind) &&
         ((type != MemoryMutationType::Add && type != MemoryMutationType::Tombstone) ||
@@ -868,6 +884,7 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     object.emplace_back("kind", memory_kind_name(record.kind));
     object.emplace_back("statement", record.statement);
     social_profile_detail::encode_assertion(record, object);
+    world_fact_detail::encode(record, object);
     if (record.evidence.has_value()) {
         object.emplace_back("evidence", artifact_ref_to_json(*record.evidence));
     }
@@ -1055,6 +1072,8 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
         record.version = static_cast<std::uint64_t>(version->as_integer().value());
     }
     if (auto decoded = social_profile_detail::decode_assertion(json, record); !decoded)
+        return decoded.error();
+    if (auto decoded = world_fact_detail::decode(json, record); !decoded)
         return decoded.error();
     return record;
 }

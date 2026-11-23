@@ -107,6 +107,7 @@ add_library(mira_core
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
     src/context/social_profile.cpp
+    src/context/world_fact.cpp
     src/context/memory_consolidation.cpp
     src/context/extraction_model_provider.cpp
     src/context/memory_embedding.cpp

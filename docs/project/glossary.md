@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.20
+> 版本：1.21
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -330,6 +330,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Social Environment Scope（社交环境擦除范围）**：
 由租户及稳定社交环境 ID 组成的擦除目标，覆盖该环境内的画像字段及关系断言。
 对象和关系读取继续使用各自的精确范围。见[DEC-126](../decisions/DEC-126-social-erasure-recovery.md)。
+
+**World Fact（世界事实）**：
+授权环境或应用内一个实体属性的有来源观察。查询区分当前有效、缺失、过期与歧义，
+并保存有效时点和记录时点。见[DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定
