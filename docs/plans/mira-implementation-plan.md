@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-23：[DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md) 交付
+一次性目标与承诺的持久状态及到期索引，见 [M30-24](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-23：[DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md) 接通 Navigate
 的重新观察及 AppModel 版本联动，见 [M30-23](m30-long-term-memory-integration.md#5-工作项)。
 

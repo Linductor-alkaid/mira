@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.21
+> 版本：1.22
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -334,6 +334,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **World Fact（世界事实）**：
 授权环境或应用内一个实体属性的有来源观察。查询区分当前有效、缺失、过期与歧义，
 并保存有效时点和记录时点。见[DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)。
+
+**Goal Memory（目标记忆）**：
+按租户与用户归属保存的任务、承诺和计划状态。到期读取使用独立索引，条目带来源与
+稳定 ID。M30-24 提供一次性任务和承诺。见[DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定

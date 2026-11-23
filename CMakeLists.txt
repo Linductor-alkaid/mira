@@ -238,6 +238,7 @@ add_library(mira_state_store
     src/storage/sqlite_memory_store.cpp
     src/storage/sqlite_conversation_index.cpp
     src/storage/sqlite_social_directory.cpp
+    src/storage/sqlite_goal_store.cpp
 )
 add_library(Mira::state_store ALIAS mira_state_store)
 target_include_directories(mira_state_store

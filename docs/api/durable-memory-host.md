@@ -260,6 +260,34 @@ auto installed = workflow.set_navigation_world_facts(std::move(binding));
 会废止旧计划；已接纳动作的结果也经过世代复核后才用于导航。见
 [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)。
 
+## 目标与承诺
+
+`SqliteGoalStore` 保存一次性任务和承诺，宿主传入已授权的租户、用户和稳定目标 ID。
+`GoalDefinition` 保存标题、来源事件和创建时间，承诺需要 `due_at`。所有时点使用 UTC
+毫秒。`expires_at` 可选，若指定则须晚于截止时间。普通任务可不设截止时间。
+
+```cpp
+const GoalOwner owner{principal.tenant_id, principal.user_id};
+const GoalKey key{owner, internal_goal_id};
+auto started = goals->create(key, {GoalKind::Commitment, title, source_event,
+                                  created_at, due_at, expires_at});
+auto pending = goals->list({owner, GoalState::Pending, 32, {}});
+auto due = goals->due({owner, cutoff, 32, {}});
+// 检查 started 后，以已提交的结算事件推进版本。
+auto settled = goals->settle(key, started.value().revision,
+                            {GoalState::Fulfilled, resolution_event, fulfilled_at});
+```
+
+`list` 按稳定 ID 分页，也能取得未指定 `due_at` 的任务和历史终态。`due` 按截止时间和
+ID 分页，返回截至指定时点已到期、仍为 Pending 且未超过 `expires_at` 的目标。两者
+翻页时沿用原归属和筛选条件，页之间可观察到新的写入和结算。`Expired` 需要宿主通过
+证据事件显式结算。过期的定义也可在 `list` 中看到原状态与 `expires_at`。
+
+重试以原稳定 ID 及原内容创建，以原版本与原证据结算。擦除后仍可查询 `Erased` 状态，
+正文与事件引用已清理，旧 ID 不能再创建。全库配额计入删除屏障，每主体的 Pending 项
+独立限额。宿主在 Executor 关闭前关闭目标库。到期查询产生待处理候选，执行授权沿
+宿主既有策略。见 [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次
