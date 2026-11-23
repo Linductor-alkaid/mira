@@ -26,6 +26,8 @@ int domain_mapping_is_total_and_matches_the_architecture_table() {
     MIRA_CHECK(memory_domain_of(MemoryKind::SkillHint) == MemoryDomain::ProceduralMemory);
     MIRA_CHECK(memory_domain_of(MemoryKind::RecoveryLesson) == MemoryDomain::ProceduralMemory);
     MIRA_CHECK(memory_domain_of(MemoryKind::Episode) == MemoryDomain::EpisodicMemory);
+    MIRA_CHECK(memory_domain_of(MemoryKind::SocialAttribute) == MemoryDomain::SocialProfile);
+    MIRA_CHECK(memory_domain_of(MemoryKind::SocialRelationship) == MemoryDomain::SocialProfile);
 
     const auto environment = memory_kinds_of_domain(MemoryDomain::EnvironmentModel);
     MIRA_CHECK(environment.size() == 2);
@@ -40,7 +42,8 @@ int domain_mapping_is_total_and_matches_the_architecture_table() {
     // consistent in both directions).
     for (const auto kind : {MemoryKind::Preference, MemoryKind::EnvironmentFact,
                             MemoryKind::ApplicationFact, MemoryKind::Episode, MemoryKind::Procedure,
-                            MemoryKind::SkillHint, MemoryKind::RecoveryLesson}) {
+                            MemoryKind::SkillHint, MemoryKind::RecoveryLesson,
+                            MemoryKind::SocialAttribute, MemoryKind::SocialRelationship}) {
         const auto kinds = memory_kinds_of_domain(memory_domain_of(kind));
         MIRA_CHECK(std::find(kinds.begin(), kinds.end(), kind) != kinds.end());
     }
@@ -51,7 +54,8 @@ int domain_names_round_trip_and_fail_closed() {
     for (const auto &[domain, name] : {std::pair{MemoryDomain::EnvironmentModel, "environment"},
                                        std::pair{MemoryDomain::UserModel, "user"},
                                        std::pair{MemoryDomain::ProceduralMemory, "procedural"},
-                                       std::pair{MemoryDomain::EpisodicMemory, "episodic"}}) {
+                                       std::pair{MemoryDomain::EpisodicMemory, "episodic"},
+                                       std::pair{MemoryDomain::SocialProfile, "social-profile"}}) {
         MIRA_CHECK(memory_domain_name(domain) == name);
         auto parsed = parse_memory_domain(name);
         MIRA_CHECK(parsed.has_value() && parsed.value() == domain);

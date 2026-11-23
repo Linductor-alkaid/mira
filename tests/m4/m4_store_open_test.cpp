@@ -161,6 +161,11 @@ int migration_and_version_stamp_roll_back_together() {
     {
         Database db(path);
         MIRA_CHECK(db.exec("ALTER TABLE memory_mutations DROP COLUMN scope_key"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_field"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_predicate"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_from"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_to"));
+        MIRA_CHECK(db.exec("DROP INDEX memory_records_by_social_environment"));
         MIRA_CHECK(db.version("1.0"));
     }
     auto readonly = fixture.open(true, path, true);
@@ -178,14 +183,27 @@ int migration_and_version_stamp_roll_back_together() {
         MIRA_CHECK(db.text(kVersion) == "1.0");
         MIRA_CHECK(db.text("SELECT count(*) FROM pragma_table_info('memory_mutations') WHERE "
                            "name='scope_key'") == "0");
+        MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                           "name='memory_records_by_social_field'") == "0");
+        MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                           "name='memory_records_by_social_to'") == "0");
+        MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                           "name='memory_records_by_social_environment'") == "0");
         MIRA_CHECK(db.exec("DROP TRIGGER reject_stamp"));
     }
     auto migrated = fixture.open(true, path);
     MIRA_CHECK(migrated && migrated.value().disposition == StoreSchemaDisposition::Migrated);
     Database db(path);
-    // The chained migration (1.0 -> 1.1 -> 1.2 -> 1.3) stamps the reader's
+    // The chained migration stamps the reader's
     // current store schema version, not an intermediate step.
-    MIRA_CHECK(db.text(kVersion) == "1.3");
+    MIRA_CHECK(db.text(kVersion) == "1.6");
+    MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                       "name='memory_records_by_social_field'") == "1");
+    MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE name IN "
+                       "('memory_records_by_social_predicate', 'memory_records_by_social_from',"
+                       " 'memory_records_by_social_to')") == "3");
+    MIRA_CHECK(db.text("SELECT count(*) FROM sqlite_schema WHERE "
+                       "name='memory_records_by_social_environment'") == "1");
     MIRA_CHECK(
         db.text(
             "SELECT count(*) FROM pragma_table_info('memory_mutations') WHERE name='scope_key'") ==

@@ -228,6 +228,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
 
     for (auto &candidate : candidates) {
         MemoryRecord proposed = std::move(candidate.proposed);
+        const bool social = is_social_assertion(proposed.kind);
         if (candidate.model_assisted && !policy_.allow_model_import_exemption)
             proposed.verification = MemoryVerification::Unverified;
         proposed.scope = scope;
@@ -240,8 +241,9 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         if (proposed.validity.valid_from.time_since_epoch().count() == 0) {
             proposed.validity.valid_from = proposed.recorded_at;
         }
-        const std::string key = memory_kind_name(proposed.kind) + ":" +
-                                context_text::to_lower_ascii(proposed.statement);
+        const std::string key =
+            memory_kind_name(proposed.kind) + ":" +
+            (social ? proposed.id.to_string() : context_text::to_lower_ascii(proposed.statement));
         ConsolidationEntry entry;
         entry.key = key;
         entry.mutation = MutationId::generate();
@@ -255,7 +257,13 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         }
         // 2. Untrusted instruction-shaped text is rejected before it can
         // become a persistent prompt injection.
-        if (candidate.model_assisted &&
+        if (candidate.model_assisted && social) {
+            entry.disposition = CandidateDisposition::RejectedInvalid;
+            entry.reason_code = "social-assertion-requires-host-source";
+            report.entries.push_back(std::move(entry));
+            continue;
+        }
+        if ((candidate.model_assisted || social) &&
             context_text::carries_marker(proposed.statement, policy_.injection_markers)) {
             entry.disposition = CandidateDisposition::RejectedInjection;
             entry.reason_code = "instruction-shaped-model-text";
@@ -300,7 +308,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         conflict_query.max_results = 64;
         std::vector<MemoryRecord> duplicates;
         std::vector<MemoryRecord> alternatives;
-        {
+        if (!social) {
             auto found = memory.query(conflict_query);
             if (!found) {
                 entry.disposition = CandidateDisposition::RejectedConflict;

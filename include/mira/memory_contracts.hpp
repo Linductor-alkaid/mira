@@ -19,9 +19,10 @@ namespace mira {
 // ---------------------------------------------------------------------------
 
 // {1,1} adds the labels/importance metadata fields (DEC-112); {1,2} adds the
-// optional `alternative_of` coexistence link (DEC-115). Readers accept the
-// previous compatible minors and ignore unknown members.
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 2}; }
+// optional `alternative_of` coexistence link (DEC-115). {1,3} adds social
+// attribute assertions (DEC-124) and {1,4} adds relationship assertions
+// (DEC-125). Readers accept previous compatible minors.
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 4}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -31,7 +32,15 @@ enum class MemoryScopeKind : std::uint8_t {
     User,
     Agent,
     TaskSkill,
+    SocialObject,
+    SocialRelationship,
+    SocialEnvironment, // Erasure-only scope.
 };
+
+[[nodiscard]] constexpr bool is_social_scope(MemoryScopeKind kind) noexcept {
+    return kind == MemoryScopeKind::SocialObject || kind == MemoryScopeKind::SocialRelationship ||
+           kind == MemoryScopeKind::SocialEnvironment;
+}
 
 [[nodiscard]] std::string memory_scope_kind_name(MemoryScopeKind kind);
 [[nodiscard]] std::optional<MemoryScopeKind> memory_scope_kind_from(std::string_view name);
@@ -53,7 +62,13 @@ enum class MemoryKind : std::uint8_t {
     Procedure,
     RecoveryLesson,
     SkillHint,
+    SocialAttribute,
+    SocialRelationship,
 };
+
+[[nodiscard]] constexpr bool is_social_assertion(MemoryKind kind) noexcept {
+    return kind == MemoryKind::SocialAttribute || kind == MemoryKind::SocialRelationship;
+}
 
 [[nodiscard]] std::string memory_kind_name(MemoryKind kind);
 [[nodiscard]] std::optional<MemoryKind> memory_kind_from(std::string_view name);
@@ -157,6 +172,18 @@ struct ValidityInterval final {
     friend bool operator==(const ValidityInterval &, const ValidityInterval &) = default;
 };
 
+enum class SocialAttributeSource : std::uint8_t { SelfReported, UserConfirmed, Inferred };
+
+struct SocialAttribute final {
+    std::string field;
+    SocialAttributeSource source = SocialAttributeSource::Inferred;
+};
+
+struct SocialRelationship final {
+    std::string predicate;
+    SocialAttributeSource source = SocialAttributeSource::Inferred;
+};
+
 struct MemoryRecord final {
     MemoryId id;
     MemoryScope scope;
@@ -190,8 +217,15 @@ struct MemoryRecord final {
     // Store-side optimistic-concurrency version; backends set it on read and
     // check it on Update/Supersede/Tombstone mutations.
     std::uint64_t version = 1;
+    // DEC-124. The assertion value is the statement; provenance holds its
+    // single source event. Each source event makes an independent assertion.
+    std::optional<SocialAttribute> social_attribute;
+    std::optional<SocialRelationship> social_relationship;
 
     [[nodiscard]] Result<void> validate() const;
+
+  private:
+    [[nodiscard]] Result<void> validate_social_assertion() const;
 };
 
 // Write-time gate for the per-kind policy: the verification floor and the
@@ -347,6 +381,11 @@ struct MemoryQuery final {
     // Soft deadline for the retrieval phases; exceeding it returns partial
     // results with quality flags instead of blocking the control plane.
     std::chrono::milliseconds deadline{2'000};
+
+    // Exact indexed field in one authorized SocialObject scope (DEC-124).
+    std::optional<std::string> social_attribute_field;
+    // Exact predicate in one authorized, directed SocialRelationship scope.
+    std::optional<std::string> social_relationship_predicate;
 
     [[nodiscard]] Result<void> validate() const;
 };

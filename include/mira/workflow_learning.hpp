@@ -17,7 +17,7 @@
 namespace mira {
 
 // ---------------------------------------------------------------------------
-// Memory four-domain organization (DEC-029 §1, stage F): a deterministic
+// Memory domain organization (DEC-029 §1, DEC-124): a deterministic
 // total mapping from the M4 MemoryKind set onto the DEC-014 §10 domains. An
 // organizational view, not a storage layer: no new tables, no IMemory changes,
 // no scope/ACL or approval rule moves. Domains never carry authorization
@@ -29,6 +29,7 @@ enum class MemoryDomain : std::uint8_t {
     UserModel,        // Preference (human-approval defaults unchanged)
     ProceduralMemory, // Procedure + SkillHint + RecoveryLesson (assets: workflow library)
     EpisodicMemory,   // Episode
+    SocialProfile,    // SocialAttribute + SocialRelationship
 };
 
 [[nodiscard]] std::string memory_domain_name(MemoryDomain domain);

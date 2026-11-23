@@ -137,6 +137,16 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   `RetrievalWeights`（含 `importance`，默认 0.0）经 options 配置。
 - **结构化元数据**（schema 1.3，纯加法迁移）：`MemoryRecord.labels`（≤16×64 字节，
   any-of 硬预过滤 `MemoryQuery::labels`）与 `importance`（[0,1] 中性默认 0.5）。
+- **社交画像字段**（SQLite schema 1.4，新增部分索引）：`MemoryQuery::social_attribute_field`
+  在单个授权 `SocialObject` scope 内按字段、有效时点和记录时点过滤，保留各条断言的
+  独立来源。使用方式见[宿主接入](durable-memory-host.md#社交画像字段)。
+- **社交关系断言**（SQLite schema 1.5，新增关系及端点索引）：
+  `MemoryQuery::social_relationship_predicate` 在一个已授权的有向关系 scope 内按谓词与
+  时点过滤。对象擦除会清理两端关系，端点处于待擦除时关系访问封闭。
+  见[宿主接入](durable-memory-host.md#社交关系断言)。
+- **社交环境擦除**（SQLite schema 1.6）：`social_environment_scope` 只用于整个环境的擦除，
+  按租户和环境读取画像及关系的清理目标。环境擦除待完成时范围内的画像与关系读写封闭。
+  见[擦除恢复](durable-memory-host.md#社交记忆擦除恢复)。
 - **近重去重**（`near_dup_threshold`，store 默认关、接线器默认 0.85）：排序后
   top-64 内按查询身份嵌入余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed`
   计数；无向量候选豁免，阈值按 embedder 实测标定。

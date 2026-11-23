@@ -161,6 +161,8 @@ class SqliteMemoryStore final : public IMemory,
     [[nodiscard]] Result<SqliteMemoryCapacitySnapshot> capacity_snapshot() const;
 
   private:
+    friend class SqliteSocialDirectory;
+    [[nodiscard]] Result<Id128> social_erasure_store_id();
     class Impl;
     explicit SqliteMemoryStore(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;

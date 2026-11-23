@@ -106,6 +106,7 @@ add_library(mira_core
     src/context/context_working_context_auto.cpp
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
+    src/context/social_profile.cpp
     src/context/memory_consolidation.cpp
     src/context/extraction_model_provider.cpp
     src/context/memory_embedding.cpp
@@ -235,6 +236,7 @@ add_library(mira_state_store
     src/storage/sqlite_checkpoint_store.cpp
     src/storage/sqlite_memory_store.cpp
     src/storage/sqlite_conversation_index.cpp
+    src/storage/sqlite_social_directory.cpp
 )
 add_library(Mira::state_store ALIAS mira_state_store)
 target_include_directories(mira_state_store

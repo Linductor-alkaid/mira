@@ -22,6 +22,8 @@ std::string memory_domain_name(MemoryDomain domain) {
         return "procedural";
     case MemoryDomain::EpisodicMemory:
         return "episodic";
+    case MemoryDomain::SocialProfile:
+        return "social-profile";
     }
     return "environment";
 }
@@ -38,6 +40,9 @@ Result<MemoryDomain> parse_memory_domain(std::string_view name) {
     }
     if (name == "episodic") {
         return MemoryDomain::EpisodicMemory;
+    }
+    if (name == "social-profile") {
+        return MemoryDomain::SocialProfile;
     }
     return make_workflow_learning_error(WorkflowLearningError::InvalidShape,
                                         "unknown memory domain name");
@@ -56,16 +61,19 @@ MemoryDomain memory_domain_of(MemoryKind kind) {
         return MemoryDomain::ProceduralMemory;
     case MemoryKind::Episode:
         return MemoryDomain::EpisodicMemory;
+    case MemoryKind::SocialAttribute:
+    case MemoryKind::SocialRelationship:
+        return MemoryDomain::SocialProfile;
     }
     return MemoryDomain::EpisodicMemory;
 }
 
 std::vector<MemoryKind> memory_kinds_of_domain(MemoryDomain domain) {
     // Declaration order of MemoryKind, filtered by the domain mapping.
-    const std::array<MemoryKind, 7> all = {
+    const std::array<MemoryKind, 9> all = {
         MemoryKind::Preference,     MemoryKind::EnvironmentFact, MemoryKind::ApplicationFact,
         MemoryKind::Episode,        MemoryKind::Procedure,       MemoryKind::SkillHint,
-        MemoryKind::RecoveryLesson,
+        MemoryKind::RecoveryLesson, MemoryKind::SocialAttribute, MemoryKind::SocialRelationship,
     };
     std::vector<MemoryKind> kinds;
     kinds.reserve(all.size());

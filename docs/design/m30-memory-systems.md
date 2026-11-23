@@ -1,13 +1,17 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.2
+> 版本：1.6
 > 更新日期：2026-11-23
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
 > [DEC-120](../decisions/DEC-120-agent-persona-admission.md)、
 > [DEC-121](../decisions/DEC-121-indexed-event-slices.md)、
-> [DEC-122](../decisions/DEC-122-durable-conversation-index.md)
+> [DEC-122](../decisions/DEC-122-durable-conversation-index.md)、
+> [DEC-123](../decisions/DEC-123-social-identity-directory.md)、
+> [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)、
+> [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)、
+> [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -60,6 +64,15 @@ M30-17 提供事件切片作为事件片段的取证入口。现有日志在重�
 索引。已授权的 Record 按 task 读取并保存扫描水位，同轮分页固定上界，墙钟范围
 在有界扫描内验证。M30-12 接通 SQLite 会话片段与 FTS5。宿主按固定来源水位重建
 整个有界会话前缀。作用域授权、正文检查、片段与索引事务，以及重放擦除屏障沿 DEC-122。
+
+M30-18 接通社交身份目录。版本化别名按租户与经授权的社交环境共同索引，返回确定性
+候选及歧义。对象和环境擦除保存持久屏障。M30-19 将字段断言提交给现有 IMemory，按
+环境内对象 ID 与精确字段预过滤，再按有效时间和记录时间读取。每条断言保留一份来源事件，
+同一字段可同时持有自述、用户确认和推断。字段与来源经宿主校验，自动模型提取不能创建
+这类记录。M30-20 以独立有向对象对 scope 保存关系断言，按谓词、有效时点和记录时点
+查询。对象擦除用两端索引在同一记忆库内清理出入关系，待擦除端点封闭相关读取与写入。
+M30-21 为目录和记忆库保存配对及擦除意图。目录先持久关闭对象或环境，记忆清理确认后
+结算意图。重开须先恢复未结算擦除。运行时的授权和撤权联动仍归 M30-13。
 
 ## 执行与验收
 

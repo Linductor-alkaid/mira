@@ -1,5 +1,7 @@
 #include <mira/memory_contracts.hpp>
 
+#include "social_profile_codec.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -108,6 +110,12 @@ std::string memory_scope_kind_name(MemoryScopeKind kind) {
         return "agent";
     case MemoryScopeKind::TaskSkill:
         return "task-skill";
+    case MemoryScopeKind::SocialObject:
+        return "social-object";
+    case MemoryScopeKind::SocialRelationship:
+        return "social-relationship";
+    case MemoryScopeKind::SocialEnvironment:
+        return "social-environment";
     }
     return "unknown";
 }
@@ -121,6 +129,9 @@ std::optional<MemoryScopeKind> memory_scope_kind_from(std::string_view name) {
         {"user", MemoryScopeKind::User},
         {"agent", MemoryScopeKind::Agent},
         {"task-skill", MemoryScopeKind::TaskSkill},
+        {"social-object", MemoryScopeKind::SocialObject},
+        {"social-relationship", MemoryScopeKind::SocialRelationship},
+        {"social-environment", MemoryScopeKind::SocialEnvironment},
     };
     for (const auto &[kind_name, kind] : kKinds) {
         if (kind_name == name) {
@@ -146,6 +157,10 @@ std::string memory_kind_name(MemoryKind kind) {
         return "recovery-lesson";
     case MemoryKind::SkillHint:
         return "skill-hint";
+    case MemoryKind::SocialAttribute:
+        return "social-attribute";
+    case MemoryKind::SocialRelationship:
+        return "social-relationship";
     }
     return "unknown";
 }
@@ -159,6 +174,8 @@ std::optional<MemoryKind> memory_kind_from(std::string_view name) {
         {"procedure", MemoryKind::Procedure},
         {"recovery-lesson", MemoryKind::RecoveryLesson},
         {"skill-hint", MemoryKind::SkillHint},
+        {"social-attribute", MemoryKind::SocialAttribute},
+        {"social-relationship", MemoryKind::SocialRelationship},
     };
     for (const auto &[kind_name, kind] : kKinds) {
         if (kind_name == name) {
@@ -303,8 +320,8 @@ constexpr std::chrono::seconds kDay{86'400};
 // would silently degrade conflict detection rather than retrieval quality.
 // The Semantic leg is the one a kind withholds: a canonical structured
 // record is not reachable by embedding similarity.
-const std::array<MemoryKindPolicy, 7> &kind_policy_table() {
-    static const std::array<MemoryKindPolicy, 7> table = {{
+const std::array<MemoryKindPolicy, 9> &kind_policy_table() {
+    static const std::array<MemoryKindPolicy, 9> table = {{
         MemoryKindPolicy{
             MemoryKind::Preference,
             180 * kDay,
@@ -349,6 +366,16 @@ const std::array<MemoryKindPolicy, 7> &kind_policy_table() {
             MemoryVerification::Observed,
             {MemoryScopeKind::TaskSkill, MemoryScopeKind::Task, MemoryScopeKind::Session},
             {MemoryRetrievalLeg::Exact, MemoryRetrievalLeg::Lexical}},
+        MemoryKindPolicy{MemoryKind::SocialAttribute,
+                         std::chrono::seconds{0},
+                         MemoryVerification::Unverified,
+                         {MemoryScopeKind::SocialObject},
+                         {MemoryRetrievalLeg::Exact}},
+        MemoryKindPolicy{MemoryKind::SocialRelationship,
+                         std::chrono::seconds{0},
+                         MemoryVerification::Unverified,
+                         {MemoryScopeKind::SocialRelationship},
+                         {MemoryRetrievalLeg::Exact}},
     }};
     return table;
 }
@@ -542,6 +569,10 @@ Result<void> MemoryRecord::validate() const {
     if (version == 0) {
         return memory_error(MemoryDomainCode::InvalidRecord, "record version starts at one");
     }
+    if (is_social_assertion(kind) || is_social_scope(scope.kind) || social_attribute ||
+        social_relationship) {
+        return validate_social_assertion();
+    }
     return Result<void>{};
 }
 
@@ -577,6 +608,8 @@ Result<void> MemoryQuery::validate() const {
     if (kinds.has_value() && kinds->empty()) {
         return memory_error(MemoryDomainCode::InvalidRecord, "kind filter must not be empty");
     }
+    if (auto social = social_profile_detail::validate_query(*this); !social)
+        return social.error();
     if (labels.has_value()) {
         if (labels->empty()) {
             return memory_error(MemoryDomainCode::InvalidRecord, "label filter must not be empty");
@@ -649,6 +682,13 @@ Result<void> MemoryMutation::validate() const {
     if (proposed.scope != scope) {
         return memory_error(MemoryDomainCode::InvalidMutation,
                             "mutation scope must match the proposed record scope");
+    }
+    if (is_social_assertion(proposed.kind) &&
+        ((type != MemoryMutationType::Add && type != MemoryMutationType::Tombstone) ||
+         (type == MemoryMutationType::Add &&
+          (proposed.status != MemoryStatus::Active || proposed.version != 1 ||
+           evidence != proposed.provenance)))) {
+        return memory_error(MemoryDomainCode::InvalidMutation, "social assertions are immutable");
     }
     switch (type) {
     case MemoryMutationType::Add:
@@ -827,6 +867,7 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     object.emplace_back("scope", memory_scope_to_json(record.scope));
     object.emplace_back("kind", memory_kind_name(record.kind));
     object.emplace_back("statement", record.statement);
+    social_profile_detail::encode_assertion(record, object);
     if (record.evidence.has_value()) {
         object.emplace_back("evidence", artifact_ref_to_json(*record.evidence));
     }
@@ -1013,6 +1054,8 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
     if (version != nullptr && version->is_integer() && version->as_integer().value() > 0) {
         record.version = static_cast<std::uint64_t>(version->as_integer().value());
     }
+    if (auto decoded = social_profile_detail::decode_assertion(json, record); !decoded)
+        return decoded.error();
     return record;
 }
 

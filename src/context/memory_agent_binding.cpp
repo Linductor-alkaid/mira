@@ -29,8 +29,10 @@ Result<void> MemoryAgentService::State::validate_binding(const MemoryWorkBinding
         bytes += constraint.size();
     }
     for (const auto &scope : binding.scopes)
-        if (scope.subject_id.empty() || scope.subject_id.size() > 256 ||
-            scope.tenant_id != binding.principal.tenant_id.to_string())
+        if (is_social_scope(scope.kind))
+            return error(ErrorCode::PermissionDenied, "social scopes require host admission");
+        else if (scope.subject_id.empty() || scope.subject_id.size() > 256 ||
+                 scope.tenant_id != binding.principal.tenant_id.to_string())
             return error(ErrorCode::PermissionDenied, "memory scope is outside the work tenant");
     return {};
 }

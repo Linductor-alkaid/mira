@@ -1,5 +1,17 @@
 # Mira 实施总计划
 
+2026-11-23：[DEC-126](../decisions/DEC-126-social-erasure-recovery.md) 接通 M30 的
+社交目录及记忆库擦除恢复，见 [M30-21](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-23：[DEC-125](../decisions/DEC-125-social-relationship-assertions.md) 接通 M30 的
+有向社交关系断言及双端点擦除，见 [M30-20](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-23：[DEC-124](../decisions/DEC-124-social-attribute-assertions.md) 接通 M30 的
+社交画像字段断言及独立字段索引，见 [M30-19](m30-long-term-memory-integration.md#5-工作项)。
+
+2026-11-23：[DEC-123](../decisions/DEC-123-social-identity-directory.md) 接通 M30 的
+社交对象与别名目录，见 [M30-18](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-23：[DEC-122](../decisions/DEC-122-durable-conversation-index.md) 接通 SQLite
 会话片段与 FTS5 召回，并将其纳入 Session scope 擦除重放，见 [M30-12](m30-long-term-memory-integration.md#5-工作项)。
 

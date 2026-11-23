@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.16
+> 版本：1.20
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -314,6 +314,22 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Durable Conversation Index（持久会话片段索引）**：
 按授权会话及匹配的 Session scope 召回 SQLite 会话片段。片段由固定事件水位重建，
 保留来源事件和角色，且受会话擦除屏障约束。见[DEC-122](../decisions/DEC-122-durable-conversation-index.md)。
+
+**Social Object Key（社交对象键）**：
+由租户、稳定社交环境 ID 及环境内对象 ID 组成。宿主按环境授权访问，别名查询返回
+候选及其版本。见[DEC-123](../decisions/DEC-123-social-identity-directory.md)。
+
+**Social Attribute Assertion（社交画像字段断言）**：
+宿主在一个已授权对象和字段内保存的单条来源主张，包含来源类型、事件、有效区间及
+记录时间。同字段可有多条断言。见[DEC-124](../decisions/DEC-124-social-attribute-assertions.md)。
+
+**Social Relationship Assertion（社交关系断言）**：
+关于同一社交环境内有序对象对和谓词的来源主张。两端点分别经宿主确认，任一端点的
+对象擦除包含这条关系。见[DEC-125](../decisions/DEC-125-social-relationship-assertions.md)。
+
+**Social Environment Scope（社交环境擦除范围）**：
+由租户及稳定社交环境 ID 组成的擦除目标，覆盖该环境内的画像字段及关系断言。
+对象和关系读取继续使用各自的精确范围。见[DEC-126](../decisions/DEC-126-social-erasure-recovery.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定

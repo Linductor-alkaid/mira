@@ -1,6 +1,6 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
-> 状态：In Progress（已交付分组召回、人格接线、事件切片及持久会话片段的 Linux 增量）
+> 状态：In Progress（召回分组、人格、事件、社交画像、关系及跨库擦除恢复已验收 Linux 增量）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -51,6 +51,10 @@
 
 ## 3. 设计与决策依据
 
+- [DEC-123](../decisions/DEC-123-social-identity-directory.md)：社交对象身份与别名索引。
+- [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)：画像字段断言与时态检索。
+- [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)：关系断言与双端点清理。
+- [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)：目录与记忆库的擦除恢复。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -137,6 +141,10 @@
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
 - [x] `M30-17` 交付 M30-12 的证据源增量，提供有界事件切片与 Record 水位，验证空页、
       文件重开、时间边界、错误传播及擦除屏障（Linux 离线）。
+- [x] `M30-18` 交付 M30-13 的社交身份目录，验收同名、跨域、版本覆盖与擦除后重开。
+- [x] `M30-19` 交付 M30-13 的画像字段断言，验收来源、有效区间、记录时间、字段索引与跨域隔离。
+- [x] `M30-20` 交付有向关系断言，验收有序端点、谓词与时态索引、重开和对象双端擦除。
+- [x] `M30-21` 交付目录与记忆库的联合擦除恢复，验收重开、数据库绑定及环境范围隔离。
 
 ## 6. 测试与退出条件
 
@@ -516,3 +524,152 @@ SBOM、平台边界和架构门禁通过。架构检查的私有头引用已改�
 | 真实 Mirage 宿主通过认证绑定挂载 | Mirage Maintainers，在产品采用本库版本后验证启动重放顺序、索引刷新与授权所有权 |
 | Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，分支提交后运行完整矩阵，按被测 head 回填 |
 | 其他上下文资产、规模与联合物理回收 | Mira Maintainers，续按 MS-04/MS-06、M31 的负载与回收契约验证 |
+
+### 2026-11-23：社交身份与别名索引
+
+基线 `b7a958d`，分支 `feat/m30-memory-systems`。按 DEC-123 验收 M30-18。
+`SqliteSocialDirectory` 按租户和社交环境保存稳定对象 ID、版本与别名。测试验证同名结果
+在候选截断后仍标为歧义，跨租户和环境的同 ID 互不影响，同版本重试幂等，较高版本
+原子替换别名。对象和环境屏障在重开后仍拒绝旧写；容量不足的擦除会停用当前目录，
+宿主增容重开并补做擦除后恢复服务。M30-13 的属性级证据、时态与关系断言继续开放。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 10
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 5 --target mira_m30_social_directory_test \
+  mira_m30_conversation_index_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_m30_(social_directory|conversation_index)_test'
+clang-tidy -p build/release --warnings-as-errors='*' src/storage/sqlite_social_directory.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Release 全量 **200/200**，ASAN 定向 **2/2**。生产编译单元 clang-tidy 和格式、
+文档、SBOM、平台边界、架构门禁通过。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| Mirage 宿主认证绑定和接入 | Mirage Maintainers，采用目录 API 后验证授权、同名确认与启动时的擦除补做 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，提交并触发对应矩阵后按被测 head 回填 |
+| 属性级证据、时态、关系断言及规模验证 | Mira Maintainers，M30-13 后续增量接入既有记忆提交管线后验收，并结合 M31 的容量和回收契约补测 |
+
+### 2026-11-23：社交画像的字段断言与有效区间
+
+在 `feat/m30-memory-systems` 上承接 M30-18，按 DEC-124 实施 M30-19。自述、用户确认和
+推断分别保留来源和验证级别。对象、字段、来源与事件共同确定断言身份，重复提交保持
+幂等，冲突正文或区间被拒绝。SQLite 迁移在同一事务中安装字段索引并更新 schema 版本。
+宿主在授权对象范围内读取，可独立选择有效时点和记录时点。首轮回归发现通用文本去重
+会合并异源断言，画像字段读取已保留这些断言。测试覆盖边界时点、停用和物理擦除、跨
+租户与环境隔离、模型提案拒绝、文件重开，以及迁移失败回滚。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_profile_test \
+  mira_m30_social_directory_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(social_profile|social_directory)|m4_store_open)_test'
+for unit in src/context/{social_profile,memory_contracts,memory_consolidation,memory_agent_binding}.cpp \
+  src/storage/sqlite_memory_store.cpp src/workflow/workflow_learning.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Release 全量 **201/201**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、
+SBOM、平台边界和架构门禁通过。日志见 `/tmp/mira-m30-profile-{full-test,asan-test,tidy,quality}.log`。
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 画像关系、目录与知识的联合擦除恢复、实时撤权 | Mira Maintainers，M30-13 接通关系端点和持久清理序列后，验证部分失败、重开重试及撤权在途结果 |
+| Mirage 产品调用链 | Mirage Maintainers，在产品层绑定授权、来源事件和目录版本后，补写读与删除端到端测试 |
+| Windows/Android、远端 CI、其他 sanitizer 与规模 | Mira Maintainers，提交并触发对应矩阵后按被测 head 回填，按 M31 目标工作负载验证限额和回收 |
+
+### 2026-11-23：社交关系断言与双端点擦除
+
+在 `feat/m30-memory-systems` 上承接 M30-19，按 DEC-125 实施 M30-20。有向关系 scope
+绑定同一社交环境内的两个对象，读取由谓词与双时态筛选。共用断言的内容门禁、来源标注、
+不可变提交和版本读取。SQLite schema 1.5 原子安装关系及端点索引，保留 1.4 的画像记录。
+对象 scope 擦除同时清理该对象的出入关系。注入删除失败并重开，验证待擦除端点封闭关系
+查询、按 ID 读取与提交。补做成功后，精确范围内的画像与关系历史消失，其他租户和对象
+对可读。持久屏障写入失败显式返回错误，由拥有目录屏障的宿主收拢。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_relationship_test \
+  mira_m30_social_profile_test mira_m30_social_directory_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_social_(relationship|profile|directory)|m4_store_open)_test'
+for unit in src/context/{social_profile,memory_contracts,memory_consolidation,memory_agent_binding}.cpp \
+  src/storage/sqlite_memory_store.cpp src/workflow/workflow_learning.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 目录与知识库之间的擦除恢复、实时撤权 | Mira Maintainers，在 M30-13 接通持久擦除序列后，验证跨库中断及撤权时的在途结果 |
+| Mirage 产品调用链 | Mirage Maintainers，完成双端点授权、目录版本复核和来源映射后补测 |
+| Windows/Android、远端 CI、其他 sanitizer 与规模 | Mira Maintainers，提交后执行目标矩阵，按被测 head 回填；M31 负载就绪后验证容量和回收 |
+
+Linux Release 全量 **202/202**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-rel-{full-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-23：社交目录与记忆库的擦除恢复
+
+在 `feat/m30-memory-systems` 上承接 M30-20，按 DEC-126 实施 M30-21。目录 schema 1.1
+在同一事务登记擦除意图并持久封闭目标；记忆库 schema 1.6 增加精确环境擦除索引。
+启动通过持久库 ID 验证配对，恢复未结算擦除后才开放目录。对象擦除沿已有端点索引，
+环境擦除覆盖目录中没有当前版本的画像与关系，保留其他环境和租户的内容。
+故障注入覆盖记忆清理失败、最终回执失败和超时后已接纳的清理继续执行。升级测试保留
+旧目录的别名和对象身份。错误配对和恢复失败均返回错误。本轮验证使用正常关闭与重开。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_erasure_recovery_test \
+  mira_m30_social_relationship_test mira_m30_social_profile_test \
+  mira_m30_social_directory_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_social_(erasure_recovery|relationship|profile|directory)|m4_store_open)_test'
+for unit in src/context/{social_profile,memory_contracts}.cpp \
+  src/storage/{sqlite_memory_store,sqlite_social_directory}.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| Mirage 产品授权和实时撤权接线 | Mirage Maintainers，在产品接通稳定对象 ID、当前目录版本和在途访问收拢后补端到端测试 |
+| 强杀、断电、备份恢复及大环境清理 | Mira Maintainers，目标故障环境与 M31 负载及回收契约就绪后验证 |
+| Windows/Android、远端 CI、其他 sanitizer | Mira Maintainers，提交后执行目标矩阵并按被测 head 回填 |
+
+Linux Release 全量 **203/203**，ASAN 定向 **5/5**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-cross-erase-{full-test,asan-test,tidy,quality}.log`。

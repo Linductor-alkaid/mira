@@ -1,6 +1,7 @@
 #include "memory_capacity_vfs.hpp"
 #include "sqlite_store_open.hpp"
 #include <mira/embedding_math.hpp>
+#include <mira/social_profile.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include "sqlite_support.hpp"
@@ -35,8 +36,25 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 3};
+constexpr SchemaVersion kMemoryStoreSchema{1, 6};
 constexpr const char *kStoreKind = "memory";
+constexpr const char *kSocialFieldIndex =
+    "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
+    " ON memory_records(scope_key, json_extract(document, '$.social_attribute.field'),"
+    " recorded_at DESC, id) WHERE kind = 'social-attribute';";
+constexpr const char *kSocialRelationshipIndexes =
+    "CREATE INDEX IF NOT EXISTS memory_records_by_social_predicate"
+    " ON memory_records(scope_key, json_extract(document, '$.social_relationship.predicate'),"
+    " recorded_at DESC, id) WHERE kind = 'social-relationship';"
+    "CREATE INDEX IF NOT EXISTS memory_records_by_social_from"
+    " ON memory_records(tenant_id, substr(subject_id, 1, 65)) WHERE kind = 'social-relationship';"
+    "CREATE INDEX IF NOT EXISTS memory_records_by_social_to"
+    " ON memory_records(tenant_id, substr(subject_id, 1, 33) || substr(subject_id, 67))"
+    " WHERE kind = 'social-relationship';";
+constexpr const char *kSocialEnvironmentIndex =
+    "CREATE INDEX IF NOT EXISTS memory_records_by_social_environment"
+    " ON memory_records(tenant_id, subject_id)"
+    " WHERE kind IN ('social-attribute', 'social-relationship');";
 
 constexpr const char *kSchemaDdl =
     "CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
@@ -382,12 +400,41 @@ class SqliteMemoryStore::Impl final {
             return store_error(ErrorCode::Internal, "scope hold check failed to prepare");
         }
         sqlite3_bind_text(hold.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
-        if (sqlite3_step(hold.get()) == SQLITE_ROW) {
+        const int step = sqlite3_step(hold.get());
+        if (step == SQLITE_ROW) {
             return make_memory_error(
                 MemoryDomainCode::ErasurePending,
                 "scope is held out of context by a pending erasure; retry the erasure");
         }
+        if (step != SQLITE_DONE)
+            return store_error(ErrorCode::Internal, "scope hold check failed");
         return Result<void>{};
+    }
+
+    [[nodiscard]] static Result<void> check_scope_holds(sqlite3 *db, const MemoryScope &scope,
+                                                        const std::string &scope_key) {
+        auto primary = check_no_hold(db, scope_key);
+        if (!primary || !is_social_scope(scope.kind) ||
+            scope.kind == MemoryScopeKind::SocialEnvironment)
+            return primary;
+        const auto environment = social_environment_scope_of(scope);
+        if (!environment)
+            return make_memory_error(MemoryDomainCode::ScopeDenied, "invalid social scope");
+        if (auto held = check_no_hold(db, scope_key_of(*environment)); !held)
+            return held.error();
+        if (scope.kind != MemoryScopeKind::SocialRelationship)
+            return {};
+        const auto endpoints = social_relationship_endpoints(scope);
+        if (!endpoints)
+            return make_memory_error(MemoryDomainCode::ScopeDenied, "invalid relationship scope");
+        for (const auto &endpoint : {endpoints->from, endpoints->to}) {
+            const auto object_scope = social_object_scope(endpoint);
+            if (!object_scope)
+                return object_scope.error();
+            if (auto held = check_no_hold(db, scope_key_of(object_scope.value())); !held)
+                return held.error();
+        }
+        return {};
     }
 
     // ---- record plumbing ----
@@ -463,7 +510,7 @@ class SqliteMemoryStore::Impl final {
         if (sqlite3_step(drop_fts.get()) != SQLITE_DONE) {
             return store_error(ErrorCode::Internal, "fts sync failed");
         }
-        if (record.status == MemoryStatus::Active) {
+        if (record.status == MemoryStatus::Active && !is_social_assertion(record.kind)) {
             Statement insert_fts(db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
             if (!insert_fts.valid()) {
                 return store_error(ErrorCode::Internal, "fts insert failed to prepare");
@@ -493,7 +540,11 @@ class SqliteMemoryStore::Impl final {
         }
         sqlite3_bind_text(insert_version.get(), 1, id.c_str(), -1, storage::transient_copy());
         sqlite3_bind_int64(insert_version.get(), 2, static_cast<std::int64_t>(version));
-        sqlite3_bind_int64(insert_version.get(), 3, wall_nanos(record.recorded_at));
+        const auto knowledge_time =
+            is_social_assertion(record.kind) && record.status == MemoryStatus::Tombstoned
+                ? std::max(record.recorded_at, std::chrono::system_clock::now())
+                : record.recorded_at;
+        sqlite3_bind_int64(insert_version.get(), 3, wall_nanos(knowledge_time));
         sqlite3_bind_int64(insert_version.get(), 4, wall_nanos(record.validity.valid_from));
         if (record.validity.valid_until.has_value()) {
             sqlite3_bind_int64(insert_version.get(), 5, wall_nanos(*record.validity.valid_until));
@@ -591,8 +642,13 @@ class SqliteMemoryStore::Impl final {
         if (!existing.value().has_value()) {
             return std::optional<MemoryRecord>{};
         }
-        if (scope_key_of(existing.value()->scope) != scope_key_of(scope)) {
+        const auto scope_key = scope_key_of(scope);
+        if (scope_key_of(existing.value()->scope) != scope_key) {
             return std::optional<MemoryRecord>{};
+        }
+        if (is_social_scope(scope.kind)) {
+            if (auto held = check_scope_holds(db, scope, scope_key); !held)
+                return held.error();
         }
         return existing.value();
     }
@@ -690,7 +746,7 @@ class SqliteMemoryStore::Impl final {
         if (!transaction.valid()) {
             return store_error(ErrorCode::Internal, "mutation transaction rejected");
         }
-        const auto hold = check_no_hold(db, scope_key);
+        const auto hold = check_scope_holds(db, mutation.scope, scope_key);
         if (!hold) {
             return hold.error();
         }
@@ -767,6 +823,15 @@ class SqliteMemoryStore::Impl final {
                 return existing.error();
             }
             if (existing.value().has_value()) {
+                if (is_social_assertion(proposed.kind) && *existing.value() == 1) {
+                    auto prior = read_record(db, proposed.id);
+                    if (!prior)
+                        return prior.error();
+                    if (prior.value() && prior.value()->scope == proposed.scope &&
+                        memory_record_to_json(*prior.value()) == memory_record_to_json(proposed)) {
+                        return MemoryMutationResult{MemoryMutationType::Add, proposed.id, 1, true};
+                    }
+                }
                 return make_memory_error(MemoryDomainCode::VersionConflict,
                                          "add target already exists");
             }
@@ -1026,7 +1091,7 @@ class SqliteMemoryStore::Impl final {
         scope_keys.reserve(request.scopes.size());
         for (const auto &scope : request.scopes) {
             scope_keys.push_back(scope_key_of(scope));
-            const auto hold = check_no_hold(db, scope_keys.back());
+            const auto hold = check_scope_holds(db, scope, scope_keys.back());
             if (!hold) {
                 return hold.error();
             }
@@ -1034,42 +1099,49 @@ class SqliteMemoryStore::Impl final {
         const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
         const bool bitemporal =
             request.as_of_recorded.has_value() || request.as_of_valid.has_value();
+        const bool relationship = request.social_relationship_predicate.has_value();
+        const bool social = relationship || request.social_attribute_field.has_value();
+        const bool kind_filter = request.kinds.has_value() && !social;
 
         // Base universe: exact scope equality, nothing crosses by similarity.
         std::string sql =
             "SELECT id, scope_key, kind, statement, recorded_at, confidence, verification,"
             " sensitivity_rank, status, evidence, valid_from, document FROM memory_records WHERE (";
         for (std::size_t index = 0; index < scope_keys.size(); ++index) {
-            sql += index == 0 ? "scope_key = ?" + std::to_string(index + 1)
-                              : " OR scope_key = ?" + std::to_string(index + 1);
+            sql += index == 0 ? "scope_key = ?" : " OR scope_key = ?";
         }
         sql += ")";
         if (!bitemporal) {
-            sql += " AND status = 'active' AND (expires_at IS NULL OR expires_at > ?" +
-                   std::to_string(scope_keys.size() + 1) + ")";
+            sql += " AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)";
         }
-        if (request.kinds.has_value()) {
+        if (kind_filter) {
             sql += " AND kind IN (";
             for (std::size_t index = 0; index < request.kinds->size(); ++index) {
-                sql += index == 0 ? "?" + std::to_string(scope_keys.size() + 2 + index)
-                                  : ", ?" + std::to_string(scope_keys.size() + 2 + index);
+                sql += index == 0 ? "?" : ", ?";
             }
             sql += ")";
         }
         // Any-of label prefilter (DEC-112): a hard filter like the scope
         // allowlist, evaluated inside the authorized candidate universe.
-        std::size_t label_param_base = 0;
         if (request.labels.has_value()) {
-            label_param_base = scope_keys.size() + 2 + (request.kinds ? request.kinds->size() : 0);
             sql += " AND EXISTS (SELECT 1 FROM json_each(memory_records.labels)"
                    " WHERE value IN (";
             for (std::size_t index = 0; index < request.labels->size(); ++index) {
-                sql += index == 0 ? "?" + std::to_string(label_param_base + index)
-                                  : ", ?" + std::to_string(label_param_base + index);
+                sql += index == 0 ? "?" : ", ?";
             }
             sql += "))";
         }
-        sql += " ORDER BY recorded_at DESC LIMIT 4096";
+        if (social) {
+            sql += relationship
+                       ? " AND kind = 'social-relationship'"
+                         " AND json_extract(document, '$.social_relationship.predicate') = ?"
+                       : " AND kind = 'social-attribute'"
+                         " AND json_extract(document, '$.social_attribute.field') = ?";
+            sql += " AND recorded_at <= ? AND valid_from <= ?"
+                   " AND (valid_until IS NULL OR valid_until > ?)";
+        }
+        sql += social ? " ORDER BY recorded_at DESC, id LIMIT 4096"
+                      : " ORDER BY recorded_at DESC LIMIT 4096";
         Statement universe(db, sql.c_str());
         if (!universe.valid()) {
             return store_error(ErrorCode::Internal, "memory query failed to prepare");
@@ -1084,7 +1156,7 @@ class SqliteMemoryStore::Impl final {
             sqlite3_bind_int64(universe.get(), next_param, now);
             ++next_param;
         }
-        if (request.kinds.has_value()) {
+        if (kind_filter) {
             for (const auto kind : *request.kinds) {
                 const std::string name = memory_kind_name(kind);
                 sqlite3_bind_text(universe.get(), next_param, name.c_str(), -1,
@@ -1098,6 +1170,18 @@ class SqliteMemoryStore::Impl final {
                                   storage::transient_copy());
                 ++next_param;
             }
+        }
+        if (social) {
+            const auto &predicate = relationship ? *request.social_relationship_predicate
+                                                 : *request.social_attribute_field;
+            sqlite3_bind_text(universe.get(), next_param++, predicate.c_str(), -1,
+                              storage::transient_copy());
+            const auto recorded_at =
+                request.as_of_recorded ? wall_nanos(*request.as_of_recorded) : now;
+            const auto valid_at = request.as_of_valid ? wall_nanos(*request.as_of_valid) : now;
+            sqlite3_bind_int64(universe.get(), next_param++, recorded_at);
+            sqlite3_bind_int64(universe.get(), next_param++, valid_at);
+            sqlite3_bind_int64(universe.get(), next_param, valid_at);
         }
         std::vector<Row> candidates;
         int step = sqlite3_step(universe.get());
@@ -1124,8 +1208,8 @@ class SqliteMemoryStore::Impl final {
             const std::int64_t recorded_cap =
                 wall_nanos(request.as_of_recorded.value_or(std::chrono::system_clock::now()));
             std::optional<std::int64_t> valid_at;
-            if (request.as_of_valid.has_value()) {
-                valid_at = wall_nanos(*request.as_of_valid);
+            if (request.as_of_valid.has_value() || social) {
+                valid_at = request.as_of_valid ? wall_nanos(*request.as_of_valid) : now;
             }
             std::vector<Row> resolved;
             resolved.reserve(candidates.size());
@@ -1477,7 +1561,7 @@ class SqliteMemoryStore::Impl final {
             if (!exact_hits.empty() && !exact_hit) {
                 continue; // explicit exact terms are mandatory filters
             }
-            if (!seen_statements.insert(row.statement).second) {
+            if (!social && !seen_statements.insert(row.statement).second) {
                 continue; // near-duplicate suppression at statement equality
             }
             // Priors are shared by both fusion modes and are computed on the
@@ -1547,8 +1631,11 @@ class SqliteMemoryStore::Impl final {
                 scored.push_back({rrf_raw[index].row, normalized * leg_total + rrf_priors[index]});
             }
         }
-        std::sort(scored.begin(), scored.end(),
-                  [](const Scored &lhs, const Scored &rhs) { return lhs.score > rhs.score; });
+        std::sort(scored.begin(), scored.end(), [social](const Scored &lhs, const Scored &rhs) {
+            if (social && lhs.score == rhs.score)
+                return lhs.row->id < rhs.row->id;
+            return lhs.score > rhs.score;
+        });
         // Near-duplicate suppression (DEC-112): a bounded head window;
         // candidates carrying an embedding of the query's producer identity
         // are compared against the already-kept set. Records without such a
@@ -1624,7 +1711,7 @@ class SqliteMemoryStore::Impl final {
             // the result set. A claim-key filtered query asked for one
             // subject, so the cap would only hide the siblings the caller
             // came for.
-            if (!request.claim_key.has_value() &&
+            if (!request.claim_key.has_value() && !social &&
                 group_counts[group] >= options_.max_per_scope_kind) {
                 continue;
             }
@@ -1667,13 +1754,54 @@ class SqliteMemoryStore::Impl final {
                                                                 const ErasureRequest &request) {
         ErasureTargets targets;
         if (request.scope.has_value()) {
-            targets.scope_key = scope_key_of(*request.scope);
-            Statement query(db, "SELECT id FROM memory_records WHERE scope_key = ?1");
+            const auto &scope = *request.scope;
+            targets.scope_key = scope_key_of(scope);
+            const bool social_object = scope.kind == MemoryScopeKind::SocialObject;
+            const bool social_environment = scope.kind == MemoryScopeKind::SocialEnvironment;
+            if (social_object && !is_social_object_scope(scope))
+                return make_memory_error(MemoryDomainCode::ScopeDenied,
+                                         "invalid social erasure scope");
+            if (social_environment && !social_environment_scope_of(scope))
+                return make_memory_error(MemoryDomainCode::ScopeDenied,
+                                         "invalid social environment erasure scope");
+            // The first two components of a relationship subject are the
+            // source object key; its first and third are the target key.
+            Statement query(
+                db,
+                social_object
+                    ? "SELECT id FROM memory_records WHERE scope_key = ?1"
+                      " UNION ALL SELECT id FROM memory_records WHERE kind = 'social-relationship'"
+                      " AND tenant_id = ?2 AND substr(subject_id, 1, 65) = ?3"
+                      " UNION ALL SELECT id FROM memory_records WHERE kind = 'social-relationship'"
+                      " AND tenant_id = ?2 AND substr(subject_id, 1, 33) || substr(subject_id, 67) "
+                      "= ?3"
+                : social_environment
+                    ? "SELECT id FROM memory_records WHERE kind IN ('social-attribute', "
+                      "'social-relationship')"
+                      " AND tenant_id = ?1 AND subject_id >= ?2 AND subject_id < ?3"
+                    : "SELECT id FROM memory_records WHERE scope_key = ?1");
             if (!query.valid()) {
                 return store_error(ErrorCode::Internal, "erasure scan failed to prepare");
             }
-            sqlite3_bind_text(query.get(), 1, targets.scope_key->c_str(), -1,
-                              storage::transient_copy());
+            if (social_environment) {
+                // '/' starts the next component, and '0' is its successor in
+                // the binary collation. Together they bound this prefix.
+                const auto lower = scope.subject_id + '/';
+                const auto upper = scope.subject_id + '0';
+                sqlite3_bind_text(query.get(), 1, scope.tenant_id->c_str(), -1,
+                                  storage::transient_copy());
+                sqlite3_bind_text(query.get(), 2, lower.c_str(), -1, storage::transient_copy());
+                sqlite3_bind_text(query.get(), 3, upper.c_str(), -1, storage::transient_copy());
+            } else {
+                sqlite3_bind_text(query.get(), 1, targets.scope_key->c_str(), -1,
+                                  storage::transient_copy());
+            }
+            if (social_object) {
+                sqlite3_bind_text(query.get(), 2, scope.tenant_id->c_str(), -1,
+                                  storage::transient_copy());
+                sqlite3_bind_text(query.get(), 3, scope.subject_id.c_str(), -1,
+                                  storage::transient_copy());
+            }
             int step = sqlite3_step(query.get());
             while (step == SQLITE_ROW) {
                 const auto *id_text =
@@ -1795,12 +1923,14 @@ class SqliteMemoryStore::Impl final {
                 }
                 sqlite3_bind_text(statement.get(), 1, id.c_str(), -1, storage::transient_copy());
                 const int outcome = sqlite3_step(statement.get());
-                if (outcome != SQLITE_DONE) {
+                const int removed = sqlite3_changes(db);
+                if (outcome != SQLITE_DONE ||
+                    (request.scope && std::string_view(step.label) == "records" && removed != 1)) {
                     failed = true;
                     failure_note = std::string("erasure step failed: ") + step.label;
                     break;
                 }
-                if (sqlite3_changes(db) > 0) {
+                if (removed > 0) {
                     if (std::string_view(step.label) == "fts") {
                         result.counts.fts_entries_removed += 1;
                     } else if (std::string_view(step.label) == "embeddings") {
@@ -1880,34 +2010,35 @@ class SqliteMemoryStore::Impl final {
         // unrelated record must not put the scope back into Context.
         if (!scope_key.empty() && request.scope.has_value()) {
             Statement release(db, "DELETE FROM memory_scope_holds WHERE scope_key = ?1");
-            if (release.valid()) {
-                sqlite3_bind_text(release.get(), 1, scope_key.c_str(), -1,
-                                  storage::transient_copy());
-                (void)sqlite3_step(release.get());
-            }
+            if (!release.valid())
+                return store_error(ErrorCode::Internal, "erasure hold release failed to prepare");
+            sqlite3_bind_text(release.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
+            if (sqlite3_step(release.get()) != SQLITE_DONE)
+                return store_error(ErrorCode::Internal, "erasure hold release failed");
         }
         return result;
     }
 
-    static void record_pending_hold(sqlite3 *db, const std::string &scope_key,
-                                    const std::string &reason) {
+    [[nodiscard]] static Result<void> record_pending_hold(sqlite3 *db, const std::string &scope_key,
+                                                          const std::string &reason) {
         if (scope_key.empty()) {
-            return;
+            return store_error(ErrorCode::Internal, "erasure failed without a scope to hold");
         }
         Transaction hold_transaction(db);
         if (!hold_transaction.valid()) {
-            return;
+            return store_error(ErrorCode::Internal, "erasure hold transaction rejected");
         }
         const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
         Statement hold(db, "INSERT INTO memory_scope_holds(scope_key, reason, since)"
                            " VALUES(?1, ?2, ?3)"
                            " ON CONFLICT(scope_key) DO UPDATE SET reason = excluded.reason");
-        if (hold.valid()) {
-            sqlite3_bind_text(hold.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_text(hold.get(), 2, reason.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_int64(hold.get(), 3, now);
-            (void)sqlite3_step(hold.get());
-        }
+        if (!hold.valid())
+            return store_error(ErrorCode::Internal, "erasure hold write failed to prepare");
+        sqlite3_bind_text(hold.get(), 1, scope_key.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(hold.get(), 2, reason.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_int64(hold.get(), 3, now);
+        if (sqlite3_step(hold.get()) != SQLITE_DONE)
+            return store_error(ErrorCode::Internal, "erasure hold write failed");
         Statement log(db, "INSERT INTO memory_erasure_log(scope_key, reason, requested_at,"
                           " status, note) VALUES(?1, ?2, ?3, 'pending', 'partial failure;"
                           " scope held out of context')");
@@ -1917,7 +2048,7 @@ class SqliteMemoryStore::Impl final {
             sqlite3_bind_int64(log.get(), 3, now);
             (void)sqlite3_step(log.get());
         }
-        (void)hold_transaction.commit();
+        return hold_transaction.commit();
     }
 
     [[nodiscard]] Result<ErasureResult> erase(sqlite3 *db, const ErasureRequest &request) {
@@ -1952,7 +2083,8 @@ class SqliteMemoryStore::Impl final {
         // Outside the rolled-back transaction: the fail-closed hold and its
         // audit row persist in their own transaction.
         if (settled.value().status == ErasureStatus::Pending) {
-            record_pending_hold(db, pending_scope_key, request.reason);
+            if (auto held = record_pending_hold(db, pending_scope_key, request.reason); !held)
+                return held.error();
         }
         return settled;
     }
@@ -2327,8 +2459,10 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
         db_options.vfs_name = capacity->name();
         db_options.exclusive_owner = true;
     }
+    const std::string schema_ddl = std::string(kSchemaDdl) + kSocialFieldIndex +
+                                   kSocialRelationshipIndexes + kSocialEnvironmentIndex;
     auto opened = storage::open_reference_store(
-        db_options, {kStoreKind, kMemoryStoreSchema, kSchemaDdl, store_error,
+        db_options, {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
                          // The callback receives the file's recorded version
                          // once, so the chain must fall through each step.
@@ -2345,9 +2479,22 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                              }
                          }
                          if (previous.major == 1 && previous.minor < 3) {
-                             return migrate_memory_schema_1_2_to_1_3(db);
+                             auto migrated = migrate_memory_schema_1_2_to_1_3(db);
+                             if (!migrated) {
+                                 return migrated.error();
+                             }
                          }
-                         return {};
+                         if (previous.minor < 4) {
+                             auto migrated = storage::exec_sql(db, kSocialFieldIndex);
+                             if (!migrated)
+                                 return migrated.error();
+                         }
+                         if (previous.minor < 5) {
+                             auto migrated = storage::exec_sql(db, kSocialRelationshipIndexes);
+                             if (!migrated)
+                                 return migrated.error();
+                         }
+                         return storage::exec_sql(db, kSocialEnvironmentIndex);
                      }});
     if (!opened) {
         if (capacity && capacity->rejected())
@@ -2407,7 +2554,34 @@ Result<MemoryCompactionResult> SqliteMemoryStore::sweep(MemorySweepOptions optio
 
 Result<ErasureResult> SqliteMemoryStore::erase(const ErasureRequest &request) {
     return impl_->run<ErasureResult>(
-        [this, &request](sqlite3 *db) { return impl_->erase(db, request); });
+        [this, request](sqlite3 *db) { return impl_->erase(db, request); });
+}
+
+Result<Id128> SqliteMemoryStore::social_erasure_store_id() {
+    return impl_->run<Id128>([this](sqlite3 *db) -> Result<Id128> {
+        if (auto writable = impl_->check_writable(); !writable)
+            return writable.error();
+        Transaction transaction(db);
+        if (!transaction.valid())
+            return store_error(ErrorCode::Unavailable,
+                               "memory store identity transaction unavailable");
+        const auto stored = storage::meta_read(db, "social_erasure_store_id");
+        if (!stored)
+            return stored.error();
+        if (stored.value()) {
+            const auto id = Id128::parse(*stored.value());
+            if (!id || id->is_nil() || id->to_string() != *stored.value())
+                return store_error(ErrorCode::DataLoss, "memory store identity is malformed");
+            return *id;
+        }
+        const auto id = Id128::generate();
+        if (auto written = storage::meta_write(db, "social_erasure_store_id", id.to_string());
+            !written)
+            return written.error();
+        if (auto committed = transaction.commit(); !committed)
+            return committed.error();
+        return id;
+    });
 }
 
 Result<void> SqliteMemoryStore::index_embedding(MemoryId record, EmbedderId embedder,

@@ -95,6 +95,113 @@ auto recalled = conversation_index->retrieve(query, RetrievalBudget{});
 重放擦除意图。原始事件、备份与磁盘回收由各自生命周期管理。
 参见 [DEC-122](../decisions/DEC-122-durable-conversation-index.md)。
 
+## 社交对象目录
+
+`SqliteSocialDirectory` 保存宿主核准的对象身份和别名。数据库由宿主独占并在
+Executor 关闭前排空。调用前从当前授权绑定确定租户和社交环境。对象键包含
+完整环境键及稳定内部 ID，宿主负责外部账号与内部 ID 的映射。
+
+```cpp
+const SocialEnvironmentKey environment{principal.tenant_id, authorized_environment_id};
+const SocialObjectKey object{environment, internal_object_id};
+auto saved = directory->activate(object, SocialObjectIdentity{3, {"陈工", "Alicia Chen"}});
+auto resolved = directory->resolve(environment, "陈工");
+// 检查 saved 和 resolved，Ambiguous 时交宿主澄清。
+```
+
+别名每项上限 256 字节，每个对象最多 16 项。索引折叠 ASCII 大小写与空白，
+非 ASCII 字符保留。完整对象版本和别名同事务更新，旧版本拒绝，同版本重放要求
+别名内容一致。同名结果包含完整对象键和读取时的版本。即使只返回一条，也可能
+标为 Ambiguous 和 truncated。宿主延后使用候选时重新核对授权和当前版本。
+
+`erase_object` 清理别名并持久封闭该对象；`erase_environment` 清理整个社交环境
+并封闭重建。目录的对象及环境配额计入保留的擦除屏障。擦除失败会封闭当前实例。
+宿主处理原因并关闭实例。与记忆库配对时，重开自动恢复已提交的意图。独立目录的宿主
+可按原目标重试擦除。
+见 [DEC-123](../decisions/DEC-123-social-identity-directory.md)。
+
+## 社交画像字段
+
+宿主查验当前租户和环境授权，从目录读取对象并确认歧义，再将已核准的来源事件转换为
+`SocialAttribute`。字段键由 1～48 个 ASCII 小写字母、数字、下划线或连字符组成，
+首字符为字母。值为非空 UTF-8 文本，上限 2048 字节。自述、用户确认和推断分别对应
+`Observed`、`HumanConfirmed` 和 `Unverified`。断言按 `Sensitive` 保存。
+
+```cpp
+auto assertion = make_social_attribute(
+    object, {"team", SocialAttributeSource::SelfReported}, verified_event_value,
+    source_event, ValidityInterval{valid_from, valid_until}, recorded_at);
+// 检查 assertion 后，在 Executor 管理的有限任务内提交，消费任务结果。
+MemoryCandidate candidate;
+candidate.proposed = assertion.value();
+candidate.evidence = candidate.proposed.provenance;
+auto report = MemoryConsolidator{}.consolidate_candidates(
+    memory, {candidate}, candidate.proposed.scope, Timestamp::now());
+// 检查报告中的处置。宿主再次确认授权与目录状态后读取。
+MemoryQuery query;
+query.scopes = {candidate.proposed.scope};
+query.social_attribute_field = "team";
+auto matching = memory.query(query);
+```
+
+同一来源事件的相同断言可重试，内容或区间发生变化时需使用新的来源事件。查询默认
+取当前已记录且有效的断言，可用 `as_of_recorded` 与 `as_of_valid` 分别选择记忆知道的
+时点和事实生效的时点。有效区间左闭右开。`Tombstone` 停用后，只有停用前的知悉时间
+能查到历史断言。此类型无默认保留期限，宿主可设置 `expires_at`。物理擦除同时清空历史。
+
+宿主负责同步授权撤销、目录状态和访问，通用 MemoryAgent 工作绑定拒绝画像 scope。
+画像擦除接入下述配对目录。见 [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)。
+
+## 社交关系断言
+
+宿主在同一租户和社交环境中核对两个对象的当前目录版本、授权和证据。关系有方向，
+有序端点不同的断言分别保存。谓词采用与画像字段相同的 ASCII 标识符规则。
+
+```cpp
+const SocialRelationshipKey pair{from, to};
+auto assertion = make_social_relationship(
+    pair, {"mentors", SocialAttributeSource::UserConfirmed}, approved_statement,
+    source_event, ValidityInterval{valid_from, valid_until}, recorded_at);
+// 检查 assertion 后沿画像字段的宿主 consolidation 管线提交。
+auto scope = social_relationship_scope(pair);
+// 检查 scope，复核两个端点的权限和目录状态后查询。
+MemoryQuery query;
+query.scopes = {scope.value()};
+query.social_relationship_predicate = "mentors";
+query.as_of_valid = valid_at;
+auto matching = memory.query(query);
+```
+
+关系保留各自证据，支持相同断言重试、按记录时点和有效时点查询以及停用。
+按任一个对象的 `SocialObject` scope 擦除会清理它作为起点或终点的关系及历史。
+若擦除仍处于 `Pending`，两端关系查询、记录 ID 读取和关系写入均要通过端点的擦除检查。
+宿主排空在途操作，查询返回后再次确认两个端点可发布。
+见 [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)。
+
+## 社交记忆擦除恢复
+
+先打开可写的 `SqliteMemoryStore`，再将同一实例传给社交目录。只有配对目录成功打开后，
+宿主才对外提供相关读写。原始记忆接口由宿主在当前授权和目录版本内调用。
+
+```cpp
+auto opened_memory = SqliteMemoryStore::open(executor, memory_options, artifact_store);
+// 检查 opened_memory 后，由宿主持有同一个记忆库实例。
+std::shared_ptr<SqliteMemoryStore> memory_store{std::move(opened_memory).value()};
+auto opened_directory = SqliteSocialDirectory::open(executor, directory_options, memory_store);
+// 检查 opened_directory，并停止和排空擦除范围内的访问。
+auto erased = opened_directory.value()->erase_environment(authorized_environment);
+```
+
+配对目录在同一事务保存擦除意图、关闭目录身份，随后清理记忆库。对象擦除覆盖该对象
+与两端关系。环境擦除按租户及环境清理全部社交记忆，也覆盖目录里无当前版本的对象。
+记忆库尚未确认完成时，意图保留。完成后确认意图清除失败，重开会再次执行幂等清理。
+启动恢复失败时目录不会开放。若初始事务未持久登记意图，宿主处理错误后应按原目标
+提交擦除。以前以独立模式执行的擦除可由宿主使用原键补做配对擦除。
+
+配对写入持久库 ID，随后要求同一个数据库。宿主先关闭目录，再关闭记忆库和 Executor。
+恢复备份时以同一一致边界恢复两库。生产授权与撤权传播仍由宿主管理。
+见 [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次
