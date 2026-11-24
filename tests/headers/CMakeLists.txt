@@ -21,6 +21,7 @@ foreach(HEADER IN ITEMS
         mira/memory_agent.hpp
         mira/extraction_model_provider.hpp
         mira/social_mention_inference.hpp
+        mira/goal_dispatch_poller.hpp
         mira/embedding_math.hpp
         mira/embedding_provider.hpp
         mira/reranker_provider.hpp

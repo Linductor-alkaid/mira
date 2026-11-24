@@ -74,6 +74,7 @@
 - [DEC-143](../decisions/DEC-143-social-message-references.md)：社交消息的发言者与引用对象。
 - [DEC-144](../decisions/DEC-144-social-mention-extraction.md)：从已索引消息提取正文对象引用。
 - [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)：一次性目标的持久派发身份与回执。
+- [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md)：一次性目标的周期到期派发。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -190,6 +191,7 @@
 - [x] `M30-41` 接通已索引社交消息的参与者查询，验收发言者、账号提及、引用消息、同名候选和擦除隔离（Linux 离线）。
 - [x] `M30-42` 交付已索引对话的模型正文引用提取，验收群聊中名称、前序发言指代、证据边界、取消和擦除（Linux 离线）。
 - [x] `M30-43` 交付一次性目标的待派发查询、稳定准备身份与提交回执，验收重启去重、纠正、取消和擦除（Linux 离线）。
+- [x] `M30-44` 通过 Executor 周期发现一次性到期目标，复用稳定 ID 调用宿主任务提交接口，验收分页、重开续派、取消和关闭（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1377,3 +1379,39 @@ Linux Release 全量 **207/207**，ASAN 定向 **2/2**。严格 clang-tidy、格
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-dispatch-{test,asan-test,quality}.log`。
 clang-tidy 初轮检查见 `/tmp/mira-m30-dispatch-tidy.log`，派发实现的修正复验见
 `/tmp/mira-m30-dispatch-recheck-tidy.log`。
+
+### 2026-11-24 一次性目标的周期发现与宿主派发
+
+基线 `ccb222c`，分支 `feat/m30-memory-systems`。DEC-146 交付 M30-44。派发器通过 kairo
+可取消延时任务检查一个已授权归属，按到期索引分页，使用稳定操作 ID 调用宿主提交
+接口。已确认提交写入原派发回执，关闭时回收下一次检查并等待在途结果。
+
+`mira_m30_goal_dispatch_poller_test` 覆盖较早目标的提交结果不明、后续页继续发现、
+模拟重开后按原 ID 对账、未到期目标、在途取消、确认回执保留、关闭与 Executor 停止。
+`mira_m30_goal_store_test` 复验准备、持久回执和现有目标行为。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+ctest --test-dir build/release --output-on-failure -R '^mira_m30_goal_dispatch_poller_test$' \
+  --repeat until-fail:30
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_goal_dispatch_poller_test mira_m30_goal_store_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m30_goal_(dispatch_poller|store)_test$'
+clang-tidy -p build/release --warnings-as-errors='*' src/storage/goal_dispatch_poller.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 生产协调层提交和重复计划派发 | Mira Maintainers 与宿主集成者接入自主提交后，按 M30-37 补跑真实任务、重启对账、兑现与重复触发 |
+| Windows、Android、远端 CI | Mira Maintainers 提交后运行目标平台矩阵 |
+
+Linux Release 全量 **208/208**，周期派发器连续复跑 **30/30**，ASAN 定向 **2/2**。
+严格 clang-tidy、格式、文档、SBOM、平台边界和架构门禁通过。日志见
+`/tmp/mira-m30-poller-{test,repeat-test,asan-test,tidy,quality}.log`。

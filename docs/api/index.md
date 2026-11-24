@@ -31,6 +31,7 @@
 | [社交画像字段](durable-memory-host.md#社交画像字段)、[社交关系](durable-memory-host.md#社交关系断言) | `social_profile.hpp` | 字段和有向关系断言、来源与时态检索 |
 | [世界事实](durable-memory-host.md#世界事实的新鲜度) | `world_fact.hpp` | 环境与应用事实、实体属性索引和新鲜度 |
 | [目标与承诺](durable-memory-host.md#目标与承诺)、[派发回执](durable-memory-host.md#一次性目标的派发回执)、[重复计划](durable-memory-host.md#重复计划与触发回执)、[目标存储授权](durable-memory-host.md#目标存储授权) | `sqlite_goal_store.hpp` | 持久目标、派发与提醒回执、重复计划和当前授权 |
+| [到期目标周期检查](durable-memory-host.md#周期检查到期的一次性目标) | `goal_dispatch_poller.hpp` | 有界检查、按稳定 ID 交给宿主派发、回执及关闭 |
 | [日历及时区](durable-memory-host.md#日历及时区) | `goal_calendar.hpp` | 本地日期规则、固定时区快照和 UTC 触发时间 |
 | [当前技能记忆](workflow-contracts.md#当前技能记忆) | `workflow_runtime.hpp`、`tool_skill.hpp` | 按当前授权、归属和发布版本查技能 `Procedure` |
 | [按版本读取恢复经验](workflow-contracts.md#按版本读取恢复经验) | `workflow_runtime.hpp`、`memory_contracts.hpp` | 按当前归属、工作流版本和失败签名查 `RecoveryLesson` |

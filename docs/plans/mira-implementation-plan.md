@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 接通一次性目标的周期发现与宿主派发，
+见 [M30-44](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md) 接通一次性目标的待派发查询、准备身份与回执，
 见 [M30-43](m30-long-term-memory-integration.md#5-工作项)。
 

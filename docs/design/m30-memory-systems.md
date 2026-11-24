@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.24
+> 版本：1.25
 > 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -29,7 +29,8 @@
 > [DEC-142](../decisions/DEC-142-social-message-evidence.md)、
 > [DEC-143](../decisions/DEC-143-social-message-references.md)、
 > [DEC-144](../decisions/DEC-144-social-mention-extraction.md)、
-> [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)
+> [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)、
+> [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -133,6 +134,10 @@ M30-28 提供目标存储授权入口。宿主从认证身份指定精确归属�
 M30-43 为到期一次性目标保存派发准备身份和提交回执。准备限于当前待处理版本，同版本
 重试复用操作 ID。待派发查询省略已提交或还需对账的旧版本，兑现仍由结算证据推进。
 见[一次性目标派发 API](../api/durable-memory-host.md#一次性目标的派发回执)。
+
+M30-44 让已获宿主授权的派发器通过 Executor 周期检查一次性目标，使用稳定派发身份
+调用宿主任务提交接口，确认后登记回执。执行端的协调层接线由 M30-37 跟踪。见
+[到期目标周期检查 API](../api/durable-memory-host.md#周期检查到期的一次性目标)。
 
 M30-29 以宿主技能目录的当前描述符定位 `Procedure` 记录，在精确学习 scope 内按版本化
 记录 ID 查询。升级会切换索引，撤回和撤权会关闭当前召回，旧版保留作查证。运行入口仍由

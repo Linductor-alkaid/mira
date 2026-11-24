@@ -418,6 +418,24 @@ auto submitted = goals->record_dispatch_submission(prepared.value().key,
 `RecordDispatchSubmission` 核对授权。集合查询依归属授权，其他操作带目标 ID。
 实际任务提交由协调层接线负责。见 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
+### 周期检查到期的一次性目标
+
+`GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的待派发列表。每轮只
+读取一页，并沿到期索引继续。上一轮结束后才登记下一轮。`status()` 提供检查、提交和
+失败计数以及最近错误。
+
+```cpp
+auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_goal_task);
+// 关闭执行器或存储前，从外部 owner 关闭派发器并检查结果。
+auto drained = poller.value()->close();
+```
+
+`submit_goal_task` 是宿主的 `GoalDispatchSubmitter`，须按 `GoalDispatchKey::operation`
+核对和去重任务提交。已受理的重复调用返回原任务、会话和时间，并在常驻授权策略下
+复核是否可以执行。该接口接收协作取消和截止时间。确认提交后，即使当轮正在关闭，
+派发器也会登记回执。未知结果保留稳定身份供后续检查。生产协调层适配及重复计划的
+执行接线由 M30-37 跟踪。见 [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md)。
+
 ## 重复计划与触发回执
 
 `SqliteGoalStore` schema 1.1 为固定 UTC 间隔的重复计划保存独立命名空间。计划的
