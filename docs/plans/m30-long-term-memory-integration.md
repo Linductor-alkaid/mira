@@ -72,6 +72,7 @@
 - [DEC-141](../decisions/DEC-141-automatic-record-pages.md)：交互结算后自动处理多页事件。
 - [DEC-142](../decisions/DEC-142-social-message-evidence.md)：社交消息事件与发言者证据。
 - [DEC-143](../decisions/DEC-143-social-message-references.md)：社交消息的发言者与引用对象。
+- [DEC-144](../decisions/DEC-144-social-mention-extraction.md)：从已索引消息提取正文对象引用。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -186,6 +187,7 @@
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 - [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
 - [x] `M30-41` 接通已索引社交消息的参与者查询，验收发言者、账号提及、引用消息、同名候选和擦除隔离（Linux 离线）。
+- [x] `M30-42` 交付已索引对话的模型正文引用提取，验收群聊中名称、前序发言指代、证据边界、取消和擦除（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1301,3 +1303,39 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-mentions-{test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24 社交正文引用提取
+
+基线 `7195aae`，分支 `feat/m30-memory-systems`。DEC-144 交付 M30-42。宿主可在消息索引
+后启动提取，模型只看到当前正文和同会话近期消息及发言者代号。原文和前序行号经确定性
+校验后用现有目录解析，模型输出继续作为候选。
+
+`mira_m30_social_inference_test` 通过文件事件日志、SQLite 目录及离线模型供应替身验收
+前序发言指代、同名歧义、未知名称、模型协议、账号隔离、原文与行号校验、会话检查、
+来源完整性、禁用远端存储、禁止内容、取消与推断期间证据擦除。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_inference_test \
+  mira_m30_social_directory_test mira_m30_event_slices_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_m30_(social_(inference|directory)|event_slices)_test$'
+printf '%s\n' src/context/social_mention_extraction.cpp src/storage/social_message_inference.cpp \
+  | xargs -P 2 -n 1 clang-tidy -p build/release --warnings-as-errors='*'
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实平台、模型表现与跨平台身份推断 | Mira Maintainers 与宿主集成者在真实适配器与授权模型接线后补跑 M30-36 |
+| Windows、Android、远端 CI | Mira Maintainers 提交后运行目标平台矩阵 |
+
+Linux Release 全量 **207/207**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-inference-{test,asan-test,tidy,quality}.log`。

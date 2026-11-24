@@ -20,6 +20,7 @@ foreach(HEADER IN ITEMS
         mira/model_context_admission.hpp
         mira/memory_agent.hpp
         mira/extraction_model_provider.hpp
+        mira/social_mention_inference.hpp
         mira/embedding_math.hpp
         mira/embedding_provider.hpp
         mira/reranker_provider.hpp

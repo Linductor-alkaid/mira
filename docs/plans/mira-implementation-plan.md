@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-144](../decisions/DEC-144-social-mention-extraction.md) 接通对已索引会话的自动正文引用提取，
+见 [M30-42](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-143](../decisions/DEC-143-social-message-references.md) 接通已索引消息的发言者与引用对象查询，
 见 [M30-41](m30-long-term-memory-integration.md#5-工作项)。
 

@@ -111,6 +111,7 @@ add_library(mira_core
     src/context/memory_legacy_add.cpp
     src/context/memory_recovery_key.cpp
     src/context/social_profile.cpp
+    src/context/social_mention_extraction.cpp
     src/context/world_fact.cpp
     src/context/goal_calendar.cpp
     src/context/memory_consolidation.cpp
@@ -245,6 +246,7 @@ add_library(mira_state_store
     src/storage/sqlite_memory_store.cpp
     src/storage/sqlite_conversation_index.cpp
     src/storage/sqlite_social_directory.cpp
+    src/storage/social_message_inference.cpp
     src/storage/sqlite_goal_store.cpp
     src/storage/sqlite_goal_calendar.cpp
 )

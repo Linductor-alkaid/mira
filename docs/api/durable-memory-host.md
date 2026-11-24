@@ -187,6 +187,26 @@ auto participants = directory->resolve_message_participants(environment, message
 结果类型也保留别名来源。同名候选被截断时仍返回 `Ambiguous`。见
 [DEC-143](../decisions/DEC-143-social-message-references.md)。
 
+### 自动提取正文中的对象引用
+
+入站适配器可在完成 `index_message` 后调用 `infer_social_message_mentions`。
+`kSocialMessageTextEvent` 标识正文为纯文本的事件。宿主选择获准处理该会话的模型，
+并传入本次消息的 `OperationContext`。入口从同一会话取得当前消息和前六个事件位置
+中已有索引的消息，每条正文最多 4096 字节。推断复用同一取消请求和截止时间。
+
+```cpp
+auto inferred = executor.submit_auto([&] {
+    return infer_social_message_mentions(*directory, *events, *provider, environment,
+                                         message, operation);
+}).get();
+```
+
+每个候选保留当前正文原文、可选的前序发言位置和由目录返回的解析结果。同名仍返回
+歧义，前序行号表示模型推断，并附对应消息证据。调用失败、未获准的会话、无效行号、
+伪造原文、取消及来源被擦除均返回错误。模型请求没有工具，关闭存储和上传。
+`extract_social_mentions` 也可独立用于宿主已准备好的文本和本地发言者代号。
+见 [DEC-144](../decisions/DEC-144-social-mention-extraction.md)。
+
 ## 社交画像字段
 
 宿主查验当前租户和环境授权，从目录读取对象并确认歧义，再将已核准的来源事件转换为
