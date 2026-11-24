@@ -94,6 +94,7 @@ int object_erasure_before_knowledge_completion() {
     MIRA_CHECK(change_db(options.path,
                          "DROP TABLE social_erasure_pending;"
                          "DROP TABLE social_accounts;"
+                         "DROP TABLE social_messages;"
                          "UPDATE store_meta SET value='1.0' WHERE key='schema_version';"));
 
     const auto profile = attribute(target);
@@ -120,12 +121,24 @@ int object_erasure_before_knowledge_completion() {
     MIRA_CHECK(!directory->recall_account_attribute(env, other_source, "", 0));
     const SocialEnvironmentKey foreign{TenantId::generate(), env.environment};
     MIRA_CHECK(!directory->recall_account_attribute(foreign, other_source, "team").value());
+    AppendRequest event;
+    event.event_id = EventId::generate();
+    event.session_id = SessionId::generate();
+    event.runtime_id = fixture.runtime;
+    event.payload = {"mira.social.message.received.v1", "message", EventClass::State};
+    const auto committed = fixture.events->append(event);
+    MIRA_CHECK(committed);
+    const SocialMessageLocator locator{event.session_id, committed.value().session_sequence,
+                                       event.event_id};
+    MIRA_CHECK(directory->index_message(env, account, locator, *fixture.events).value().speaker ==
+               target);
     auto failed = directory->erase_object(target);
     MIRA_CHECK(!failed && failed.error().domain_code ==
                               static_cast<std::int32_t>(MemoryDomainCode::ErasurePending));
     MIRA_CHECK(!directory->resolve(env, "target"));
     MIRA_CHECK(!directory->resolve_account(env, account));
     MIRA_CHECK(!directory->recall_account_attribute(env, other_source, "team"));
+    MIRA_CHECK(!directory->read_message_evidence(env, locator.session, 0, locator.sequence));
     MIRA_CHECK(!directory->activate(neighbor, {1, {"Neighbor"}}));
     directory.reset();
 
@@ -147,6 +160,12 @@ int object_erasure_before_knowledge_completion() {
     MIRA_CHECK(recovered.value()->resolve(env, "target").value().matches.empty());
     const auto replay = recovered.value()->observe_account(env, account, evidence);
     MIRA_CHECK(!replay && replay.error().code == ErrorCode::PermissionDenied);
+    const auto source_page =
+        recovered.value()->read_message_evidence(env, locator.session, 0, locator.sequence);
+    MIRA_CHECK(source_page && source_page.value().evidence.empty());
+    const auto source_replay =
+        recovered.value()->index_message(env, account, locator, *fixture.events);
+    MIRA_CHECK(!source_replay && source_replay.error().code == ErrorCode::PermissionDenied);
     const auto late = recovered.value()->activate(target, {2, {"Late"}});
     MIRA_CHECK(!late && late.error().code == ErrorCode::PermissionDenied);
     MIRA_CHECK(recovered.value()->erase_object(target));

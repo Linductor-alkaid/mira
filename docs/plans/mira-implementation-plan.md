@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-142](../decisions/DEC-142-social-message-evidence.md) 接通会话事件和社交发言者的持久证据索引，
+见 [M30-40](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-140](../decisions/DEC-140-source-account-identity.md) 接通社交账号与画像查询，
 [DEC-141](../decisions/DEC-141-automatic-record-pages.md) 接通结算后的多页提取，
 见 [M30-35 与 M30-39](m30-long-term-memory-integration.md#5-工作项)。

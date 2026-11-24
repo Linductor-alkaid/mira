@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.32
+> 版本：1.33
 > 更新日期：2026-11-24
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -322,6 +322,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Social Account Key（社交来源账号键）**：
 由认证消息来源命名空间和稳定不透明账号 ID 组成，在租户与社交环境内解析到稳定对象。
 账号绑定保留已接纳的来源事件引用。见[DEC-140](../decisions/DEC-140-source-account-identity.md)。
+
+**Social Message Evidence（社交消息证据）**：
+已授权会话事件与该条发言的社交对象和来源账号之间的持久关联。查询返回事件位置与摘要，
+对象和环境擦除会清除关联。见[DEC-142](../decisions/DEC-142-social-message-evidence.md)。
 
 **Social Attribute Assertion（社交画像字段断言）**：
 宿主在一个已授权对象和字段内保存的单条来源主张，包含来源类型、事件、有效区间及

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/social_identity.hpp>
 
@@ -48,6 +49,27 @@ struct SocialAccountAttributeRecall final {
     MemoryQueryResult assertions;
 };
 
+struct SocialMessageLocator final {
+    SessionId session;
+    SessionSequence sequence = 0;
+    EventId event;
+    friend bool operator==(const SocialMessageLocator &, const SocialMessageLocator &) = default;
+};
+
+struct SocialMessageEvidence final {
+    SocialMessageLocator message;
+    SocialObjectKey speaker;
+    std::string source;
+    Sha256Digest account_digest;
+    Sha256Digest event_integrity;
+    friend bool operator==(const SocialMessageEvidence &, const SocialMessageEvidence &) = default;
+};
+
+struct SocialMessagePage final {
+    std::vector<SocialMessageEvidence> evidence;
+    bool has_more = false;
+};
+
 struct SqliteSocialDirectoryOptions final {
     std::filesystem::path path;
     std::size_t max_environments = 256;
@@ -55,6 +77,7 @@ struct SqliteSocialDirectoryOptions final {
     std::size_t max_pending_requests = 32;
     std::chrono::milliseconds operation_timeout{30000};
     std::size_t max_accounts = 16384; // Includes account erasure barriers.
+    std::size_t max_messages = 65536; // Includes message erasure barriers.
 };
 
 // Host-owned authoritative identity directory. All entry points require a
@@ -88,6 +111,15 @@ class SqliteSocialDirectory final {
     [[nodiscard]] Result<std::optional<SocialAccountAttributeRecall>>
     recall_account_attribute(const SocialEnvironmentKey &, const SocialAccountKey &,
                              std::string field, std::size_t limit = 8) const;
+    // The authenticated adapter supplies a committed event from its authorized session.
+    [[nodiscard]] Result<SocialMessageEvidence> index_message(const SocialEnvironmentKey &,
+                                                              const SocialAccountKey &sender,
+                                                              const SocialMessageLocator &,
+                                                              const IEventStore &events);
+    // Reads the projected evidence inside (after, through] for one session.
+    [[nodiscard]] Result<SocialMessagePage>
+    read_message_evidence(const SocialEnvironmentKey &, SessionId session, SessionSequence after,
+                          SessionSequence through, std::size_t limit = 32) const;
     [[nodiscard]] Result<void> erase_object(const SocialObjectKey &);
     [[nodiscard]] Result<void> erase_environment(const SocialEnvironmentKey &);
     [[nodiscard]] Result<void> close() noexcept;

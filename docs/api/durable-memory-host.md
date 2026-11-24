@@ -143,6 +143,32 @@ auto team = directory->recall_account_attribute(environment, sender, "team");
 拦截。消息网关负责来源验证与授权，自动身份推断与已建对象归并属于 M30-36。
 见 [DEC-140](../decisions/DEC-140-source-account-identity.md)。
 
+### 索引社交消息证据
+
+宿主在入站消息事件持久化后，从认证信封取得环境、会话和发送账号，用事件回执构造
+`SocialMessageLocator`。在 Executor 管理的有限任务中调用 `index_message` 并消费结果。
+目录从指定 EventStore 的精确位置核对会话、序号、事件 ID 和摘要，再原子提交账号接纳
+和发言证据。对象、来源账号摘要、事件位置和内容完整性摘要均可用于后续引用。
+
+```cpp
+const SocialMessageLocator message{authorized_session, committed.session_sequence,
+                                   committed.event_id};
+auto indexed = executor.submit_auto([&] {
+    return directory->index_message(environment, sender, message, *events);
+}).get();
+auto page = directory->read_message_evidence(environment, authorized_session, 0,
+                                             committed.session_sequence, 16);
+```
+
+读证据按 `(after, through]` 的会话序号顺序返回，`has_more` 为真时可以用最后一条
+证据的序号继续。历史消息补录时重查相应区间。重放要使用相同来源账号和已保存事件。
+事件内容、账号或会话位置发生冲突时返回 `AlreadyExists`。会话授权与来源认证由宿主
+决定。消息正文保留在原 EventStore 中，证据索引只引用位置和摘要。
+
+`max_messages` 默认 65536，含擦除屏障。对象擦除会清理发言证据并阻止已擦除事件重新
+归因。环境擦除清理全部相关索引，由环境屏障拦截旧事件。见
+[DEC-142](../decisions/DEC-142-social-message-evidence.md)。
+
 ## 社交画像字段
 
 宿主查验当前租户和环境授权，从目录读取对象并确认歧义，再将已核准的来源事件转换为

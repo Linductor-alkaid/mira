@@ -70,6 +70,7 @@
 - [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)：技能记忆的环境范围。
 - [DEC-140](../decisions/DEC-140-source-account-identity.md)：来源账号与当前交谈对象。
 - [DEC-141](../decisions/DEC-141-automatic-record-pages.md)：交互结算后自动处理多页事件。
+- [DEC-142](../decisions/DEC-142-social-message-evidence.md)：社交消息事件与发言者证据。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -182,6 +183,7 @@
 - [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
 - [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
+- [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1227,3 +1229,40 @@ git diff --check
 Linux Release 全量 **206/206**，ASAN 定向 **7/7**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-auto-record-{release-test,asan-test,tidy,quality}.log`
 和 `/tmp/mira-m30-accounts-tidy.log`。
+
+### 2026-11-24 社交消息发言证据
+
+基线 `684d1e1`，分支 `feat/m30-memory-systems`。DEC-142 交付 M30-40 的社交消息索引。
+复用事件切片核对会话、位置、事件身份及完整性引用，原子接纳发言对象与消息证据。
+按精确环境和会话区间分页读取，擦除按原目录和记忆库流程执行。
+
+- `mira_m30_social_directory_test` 覆盖同会话多个发言者及来源、精确事件不符、
+  来源和正文冲突、位置冲突回滚、限额回滚、作用域、重开和擦除后重放。
+- `mira_m30_social_erasure_recovery_test` 覆盖 1.0 旧目录迁移、配对记忆库擦除失败
+  时封闭证据读取、恢复后旧消息拒绝重新接纳。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_directory_test \
+  mira_m30_social_erasure_recovery_test mira_m30_social_profile_test \
+  mira_m30_social_relationship_test mira_m30_event_slices_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_m30_(social_(directory|erasure_recovery|profile|relationship)|event_slices)_test$'
+clang-tidy -p build/release --warnings-as-errors='*' src/storage/sqlite_social_directory.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实平台事件触发、正文提及及跨来源推断 | Mira Maintainers 和宿主集成者在真实消息适配器与模型接线后补跑 M30-36 |
+| Windows、Android 与远端 CI | Mira Maintainers 提交后运行目标平台矩阵 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **5/5**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-message-{test,asan-test,tidy,quality}.log`。

@@ -27,6 +27,17 @@ constexpr const char *kAccountsSchema =
     " PRIMARY KEY(scope,account_key));"
     "CREATE INDEX social_accounts_by_object ON social_accounts(scope,object)"
     " WHERE object IS NOT NULL;";
+constexpr const char *kMessagesSchema =
+    "CREATE TABLE social_messages(scope TEXT NOT NULL,event_key TEXT NOT NULL,"
+    " session TEXT,sequence INTEGER,event TEXT,object TEXT,source TEXT,account_key TEXT,integrity "
+    "TEXT,"
+    " CHECK((object IS NULL)=(session IS NULL) AND (object IS NULL)=(sequence IS NULL)"
+    " AND (object IS NULL)=(event IS NULL) AND (object IS NULL)=(source IS NULL)"
+    " AND (object IS NULL)=(account_key IS NULL) AND (object IS NULL)=(integrity IS NULL)"
+    " AND (sequence IS NULL OR sequence>0)),"
+    " PRIMARY KEY(scope,event_key),UNIQUE(scope,session,sequence));"
+    "CREATE INDEX social_messages_by_object ON social_messages(scope,object)"
+    " WHERE object IS NOT NULL;";
 constexpr const char *kSchema =
     "CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
     "CREATE TABLE social_environments(scope TEXT PRIMARY KEY,erased INTEGER NOT NULL"
@@ -51,7 +62,7 @@ std::string scope_key(const SocialEnvironmentKey &environment) {
         .to_string();
 }
 
-Result<std::string> account_key(const SocialAccountKey &account, const std::string &scope) {
+Result<Sha256Digest> account_key(const SocialAccountKey &account, const std::string &scope) {
     if (account.account.is_nil() || account.source.empty() || account.source.size() > 64 ||
         !std::ranges::all_of(account.source, [](char byte) {
             return (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') || byte == '.' ||
@@ -59,8 +70,12 @@ Result<std::string> account_key(const SocialAccountKey &account, const std::stri
         }))
         return directory_error(ErrorCode::InvalidArgument, "invalid social account key");
     return digest_string("mira.social.account.v1/" + scope + "/" + account.source + "/" +
-                         account.account.to_string())
-        .to_string();
+                         account.account.to_string());
+}
+
+bool valid_message_sequence(SessionSequence sequence) {
+    return sequence > 0 &&
+           sequence <= static_cast<SessionSequence>(std::numeric_limits<std::int64_t>::max());
 }
 
 struct ErasureTarget final {
@@ -370,9 +385,6 @@ Result<SocialAccountBinding> admit_account(sqlite3 *db, const SqliteSocialDirect
                                            const std::string &scope, const std::string &account,
                                            EventId source_event,
                                            const std::optional<SocialObjectKey> &known_object) {
-    Transaction transaction(db);
-    if (!transaction.valid())
-        return directory_error(ErrorCode::Unavailable, "social account transaction unavailable");
     const auto active = ensure_environment(db, scope, options.max_environments);
     if (!active)
         return active.error();
@@ -422,9 +434,88 @@ Result<SocialAccountBinding> admit_account(sqlite3 *db, const SqliteSocialDirect
         !bind_text(insert, 3, object_text) || !bind_text(insert, 4, source_event.to_string()) ||
         sqlite3_step(insert.get()) != SQLITE_DONE)
         return directory_error(ErrorCode::Internal, "social account binding write failed");
+    return SocialAccountBinding{{environment, object}, version, source_event};
+}
+
+Result<SocialMessageEvidence> decode_message(Statement &row,
+                                             const SocialEnvironmentKey &environment) {
+    const auto session = SessionId::parse(column(row, 0));
+    const auto sequence = sqlite3_column_int64(row.get(), 1);
+    const auto event = EventId::parse(column(row, 2));
+    const auto object = Id128::parse(column(row, 3));
+    auto source = column(row, 4);
+    const auto account = digest_from_hex(column(row, 5));
+    const auto integrity = digest_from_hex(column(row, 6));
+    if (!session || session->is_nil() || sequence <= 0 || !event || event->is_nil() || !object ||
+        object->is_nil() || source.empty() || !account || !integrity)
+        return directory_error(ErrorCode::DataLoss, "social message evidence is malformed");
+    return SocialMessageEvidence{{*session, static_cast<SessionSequence>(sequence), *event},
+                                 {environment, *object},
+                                 std::move(source),
+                                 *account,
+                                 *integrity};
+}
+
+Result<SocialMessageEvidence>
+index_message_evidence(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
+                       const SocialEnvironmentKey &environment, const std::string &scope,
+                       const Sha256Digest &account_digest, const std::string &source,
+                       const SocialMessageLocator &message, const Sha256Digest &integrity) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return directory_error(ErrorCode::Unavailable, "social message transaction unavailable");
+    const auto event_key =
+        digest_string("mira.social.message.v1/" + scope + "/" + message.event.to_string())
+            .to_string();
+    const auto account = account_digest.to_string();
+    Statement lookup(db, "SELECT session,sequence,event,object,source,account_key,integrity"
+                         " FROM social_messages WHERE scope=?1 AND event_key=?2");
+    if (!lookup.valid() || !bind_text(lookup, 1, scope) || !bind_text(lookup, 2, event_key))
+        return directory_error(ErrorCode::Internal, "social message lookup preparation failed");
+    const auto step = sqlite3_step(lookup.get());
+    if (step == SQLITE_ROW) {
+        if (sqlite3_column_type(lookup.get(), 3) == SQLITE_NULL)
+            return directory_error(ErrorCode::PermissionDenied, "social message has been erased");
+        auto previous = decode_message(lookup, environment);
+        if (!previous)
+            return previous.error();
+        if (previous.value().message != message || previous.value().source != source ||
+            previous.value().account_digest != account_digest ||
+            previous.value().event_integrity != integrity)
+            return directory_error(ErrorCode::AlreadyExists, "social message evidence conflicts");
+        return previous;
+    }
+    if (step != SQLITE_DONE)
+        return directory_error(ErrorCode::Internal, "social message lookup failed");
+    const auto speaker =
+        admit_account(db, options, environment, scope, account, message.event, std::nullopt);
+    if (!speaker)
+        return speaker.error();
+    if (auto room =
+            require_capacity(db, "SELECT count(*) FROM social_messages", options.max_messages);
+        !room)
+        return room.error();
+    Statement insert(db,
+                     "INSERT INTO social_messages(scope,event_key,session,sequence,event,object,"
+                     "source,account_key,integrity) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)");
+    if (!insert.valid() || !bind_text(insert, 1, scope) || !bind_text(insert, 2, event_key) ||
+        !bind_text(insert, 3, message.session.to_string()) ||
+        sqlite3_bind_int64(insert.get(), 4, static_cast<std::int64_t>(message.sequence)) !=
+            SQLITE_OK ||
+        !bind_text(insert, 5, message.event.to_string()) ||
+        !bind_text(insert, 6, speaker.value().object.object.to_string()) ||
+        !bind_text(insert, 7, source) || !bind_text(insert, 8, account) ||
+        !bind_text(insert, 9, integrity.to_string()))
+        return directory_error(ErrorCode::Internal, "social message insert preparation failed");
+    if (sqlite3_step(insert.get()) != SQLITE_DONE) {
+        if (sqlite3_extended_errcode(db) == SQLITE_CONSTRAINT_UNIQUE)
+            return directory_error(ErrorCode::AlreadyExists, "social message sequence conflicts");
+        return directory_error(ErrorCode::Internal, "social message insert failed");
+    }
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    return SocialAccountBinding{{environment, object}, version, source_event};
+    return SocialMessageEvidence{message, speaker.value().object, source, account_digest,
+                                 integrity};
 }
 
 Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
@@ -461,6 +552,14 @@ Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &opt
                                        scope, &object);
             !removed)
             return removed;
+        if (auto removed =
+                delete_rows(db,
+                            "UPDATE social_messages SET session=NULL,sequence=NULL,event=NULL,"
+                            " object=NULL,source=NULL,account_key=NULL,integrity=NULL"
+                            " WHERE scope=?1 AND object=?2 AND object IS NOT NULL",
+                            scope, &object);
+            !removed)
+            return removed;
         if (auto removed = delete_rows(
                 db, "DELETE FROM social_aliases WHERE scope=?1 AND object=?2", scope, &object);
             !removed)
@@ -474,6 +573,9 @@ Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &opt
             !removed)
             return removed;
         if (auto removed = delete_rows(db, "DELETE FROM social_accounts WHERE scope=?1", scope);
+            !removed)
+            return removed;
+        if (auto removed = delete_rows(db, "DELETE FROM social_messages WHERE scope=?1", scope);
             !removed)
             return removed;
         if (auto removed = delete_rows(db, "DELETE FROM social_objects WHERE scope=?1", scope);
@@ -579,7 +681,8 @@ SqliteSocialDirectory::open(kairo::Executor &executor, SqliteSocialDirectoryOpti
                             std::shared_ptr<SqliteMemoryStore> memory) {
     if (options.path.empty() || options.max_environments == 0 || options.max_environments > 4096 ||
         options.max_objects == 0 || options.max_objects > 100000 || options.max_accounts == 0 ||
-        options.max_accounts > 1000000 || options.max_pending_requests == 0 ||
+        options.max_accounts > 1000000 || options.max_messages == 0 ||
+        options.max_messages > 1000000 || options.max_pending_requests == 0 ||
         options.max_pending_requests > 256 || options.operation_timeout.count() <= 0 ||
         options.operation_timeout > std::chrono::minutes(10))
         return directory_error(ErrorCode::InvalidArgument, "invalid social directory options");
@@ -588,10 +691,11 @@ SqliteSocialDirectory::open(kairo::Executor &executor, SqliteSocialDirectoryOpti
     db_options.path = options.path;
     db_options.exclusive_owner = true;
     db_options.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
-    const std::string schema = std::string(kSchema) + kErasureSchema + kAccountsSchema;
+    const std::string schema =
+        std::string(kSchema) + kErasureSchema + kAccountsSchema + kMessagesSchema;
     auto opened = storage::open_reference_store(
         db_options, {"social-directory",
-                     {1, 2},
+                     {1, 3},
                      schema.c_str(),
                      directory_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
@@ -599,7 +703,12 @@ SqliteSocialDirectory::open(kairo::Executor &executor, SqliteSocialDirectoryOpti
                              if (auto installed = storage::exec_sql(db, kErasureSchema); !installed)
                                  return installed.error();
                          }
-                         return storage::exec_sql(db, kAccountsSchema);
+                         if (previous.minor < 2) {
+                             if (auto installed = storage::exec_sql(db, kAccountsSchema);
+                                 !installed)
+                                 return installed.error();
+                         }
+                         return storage::exec_sql(db, kMessagesSchema);
                      }});
     if (!opened)
         return opened.error();
@@ -728,7 +837,7 @@ SqliteSocialDirectory::resolve_account(const SocialEnvironmentKey &environment,
     if (!hashed)
         return hashed.error();
     return impl_->run<std::optional<SocialAccountBinding>>(
-        [environment, scope = std::move(scope), account = std::move(hashed).value()](sqlite3 *db) {
+        [environment, scope = std::move(scope), account = hashed.value().to_string()](sqlite3 *db) {
             return read_account_binding(db, environment, scope, account);
         });
 }
@@ -749,9 +858,19 @@ SqliteSocialDirectory::observe_account(const SocialEnvironmentKey &environment,
         return hashed.error();
     return impl_->run<SocialAccountBinding>(
         [state = impl_.get(), environment, scope = std::move(scope),
-         account = std::move(hashed).value(), source_event, known_object](sqlite3 *db) {
-            return admit_account(db, state->options, environment, scope, account, source_event,
-                                 known_object);
+         account = hashed.value().to_string(), source_event,
+         known_object](sqlite3 *db) -> Result<SocialAccountBinding> {
+            Transaction transaction(db);
+            if (!transaction.valid())
+                return directory_error(ErrorCode::Unavailable,
+                                       "social account transaction unavailable");
+            auto admitted = admit_account(db, state->options, environment, scope, account,
+                                          source_event, known_object);
+            if (!admitted)
+                return admitted.error();
+            if (auto committed = transaction.commit(); !committed)
+                return committed.error();
+            return admitted;
         });
 }
 
@@ -788,6 +907,78 @@ SqliteSocialDirectory::recall_account_attribute(const SocialEnvironmentKey &envi
                                "social account binding changed during recall");
     return std::optional{
         SocialAccountAttributeRecall{*current.value(), std::move(recalled).value()}};
+}
+
+Result<SocialMessageEvidence> SqliteSocialDirectory::index_message(
+    const SocialEnvironmentKey &environment, const SocialAccountKey &sender,
+    const SocialMessageLocator &message, const IEventStore &events) {
+    if (!valid_environment(environment) || message.session.is_nil() || message.event.is_nil() ||
+        !valid_message_sequence(message.sequence))
+        return directory_error(ErrorCode::InvalidArgument, "invalid social message source");
+    auto scope = scope_key(environment);
+    const auto account = account_key(sender, scope);
+    if (!account)
+        return account.error();
+    EventSliceQuery query;
+    query.session_id = message.session;
+    query.after_sequence = message.sequence - 1;
+    query.through_sequence = message.sequence;
+    query.limit = 1;
+    query.scan_limit = 1;
+    const auto found = events.read_slice(query);
+    if (!found)
+        return found.error();
+    const auto &page = found.value();
+    if (page.events.size() != 1 || page.snapshot_through != message.sequence ||
+        page.scanned_through != message.sequence || page.has_more)
+        return directory_error(ErrorCode::DataLoss, "social message event proof is incomplete");
+    const auto &event = page.events.front();
+    if (event.session_id != message.session || event.session_sequence != message.sequence ||
+        event.event_id != message.event || event.integrity == Sha256Digest{})
+        return directory_error(ErrorCode::DataLoss,
+                               "social message event does not match its source");
+    return impl_->run<SocialMessageEvidence>(
+        [state = impl_.get(), environment, scope = std::move(scope), account = account.value(),
+         source = sender.source, message, integrity = event.integrity](sqlite3 *db) {
+            return index_message_evidence(db, state->options, environment, scope, account, source,
+                                          message, integrity);
+        });
+}
+
+Result<SocialMessagePage>
+SqliteSocialDirectory::read_message_evidence(const SocialEnvironmentKey &environment,
+                                             SessionId session, SessionSequence after,
+                                             SessionSequence through, std::size_t limit) const {
+    if (!valid_environment(environment) || session.is_nil() || !valid_message_sequence(through) ||
+        after > through || limit == 0 || limit > 64)
+        return directory_error(ErrorCode::InvalidArgument, "invalid social message evidence query");
+    return impl_->run<SocialMessagePage>([environment, scope = scope_key(environment),
+                                          session_key = session.to_string(), after, through,
+                                          limit](sqlite3 *db) -> Result<SocialMessagePage> {
+        Statement rows(db, "SELECT session,sequence,event,object,source,account_key,integrity"
+                           " FROM social_messages WHERE scope=?1 AND session=?2"
+                           " AND sequence>?3 AND sequence<=?4 ORDER BY sequence LIMIT ?5");
+        if (!rows.valid() || !bind_text(rows, 1, scope) || !bind_text(rows, 2, session_key) ||
+            sqlite3_bind_int64(rows.get(), 3, static_cast<std::int64_t>(after)) != SQLITE_OK ||
+            sqlite3_bind_int64(rows.get(), 4, static_cast<std::int64_t>(through)) != SQLITE_OK ||
+            sqlite3_bind_int64(rows.get(), 5, static_cast<std::int64_t>(limit + 1)) != SQLITE_OK)
+            return directory_error(ErrorCode::Internal, "social message query preparation failed");
+        SocialMessagePage result;
+        int step = SQLITE_OK;
+        while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
+            if (result.evidence.size() == limit) {
+                result.has_more = true;
+                return result;
+            }
+            auto decoded = decode_message(rows, environment);
+            if (!decoded)
+                return decoded.error();
+            result.evidence.push_back(std::move(decoded).value());
+        }
+        if (step != SQLITE_DONE)
+            return directory_error(ErrorCode::Internal, "social message query failed");
+        return result;
+    });
 }
 
 Result<void> SqliteSocialDirectory::erase_object(const SocialObjectKey &key) {

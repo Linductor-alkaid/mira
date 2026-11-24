@@ -207,6 +207,116 @@ int source_accounts_survive_reopen_and_respect_erasure() {
     MIRA_CHECK(directory->observe_account(other_tenant, qq, later_message));
     return 0;
 }
+
+int messages_keep_scoped_speaker_evidence() {
+    MemoryAgentFixture fixture;
+    const auto session = SessionId::generate();
+    const SocialEnvironmentKey environment{fixture.principal.tenant_id, Id128::generate()};
+    const SocialEnvironmentKey other{environment.tenant, Id128::generate()};
+    const SocialAccountKey qq{"qq", Id128::generate()};
+    const SocialAccountKey bilibili{"bilibili", Id128::generate()};
+    const SocialAccountKey other_speaker{"qq", Id128::generate()};
+    const SocialAccountKey fresh{"qq", Id128::generate()};
+    SqliteSocialDirectoryOptions options;
+    options.path = fixture.root / "social-messages.db";
+    options.max_messages = 4;
+    auto opened = SqliteSocialDirectory::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    auto directory = std::move(opened).value();
+    const auto append = [&](IEventStore &store, EventId id,
+                            std::string body) -> Result<SocialMessageLocator> {
+        AppendRequest event;
+        event.event_id = id;
+        event.session_id = session;
+        event.runtime_id = fixture.runtime;
+        event.payload = {"mira.social.message.received.v1", std::move(body), EventClass::State};
+        const auto saved = store.append(event);
+        if (!saved)
+            return saved.error();
+        return SocialMessageLocator{session, saved.value().session_sequence,
+                                    saved.value().event_id};
+    };
+    auto &events = *fixture.events;
+    const auto first = append(events, EventId::generate(), "a message");
+    const auto second = append(events, EventId::generate(), "same speaker, another platform");
+    const auto third = append(events, EventId::generate(), "another speaker");
+    const auto fourth = append(events, EventId::generate(), "capacity check");
+    MIRA_CHECK(first && second && third && fourth);
+    auto wrong = first.value();
+    wrong.event = EventId::generate();
+    const auto mismatch = directory->index_message(environment, qq, wrong, events);
+    MIRA_CHECK(!mismatch && mismatch.error().code == ErrorCode::DataLoss);
+    MIRA_CHECK(!directory->resolve_account(environment, qq).value());
+
+    const auto observed = directory->index_message(environment, qq, first.value(), events);
+    MIRA_CHECK(observed && observed.value().source == "qq");
+    const auto person = observed.value().speaker;
+    const auto known = directory->resolve_account(environment, qq);
+    MIRA_CHECK(known && known.value() && known.value()->source_event == first.value().event);
+    MIRA_CHECK(directory->observe_account(environment, bilibili, first.value().event, person));
+    const auto cross = directory->index_message(environment, bilibili, second.value(), events);
+    MIRA_CHECK(cross && cross.value().speaker == person && cross.value().source == "bilibili");
+    MIRA_CHECK(cross.value().account_digest != observed.value().account_digest);
+    const auto different =
+        directory->index_message(environment, other_speaker, third.value(), events);
+    MIRA_CHECK(different && different.value().speaker != person);
+    MemoryEventStore occupied;
+    const auto same_position =
+        append(occupied, EventId::generate(), "another event at position one");
+    MIRA_CHECK(same_position);
+    const auto conflict =
+        directory->index_message(environment, fresh, same_position.value(), occupied);
+    MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::AlreadyExists);
+    MIRA_CHECK(!directory->resolve_account(environment, fresh).value());
+    MIRA_CHECK(directory->read_message_evidence(other, session, 0, 4).value().evidence.empty());
+    MIRA_CHECK(directory->read_message_evidence(environment, SessionId::generate(), 0, 4)
+                   .value()
+                   .evidence.empty());
+    MIRA_CHECK(directory->index_message(other, qq, first.value(), events));
+
+    const auto limited = directory->read_message_evidence(environment, session, 0, 3, 2);
+    MIRA_CHECK(limited && limited.value().has_more && limited.value().evidence.size() == 2);
+    MIRA_CHECK(limited.value().evidence.at(0) == observed.value() &&
+               limited.value().evidence.at(1) == cross.value());
+    const auto tail = directory->read_message_evidence(environment, session, 2, 3, 2);
+    MIRA_CHECK(tail && !tail.value().has_more && tail.value().evidence.size() == 1);
+    MIRA_CHECK(tail.value().evidence.front() == different.value());
+    const auto over = directory->index_message(environment, fresh, fourth.value(), events);
+    MIRA_CHECK(!over && over.error().code == ErrorCode::ResourceExhausted);
+    MIRA_CHECK(!directory->resolve_account(environment, fresh).value());
+
+    const auto different_sender =
+        directory->index_message(environment, fresh, first.value(), events);
+    MIRA_CHECK(!different_sender && different_sender.error().code == ErrorCode::AlreadyExists);
+    MemoryEventStore alternate;
+    const auto changed = append(alternate, first.value().event, "changed body");
+    MIRA_CHECK(changed && changed.value() == first.value());
+    const auto different_body =
+        directory->index_message(environment, qq, changed.value(), alternate);
+    MIRA_CHECK(!different_body && different_body.error().code == ErrorCode::AlreadyExists);
+    MIRA_CHECK(directory->close());
+    directory.reset();
+
+    opened = SqliteSocialDirectory::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    directory = std::move(opened).value();
+    fixture.events.reset();
+    FileEventStore reopened(fixture.root / "events");
+    const auto replay = directory->index_message(environment, qq, first.value(), reopened);
+    MIRA_CHECK(replay && replay.value() == observed.value());
+    MIRA_CHECK(directory->erase_object(person));
+    const auto after_erasure = directory->read_message_evidence(environment, session, 0, 4);
+    MIRA_CHECK(after_erasure && after_erasure.value().evidence.size() == 1 &&
+               after_erasure.value().evidence.front() == different.value());
+    const auto replay_as_other =
+        directory->index_message(environment, fresh, first.value(), reopened);
+    MIRA_CHECK(!replay_as_other && replay_as_other.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(directory->read_message_evidence(other, session, 0, 4).value().evidence.size() == 1);
+    MIRA_CHECK(directory->erase_environment(other));
+    MIRA_CHECK(directory->read_message_evidence(other, session, 0, 4).value().evidence.empty());
+    MIRA_CHECK(directory->index_message(environment, fresh, fourth.value(), reopened));
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -214,5 +324,7 @@ int main() {
         return result;
     if (const auto result = failed_erasure_fences_until_host_retry(); result != 0)
         return result;
-    return source_accounts_survive_reopen_and_respect_erasure();
+    if (const auto result = source_accounts_survive_reopen_and_respect_erasure(); result != 0)
+        return result;
+    return messages_keep_scoped_speaker_evidence();
 }
