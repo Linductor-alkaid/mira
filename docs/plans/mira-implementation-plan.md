@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-23：[DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md) 交付
+重复计划与版本化触发回执，见 [M30-25](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-23：[DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md) 交付
 一次性目标与承诺的持久状态及到期索引，见 [M30-24](m30-long-term-memory-integration.md#5-工作项)。
 

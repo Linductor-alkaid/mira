@@ -4,6 +4,7 @@
 #include <mira/sqlite_goal_store.hpp>
 
 #include <kairo/executor.hpp>
+#include <sqlite3.h>
 
 #include <cstdlib>
 
@@ -42,6 +43,18 @@ struct GoalFixture final {
             return false;
         store = std::move(opened).value();
         return true;
+    }
+
+    bool update_database(const char *sql) {
+        if (store && !store->close())
+            return false;
+        store.reset();
+        sqlite3 *raw = nullptr;
+        const bool opened = sqlite3_open(options.path.string().c_str(), &raw) == SQLITE_OK;
+        const bool changed =
+            opened && sqlite3_exec(raw, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
+        sqlite3_close(raw);
+        return changed;
     }
 
     kairo::Executor executor;
@@ -183,10 +196,144 @@ int recover_states_quota_and_erasure() {
     MIRA_CHECK(!fixture.store->read(done));
     return 0;
 }
+
+int recurring_plan_versions_and_restart() {
+    GoalFixture fixture(6, 3);
+    fixture.options.max_plans = 3;
+    fixture.options.max_active_plans_per_owner = 2;
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey plan{fixture.owner, Id128::generate()};
+    const GoalKey peer{fixture.owner, Id128::generate()};
+    const GoalKey foreign{{TenantId::generate(), fixture.owner.user}, plan.id};
+    const auto task = commitment(fixture.now, "A one-time goal with the same ID");
+    MIRA_CHECK(fixture.store->create(plan, task));
+    MIRA_CHECK(
+        fixture.update_database("DROP TABLE recurring_occurrences; DROP TABLE recurring_plans;"
+                                " UPDATE store_meta SET value='1.0' WHERE key='schema_version';"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->read(plan).value()->definition == task);
+    const auto first_at = fixture.now - 2h;
+    const RecurringPlanDefinition definition{"Send weekly notes", EventId::generate(), first_at,
+                                             15min};
+    auto invalid = definition;
+    invalid.interval = 0ms;
+    MIRA_CHECK(!fixture.store->create_plan(plan, invalid));
+    const auto initial = fixture.store->create_plan(plan, definition);
+    MIRA_CHECK(initial && initial.value().revision == 1 && initial.value().next_at == first_at);
+    MIRA_CHECK(fixture.store->create_plan(peer, definition));
+    MIRA_CHECK(!fixture.store->read_plan(foreign).value());
+    MIRA_CHECK(fixture.store->create_plan(foreign, definition));
+    RecurringDueQuery due{fixture.owner, fixture.now, 1, {}};
+    const auto page = fixture.store->due_plans(due);
+    MIRA_CHECK(page && page.value().records.size() == 1 && page.value().next);
+    due.after = page.value().next;
+    const auto next_page = fixture.store->due_plans(due);
+    MIRA_CHECK(next_page && next_page.value().records.size() == 1 && !next_page.value().next &&
+               next_page.value().records.front().key != page.value().records.front().key);
+
+    const GoalOccurrenceKey occurrence{plan, 1, first_at};
+    MIRA_CHECK(!fixture.store->record_occurrence(occurrence, first_at - 1ms));
+    const auto same_time = [&] {
+        return fixture.store->record_occurrence(occurrence, fixture.now);
+    };
+    auto first = fixture.executor.submit_auto(same_time);
+    auto second = fixture.executor.submit_auto(same_time);
+    const auto a = first.get();
+    const auto b = second.get();
+    MIRA_CHECK(a && b && a.value().idempotent_replay != b.value().idempotent_replay);
+    MIRA_CHECK(fixture.reopen());
+    const auto replay = fixture.store->record_occurrence(occurrence, fixture.now + 1min);
+    MIRA_CHECK(replay && replay.value().idempotent_replay &&
+               replay.value().recorded_at == fixture.now);
+    auto advanced = fixture.store->read_plan(plan);
+    MIRA_CHECK(advanced && advanced.value() && advanced.value()->next_at == first_at + 15min);
+    const GoalOccurrenceKey missed_step{plan, 1, first_at + 30min};
+    MIRA_CHECK(!fixture.store->record_occurrence(missed_step, fixture.now));
+    const GoalOccurrenceKey pending_old{plan, 1, first_at + 15min};
+    MIRA_CHECK(fixture.store->record_occurrence(pending_old, fixture.now));
+
+    auto new_definition = definition;
+    new_definition.source_event = EventId::generate();
+    new_definition.interval = 1h;
+    const auto revised = fixture.store->replace_plan(plan, 1, new_definition);
+    MIRA_CHECK(revised && revised.value().revision == 2 && revised.value().next_at == first_at);
+    MIRA_CHECK(!fixture.store->record_occurrence(missed_step, fixture.now));
+    const GoalOccurrenceKey new_occurrence{plan, 2, first_at};
+    const auto registered = fixture.store->record_occurrence(new_occurrence, fixture.now);
+    MIRA_CHECK(registered && !registered.value().idempotent_replay);
+    const auto revise_replay = fixture.store->replace_plan(plan, 1, new_definition);
+    MIRA_CHECK(revise_replay && revise_replay.value().next_at == first_at + 1h);
+
+    const RecurringPlanCancellation cancellation{EventId::generate(), fixture.now};
+    const auto cancelled = fixture.store->cancel_plan(plan, 2, cancellation);
+    MIRA_CHECK(cancelled && cancelled.value().state == RecurringPlanState::Cancelled &&
+               !cancelled.value().next_at && cancelled.value().cancellation == cancellation);
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->cancel_plan(plan, 2, cancellation).value().revision == 3);
+    MIRA_CHECK(
+        fixture.store->record_occurrence(new_occurrence, fixture.now).value().idempotent_replay);
+    const GoalOccurrenceKey cancelled_occurrence{plan, 2, first_at + 1h};
+    MIRA_CHECK(!fixture.store->record_occurrence(cancelled_occurrence, fixture.now));
+    const auto remaining = fixture.store->due_plans({fixture.owner, fixture.now, 32, {}});
+    MIRA_CHECK(remaining && remaining.value().records.size() == 1 &&
+               remaining.value().records.front().key == peer);
+
+    MIRA_CHECK(fixture.store->erase_plan(plan) && fixture.store->erase_plan(plan));
+    MIRA_CHECK(fixture.reopen());
+    const auto erased = fixture.store->read_plan(plan);
+    MIRA_CHECK(erased && erased.value() && erased.value()->state == RecurringPlanState::Erased &&
+               !erased.value()->definition && !erased.value()->cancellation);
+    MIRA_CHECK(!fixture.store->read_occurrence(occurrence).value() &&
+               !fixture.store->read_occurrence(new_occurrence).value());
+    MIRA_CHECK(!fixture.store->record_occurrence(new_occurrence, fixture.now));
+    MIRA_CHECK(!fixture.store->create_plan(plan, definition));
+    MIRA_CHECK(fixture.store->read_plan(foreign).value()->next_at == first_at);
+    MIRA_CHECK(fixture.store->read(plan).value()->definition == task);
+    return 0;
+}
+
+int occurrence_rollback_and_quota() {
+    GoalFixture fixture(4, 2);
+    fixture.options.max_plans = 2;
+    fixture.options.max_active_plans_per_owner = 1;
+    fixture.options.max_occurrences = 1;
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey plan{fixture.owner, Id128::generate()};
+    const GoalKey next_plan{fixture.owner, Id128::generate()};
+    const auto first_at = fixture.now - 2h;
+    const RecurringPlanDefinition definition{"Check status", EventId::generate(), first_at, 1h};
+    MIRA_CHECK(fixture.store->create_plan(plan, definition));
+    const auto denied = fixture.store->create_plan(next_plan, definition);
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::ResourceExhausted);
+    const GoalOccurrenceKey occurrence{plan, 1, first_at};
+    MIRA_CHECK(fixture.update_database(
+        "CREATE TRIGGER fail_advance BEFORE UPDATE OF next_at ON recurring_plans"
+        " BEGIN SELECT RAISE(ABORT, 'fixture rejects advance'); END;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(!fixture.store->record_occurrence(occurrence, fixture.now));
+    MIRA_CHECK(!fixture.store->read_occurrence(occurrence).value());
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == first_at);
+    MIRA_CHECK(fixture.update_database("DROP TRIGGER fail_advance;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->record_occurrence(occurrence, fixture.now));
+    const GoalOccurrenceKey after{plan, 1, first_at + 1h};
+    const auto full = fixture.store->record_occurrence(after, fixture.now);
+    MIRA_CHECK(!full && full.error().code == ErrorCode::ResourceExhausted);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == after.scheduled_at);
+    MIRA_CHECK(fixture.store->record_occurrence(occurrence, fixture.now).value().idempotent_replay);
+    MIRA_CHECK(fixture.store->erase_plan(plan));
+    MIRA_CHECK(fixture.store->create_plan(next_plan, definition));
+    MIRA_CHECK(fixture.store->record_occurrence({next_plan, 1, first_at}, fixture.now));
+    return 0;
+}
 } // namespace
 
 int main() {
     if (const int result = bounded_due_pages_and_exact_owner(); result != 0)
         return result;
-    return recover_states_quota_and_erasure();
+    if (const int result = recover_states_quota_and_erasure(); result != 0)
+        return result;
+    if (const int result = recurring_plan_versions_and_restart(); result != 0)
+        return result;
+    return occurrence_rollback_and_quota();
 }

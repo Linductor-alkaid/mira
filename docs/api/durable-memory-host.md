@@ -288,6 +288,29 @@ ID 分页，返回截至指定时点已到期、仍为 Pending 且未超过 `exp
 独立限额。宿主在 Executor 关闭前关闭目标库。到期查询产生待处理候选，执行授权沿
 宿主既有策略。见 [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
 
+## 重复计划与触发回执
+
+`SqliteGoalStore` schema 1.1 为固定 UTC 间隔的重复计划保存独立命名空间。计划的
+首次触发时间、间隔和来源事件由当前授权的宿主确定。间隔为 1 秒至 365 天。
+`due_plans` 按计划的下一次触发时间和 ID 分页，调用方沿用同一归属与截止时点。
+
+```cpp
+const GoalKey key{owner, internal_plan_id};
+auto created = goals->create_plan(key, {title, source_event, first_at, interval});
+auto due = goals->due_plans({owner, cutoff, 32, {}});
+// 核对授权与 due 结果，再登记其中计划的本次触发。
+auto receipt = goals->record_occurrence({key, active_revision, scheduled_at}, recorded_at);
+```
+
+登记一次只推进一个预定时间。重启后可用相同 `GoalOccurrenceKey` 查询或重试，回执保留
+首次登记时间。回执与下次到期时间同事务写入。若有多次积压，宿主按已登记后的新时间
+决定何时处理下一次。回执额度达到上限时，登记返回错误并保留原到期时间。
+
+使用 `replace_plan` 和 `cancel_plan` 提交期望版本。换版从新定义的首次触发时间开始，
+取消移除到期候选。两种操作都会拦截旧版未登记的触发，已有回执仍可查证。`erase_plan`
+清理计划定义与回执，保留 ID 屏障。同 ID 的一次性任务使用单独的命名空间。回执供宿主
+判断去重；派发前仍须核对现行授权和计划版本。见 [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次

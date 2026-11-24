@@ -86,12 +86,72 @@ struct GoalListPage final {
     std::optional<Id128> next;
 };
 
+enum class RecurringPlanState : std::uint8_t { Active, Cancelled, Erased };
+
+struct RecurringPlanDefinition final {
+    std::string title;
+    EventId source_event;
+    GoalTime first_at{};
+    std::chrono::milliseconds interval{};
+    friend bool operator==(const RecurringPlanDefinition &,
+                           const RecurringPlanDefinition &) = default;
+};
+
+struct RecurringPlanCancellation final {
+    EventId evidence;
+    GoalTime at{};
+    friend bool operator==(const RecurringPlanCancellation &,
+                           const RecurringPlanCancellation &) = default;
+};
+
+struct RecurringPlanRecord final {
+    GoalKey key;
+    RecurringPlanState state = RecurringPlanState::Active;
+    std::uint64_t revision = 1;
+    std::optional<RecurringPlanDefinition> definition;
+    std::optional<GoalTime> next_at;
+    std::optional<RecurringPlanCancellation> cancellation;
+};
+
+struct RecurringDueCursor final {
+    GoalTime scheduled_at;
+    Id128 plan;
+};
+
+struct RecurringDueQuery final {
+    GoalOwner owner;
+    GoalTime cutoff;
+    std::size_t limit = 32;
+    std::optional<RecurringDueCursor> after;
+};
+
+struct RecurringDuePage final {
+    std::vector<RecurringPlanRecord> records;
+    std::optional<RecurringDueCursor> next;
+};
+
+struct GoalOccurrenceKey final {
+    GoalKey plan;
+    std::uint64_t plan_revision = 0;
+    GoalTime scheduled_at{};
+    friend bool operator==(const GoalOccurrenceKey &, const GoalOccurrenceKey &) = default;
+};
+
+struct GoalOccurrenceReceipt final {
+    GoalOccurrenceKey key;
+    GoalTime recorded_at{};
+    bool idempotent_replay = false;
+};
+
 struct SqliteGoalStoreOptions final {
     std::filesystem::path path;
     std::size_t max_goals = 4096; // Includes erased IDs.
     std::size_t max_pending_per_owner = 64;
     std::size_t max_pending_requests = 32;
     std::chrono::milliseconds operation_timeout{30'000};
+    std::size_t max_plans = 1024;
+    std::size_t max_active_plans_per_owner = 32;
+    std::size_t max_occurrences = 8192;
 };
 
 // The host authenticates the exact owner and authorizes each operation. Due
@@ -112,6 +172,23 @@ class SqliteGoalStore final {
     [[nodiscard]] Result<GoalDuePage> due(const GoalDueQuery &query) const;
     [[nodiscard]] Result<GoalListPage> list(const GoalListQuery &query) const;
     [[nodiscard]] Result<void> erase(const GoalKey &key);
+
+    [[nodiscard]] Result<RecurringPlanRecord> create_plan(const GoalKey &key,
+                                                          RecurringPlanDefinition definition);
+    [[nodiscard]] Result<RecurringPlanRecord> replace_plan(const GoalKey &key,
+                                                           std::uint64_t expected_revision,
+                                                           RecurringPlanDefinition definition);
+    [[nodiscard]] Result<RecurringPlanRecord> cancel_plan(const GoalKey &key,
+                                                          std::uint64_t expected_revision,
+                                                          RecurringPlanCancellation cancellation);
+    [[nodiscard]] Result<std::optional<RecurringPlanRecord>> read_plan(const GoalKey &key) const;
+    [[nodiscard]] Result<RecurringDuePage> due_plans(const RecurringDueQuery &query) const;
+    [[nodiscard]] Result<GoalOccurrenceReceipt> record_occurrence(const GoalOccurrenceKey &key,
+                                                                  GoalTime recorded_at);
+    [[nodiscard]] Result<std::optional<GoalOccurrenceReceipt>>
+    read_occurrence(const GoalOccurrenceKey &key) const;
+    [[nodiscard]] Result<void> erase_plan(const GoalKey &key);
+
     [[nodiscard]] Result<void> close() noexcept;
 
   private:

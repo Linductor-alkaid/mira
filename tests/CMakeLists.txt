@@ -896,6 +896,7 @@ foreach(mira_m30_case scope_binding lifecycle recording lifecycle_faults recall_
 endforeach()
 target_link_libraries(mira_m30_social_relationship_test PRIVATE Mira::sqlite3)
 target_link_libraries(mira_m30_social_erasure_recovery_test PRIVATE Mira::sqlite3)
+target_link_libraries(mira_m30_goal_store_test PRIVATE Mira::sqlite3)
 mira_add_test(mira_m30_navigation_world_test m30/m30_navigation_world_test.cpp "contract;m30")
 target_link_libraries(mira_m30_navigation_world_test PRIVATE Mira::workflow Mira::state_store)
 mira_add_test(mira_m30_persona_test m30/m30_persona_test.cpp "contract;m30")

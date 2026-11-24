@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.9
+> 版本：1.10
 > 更新日期：2026-11-23
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -14,7 +14,8 @@
 > [DEC-126](../decisions/DEC-126-social-erasure-recovery.md)、
 > [DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)、
 > [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)、
-> [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)
+> [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)、
+> [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -85,7 +86,9 @@ M30-22 以独立环境和应用 scope 保存世界观察。实体和属性在精
 
 M30-24 由独立 SQLite 目标库保存一次性任务和承诺。宿主按租户、用户和目标 ID 接纳
 稳定来源，按归属和状态列出记录，并以截止时间索引发现待处理事项。结算和擦除持久化，
-擦除保留身份屏障。重复计划和提醒契约在 M30-15 继续推进。
+擦除保留身份屏障。M30-25 在同一目标库接通固定 UTC 间隔计划，登记的触发与下一次
+截止时间一起提交。计划版本约束待登记触发，重复登记返回持久回执。提醒契约在 M30-15
+继续推进，主动派发由 M33 承接。
 
 ## 执行与验收
 
