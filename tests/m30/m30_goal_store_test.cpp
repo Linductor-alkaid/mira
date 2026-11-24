@@ -342,6 +342,7 @@ int corrections_and_reminders_survive_restart() {
     MIRA_CHECK(fixture.store->create_plan(goal, plan));
     MIRA_CHECK(fixture.update_database(
         "DROP TABLE goal_corrections; DROP TABLE goal_reminders;"
+        " ALTER TABLE recurring_plans DROP COLUMN calendar;"
         " ALTER TABLE goals RENAME TO fixture_goal_source;"
         " CREATE TABLE goals(tenant TEXT NOT NULL,owner TEXT NOT NULL,id TEXT NOT NULL,"
         " state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 4),"
@@ -439,6 +440,113 @@ int corrections_and_reminders_survive_restart() {
     MIRA_CHECK(fixture.store->read_plan(goal).value()->definition == plan);
     return 0;
 }
+
+GoalTime utc(int year, unsigned month, unsigned day, std::chrono::hours hour = 0h,
+             std::chrono::minutes minute = 0min) {
+    return std::chrono::sys_days{std::chrono::year{year} / std::chrono::month{month} /
+                                 std::chrono::day{day}} +
+           hour + minute;
+}
+
+int calendar_gap_fold_and_weekday() {
+    GoalCalendarRule spring{"Test/Eastern",
+                            "synthetic-v1",
+                            utc(2026, 3, 1),
+                            utc(2026, 4, 1),
+                            -5h,
+                            {{utc(2026, 3, 8, 7h), -4h}},
+                            2h + 30min,
+                            0x7f};
+    const auto before = next_goal_calendar_occurrence(spring, utc(2026, 3, 7));
+    MIRA_CHECK(before && before.value() == utc(2026, 3, 7, 7h, 30min));
+    const auto gap = next_goal_calendar_occurrence(spring, utc(2026, 3, 8));
+    MIRA_CHECK(gap && gap.value() == utc(2026, 3, 9, 6h, 30min));
+    MIRA_CHECK(!next_goal_calendar_occurrence(spring, utc(2026, 3, 2)));
+    auto unsorted = spring;
+    unsorted.transitions.push_back({utc(2026, 3, 7, 7h), -5h});
+    MIRA_CHECK(!validate_goal_calendar(unsorted));
+
+    GoalCalendarRule fall{"Test/Eastern",
+                          "synthetic-v1",
+                          utc(2026, 10, 25),
+                          utc(2026, 11, 9),
+                          -4h,
+                          {{utc(2026, 11, 1, 6h), -5h}},
+                          1h + 30min,
+                          0x7f};
+    const auto first = next_goal_calendar_occurrence(fall, utc(2026, 11, 1));
+    MIRA_CHECK(first && first.value() == utc(2026, 11, 1, 5h, 30min));
+    // Even between the two UTC interpretations, the second one is skipped.
+    const auto between = next_goal_calendar_occurrence(fall, utc(2026, 11, 1, 6h));
+    MIRA_CHECK(between && between.value() == utc(2026, 11, 2, 6h, 30min));
+    fall.weekdays = 0x01;
+    const auto monday = next_goal_calendar_occurrence(fall, utc(2026, 11, 1));
+    MIRA_CHECK(monday && monday.value() == utc(2026, 11, 2, 6h, 30min));
+    MIRA_CHECK(!next_goal_calendar_occurrence(fall, *monday.value() + 1ms).value());
+    return 0;
+}
+
+int calendar_plan_reopen_and_rules_exhaustion() {
+    GoalFixture fixture(4, 2);
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey fixed{fixture.owner, Id128::generate()};
+    const auto start = utc(2026, 11, 1);
+    const RecurringPlanDefinition existing{"Existing interval", EventId::generate(), start + 2h,
+                                           30min};
+    MIRA_CHECK(fixture.store->create_plan(fixed, existing));
+    MIRA_CHECK(
+        fixture.update_database("ALTER TABLE recurring_plans DROP COLUMN calendar;"
+                                " UPDATE store_meta SET value='1.2' WHERE key='schema_version';"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->read_plan(fixed).value()->definition == existing);
+
+    const GoalKey calendar{fixture.owner, Id128::generate()};
+    const GoalKey foreign{{TenantId::generate(), fixture.owner.user}, calendar.id};
+    const GoalCalendarRule rule{"Test/Eastern",
+                                "synthetic-v1",
+                                utc(2026, 10, 25),
+                                utc(2026, 11, 1, 7h),
+                                -4h,
+                                {{utc(2026, 11, 1, 6h), -5h}},
+                                1h + 30min,
+                                0x7f};
+    const RecurringPlanDefinition definition{"Local time plan", EventId::generate(), start, 0ms,
+                                             rule};
+    const auto created = fixture.store->create_plan(calendar, definition);
+    const auto first = utc(2026, 11, 1, 5h, 30min);
+    MIRA_CHECK(created && created.value().next_at == first &&
+               created.value().definition == definition);
+    MIRA_CHECK(!fixture.store->read_plan(foreign).value());
+    const auto due = fixture.store->due_plans({fixture.owner, first, 8, {}});
+    MIRA_CHECK(due && due.value().records.size() == 2 &&
+               due.value().records.back().key == calendar);
+    const GoalOccurrenceKey occurrence{calendar, 1, first};
+    MIRA_CHECK(fixture.store->record_occurrence(occurrence, first));
+    MIRA_CHECK(fixture.reopen());
+    const auto exhausted = fixture.store->read_plan(calendar);
+    MIRA_CHECK(exhausted && exhausted.value() && !exhausted.value()->next_at &&
+               exhausted.value()->definition == definition);
+    const auto cuts = fixture.store->due_plans({fixture.owner, first + 2h, 8, {}});
+    MIRA_CHECK(cuts && cuts.value().records.size() == 1 &&
+               cuts.value().records.front().key == fixed);
+    MIRA_CHECK(fixture.store->record_occurrence(occurrence, first + 1h).value().idempotent_replay);
+    MIRA_CHECK(!fixture.store->record_occurrence({calendar, 1, first + 1h}, first + 1h));
+
+    auto replacement = definition;
+    replacement.source_event = EventId::generate();
+    replacement.first_at = utc(2026, 11, 2);
+    replacement.calendar->rules_version = "synthetic-v2";
+    replacement.calendar->valid_until = utc(2026, 11, 4);
+    const auto revised = fixture.store->replace_plan(calendar, 1, replacement);
+    const auto next = utc(2026, 11, 2, 6h, 30min);
+    MIRA_CHECK(revised && revised.value().revision == 2 && revised.value().next_at == next);
+    MIRA_CHECK(!fixture.store->record_occurrence({calendar, 1, next}, next));
+    MIRA_CHECK(fixture.store->record_occurrence({calendar, 2, next}, next));
+    MIRA_CHECK(fixture.store->erase_plan(calendar) && fixture.reopen());
+    MIRA_CHECK(!fixture.store->read_plan(calendar).value()->definition &&
+               !fixture.store->read_occurrence(occurrence).value());
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -450,5 +558,9 @@ int main() {
         return result;
     if (const int result = occurrence_rollback_and_quota(); result != 0)
         return result;
-    return corrections_and_reminders_survive_restart();
+    if (const int result = corrections_and_reminders_survive_restart(); result != 0)
+        return result;
+    if (const int result = calendar_gap_fold_and_weekday(); result != 0)
+        return result;
+    return calendar_plan_reopen_and_rules_exhaustion();
 }

@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-24：[DEC-132](../decisions/DEC-132-calendar-goal-plans.md) 交付
+按本地时分和星期运行的日历计划，见 [M30-27](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-24：[DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md) 交付
 一次性目标纠正、历史与提醒回执，见 [M30-26](m30-long-term-memory-integration.md#5-工作项)。
 

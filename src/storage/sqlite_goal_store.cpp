@@ -1,5 +1,6 @@
 #include <mira/sqlite_goal_store.hpp>
 
+#include "sqlite_goal_calendar.hpp"
 #include "sqlite_store_open.hpp"
 
 #include <mira/content_markers.hpp>
@@ -50,7 +51,8 @@ constexpr const char *kRecurringSchema =
     " PRIMARY KEY(tenant,owner,plan_id,revision,scheduled_at));";
 constexpr const char *kPlanColumns =
     "id,state,revision,title,source_event,first_at,interval_ms,next_at,"
-    "cancellation_event,cancelled_at";
+    "cancellation_event,cancelled_at,calendar";
+constexpr const char *kCalendarSchema = "ALTER TABLE recurring_plans ADD COLUMN calendar TEXT;";
 constexpr auto kMaxSqlInteger = std::numeric_limits<std::int64_t>::max();
 
 Error goal_error(ErrorCode code, std::string message) {
@@ -519,10 +521,31 @@ Result<GoalReminderReceipt> store_reminder(sqlite3 *db, const GoalKey &key, std:
     return GoalReminderReceipt{expected, reminder, false};
 }
 
-bool valid_plan(const RecurringPlanDefinition &plan) {
-    return valid_title(plan.title) && !plan.source_event.is_nil() && valid_time(plan.first_at) &&
-           plan.interval >= std::chrono::seconds{1} && plan.interval <= std::chrono::days{365} &&
-           plan.first_at.time_since_epoch().count() <= kMaxSqlInteger - plan.interval.count();
+std::optional<GoalTime> first_plan_occurrence(const RecurringPlanDefinition &plan) {
+    if (!valid_title(plan.title) || plan.source_event.is_nil() || !valid_time(plan.first_at))
+        return std::nullopt;
+    if (plan.calendar) {
+        if (plan.interval != std::chrono::milliseconds{0})
+            return std::nullopt;
+        auto next = next_goal_calendar_occurrence(*plan.calendar, plan.first_at);
+        return next ? next.value() : std::nullopt;
+    }
+    if (plan.interval < std::chrono::seconds{1} || plan.interval > std::chrono::days{365} ||
+        plan.first_at.time_since_epoch().count() > kMaxSqlInteger - plan.interval.count())
+        return std::nullopt;
+    return plan.first_at;
+}
+
+bool valid_next(const RecurringPlanDefinition &plan, std::optional<GoalTime> next) {
+    if (!next)
+        return plan.calendar.has_value();
+    if (*next < plan.first_at)
+        return false;
+    if (plan.calendar) {
+        const auto calculated = next_goal_calendar_occurrence(*plan.calendar, *next);
+        return calculated && calculated.value() == next;
+    }
+    return (*next - plan.first_at).count() % plan.interval.count() == 0;
 }
 
 Error invalid_plan_row() {
@@ -544,7 +567,7 @@ Result<RecurringPlanRecord> decode_plan(Statement &row, const GoalOwner &owner) 
                              {},
                              {}};
     if (plan.state == RecurringPlanState::Erased) {
-        for (int index = 3; index <= 9; ++index)
+        for (int index = 3; index <= 10; ++index)
             if (!null_column(row, index))
                 return invalid_plan_row();
         return plan;
@@ -556,13 +579,19 @@ Result<RecurringPlanRecord> decode_plan(Statement &row, const GoalOwner &owner) 
     plan.definition =
         RecurringPlanDefinition{column_text(row, 3), *source, *first_at,
                                 std::chrono::milliseconds{sqlite3_column_int64(row.get(), 6)}};
-    if (!valid_plan(*plan.definition))
+    if (!null_column(row, 10)) {
+        auto calendar = storage::decode_goal_calendar(column_text(row, 10));
+        if (!calendar)
+            return calendar.error();
+        plan.definition->calendar = std::move(calendar).value();
+    }
+    if (!first_plan_occurrence(*plan.definition))
         return invalid_plan_row();
     if (plan.state == RecurringPlanState::Active) {
         plan.next_at = column_time(row, 7);
-        if (!plan.next_at || *plan.next_at < *first_at ||
-            (*plan.next_at - *first_at).count() % plan.definition->interval.count() != 0 ||
-            !null_column(row, 8) || !null_column(row, 9))
+        if ((!plan.next_at && !null_column(row, 7)) ||
+            !valid_next(*plan.definition, plan.next_at) || !null_column(row, 8) ||
+            !null_column(row, 9))
             return invalid_plan_row();
         return plan;
     }
@@ -597,11 +626,15 @@ bool bind_revision(Statement &statement, int parameter, std::uint64_t revision) 
            SQLITE_OK;
 }
 
-bool bind_plan(Statement &statement, const RecurringPlanDefinition &definition) {
+bool bind_plan(Statement &statement, const RecurringPlanDefinition &definition, GoalTime next) {
     return bind_text(statement, 4, definition.title) &&
            bind_text(statement, 5, definition.source_event.to_string()) &&
            bind_time(statement, 6, definition.first_at) &&
-           sqlite3_bind_int64(statement.get(), 7, definition.interval.count()) == SQLITE_OK;
+           sqlite3_bind_int64(statement.get(), 7, definition.interval.count()) == SQLITE_OK &&
+           bind_time(statement, 8, next) &&
+           (definition.calendar
+                ? bind_text(statement, 9, storage::encode_goal_calendar(*definition.calendar))
+                : sqlite3_bind_null(statement.get(), 9) == SQLITE_OK);
 }
 
 Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOptions &options,
@@ -628,16 +661,18 @@ Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOp
             options.max_active_plans_per_owner, &key.owner);
         !room)
         return room.error();
+    const auto first = first_plan_occurrence(definition);
+    if (!first)
+        return goal_error(ErrorCode::InvalidArgument, "invalid first plan occurrence");
     Statement insert(
         db, "INSERT INTO recurring_plans(tenant,owner,id,state,revision,title,source_event,"
-            "first_at,interval_ms,next_at) VALUES(?1,?2,?3,0,1,?4,?5,?6,?7,?6)");
-    if (!insert.valid() || !bind_key(insert, key) || !bind_plan(insert, definition) ||
+            "first_at,interval_ms,next_at,calendar) VALUES(?1,?2,?3,0,1,?4,?5,?6,?7,?8,?9)");
+    if (!insert.valid() || !bind_key(insert, key) || !bind_plan(insert, definition, *first) ||
         sqlite3_step(insert.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
         return goal_error(ErrorCode::Internal, "plan creation failed");
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    const auto first_at = definition.first_at;
-    return RecurringPlanRecord{key, RecurringPlanState::Active, 1, std::move(definition), first_at,
+    return RecurringPlanRecord{key, RecurringPlanState::Active, 1, std::move(definition), first,
                                {}};
 }
 
@@ -660,17 +695,20 @@ Result<RecurringPlanRecord> replace_plan_row(sqlite3 *db, const GoalKey &key,
         return plan;
     if (plan.revision != expected || plan.definition->source_event == definition.source_event)
         return goal_error(ErrorCode::InvalidState, "plan version or source changed");
+    const auto first = first_plan_occurrence(definition);
+    if (!first)
+        return goal_error(ErrorCode::InvalidArgument, "invalid first plan occurrence");
     Statement update(db, "UPDATE recurring_plans SET revision=revision+1,title=?4,source_event=?5,"
-                         " first_at=?6,interval_ms=?7,next_at=?6"
-                         " WHERE tenant=?1 AND owner=?2 AND id=?3 AND revision=?8 AND state=0");
-    if (!update.valid() || !bind_key(update, key) || !bind_plan(update, definition) ||
-        !bind_revision(update, 8, expected) || sqlite3_step(update.get()) != SQLITE_DONE ||
+                         " first_at=?6,interval_ms=?7,next_at=?8,calendar=?9"
+                         " WHERE tenant=?1 AND owner=?2 AND id=?3 AND revision=?10 AND state=0");
+    if (!update.valid() || !bind_key(update, key) || !bind_plan(update, definition, *first) ||
+        !bind_revision(update, 10, expected) || sqlite3_step(update.get()) != SQLITE_DONE ||
         sqlite3_changes(db) != 1)
         return goal_error(ErrorCode::Internal, "plan replacement failed");
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
     ++plan.revision;
-    plan.next_at = definition.first_at;
+    plan.next_at = first;
     plan.definition = std::move(definition);
     return plan;
 }
@@ -785,9 +823,18 @@ Result<GoalOccurrenceReceipt> record_occurrence_row(sqlite3 *db, std::size_t cap
     if (auto room = require_capacity(db, "SELECT count(*) FROM recurring_occurrences", capacity);
         !room)
         return room.error();
-    const auto interval = result.value()->definition->interval;
+    const auto &definition = *result.value()->definition;
+    const auto interval = definition.interval;
     if (key.scheduled_at.time_since_epoch().count() > kMaxSqlInteger - interval.count())
         return goal_error(ErrorCode::ResourceExhausted, "recurring plan time range reached");
+    std::optional<GoalTime> next = key.scheduled_at + interval;
+    if (definition.calendar) {
+        const auto calculated = next_goal_calendar_occurrence(
+            *definition.calendar, key.scheduled_at + std::chrono::milliseconds{1});
+        if (!calculated)
+            return calculated.error();
+        next = calculated.value();
+    }
     Statement insert(
         db,
         "INSERT INTO recurring_occurrences(tenant,owner,plan_id,revision,scheduled_at,recorded_at)"
@@ -797,8 +844,7 @@ Result<GoalOccurrenceReceipt> record_occurrence_row(sqlite3 *db, std::size_t cap
         return goal_error(ErrorCode::Internal, "occurrence write failed");
     Statement advance(db, "UPDATE recurring_plans SET next_at=?6 WHERE tenant=?1 AND owner=?2"
                           " AND id=?3 AND revision=?4 AND next_at=?5 AND state=0");
-    if (!advance.valid() || !bind_occurrence(advance, key) ||
-        !bind_time(advance, 6, key.scheduled_at + interval) ||
+    if (!advance.valid() || !bind_occurrence(advance, key) || !bind_time(advance, 6, next) ||
         sqlite3_step(advance.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
         return goal_error(ErrorCode::Internal, "recurring plan advance failed");
     if (auto committed = transaction.commit(); !committed)
@@ -810,10 +856,10 @@ Result<void> erase_plan_row(sqlite3 *db, std::size_t capacity, const GoalKey &ke
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "plan erasure transaction unavailable");
-    Statement wipe(db,
-                   "UPDATE recurring_plans SET state=2,title=NULL,source_event=NULL,first_at=NULL,"
-                   " interval_ms=NULL,next_at=NULL,cancellation_event=NULL,cancelled_at=NULL"
-                   " WHERE tenant=?1 AND owner=?2 AND id=?3 AND state<>2");
+    Statement wipe(
+        db, "UPDATE recurring_plans SET state=2,title=NULL,source_event=NULL,first_at=NULL,"
+            " interval_ms=NULL,next_at=NULL,cancellation_event=NULL,cancelled_at=NULL,calendar=NULL"
+            " WHERE tenant=?1 AND owner=?2 AND id=?3 AND state<>2");
     if (!wipe.valid() || !bind_key(wipe, key) || sqlite3_step(wipe.get()) != SQLITE_DONE)
         return goal_error(ErrorCode::Internal, "plan erasure failed");
     if (sqlite3_changes(db) == 0) {
@@ -884,10 +930,10 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open(kairo::Executor &
     db.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
     const std::string schema =
         std::string("CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);") +
-        kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema;
+        kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema + kCalendarSchema;
     auto opened = storage::open_reference_store(
         db, {"goal-store",
-             {1, 2},
+             {1, 3},
              schema.c_str(),
              goal_error,
              [](sqlite3 *database, SchemaVersion previous) {
@@ -895,13 +941,17 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open(kairo::Executor &
                      if (auto migrated = storage::exec_sql(database, kRecurringSchema); !migrated)
                          return migrated;
                  }
-                 const auto migration =
-                     std::string("ALTER TABLE goals RENAME TO goals_before_revision;") +
-                     kGoalTable +
-                     "INSERT INTO goals SELECT * FROM goals_before_revision;"
-                     "DROP TABLE goals_before_revision;" +
-                     kGoalIndexes + kGoalHistorySchema;
-                 return storage::exec_sql(database, migration.c_str());
+                 if (previous.minor < 2) {
+                     const auto migration =
+                         std::string("ALTER TABLE goals RENAME TO goals_before_revision;") +
+                         kGoalTable +
+                         "INSERT INTO goals SELECT * FROM goals_before_revision;"
+                         "DROP TABLE goals_before_revision;" +
+                         kGoalIndexes + kGoalHistorySchema;
+                     if (auto migrated = storage::exec_sql(database, migration.c_str()); !migrated)
+                         return migrated;
+                 }
+                 return storage::exec_sql(database, kCalendarSchema);
              }});
     if (!opened)
         return opened.error();
@@ -1001,7 +1051,7 @@ Result<GoalReminderReceipt> SqliteGoalStore::record_reminder(const GoalKey &key,
 
 Result<RecurringPlanRecord> SqliteGoalStore::create_plan(const GoalKey &key,
                                                          RecurringPlanDefinition definition) {
-    if (!valid_key(key) || !valid_plan(definition))
+    if (!valid_key(key) || !first_plan_occurrence(definition))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan definition");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "recurring plan title is not retainable");
@@ -1015,7 +1065,7 @@ Result<RecurringPlanRecord> SqliteGoalStore::replace_plan(const GoalKey &key,
                                                           std::uint64_t expected_revision,
                                                           RecurringPlanDefinition definition) {
     if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger - 1 ||
-        !valid_plan(definition))
+        !first_plan_occurrence(definition))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan replacement");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "recurring plan title is not retainable");

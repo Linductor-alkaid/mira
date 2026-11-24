@@ -108,6 +108,7 @@ add_library(mira_core
     src/context/memory_contracts.cpp
     src/context/social_profile.cpp
     src/context/world_fact.cpp
+    src/context/goal_calendar.cpp
     src/context/memory_consolidation.cpp
     src/context/extraction_model_provider.cpp
     src/context/memory_embedding.cpp
@@ -239,6 +240,7 @@ add_library(mira_state_store
     src/storage/sqlite_conversation_index.cpp
     src/storage/sqlite_social_directory.cpp
     src/storage/sqlite_goal_store.cpp
+    src/storage/sqlite_goal_calendar.cpp
 )
 add_library(Mira::state_store ALIAS mira_state_store)
 target_include_directories(mira_state_store

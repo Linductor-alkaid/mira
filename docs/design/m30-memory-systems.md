@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.11
+> 版本：1.12
 > 更新日期：2026-11-23
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -16,7 +16,8 @@
 > [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)、
 > [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)、
 > [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)、
-> [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)
+> [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)、
+> [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -91,6 +92,9 @@ M30-24 由独立 SQLite 目标库保存一次性任务和承诺。宿主按租�
 截止时间一起提交。计划版本约束待登记触发，重复登记返回持久回执。M30-26 接通一次性
 目标纠正和已送达提醒回执。纠正保留旧版本，提醒计数由回执计算；擦除清理两者的历史。
 提醒送达与主动派发由宿主和 M33 承接。
+
+M30-27 增加本地时分和星期计划，使用宿主提供的版本化时区规则计算 UTC。夏令时缺口
+跳过，回拨选较早时间。规则耗尽后保留已登记回执，宿主换版可恢复下一次触发。
 
 ## 执行与验收
 

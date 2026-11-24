@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mira/core_contracts.hpp>
+#include <mira/goal_calendar.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -14,8 +14,6 @@ class Executor;
 }
 
 namespace mira {
-
-using GoalTime = std::chrono::sys_time<std::chrono::milliseconds>;
 
 struct GoalOwner final {
     TenantId tenant;
@@ -111,6 +109,7 @@ struct RecurringPlanDefinition final {
     EventId source_event;
     GoalTime first_at{};
     std::chrono::milliseconds interval{};
+    std::optional<GoalCalendarRule> calendar = std::nullopt;
     friend bool operator==(const RecurringPlanDefinition &,
                            const RecurringPlanDefinition &) = default;
 };

@@ -330,6 +330,27 @@ auto receipt = goals->record_occurrence({key, active_revision, scheduled_at}, re
 清理计划定义与回执，保留 ID 屏障。同 ID 的一次性任务使用单独的命名空间。回执供宿主
 判断去重；派发前仍须核对现行授权和计划版本。见 [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)。
 
+### 日历及时区
+
+目标库 schema 1.3 支持按本地时分和星期运行的计划。`RecurringPlanDefinition` 指定
+`calendar` 时，`interval` 为零。`first_at` 是 UTC 下界。`GoalCalendarRule` 使用本地
+午夜后的分钟数，`weekdays` 的最低位代表周一。宿主提供时区标识、规则版本、初始偏移和
+按 UTC 排序的偏移转换；至少覆盖首次触发下界之前的两天以及计划需要的未来范围。
+单个快照最多 1830 天和 128 个转换。
+
+```cpp
+RecurringPlanDefinition definition;
+definition.title = title;
+definition.source_event = source_event;
+definition.first_at = first_allowed_utc;
+definition.calendar = authorized_time_zone_rules;
+auto created = goals->create_plan(key, std::move(definition));
+```
+
+本地时刻不存在时跳过这一日期，重复时刻选较早的 UTC 时间。重开沿用持久规则和已登记
+回执。规则覆盖耗尽后，`read_plan` 返回 Active 和空的 `next_at`，到期页省略该计划。
+宿主可用新的来源事件和快照换版，恢复将来的触发。见 [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次

@@ -60,6 +60,7 @@
 - [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)：一次性目标与承诺持久状态。
 - [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)：重复计划与持久触发标识。
 - [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)：目标纠正与提醒回执。
+- [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)：带时区快照的日历计划。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -155,6 +156,7 @@
 - [x] `M30-24` 交付一次性任务与承诺的持久状态和到期索引，验收归属、结算、重开和擦除。
 - [x] `M30-25` 交付固定 UTC 间隔重复计划，验收到期索引、版本化触发、重开去重和取消。
 - [x] `M30-26` 交付一次性目标纠正与提醒回执，验收历史、计数、重试、重开和联合擦除。
+- [x] `M30-27` 交付按本地时分与星期计算的日历计划，验收夏令时、规则耗尽、重开和换版。
 
 ## 6. 测试与退出条件
 
@@ -866,3 +868,39 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-goal-history-{full-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24：日历计划与持久时区规则
+
+基线 `adb1d1c`，分支 `feat/m30-memory-systems`。按 DEC-132 实施 M30-27。目标库
+schema 1.3 支持以本地时分和星期计算 UTC 触发，将宿主提供的时区快照和规则版本与计划
+一同保存。夏令时缺口跳过，回拨选较早解释。规则耗尽后计划保留历史回执，通过换版恢复。
+
+测试使用合成偏移规则，覆盖首次下界、星期选择、缺口、回拨重复时刻、快照不足、旧库
+迁移、归属隔离、重开、规则耗尽、版本失效与擦除。已有固定间隔计划和其他目标记录保留。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_goal_store_test \
+  mira_m30_social_erasure_recovery_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(goal_store|social_erasure_recovery)|m4_store_open)_test'
+for unit in src/context/goal_calendar.cpp src/storage/{sqlite_goal_store,sqlite_goal_calendar}.cpp; do
+  clang-tidy -p build/release --warnings-as-errors='*' "$unit" || exit 1
+done
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 宿主时区数据、送达及当前授权 | Mira Maintainers 与宿主集成者，产品接通实际时区数据源、提醒送达及 M33 派发入口后验证 |
+| Windows/Android、远端 CI 与其他 sanitizer | Mira Maintainers，提交后运行对应矩阵并按被测 head 回填 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-calendar-{full-test,asan-test,tidy,quality}.log`。
