@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.33
+> 版本：1.34
 > 更新日期：2026-11-24
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -326,6 +326,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Social Message Evidence（社交消息证据）**：
 已授权会话事件与该条发言的社交对象和来源账号之间的持久关联。查询返回事件位置与摘要，
 对象和环境擦除会清除关联。见[DEC-142](../decisions/DEC-142-social-message-evidence.md)。
+
+**Social Mention Reference（社交消息引用）**：
+平台账号提及、同会话中被引用的更早消息，或正文中的别名。显式引用返回已保存证据，
+别名返回带来源的候选。见[DEC-143](../decisions/DEC-143-social-message-references.md)。
 
 **Social Attribute Assertion（社交画像字段断言）**：
 宿主在一个已授权对象和字段内保存的单条来源主张，包含来源类型、事件、有效区间及

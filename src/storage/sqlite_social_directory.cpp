@@ -296,6 +296,38 @@ Result<Aliases> read_aliases(sqlite3 *db, const std::string &scope, const std::s
     return aliases;
 }
 
+Result<SocialAliasResult> find_alias(sqlite3 *db, const SocialEnvironmentKey &environment,
+                                     const std::string &scope, const std::string &name,
+                                     std::size_t limit) {
+    Statement rows(db, "SELECT a.object,o.revision FROM social_aliases a"
+                       " JOIN social_objects o ON o.scope=a.scope AND o.object=a.object"
+                       " WHERE a.scope=?1 AND a.name_key=?2 AND o.revision>0"
+                       " ORDER BY a.object LIMIT ?3");
+    if (!rows.valid() || !bind_text(rows, 1, scope) || !bind_text(rows, 2, name) ||
+        sqlite3_bind_int64(rows.get(), 3, static_cast<std::int64_t>(limit + 1)) != SQLITE_OK)
+        return directory_error(ErrorCode::Internal, "social alias lookup preparation failed");
+    SocialAliasResult result;
+    int step = SQLITE_OK;
+    while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
+        const auto object = Id128::parse(column(rows, 0));
+        const auto version = sqlite3_column_int64(rows.get(), 1);
+        if (!object || object->is_nil() || version <= 0)
+            return directory_error(ErrorCode::DataLoss, "social alias match is malformed");
+        result.matches.push_back({{environment, *object}, static_cast<std::uint64_t>(version)});
+    }
+    if (step != SQLITE_DONE)
+        return directory_error(ErrorCode::Internal, "social alias lookup failed");
+    if (result.matches.size() == 1)
+        result.resolution = SocialAliasResolution::Unique;
+    else if (result.matches.size() > 1)
+        result.resolution = SocialAliasResolution::Ambiguous;
+    if (result.matches.size() > limit) {
+        result.truncated = true;
+        result.matches.resize(limit);
+    }
+    return result;
+}
+
 Result<void> delete_rows(sqlite3 *db, const char *sql, const std::string &scope,
                          const std::string *object = nullptr) {
     Statement remove(db, sql);
@@ -456,6 +488,68 @@ Result<SocialMessageEvidence> decode_message(Statement &row,
                                  *integrity};
 }
 
+std::string message_event_key(const std::string &scope, EventId event) {
+    return digest_string("mira.social.message.v1/" + scope + "/" + event.to_string()).to_string();
+}
+
+Result<std::optional<SocialMessageEvidence>> find_message(sqlite3 *db,
+                                                          const SocialEnvironmentKey &environment,
+                                                          const std::string &scope,
+                                                          const std::string &event_key) {
+    Statement lookup(db, "SELECT session,sequence,event,object,source,account_key,integrity"
+                         " FROM social_messages WHERE scope=?1 AND event_key=?2");
+    if (!lookup.valid() || !bind_text(lookup, 1, scope) || !bind_text(lookup, 2, event_key))
+        return directory_error(ErrorCode::Internal, "social message lookup preparation failed");
+    const auto step = sqlite3_step(lookup.get());
+    if (step == SQLITE_DONE)
+        return std::optional<SocialMessageEvidence>{};
+    if (step != SQLITE_ROW)
+        return directory_error(ErrorCode::Internal, "social message lookup failed");
+    if (sqlite3_column_type(lookup.get(), 3) == SQLITE_NULL)
+        return directory_error(ErrorCode::PermissionDenied, "social message has been erased");
+    auto evidence = decode_message(lookup, environment);
+    if (!evidence)
+        return evidence.error();
+    return std::optional{std::move(evidence).value()};
+}
+
+Result<std::optional<SocialMessageEvidence>>
+find_message_at(sqlite3 *db, const SocialEnvironmentKey &environment, const std::string &scope,
+                const SocialMessageLocator &message) {
+    auto found = find_message(db, environment, scope, message_event_key(scope, message.event));
+    if (found && found.value() && found.value()->message != message)
+        return directory_error(ErrorCode::InvalidArgument,
+                               "social message reference position does not match");
+    return found;
+}
+
+using PreparedMention = std::variant<Sha256Digest, SocialMessageLocator, std::string>;
+
+Result<SocialMentionResult> find_mention(sqlite3 *db, const SocialEnvironmentKey &environment,
+                                         const std::string &scope, const PreparedMention &mention,
+                                         std::size_t alias_limit) {
+    if (const auto *account = std::get_if<Sha256Digest>(&mention)) {
+        auto found = read_account_binding(db, environment, scope, account->to_string());
+        if (!found && found.error().code != ErrorCode::PermissionDenied)
+            return found.error();
+        if (!found || !found.value())
+            return SocialMentionResult{};
+        return SocialMentionResult{*found.value()};
+    }
+    if (const auto *quoted = std::get_if<SocialMessageLocator>(&mention)) {
+        auto found = find_message_at(db, environment, scope, *quoted);
+        if (!found && found.error().code != ErrorCode::PermissionDenied)
+            return found.error();
+        if (!found || !found.value())
+            return SocialMentionResult{};
+        return SocialMentionResult{std::move(*found.value())};
+    }
+    auto aliases = find_alias(db, environment, scope, std::get<std::string>(mention), alias_limit);
+    if (!aliases)
+        return aliases.error();
+    return SocialMentionResult{std::move(aliases).value()};
+}
+
 Result<SocialMessageEvidence>
 index_message_evidence(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
                        const SocialEnvironmentKey &environment, const std::string &scope,
@@ -464,29 +558,18 @@ index_message_evidence(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
     Transaction transaction(db);
     if (!transaction.valid())
         return directory_error(ErrorCode::Unavailable, "social message transaction unavailable");
-    const auto event_key =
-        digest_string("mira.social.message.v1/" + scope + "/" + message.event.to_string())
-            .to_string();
+    const auto event_key = message_event_key(scope, message.event);
     const auto account = account_digest.to_string();
-    Statement lookup(db, "SELECT session,sequence,event,object,source,account_key,integrity"
-                         " FROM social_messages WHERE scope=?1 AND event_key=?2");
-    if (!lookup.valid() || !bind_text(lookup, 1, scope) || !bind_text(lookup, 2, event_key))
-        return directory_error(ErrorCode::Internal, "social message lookup preparation failed");
-    const auto step = sqlite3_step(lookup.get());
-    if (step == SQLITE_ROW) {
-        if (sqlite3_column_type(lookup.get(), 3) == SQLITE_NULL)
-            return directory_error(ErrorCode::PermissionDenied, "social message has been erased");
-        auto previous = decode_message(lookup, environment);
-        if (!previous)
-            return previous.error();
-        if (previous.value().message != message || previous.value().source != source ||
-            previous.value().account_digest != account_digest ||
-            previous.value().event_integrity != integrity)
+    auto previous = find_message(db, environment, scope, event_key);
+    if (!previous)
+        return previous.error();
+    if (previous.value()) {
+        if (previous.value()->message != message || previous.value()->source != source ||
+            previous.value()->account_digest != account_digest ||
+            previous.value()->event_integrity != integrity)
             return directory_error(ErrorCode::AlreadyExists, "social message evidence conflicts");
-        return previous;
+        return std::move(*previous.value());
     }
-    if (step != SQLITE_DONE)
-        return directory_error(ErrorCode::Internal, "social message lookup failed");
     const auto speaker =
         admit_account(db, options, environment, scope, account, message.event, std::nullopt);
     if (!speaker)
@@ -794,37 +877,9 @@ Result<SocialAliasResult> SqliteSocialDirectory::resolve(const SocialEnvironment
     auto normalized = alias_key(alias, default_forbidden_content_markers());
     if (!normalized)
         return normalized.error();
-    return impl_->run<SocialAliasResult>([environment, scope = scope_key(environment),
-                                          name = std::move(normalized).value(),
-                                          limit](sqlite3 *db) -> Result<SocialAliasResult> {
-        Statement rows(db, "SELECT a.object,o.revision FROM social_aliases a"
-                           " JOIN social_objects o ON o.scope=a.scope AND o.object=a.object"
-                           " WHERE a.scope=?1 AND a.name_key=?2 AND o.revision>0"
-                           " ORDER BY a.object LIMIT ?3");
-        if (!rows.valid() || !bind_text(rows, 1, scope) || !bind_text(rows, 2, name) ||
-            sqlite3_bind_int64(rows.get(), 3, static_cast<std::int64_t>(limit + 1)) != SQLITE_OK)
-            return directory_error(ErrorCode::Internal, "social alias lookup preparation failed");
-        SocialAliasResult result;
-        int step = SQLITE_OK;
-        while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
-            const auto object = Id128::parse(column(rows, 0));
-            const auto version = sqlite3_column_int64(rows.get(), 1);
-            if (!object || object->is_nil() || version <= 0)
-                return directory_error(ErrorCode::DataLoss, "social alias match is malformed");
-            result.matches.push_back({{environment, *object}, static_cast<std::uint64_t>(version)});
-        }
-        if (step != SQLITE_DONE)
-            return directory_error(ErrorCode::Internal, "social alias lookup failed");
-        if (result.matches.size() == 1)
-            result.resolution = SocialAliasResolution::Unique;
-        else if (result.matches.size() > 1)
-            result.resolution = SocialAliasResolution::Ambiguous;
-        if (result.matches.size() > limit) {
-            result.truncated = true;
-            result.matches.resize(limit);
-        }
-        return result;
-    });
+    return impl_->run<SocialAliasResult>(
+        [environment, scope = scope_key(environment), name = std::move(normalized).value(),
+         limit](sqlite3 *db) { return find_alias(db, environment, scope, name, limit); });
 }
 
 Result<std::optional<SocialAccountBinding>>
@@ -979,6 +1034,59 @@ SqliteSocialDirectory::read_message_evidence(const SocialEnvironmentKey &environ
             return directory_error(ErrorCode::Internal, "social message query failed");
         return result;
     });
+}
+
+Result<SocialMessageParticipants> SqliteSocialDirectory::resolve_message_participants(
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    std::span<const SocialMentionReference> mentions, std::size_t alias_limit) const {
+    if (!valid_environment(environment) || message.session.is_nil() || message.event.is_nil() ||
+        !valid_message_sequence(message.sequence) || mentions.size() > 16 || alias_limit == 0 ||
+        alias_limit > 64)
+        return directory_error(ErrorCode::InvalidArgument,
+                               "invalid social message participants query");
+    auto scope = scope_key(environment);
+    const auto forbidden = default_forbidden_content_markers();
+    std::vector<PreparedMention> prepared;
+    prepared.reserve(mentions.size());
+    for (const auto &mention : mentions) {
+        if (const auto *account = std::get_if<SocialAccountKey>(&mention)) {
+            const auto hashed = account_key(*account, scope);
+            if (!hashed)
+                return hashed.error();
+            prepared.emplace_back(hashed.value());
+        } else if (const auto *quoted = std::get_if<SocialMessageLocator>(&mention)) {
+            if (quoted->session != message.session || quoted->sequence >= message.sequence ||
+                quoted->sequence == 0 || quoted->event.is_nil() || quoted->event == message.event)
+                return directory_error(
+                    ErrorCode::InvalidArgument,
+                    "quoted message must precede the current one in the same session");
+            prepared.emplace_back(*quoted);
+        } else {
+            auto normalized = alias_key(std::get<std::string>(mention), forbidden);
+            if (!normalized)
+                return normalized.error();
+            prepared.emplace_back(std::move(normalized).value());
+        }
+    }
+    return impl_->run<SocialMessageParticipants>(
+        [environment, message, scope = std::move(scope), prepared = std::move(prepared),
+         alias_limit](sqlite3 *db) -> Result<SocialMessageParticipants> {
+            auto speaker = find_message_at(db, environment, scope, message);
+            if (!speaker)
+                return speaker.error();
+            if (!speaker.value())
+                return directory_error(ErrorCode::NotFound,
+                                       "social message speaker is not indexed");
+            SocialMessageParticipants resolved{std::move(*speaker.value()), {}};
+            resolved.mentions.reserve(prepared.size());
+            for (const auto &mention : prepared) {
+                auto found = find_mention(db, environment, scope, mention, alias_limit);
+                if (!found)
+                    return found.error();
+                resolved.mentions.push_back(std::move(found).value());
+            }
+            return resolved;
+        });
 }
 
 Result<void> SqliteSocialDirectory::erase_object(const SocialObjectKey &key) {

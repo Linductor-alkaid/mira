@@ -260,6 +260,45 @@ int messages_keep_scoped_speaker_evidence() {
     const auto different =
         directory->index_message(environment, other_speaker, third.value(), events);
     MIRA_CHECK(different && different.value().speaker != person);
+    MIRA_CHECK(directory->activate(person, {2, {"同名", "陈工"}}));
+    MIRA_CHECK(directory->activate(different.value().speaker, {2, {"同名"}}));
+    const std::vector<SocialMentionReference> mentions{
+        bilibili, first.value(), std::string{"同名"},  std::string{"陈工"},
+        fresh,    wrong,         std::string{"未建档"}};
+    const auto participants =
+        directory->resolve_message_participants(environment, third.value(), mentions, 1);
+    MIRA_CHECK(participants && participants.value().speaker == different.value());
+    const auto &resolved = participants.value().mentions;
+    MIRA_CHECK(resolved.size() == mentions.size());
+    const auto *tagged = std::get_if<SocialAccountBinding>(&resolved.at(0));
+    MIRA_CHECK(tagged && tagged->object == person && tagged->object_revision == 2 &&
+               tagged->source_event == first.value().event);
+    const auto *quoted = std::get_if<SocialMessageEvidence>(&resolved.at(1));
+    MIRA_CHECK(quoted && *quoted == observed.value());
+    const auto *ambiguous = std::get_if<SocialAliasResult>(&resolved.at(2));
+    MIRA_CHECK(ambiguous && ambiguous->resolution == SocialAliasResolution::Ambiguous &&
+               ambiguous->truncated && ambiguous->matches.size() == 1);
+    const auto *unique = std::get_if<SocialAliasResult>(&resolved.at(3));
+    MIRA_CHECK(unique && unique->resolution == SocialAliasResolution::Unique &&
+               unique->matches.front().key == person);
+    MIRA_CHECK(std::holds_alternative<std::monostate>(resolved.at(4)) &&
+               std::holds_alternative<std::monostate>(resolved.at(5)));
+    const auto *unknown = std::get_if<SocialAliasResult>(&resolved.at(6));
+    MIRA_CHECK(unknown && unknown->resolution == SocialAliasResolution::Missing);
+    MIRA_CHECK(!directory->resolve_account(environment, fresh).value());
+    const auto isolated = directory->resolve_message_participants(other, third.value(), mentions);
+    MIRA_CHECK(!isolated && isolated.error().code == ErrorCode::NotFound);
+    auto external = first.value();
+    external.session = SessionId::generate();
+    const SocialMentionReference external_quote{external};
+    const auto invalid_quote =
+        directory->resolve_message_participants(environment, third.value(), {&external_quote, 1});
+    MIRA_CHECK(!invalid_quote && invalid_quote.error().code == ErrorCode::InvalidArgument);
+    const SocialMentionReference self_quote{third.value()};
+    MIRA_CHECK(
+        !directory->resolve_message_participants(environment, third.value(), {&self_quote, 1}));
+    const std::vector<SocialMentionReference> too_many(17, bilibili);
+    MIRA_CHECK(!directory->resolve_message_participants(environment, third.value(), too_many));
     MemoryEventStore occupied;
     const auto same_position =
         append(occupied, EventId::generate(), "another event at position one");
@@ -308,6 +347,16 @@ int messages_keep_scoped_speaker_evidence() {
     const auto after_erasure = directory->read_message_evidence(environment, session, 0, 4);
     MIRA_CHECK(after_erasure && after_erasure.value().evidence.size() == 1 &&
                after_erasure.value().evidence.front() == different.value());
+    const auto surviving =
+        directory->resolve_message_participants(environment, third.value(), mentions);
+    MIRA_CHECK(surviving && surviving.value().speaker == different.value());
+    MIRA_CHECK(std::holds_alternative<std::monostate>(surviving.value().mentions.at(0)) &&
+               std::holds_alternative<std::monostate>(surviving.value().mentions.at(1)));
+    const auto *remaining = std::get_if<SocialAliasResult>(&surviving.value().mentions.at(2));
+    MIRA_CHECK(remaining && remaining->resolution == SocialAliasResolution::Unique &&
+               remaining->matches.front().key == different.value().speaker);
+    const auto retired = directory->resolve_message_participants(environment, first.value(), {});
+    MIRA_CHECK(!retired && retired.error().code == ErrorCode::PermissionDenied);
     const auto replay_as_other =
         directory->index_message(environment, fresh, first.value(), reopened);
     MIRA_CHECK(!replay_as_other && replay_as_other.error().code == ErrorCode::PermissionDenied);

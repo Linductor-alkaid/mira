@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-143](../decisions/DEC-143-social-message-references.md) 接通已索引消息的发言者与引用对象查询，
+见 [M30-41](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-142](../decisions/DEC-142-social-message-evidence.md) 接通会话事件和社交发言者的持久证据索引，
 见 [M30-40](m30-long-term-memory-integration.md#5-工作项)。
 

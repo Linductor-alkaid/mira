@@ -8,7 +8,9 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace kairo {
@@ -70,6 +72,17 @@ struct SocialMessagePage final {
     bool has_more = false;
 };
 
+// An authenticated account mention, an earlier message, or a name from the text.
+using SocialMentionReference = std::variant<SocialAccountKey, SocialMessageLocator, std::string>;
+using SocialMentionResult =
+    std::variant<std::monostate, SocialAccountBinding, SocialMessageEvidence, SocialAliasResult>;
+
+struct SocialMessageParticipants final {
+    SocialMessageEvidence speaker;
+    // One result per reference, in the supplied order. Alias candidates retain their source.
+    std::vector<SocialMentionResult> mentions;
+};
+
 struct SqliteSocialDirectoryOptions final {
     std::filesystem::path path;
     std::size_t max_environments = 256;
@@ -120,6 +133,10 @@ class SqliteSocialDirectory final {
     [[nodiscard]] Result<SocialMessagePage>
     read_message_evidence(const SocialEnvironmentKey &, SessionId session, SessionSequence after,
                           SessionSequence through, std::size_t limit = 32) const;
+    [[nodiscard]] Result<SocialMessageParticipants>
+    resolve_message_participants(const SocialEnvironmentKey &, const SocialMessageLocator &,
+                                 std::span<const SocialMentionReference> mentions,
+                                 std::size_t alias_limit = 8) const;
     [[nodiscard]] Result<void> erase_object(const SocialObjectKey &);
     [[nodiscard]] Result<void> erase_environment(const SocialEnvironmentKey &);
     [[nodiscard]] Result<void> close() noexcept;

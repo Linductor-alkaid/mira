@@ -169,6 +169,24 @@ auto page = directory->read_message_evidence(environment, authorized_session, 0,
 归因。环境擦除清理全部相关索引，由环境屏障拦截旧事件。见
 [DEC-142](../decisions/DEC-142-social-message-evidence.md)。
 
+### 解析当前发言者和引用对象
+
+宿主按已授权会话调用 `resolve_message_participants`，并传入该消息的结构化提及、引用
+位置和正文提取出的别名。结果中的 `speaker` 对应当前消息。`mentions` 与输入顺序一致，
+每次最多 16 条。
+
+```cpp
+const std::vector<SocialMentionReference> mentions{
+    authenticated_tagged_account, earlier_message, std::string{"陈工"}};
+auto participants = directory->resolve_message_participants(environment, message, mentions);
+```
+
+显式提及返回 `SocialAccountBinding`，引用更早的已索引消息返回 `SocialMessageEvidence`。
+两种身份均保留已记录的证据，缺失或已擦除的引用返回 `std::monostate`。引用必须在同一
+会话中，且序号早于当前消息。文本别名返回 `SocialAliasResult`，即使只有一个候选，
+结果类型也保留别名来源。同名候选被截断时仍返回 `Ambiguous`。见
+[DEC-143](../decisions/DEC-143-social-message-references.md)。
+
 ## 社交画像字段
 
 宿主查验当前租户和环境授权，从目录读取对象并确认歧义，再将已核准的来源事件转换为

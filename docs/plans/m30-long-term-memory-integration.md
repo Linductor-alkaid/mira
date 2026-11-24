@@ -71,6 +71,7 @@
 - [DEC-140](../decisions/DEC-140-source-account-identity.md)：来源账号与当前交谈对象。
 - [DEC-141](../decisions/DEC-141-automatic-record-pages.md)：交互结算后自动处理多页事件。
 - [DEC-142](../decisions/DEC-142-social-message-evidence.md)：社交消息事件与发言者证据。
+- [DEC-143](../decisions/DEC-143-social-message-references.md)：社交消息的发言者与引用对象。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -184,6 +185,7 @@
 - [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 - [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
+- [x] `M30-41` 接通已索引社交消息的参与者查询，验收发言者、账号提及、引用消息、同名候选和擦除隔离（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1266,3 +1268,36 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **5/5**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-message-{test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24 社交消息参与者查询
+
+基线 `18d8f7a`，分支 `feat/m30-memory-systems`。DEC-143 交付 M30-41。在同一目录工作单元
+解析发言者和已知引用，按原输入顺序返回账号证据、消息证据、别名候选或未解析状态。
+继续使用目录的环境、擦除和版本规则。
+
+`mira_m30_social_directory_test` 覆盖同一群聊内发言者与多来源提及、引用消息、别名的
+唯一和同名歧义、未知引用、跨会话限制、引用数量上限，以及擦除后引用和发言证据失效。
+社交画像、关系和联合擦除用例复验现有读写行为。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3。复现命令如下。
+
+```bash
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake --build build/asan -j 4 --target mira_m30_social_directory_test \
+  mira_m30_social_erasure_recovery_test mira_m30_social_profile_test mira_m30_social_relationship_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_m30_social_(directory|erasure_recovery|profile|relationship)_test$'
+clang-tidy -p build/release --warnings-as-errors='*' src/storage/sqlite_social_directory.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实平台引用、正文指代提取与跨来源推断 | Mira Maintainers 与宿主集成者在真实消息适配器和模型接线后补跑 M30-36 |
+| Windows、Android、远端 CI | Mira Maintainers 提交后运行目标平台矩阵 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-mentions-{test,asan-test,tidy,quality}.log`。

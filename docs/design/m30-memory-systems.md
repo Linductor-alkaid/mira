@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.21
+> 版本：1.22
 > 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -26,7 +26,8 @@
 > [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)、
 > [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)、
 > [DEC-140](../decisions/DEC-140-source-account-identity.md)、
-> [DEC-142](../decisions/DEC-142-social-message-evidence.md)
+> [DEC-142](../decisions/DEC-142-social-message-evidence.md)、
+> [DEC-143](../decisions/DEC-143-social-message-references.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -98,6 +99,10 @@ M30-35 通过消息来源和不透明账号 ID 精确解析当前交谈对象。
 M30-40 从已持久化的会话事件建立消息与发言者关联，保存来源账号和原事件摘要。
 精确会话查询提供有界证据，账号接纳与证据提交同事务，擦除后的旧消息无法重新归因。
 见[消息证据 API](../api/durable-memory-host.md#索引社交消息证据)。
+
+M30-41 从同一会话证据读取当前发言者，并将显式账号提及、早期引用消息和正文别名
+分别关联到证据或候选。别名保留同名歧义，已擦除的引用失效。见
+[参与者解析 API](../api/durable-memory-host.md#解析当前发言者和引用对象)。
 
 M30-22 以独立环境和应用 scope 保存世界观察。实体和属性在精确 scope 内索引。读取先
 选择对应时点的最新已知观察，再核对有效区间。缺失、过期或歧义返回重新观察信号，旧观察
