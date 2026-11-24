@@ -699,15 +699,17 @@ int g5_episode_path_intact() {
     return 0;
 }
 
+struct TemporaryDatabase {
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("mira-skill-" + Id128::generate().to_string());
+    ~TemporaryDatabase() {
+        std::error_code ignored;
+        std::filesystem::remove_all(root, ignored);
+    }
+};
+
 int m30_current_procedure_recall() {
-    struct TemporaryDatabase {
-        const std::filesystem::path root = std::filesystem::temp_directory_path() /
-                                           ("mira-skill-" + Id128::generate().to_string());
-        ~TemporaryDatabase() {
-            std::error_code ignored;
-            std::filesystem::remove_all(root, ignored);
-        }
-    } database;
+    TemporaryDatabase database;
     std::filesystem::create_directories(database.root);
     WorkflowFixture fixture;
     FixtureTool tool;
@@ -836,6 +838,119 @@ int m30_current_procedure_recall() {
     return 0;
 }
 
+MemoryMutation legacy_procedure_add(const SkillPublicationRegistry &skills,
+                                    const MemoryScope &scope) {
+    const auto index = must(project_skill_procedure_index(skills.publications()), "legacy index");
+    const auto &entry = index.entries.front();
+    const std::string seed = "mira.workflow.skill_procedure|" + entry.name + "|1.0.0|" +
+                             entry.descriptor_digest.to_string();
+    MemoryMutation add;
+    add.id = MutationId{learning_id_from_seed(seed + "|mutation")};
+    add.scope = scope;
+    add.proposed.id = MemoryId{learning_id_from_seed(seed)};
+    add.proposed.scope = scope;
+    add.proposed.kind = MemoryKind::Procedure;
+    add.proposed.statement = entry.statement;
+    add.proposed.recorded_at = std::chrono::system_clock::now();
+    add.proposed.validity.valid_from = add.proposed.recorded_at;
+    add.evidence = {EventId::generate()};
+    return add;
+}
+
+int m30_procedure_writes_are_scope_bound() {
+    TemporaryDatabase database;
+    std::filesystem::create_directories(database.root);
+    WorkflowFixture fixture;
+    FixtureTool tool;
+    fixture.registry_ = registry_with(tool);
+    auto first = fixture.make_workflow();
+    auto second = fixture.make_workflow();
+    const auto view = fixture.registry_->exposed_tools();
+    const std::string name = "fixture.multiscope_skill";
+    SkillPublicationRegistry old_catalog;
+    const auto published = publish_skill_source(*first, view, old_catalog, kWorkflowAlpha, name,
+                                                "multiscope skill", "delta.lookup", {1, 0, 0});
+    SkillPublicationRegistry other_catalog;
+    must(other_catalog.publish_skill(published.descriptor, published.definition, published.refs,
+                                     view, published.history),
+         "replicate host publication");
+    SqliteMemoryStoreOptions options;
+    options.path = database.root / "memory.db";
+    auto first_open = SqliteMemoryStore::open(fixture.executor_, options);
+    auto second_open = SqliteMemoryStore::open(fixture.executor_, options);
+    MIRA_CHECK(first_open && second_open);
+    std::shared_ptr<SqliteMemoryStore> memory = std::move(first_open).value();
+    std::shared_ptr<SqliteMemoryStore> other_memory = std::move(second_open).value();
+    const MemoryScope legacy{MemoryScopeKind::Agent, "fixture.legacy", "tenant-a"};
+    const MemoryScope current{legacy.kind, "fixture.current", legacy.tenant_id};
+    const MemoryScope foreign{legacy.kind, current.subject_id, "tenant-b"};
+    const auto authorize = [](const MemoryScope &, std::string_view) { return true; };
+    const auto old_add = legacy_procedure_add(old_catalog, legacy);
+    MIRA_CHECK(must(memory->apply(old_add), "seed legacy identity").record == old_add.proposed.id);
+    must(first->set_learning_context(memory, legacy), "bind legacy owner");
+    MIRA_CHECK(first->recall_skill_procedure(old_catalog, name, authorize).value()->id ==
+               old_add.proposed.id);
+    MIRA_CHECK(must(first->sync_skill_procedure_index(old_catalog), "legacy no-op").idempotent ==
+               1);
+
+    must(first->set_learning_context(memory, current), "bind current scope");
+    must(second->set_learning_context(other_memory, foreign), "bind foreign scope");
+    auto one = fixture.executor_.submit_auto(
+        [&] { return first->sync_skill_procedure_index(old_catalog); });
+    auto two = fixture.executor_.submit_auto(
+        [&] { return second->sync_skill_procedure_index(other_catalog); });
+    const auto first_sync = one.get();
+    const auto second_sync = two.get();
+    MIRA_CHECK(first_sync && first_sync.value().applied == 1 && first_sync.value().failed == 0);
+    MIRA_CHECK(second_sync && second_sync.value().applied == 1 && second_sync.value().failed == 0);
+    const auto current_record = first->recall_skill_procedure(old_catalog, name, authorize).value();
+    const auto foreign_record =
+        second->recall_skill_procedure(other_catalog, name, authorize).value();
+    MIRA_CHECK(current_record && current_record->scope == current && foreign_record &&
+               foreign_record->scope == foreign && current_record->id != foreign_record->id &&
+               current_record->id != old_add.proposed.id &&
+               foreign_record->id != old_add.proposed.id);
+    MIRA_CHECK(!memory->get(foreign_record->id, current).value());
+    MIRA_CHECK(must(memory->erase({legacy, {}, "erase legacy projection"}), "erase legacy")
+                   .counts.records_removed == 1);
+    MIRA_CHECK(
+        must(memory->erase({{}, current_record->id, "erase scoped projection"}), "erase scoped")
+            .counts.records_removed == 1);
+
+    must(memory->close(), "close first store");
+    auto reopened = SqliteMemoryStore::open(fixture.executor_, options);
+    MIRA_CHECK(reopened);
+    memory = std::move(reopened).value();
+    for (const auto &erased_scope : {legacy, current}) {
+        must(first->set_learning_context(memory, erased_scope), "bind erased scope");
+        const auto replay = must(first->sync_skill_procedure_index(old_catalog), "resync erased");
+        MIRA_CHECK(replay.idempotent == 1 && replay.applied == 0 && replay.failed == 0);
+        MIRA_CHECK(!first->recall_skill_procedure(old_catalog, name, authorize).value());
+    }
+    MIRA_CHECK(second->recall_skill_procedure(other_catalog, name, authorize).value()->id ==
+               foreign_record->id);
+
+    SkillPublicationRegistry new_catalog;
+    const std::string new_name = "fixture.fresh_scoped_skill";
+    publish_skill_source(*first, view, new_catalog, kWorkflowBeta, new_name, "fresh scoped skill",
+                         "delta.lookup", {1, 0, 0});
+    const auto first_scoped =
+        must(first->sync_skill_procedure_index(new_catalog), "reserve legacy identity");
+    MIRA_CHECK(first_scoped.applied == 1);
+    const auto old_writer = legacy_procedure_add(new_catalog, current);
+    const auto fenced = must(other_memory->apply(old_writer), "try old writer after scoped write");
+    MIRA_CHECK(fenced.idempotent_replay && fenced.applied == MemoryMutationType::Noop &&
+               !other_memory->get(old_writer.proposed.id, current).value());
+    MIRA_CHECK(
+        must(second->sync_skill_procedure_index(new_catalog), "foreign scope after reservation")
+            .applied == 1);
+    const auto next_foreign =
+        second->recall_skill_procedure(new_catalog, new_name, authorize).value();
+    MIRA_CHECK(next_foreign && next_foreign->scope == foreign);
+    MIRA_CHECK(first->shutdown().clean && second->shutdown().clean);
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // G6: consumer closure surface (M7-TR2-G6; consumer binary run via ctest)
 // ---------------------------------------------------------------------------
@@ -933,6 +1048,7 @@ int main(int argc, char **argv) {
         {"G5 procedure sync wiring", g5_procedure_sync_wiring},
         {"G5 episode path intact", g5_episode_path_intact},
         {"M30 current procedure recall", m30_current_procedure_recall},
+        {"M30 scope-bound procedure writes", m30_procedure_writes_are_scope_bound},
         {"G6 public surface closure", g6_public_surface_closure},
     };
 

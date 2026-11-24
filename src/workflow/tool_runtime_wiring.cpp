@@ -42,13 +42,16 @@ namespace {
         [](const WorkflowStep &step) { return step.kind == WorkflowStepKind::ToolCall; });
 }
 
-// Deterministic Procedure identity: one name+version+descriptor digest maps to
-// one memory record and one mutation, so a re-sync replays as idempotent NoOps
-// instead of duplicating statements (DEC-030 seed discipline).
-[[nodiscard]] std::string procedure_seed(const SkillProcedureEntry &entry) {
+[[nodiscard]] std::string legacy_procedure_seed(const SkillProcedureEntry &entry) {
     return "mira.workflow.skill_procedure|" + entry.name + "|" +
            std::to_string(entry.version.major) + "." + std::to_string(entry.version.minor) + "." +
            std::to_string(entry.version.patch) + "|" + entry.descriptor_digest.to_string();
+}
+
+[[nodiscard]] std::string scoped_procedure_seed(std::string_view legacy_seed,
+                                                const MemoryScope &scope) {
+    return std::string(legacy_seed) + "|scope|" +
+           canonical_json_digest(memory_scope_to_json(scope)).to_string();
 }
 
 [[nodiscard]] bool procedure_access_allowed(const WorkflowRuntime::SkillProcedureAuthorizer &probe,
@@ -393,7 +396,10 @@ WorkflowRuntime::sync_skill_procedure_index(const SkillPublicationRegistry &skil
         if (entry.status != SkillPublicationStatus::Published) {
             continue; // Revoked entries never (re-)enter memory here.
         }
-        const std::string seed = procedure_seed(entry);
+        const auto legacy_seed = legacy_procedure_seed(entry);
+        const auto seed = scoped_procedure_seed(legacy_seed, scope);
+        const LegacyMemoryAdd legacy{MutationId{learning_id_from_seed(legacy_seed + "|mutation")},
+                                     MemoryId{learning_id_from_seed(legacy_seed)}};
         MemoryRecord record;
         record.id = MemoryId{learning_id_from_seed(seed)};
         record.scope = scope;
@@ -405,16 +411,14 @@ WorkflowRuntime::sync_skill_procedure_index(const SkillPublicationRegistry &skil
         // discipline keeps unverified content conservative even though the
         // mutation now carries the sync event as evidence.
         record.confidence = 0.3F;
-        auto applied = memory->apply([&] {
-            MemoryMutation mutation;
-            mutation.id = MutationId{learning_id_from_seed(seed + "|mutation")};
-            mutation.type = MemoryMutationType::Add;
-            mutation.scope = scope;
-            mutation.proposed = record;
-            mutation.evidence = {append.event_id};
-            mutation.reason = MutationReasonCode::VerifiedEvent;
-            return mutation;
-        }());
+        MemoryMutation mutation;
+        mutation.id = MutationId{learning_id_from_seed(seed + "|mutation")};
+        mutation.type = MemoryMutationType::Add;
+        mutation.scope = scope;
+        mutation.proposed = std::move(record);
+        mutation.evidence = {append.event_id};
+        mutation.reason = MutationReasonCode::VerifiedEvent;
+        const auto applied = memory->apply_add_with_legacy_identity(mutation, legacy);
         if (!applied.has_value()) {
             ++report.failed;
             continue;
@@ -460,13 +464,25 @@ Result<std::optional<MemoryRecord>> WorkflowRuntime::recall_skill_procedure(
     if (!index)
         return index.error();
     const auto &entry = index.value().entries.front();
-    const auto id = MemoryId{learning_id_from_seed(procedure_seed(entry))};
+    const auto legacy_seed = legacy_procedure_seed(entry);
     MemoryQuery query;
     query.scopes = {scope};
     query.kinds = std::vector{MemoryKind::Procedure};
-    query.record_id = id;
+    query.record_id = MemoryId{learning_id_from_seed(scoped_procedure_seed(legacy_seed, scope))};
     query.max_results = 1;
+    const auto started = std::chrono::steady_clock::now();
     auto recalled = memory->query(query);
+    if (recalled && !recalled.value().quality.deadline_exceeded &&
+        recalled.value().records.empty()) {
+        query.deadline -= std::chrono::ceil<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started);
+        if (query.deadline.count() > 0) {
+            query.record_id = MemoryId{learning_id_from_seed(legacy_seed)};
+            recalled = memory->query(query);
+        } else {
+            recalled.value().quality.deadline_exceeded = true;
+        }
+    }
 
     if (!procedure_access_allowed(authorize, scope, name))
         return wiring_error(ErrorCode::PermissionDenied, "skill recall access denied");
@@ -489,7 +505,7 @@ Result<std::optional<MemoryRecord>> WorkflowRuntime::recall_skill_procedure(
     if (records.empty())
         return std::optional<MemoryRecord>{};
     auto &record = records.front();
-    if (records.size() != 1 || record.id != id || record.scope != scope ||
+    if (records.size() != 1 || record.id != *query.record_id || record.scope != scope ||
         record.kind != MemoryKind::Procedure || record.source_namespace ||
         record.statement != entry.statement)
         return wiring_error(ErrorCode::DataLoss, "skill recall record does not match publication");

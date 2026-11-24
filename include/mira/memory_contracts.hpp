@@ -302,6 +302,13 @@ struct MemoryMutationResult final {
     bool idempotent_replay = false;
 };
 
+struct LegacyMemoryAdd final {
+    MutationId mutation_id;
+    MemoryId record_id;
+
+    [[nodiscard]] Result<void> validate_for(const MemoryMutation &mutation) const;
+};
+
 // ---------------------------------------------------------------------------
 // Retrieval contracts (M4-10/M4-11)
 // ---------------------------------------------------------------------------
@@ -513,6 +520,12 @@ class IMemory {
     // Idempotent by mutation id; optimistic version conflicts return
     // VersionConflict instead of silently overwriting.
     [[nodiscard]] virtual Result<MemoryMutationResult> apply(const MemoryMutation &mutation) = 0;
+    // Apply a scope-specific Add while retaining ownership and erasure
+    // semantics of its previous identity. Overrides must check and reserve
+    // the old identity in the same transaction as the Add. The default
+    // submits the legacy identity to preserve existing backend behavior.
+    [[nodiscard]] virtual Result<MemoryMutationResult>
+    apply_add_with_legacy_identity(const MemoryMutation &mutation, const LegacyMemoryAdd &legacy);
     // Retention sweep: purge expired records, prune old versions and stale
     // tombstones. Artifacts referenced by purged records are erased too.
     [[nodiscard]] virtual Result<MemoryCompactionResult> compact(const MemoryScope &scope) = 0;

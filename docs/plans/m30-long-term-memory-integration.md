@@ -63,6 +63,7 @@
 - [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)：带时区快照的日历计划。
 - [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)：目标存储的当前授权。
 - [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)：按当前发布版本读取技能记忆。
+- [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)：按学习范围写入技能发布投影。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -147,7 +148,7 @@
 - [ ] `M30-15` 持久化目标和承诺的状态、授权、到期索引及重复计划身份，验证兑现、取消、
       重启和幂等恢复；主动派发与打断预算归 M33。
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
-      当前发布 `Procedure` 读取见 M30-29，带失败签名的经验读取和跨 scope 写入身份仍待完成。
+      当前发布 `Procedure` 读取与范围化写入见 M30-29/30，带失败签名的经验读取仍待完成。
 - [x] `M30-17` 交付 M30-12 的证据源增量，提供有界事件切片与 Record 水位，验证空页、
       文件重开、时间边界、错误传播及擦除屏障（Linux 离线）。
 - [x] `M30-18` 交付 M30-13 的社交身份目录，验收同名、跨域、版本覆盖与擦除后重开。
@@ -162,6 +163,7 @@
 - [x] `M30-27` 交付按本地时分与星期计算的日历计划，验收夏令时、规则耗尽、重开和换版。
 - [x] `M30-28` 交付目标存储的当前授权入口，验收精确归属、操作隔离、撤权与重试（Linux 离线）。
 - [x] `M30-29` 交付按当前已授权发布版本读取 `Procedure`，验收版本切换、撤回、归属和重开（Linux 离线）。
+- [x] `M30-30` 交付同一技能发布在多个学习 scope 的独立写入，验收旧回执、擦除与并发同步（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -980,3 +982,38 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-skill-{test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24 技能发布的范围化写入
+
+基线 `c1d8f5a`，分支 `feat/m30-memory-systems`。按 DEC-135 实施 M30-30。新技能发布投影
+按规范化学习 scope 和发布版本派生记录与 mutation ID。SQLite 使用原有 Add 事务保留旧
+回执语义，读取先查新身份，再在同一授权范围查旧身份。既有自定义后端继续用旧身份。
+
+M7 技能运行接线使用两个 SQLite 写入连接验证同一发布在不同 scope 的并发同步、旧投影
+保留、跨租户隔离、两类身份擦除后重开与继续同步，以及旧写入方遇到保留回执。M4 SQLite
+测试验证新写入失败时旧身份预留随事务回滚，并覆盖旧回执归属缺失时拒绝写入。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m7_tool_runtime_skill_test mira_m4_sqlite_memory_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m7_tool_runtime_skill|m4_sqlite_memory)_test$'
+clang-tidy -p build/release --warnings-as-errors='*' src/workflow/tool_runtime_wiring.cpp \
+  src/context/memory_legacy_add.cpp src/storage/sqlite_memory_store.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| `SkillHint` / `RecoveryLesson` 的版本和环境检索 | Mira Maintainers，冻结经验索引键并接通学习和读取入口后验收 |
+| 生产宿主及 Windows/Android、远端 CI | Mira Maintainers 与宿主集成者，接入真实策略和目录后验证，提交后运行对应平台矩阵 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-skill-scope-{test,asan-test,tidy,legacy-tidy,quality}.log`。

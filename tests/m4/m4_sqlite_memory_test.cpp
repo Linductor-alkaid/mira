@@ -519,6 +519,63 @@ int mutation_ledger_is_scope_bound() {
     return 0;
 }
 
+int compatible_add_reservations_are_transactional() {
+    kairo::Executor exec;
+    MIRA_CHECK(exec.initialize(kairo::ExecutorConfig{}));
+    SqliteMemoryStoreOptions options;
+    options.path = temp_dir() / "memory-legacy-add.db";
+    const auto scope = env_scope("legacy-owner", "tenant-a");
+    const auto other_scope = env_scope("legacy-owner", "tenant-b");
+    const auto legacy = add_mutation(record(scope, "legacy record"));
+    const LegacyMemoryAdd legacy_ids{legacy.id, legacy.proposed.id};
+    const auto occupied = add_mutation(record(scope, "already occupied"));
+    const auto alternate = add_mutation(record(scope, "scoped replacement"));
+    {
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store && store.value()->apply(occupied));
+        auto conflict = alternate;
+        conflict.proposed.id = occupied.proposed.id;
+        const auto rejected = store.value()->apply_add_with_legacy_identity(conflict, legacy_ids);
+        MIRA_CHECK(!rejected && rejected.error().domain_code ==
+                                    static_cast<std::int32_t>(MemoryDomainCode::VersionConflict));
+        const auto old_write = store.value()->apply(legacy);
+        MIRA_CHECK(old_write && !old_write.value().idempotent_replay);
+        const auto reuse = store.value()->apply_add_with_legacy_identity(alternate, legacy_ids);
+        MIRA_CHECK(reuse && reuse.value().idempotent_replay &&
+                   reuse.value().record == legacy_ids.record_id);
+        MIRA_CHECK(!store.value()->get(alternate.proposed.id, scope).value());
+        MIRA_CHECK(store.value()->erase({{}, legacy.proposed.id, "erase historical record"}));
+        MIRA_CHECK(store.value()->close());
+    }
+    {
+        // Simulate the unattributed receipt left by a historical scope erasure
+        // during a schema 1.0 to 1.1 migration.
+        sqlite3 *db = nullptr;
+        MIRA_CHECK(sqlite3_open(options.path.string().c_str(), &db) == SQLITE_OK);
+        const std::string sql = "UPDATE memory_mutations SET scope_key='' WHERE mutation_id='" +
+                                legacy.id.to_string() + "'";
+        const int changed = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        MIRA_CHECK(changed == SQLITE_OK);
+    }
+    {
+        auto store = SqliteMemoryStore::open(exec, options);
+        MIRA_CHECK(store);
+        for (const auto &target : {scope, other_scope}) {
+            const auto candidate = add_mutation(record(target, "scoped candidate"));
+            const auto denied =
+                store.value()->apply_add_with_legacy_identity(candidate, legacy_ids);
+            MIRA_CHECK(!denied && denied.error().domain_code ==
+                                      static_cast<std::int32_t>(MemoryDomainCode::ScopeDenied));
+            MIRA_CHECK(!store.value()->get(candidate.proposed.id, target).value());
+        }
+        MIRA_CHECK(!store.value()->get(legacy.proposed.id, scope).value());
+        MIRA_CHECK(store.value()->close());
+    }
+    MIRA_CHECK(exec.shutdown(true) == kairo::ShutdownResult::Completed);
+    return 0;
+}
+
 // A store file written by a 1.0 reader carries no scope on its mutation
 // ledger. Reopening it with the current reader migrates the ledger in place,
 // keeps the records queryable and makes the pre-migration mutation ids
@@ -1047,6 +1104,7 @@ int main() {
     failures += get_enforces_scope_acl();
     failures += apply_scope_check_precedes_version_check();
     failures += mutation_ledger_is_scope_bound();
+    failures += compatible_add_reservations_are_transactional();
     failures += migration_adds_ledger_scope();
     failures += migration_adds_embedder_identity();
     failures += migration_adds_metadata_columns();

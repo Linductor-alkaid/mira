@@ -149,6 +149,62 @@ constexpr const char *kSchemaDdl =
     return key;
 }
 
+enum class LegacyAddState { Missing, Recorded, Owned };
+
+[[nodiscard]] Result<LegacyAddState> legacy_add_state(sqlite3 *db, const LegacyMemoryAdd &legacy,
+                                                      const std::string &scope_key) {
+    Statement row(db, "SELECT scope_key, applied_type, record_id, result_version"
+                      " FROM memory_mutations WHERE mutation_id = ?1");
+    const auto id = legacy.mutation_id.to_string();
+    if (!row.valid() ||
+        sqlite3_bind_text(row.get(), 1, id.c_str(), -1, storage::transient_copy()) != SQLITE_OK)
+        return store_error(ErrorCode::Internal, "legacy add lookup failed to prepare");
+    const int step = sqlite3_step(row.get());
+    if (step == SQLITE_DONE)
+        return LegacyAddState::Missing;
+    if (step != SQLITE_ROW)
+        return store_error(ErrorCode::Internal, "legacy add lookup failed");
+
+    const auto *owner = reinterpret_cast<const char *>(sqlite3_column_text(row.get(), 0));
+    if (owner == nullptr || *owner == '\0')
+        return make_memory_error(MemoryDomainCode::ScopeDenied, "legacy add scope is unknown");
+    if (owner != scope_key)
+        return LegacyAddState::Recorded;
+
+    const auto *type = reinterpret_cast<const char *>(sqlite3_column_text(row.get(), 1));
+    const auto *record = reinterpret_cast<const char *>(sqlite3_column_text(row.get(), 2));
+    const auto version = sqlite3_column_int64(row.get(), 3);
+    if (type == nullptr || record == nullptr || record != legacy.record_id.to_string())
+        return store_error(ErrorCode::DataLoss, "legacy add receipt does not match its identity");
+    if (std::string_view(type) == "add" && version == 1)
+        return LegacyAddState::Owned;
+    if (std::string_view(type) == "noop" && version == 0)
+        return LegacyAddState::Recorded;
+    return store_error(ErrorCode::DataLoss, "legacy add receipt has an invalid result");
+}
+
+[[nodiscard]] Result<void> reserve_legacy_add(sqlite3 *db, const LegacyMemoryAdd &legacy,
+                                              const std::string &scope_key) {
+    // A writer that still uses the old identity sees a completed Noop or a
+    // scope denial through the normal replay path, so it cannot insert a copy.
+    Statement log(db, "INSERT INTO memory_mutations(mutation_id, scope_key, applied_type,"
+                      " record_id, result_version, applied_at) VALUES(?1, ?2, 'noop', ?3, 0, ?4)");
+    const auto mutation_id = legacy.mutation_id.to_string();
+    const auto record_id = legacy.record_id.to_string();
+    if (!log.valid() ||
+        sqlite3_bind_text(log.get(), 1, mutation_id.c_str(), -1, storage::transient_copy()) !=
+            SQLITE_OK ||
+        sqlite3_bind_text(log.get(), 2, scope_key.c_str(), -1, storage::transient_copy()) !=
+            SQLITE_OK ||
+        sqlite3_bind_text(log.get(), 3, record_id.c_str(), -1, storage::transient_copy()) !=
+            SQLITE_OK ||
+        sqlite3_bind_int64(log.get(), 4, wall_nanos(std::chrono::system_clock::now())) !=
+            SQLITE_OK ||
+        sqlite3_step(log.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
+        return store_error(ErrorCode::Internal, "legacy add reservation failed");
+    return {};
+}
+
 // True when the mutation ledger already carries the scope that owns each
 // entry (schema 1.1 and later).
 [[nodiscard]] bool ledger_has_scope_column(sqlite3 *db) {
@@ -732,7 +788,8 @@ class SqliteMemoryStore::Impl final {
         return sync_derived_rows(db, indexed, version);
     }
 
-    [[nodiscard]] Result<MemoryMutationResult> apply(sqlite3 *db, const MemoryMutation &mutation) {
+    [[nodiscard]] Result<MemoryMutationResult> apply(sqlite3 *db, const MemoryMutation &mutation,
+                                                     const LegacyMemoryAdd *legacy = nullptr) {
         const auto writable = check_writable();
         if (!writable) {
             return writable.error();
@@ -764,7 +821,8 @@ class SqliteMemoryStore::Impl final {
                 return store_error(ErrorCode::Internal, "mutation replay failed to prepare");
             }
             sqlite3_bind_text(replay.get(), 1, mutation_id.c_str(), -1, storage::transient_copy());
-            if (sqlite3_step(replay.get()) == SQLITE_ROW) {
+            const int step = sqlite3_step(replay.get());
+            if (step == SQLITE_ROW) {
                 // The ledger is keyed by mutation id alone. Honouring a replay
                 // whose entry was written in another scope would hand that
                 // scope's record id and version to the caller, so a mutation
@@ -796,8 +854,19 @@ class SqliteMemoryStore::Impl final {
                 result.idempotent_replay = true;
                 return result; // read-only; the transaction rolls back
             }
+            if (step != SQLITE_DONE)
+                return store_error(ErrorCode::Internal, "mutation replay failed");
         }
 
+        bool reserve_legacy = false;
+        if (legacy != nullptr) {
+            const auto state = legacy_add_state(db, *legacy, scope_key);
+            if (!state)
+                return state.error();
+            if (state.value() == LegacyAddState::Owned)
+                return MemoryMutationResult{MemoryMutationType::Noop, legacy->record_id, 1, true};
+            reserve_legacy = state.value() == LegacyAddState::Missing;
+        }
         if (capacity_) {
             const auto current = capacity_->snapshot();
             if (!current)
@@ -807,6 +876,10 @@ class SqliteMemoryStore::Impl final {
                 return storage::memory_capacity_error();
             capacity_->set_operation_limit(options_.max_storage_bytes -
                                            options_.capacity_reserve_bytes);
+        }
+        if (reserve_legacy) {
+            if (auto reserved = reserve_legacy_add(db, *legacy, scope_key); !reserved)
+                return reserved.error();
         }
         MemoryRecord proposed = mutation.proposed;
         proposed.scope = mutation.scope;
@@ -2625,6 +2698,15 @@ Result<std::optional<MemoryRecord>> SqliteMemoryStore::get(MemoryId record,
 Result<MemoryMutationResult> SqliteMemoryStore::apply(const MemoryMutation &mutation) {
     return impl_->run<MemoryMutationResult>(
         [this, &mutation](sqlite3 *db) { return impl_->apply(db, mutation); });
+}
+
+Result<MemoryMutationResult>
+SqliteMemoryStore::apply_add_with_legacy_identity(const MemoryMutation &mutation,
+                                                  const LegacyMemoryAdd &legacy) {
+    if (auto valid = legacy.validate_for(mutation); !valid)
+        return valid.error();
+    return impl_->run<MemoryMutationResult>(
+        [this, mutation, legacy](sqlite3 *db) { return impl_->apply(db, mutation, &legacy); });
 }
 
 Result<MemoryCompactionResult> SqliteMemoryStore::compact(const MemoryScope &scope) {

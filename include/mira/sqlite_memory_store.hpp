@@ -127,6 +127,9 @@ class SqliteMemoryStore final : public IMemory,
     [[nodiscard]] Result<std::optional<MemoryRecord>> get(MemoryId record,
                                                           const MemoryScope &scope) const override;
     [[nodiscard]] Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override;
+    [[nodiscard]] Result<MemoryMutationResult>
+    apply_add_with_legacy_identity(const MemoryMutation &mutation,
+                                   const LegacyMemoryAdd &legacy) override;
     [[nodiscard]] Result<MemoryCompactionResult> compact(const MemoryScope &scope) override;
     [[nodiscard]] Result<ErasureResult> erase(const ErasureRequest &request) override;
 

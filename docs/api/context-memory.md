@@ -80,6 +80,10 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - `MemoryQuery::record_id` 可在已授权的 scope 内按持久记录 ID 精确检索。SQLite 在构建
   候选集时使用主键过滤，应用查询的状态、有效期参数和擦除屏障。与面向取证的 `get`
   一样要求明确 scope。见 [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)。
+- `IMemory::apply_add_with_legacy_identity` 接收带新身份的 `Add` 和对应旧记录、旧 mutation
+  ID。SQLite 在同一事务处理旧回执与新写入。默认实现提交旧身份以兼容已有后端。实现
+  此接口的自定义后端需遵守 [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)
+  的归属、保留与幂等规则。
 - 保留期清扫（设计 §16.4）：`IMemoryRetentionSweep::sweep(MemorySweepOptions)` 是存储
   所有者的跨 scope 入口，独立于每个方法都绑定 scope 的 `IMemory`。
   `MemorySweepOptions{max_records, max_versions, deadline}` 给出这一趟的上限；一趟在

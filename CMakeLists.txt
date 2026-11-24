@@ -106,6 +106,7 @@ add_library(mira_core
     src/context/context_working_context_auto.cpp
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
+    src/context/memory_legacy_add.cpp
     src/context/social_profile.cpp
     src/context/world_fact.cpp
     src/context/goal_calendar.cpp

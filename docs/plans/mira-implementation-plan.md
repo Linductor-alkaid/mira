@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md) 交付同一技能发布在多个学习
+scope 的独立写入与旧回执兼容，见 [M30-30](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md) 交付按当前授权和发布版本的
 技能 `Procedure` 读取，见 [M30-29](m30-long-term-memory-integration.md#5-工作项)。
 

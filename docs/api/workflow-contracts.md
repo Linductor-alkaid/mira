@@ -357,6 +357,12 @@ auto memory = workflow.recall_skill_procedure(
 自身权限查证。宿主从已授权注册表解析后续执行入口。见
 [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)。
 
+SQLite 可以在宿主分别配置的学习 scope 内同步同一发布。新投影的记录和写入 ID 都绑定
+完整 scope。旧投影保留原 ID，当前读取先查新 ID，缺失时在同一 scope 查旧 ID。
+已擦除的投影仍保留幂等回执，重复同步不会恢复同一发布版本。已有自定义 `IMemory`
+后端沿用旧身份，支持独立写入需实现 `apply_add_with_legacy_identity`。见
+[DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)。
+
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 
 - `WorkflowRecoveryOrchestrator`（Core，`mira_workflow` 目标内）：把一次失败升级变成
