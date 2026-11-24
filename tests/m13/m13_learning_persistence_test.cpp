@@ -949,22 +949,33 @@ int escalation_prioritizes_exact_recovery_and_shares_budget() {
     PersistenceHarness harness(root);
     ScriptedTool tool{std::vector<int>{1, 2, 3, 4, 5}};
     MIRA_CHECK(register_registration(*harness.registry, tool.registration("scripted")));
-    const auto scope = learning_scope();
+    auto scope = learning_scope();
+    const SkillEnvironmentKey environment{TenantId::generate(), SkillEnvironmentKind::Work,
+                                          Id128::generate()};
+    scope.tenant_id = environment.tenant.to_string();
+    const auto skill_scope = skill_environment_scope(environment).value();
+    WorkflowLearningLimits limits;
+    limits.max_retrieval_results = 1;
+    const auto bind = [&] {
+        return harness.workflow->set_learning_context(harness.store, scope, limits, environment);
+    };
+    MIRA_CHECK(bind());
     const auto definition = mnt25_recoverable_definition();
     const auto first = harness.workflow->create_run(definition, JsonValue{}, std::nullopt);
     MIRA_CHECK(first);
     const auto &step = definition.steps.front();
     const RecoveryLessonKey key{definition.workflow_id, first.value().ir_digest, step.id,
                                 workflow_step_kind_name(step.kind), "mira.workflow:6"};
-    const auto current = recovery_lesson_fixture(key, scope);
+    const auto current = recovery_lesson_fixture(key, skill_scope);
     MIRA_CHECK(harness.store->apply(current));
     auto old = key;
     old.ir_digest = digest_string("previous workflow version");
     auto wrong_reason = key;
     wrong_reason.reason_code = "mira.workflow:60";
     // Both are newer than the exact lesson and share its legacy lexical terms.
-    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(old, scope)));
-    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(wrong_reason, scope)));
+    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(old, skill_scope)));
+    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(wrong_reason, skill_scope)));
+    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(key, scope)));
 
     WorkflowEpisodeRecord prior;
     prior.run_id = WorkflowRunId::generate().to_string();
@@ -996,9 +1007,6 @@ int escalation_prioritizes_exact_recovery_and_shares_budget() {
             return run.error();
         return drive(run.value().run_id);
     };
-    WorkflowLearningLimits limits;
-    limits.max_retrieval_results = 1;
-    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
     const auto only_exact = drive(first.value().run_id);
     MIRA_CHECK(only_exact && only_exact.value().relevant_lessons.size() == 1 &&
                only_exact.value().relevant_lessons.front().statement == current.proposed.statement);
@@ -1007,7 +1015,7 @@ int escalation_prioritizes_exact_recovery_and_shares_budget() {
                                  memory_statement_token_estimate(episode.proposed.statement);
     limits.max_retrieval_results = 2;
     limits.retrieval_token_budget = combined_tokens - 1;
-    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    MIRA_CHECK(bind());
     const auto invalidated = harness.workflow->agent_continuation(first.value().run_id);
     MIRA_CHECK(invalidated && invalidated.value().relevant_lessons.empty());
     const auto token_limited = next();
@@ -1015,7 +1023,7 @@ int escalation_prioritizes_exact_recovery_and_shares_budget() {
                token_limited.value().relevant_lessons.front().kind == MemoryKind::RecoveryLesson);
 
     limits.retrieval_token_budget = combined_tokens;
-    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    MIRA_CHECK(bind());
     const auto both = next();
     MIRA_CHECK(both && both.value().relevant_lessons.size() == 2 &&
                both.value().relevant_lessons[0].statement == current.proposed.statement &&
@@ -1027,9 +1035,90 @@ int escalation_prioritizes_exact_recovery_and_shares_budget() {
                fallback.value().relevant_lessons.front().kind == MemoryKind::Episode);
 
     limits.retrieval_deadline = std::chrono::milliseconds{0};
-    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    MIRA_CHECK(bind());
     const auto expired = next();
     MIRA_CHECK(expired && expired.value().relevant_lessons.empty());
+    harness.close();
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+    return 0;
+}
+
+int environment_learning_isolates_writes_and_rejects_stale_runs() {
+    const auto root = temp_dir("skill-environment");
+    PersistenceHarness harness(root);
+    ScriptedTool tool{std::vector<int>{1, 3, 5}};
+    MIRA_CHECK(register_registration(*harness.registry, tool.registration("scripted")));
+    const SkillEnvironmentKey work{TenantId::generate(), SkillEnvironmentKind::Work,
+                                   Id128::generate()};
+    const SkillEnvironmentKey social{work.tenant, SkillEnvironmentKind::Social, work.environment};
+    const auto work_scope = skill_environment_scope(work).value();
+    const auto social_scope = skill_environment_scope(social).value();
+    MIRA_CHECK(work_scope != social_scope && skill_environment_key_of(work_scope) == work &&
+               skill_environment_key_of(social_scope) == social);
+    const MemoryScope episode_scope{MemoryScopeKind::Agent, "episode-owner",
+                                    work.tenant.to_string()};
+    const auto bind = [&](const SkillEnvironmentKey &key) {
+        return harness.workflow->set_learning_context(harness.store, episode_scope, {}, key);
+    };
+    const SkillEnvironmentKey wrong_tenant{TenantId::generate(), work.kind, work.environment};
+    MIRA_CHECK(!bind(wrong_tenant) && !bind({work.tenant, work.kind, {}}) && bind(work));
+    const auto definition = mnt25_recoverable_definition();
+    const auto create = [&] {
+        return harness.workflow->create_run(definition, JsonValue{}, std::nullopt);
+    };
+    const auto recover = [&](WorkflowRunId id) {
+        auto context = drive_context();
+        context.session = harness.session;
+        const auto waiting = harness.workflow->execute_run(id, context);
+        if (!waiting || waiting.value().state != WorkflowRunState::WaitingAgent ||
+            !harness.workflow->resume_run(id))
+            return false;
+        const auto settled = harness.workflow->wait_run(id, std::chrono::seconds{5});
+        return settled && settled.value().state == WorkflowRunState::Completed;
+    };
+    const auto first = create();
+    MIRA_CHECK(first && recover(first.value().run_id));
+    const auto work_lesson = harness.workflow->record_recovery_lesson(first.value().run_id);
+    MIRA_CHECK(work_lesson);
+    const RecoveryLessonKey key{definition.workflow_id, first.value().ir_digest,
+                                definition.steps.front().id, work_lesson.value().failure.step_kind,
+                                work_lesson.value().failure.reason_code};
+    const auto authorize = [](const MemoryScope &, const RecoveryLessonKey &) { return true; };
+    const auto first_hits = harness.workflow->recall_recovery_lessons(key, authorize);
+    MIRA_CHECK(first_hits && first_hits.value().records.size() == 1 &&
+               first_hits.value().records.front().scope == work_scope);
+    MIRA_CHECK(
+        harness.store
+            ->get(workflow_episode_memory_id(first.value().run_id.to_string()), episode_scope)
+            .value());
+
+    const auto parked = create();
+    MIRA_CHECK(parked && bind(social));
+    MIRA_CHECK(harness.workflow->recall_recovery_lessons(key, authorize).value().records.empty());
+    MIRA_CHECK(!harness.workflow->record_recovery_lesson(first.value().run_id));
+    const auto second = create();
+    MIRA_CHECK(second && recover(second.value().run_id));
+    const auto social_lesson = harness.workflow->record_recovery_lesson(second.value().run_id);
+    MIRA_CHECK(social_lesson);
+    const auto social_hits = harness.workflow->recall_recovery_lessons(key, authorize);
+    MIRA_CHECK(social_hits && social_hits.value().records.size() == 1 &&
+               social_hits.value().records.front().scope == social_scope);
+
+    auto context = drive_context();
+    context.session = harness.session;
+    MIRA_CHECK(harness.workflow->execute_run(parked.value().run_id, context));
+    const auto stale = harness.workflow->agent_continuation(parked.value().run_id);
+    MIRA_CHECK(stale && stale.value().relevant_lessons.empty());
+    MIRA_CHECK(harness.workflow->resume_run(parked.value().run_id));
+    MIRA_CHECK(harness.workflow->wait_run(parked.value().run_id, std::chrono::seconds{5}));
+    MIRA_CHECK(bind(work) && !harness.workflow->record_recovery_lesson(parked.value().run_id));
+    const auto erased = harness.store->erase({work_scope, {}, "erase work skill memory"});
+    MIRA_CHECK(erased && erased.value().counts.records_removed == 1);
+    MIRA_CHECK(harness.workflow->recall_recovery_lessons(key, authorize).value().records.empty());
+    MIRA_CHECK(bind(social));
+    MIRA_CHECK(harness.workflow->recall_recovery_lessons(key, authorize).value().records.size() ==
+               1);
     harness.close();
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
@@ -1043,7 +1132,8 @@ int main() {
         {sqlite_records_survive_owner_rebuild, event_recipe_rebuild_field_evidence,
          slow_store_keeps_cancel_closed, slow_store_keeps_shutdown_drain_clean,
          failing_store_keeps_cancel_and_shutdown_closed, exact_recovery_recall_after_sqlite_upgrade,
-         escalation_prioritizes_exact_recovery_and_shares_budget});
+         escalation_prioritizes_exact_recovery_and_shares_budget,
+         environment_learning_isolates_writes_and_rejects_stale_runs});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

@@ -264,6 +264,7 @@ struct WorkflowRuntime::RunRecord final {
     std::size_t patches_at_last_escalation = 0;
     std::uint64_t retrieved_lessons_revision = 0;
     std::uint64_t retrieved_lessons_epoch = 0;
+    std::optional<std::uint64_t> learning_environment_revision;
     std::shared_future<Result<WorkflowRunResult>> drive_future;
     // Resolved ToolCall arguments per step index (binding applied at
     // admission); other kinds keep the raw arguments.
@@ -318,7 +319,7 @@ WorkflowRuntime::WorkflowRuntime(kairo::Executor &executor, MiraRuntime &runtime
     : executor_(executor), runtime_(runtime), session_(session),
       environment_(std::move(environment)), config_(config), runtime_id_(RuntimeId::generate()) {}
 
-thread_local std::uint32_t WorkflowRuntime::t_skill_dispatch_depth_ = 0;
+thread_local WorkflowRuntime::SkillDispatchContext WorkflowRuntime::t_skill_dispatch_{};
 
 WorkflowRuntime::~WorkflowRuntime() {
     if (!shut_down_) {
@@ -396,9 +397,10 @@ bool WorkflowRuntime::navigation_context_installed() const {
 
 // --- Stage F: learning loop (DEC-030) ----------------------------------------
 
-Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memory,
-                                                   MemoryScope scope,
-                                                   WorkflowLearningLimits limits) {
+Result<void>
+WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memory, MemoryScope scope,
+                                      WorkflowLearningLimits limits,
+                                      std::optional<SkillEnvironmentKey> skill_environment) {
     if (memory == nullptr) {
         return workflow_error(ErrorCode::InvalidArgument,
                               "learning context requires a memory backend");
@@ -409,6 +411,9 @@ Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memo
         return workflow_error(ErrorCode::InvalidArgument,
                               "learning scope must not be the user memory domain");
     }
+    if (scope.kind == MemoryScopeKind::SkillEnvironment)
+        return workflow_error(ErrorCode::InvalidArgument,
+                              "skill environment must be bound apart from the episode scope");
     if (scope.subject_id.empty() && scope.kind != MemoryScopeKind::Environment &&
         scope.kind != MemoryScopeKind::Agent) {
         return workflow_error(ErrorCode::InvalidArgument, "learning scope requires a subject id");
@@ -416,9 +421,26 @@ Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memo
     if (auto valid = limits.validate(); !valid.has_value()) {
         return valid.error();
     }
+    std::optional<MemoryScope> skill_scope;
+    if (skill_environment) {
+        auto address = skill_environment_scope(*skill_environment);
+        if (!address)
+            return address.error();
+        const auto &allowed = memory_kind_policy(MemoryKind::Episode).allowed_scope_kinds;
+        if (scope.tenant_id != address.value().tenant_id ||
+            std::ranges::find(allowed, scope.kind) == allowed.end())
+            return workflow_error(ErrorCode::PermissionDenied,
+                                  "skill environment needs a matching tenant and episode scope");
+        skill_scope = std::move(address).value();
+    }
     std::lock_guard lock(mutex_);
+    if ((learning_skill_scope_ || skill_scope) &&
+        (learning_skill_scope_ != skill_scope || learning_scope_ != scope ||
+         learning_memory_ != memory))
+        ++learning_environment_revision_;
     learning_memory_ = std::move(memory);
     learning_scope_ = std::move(scope);
+    learning_skill_scope_ = std::move(skill_scope);
     learning_limits_ = limits;
     ++learning_revision_;
     return Result<void>{};
@@ -429,7 +451,8 @@ void WorkflowRuntime::record_episode(RunRecord &run, WorkflowRunState terminal_s
     MemoryScope scope;
     {
         std::lock_guard lock(mutex_);
-        if (!learning_memory_ || run.episode_recorded) {
+        if (!learning_memory_ || run.episode_recorded ||
+            run.learning_environment_revision != learning_environment_revision_) {
             return;
         }
         memory = learning_memory_;
@@ -495,7 +518,8 @@ void WorkflowRuntime::record_episode(RunRecord &run, WorkflowRunState terminal_s
 
 void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     std::shared_ptr<IMemory> memory;
-    MemoryScope scope;
+    MemoryScope episode_scope;
+    MemoryScope skill_scope;
     WorkflowLearningLimits limits;
     std::optional<WorkflowFailureSignature> signature;
     WorkflowId workflow;
@@ -506,11 +530,13 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     std::uint64_t revision = 0;
     {
         std::lock_guard lock(mutex_);
-        if (shut_down_ || !learning_memory_ || run.view.state != WorkflowRunState::WaitingAgent) {
+        if (shut_down_ || !learning_memory_ || run.view.state != WorkflowRunState::WaitingAgent ||
+            run.learning_environment_revision != learning_environment_revision_) {
             return;
         }
         memory = learning_memory_;
-        scope = learning_scope_;
+        episode_scope = learning_scope_;
+        skill_scope = skill_learning_scope_locked();
         limits = learning_limits_;
         signature = run.last_failure_signature;
         workflow = run.view.workflow_id;
@@ -523,7 +549,7 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     if (!signature || limits.retrieval_deadline.count() == 0) {
         return;
     }
-    auto episodes = failure_retrieval_query(*signature, scope, limits);
+    auto episodes = failure_retrieval_query(*signature, episode_scope, limits);
     if (!episodes) {
         ++retrieval_failures_;
         return;
@@ -558,7 +584,8 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     std::uint64_t remaining_tokens = limits.retrieval_token_budget;
     bool degraded = false;
     bool deadline_exceeded = false;
-    const auto append = [&](const Result<MemoryQueryResult> &found, MemoryKind kind) {
+    const auto append = [&](const Result<MemoryQueryResult> &found, MemoryKind kind,
+                            const MemoryScope &expected_scope) {
         if (!found) {
             degraded = true;
             return;
@@ -568,7 +595,7 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
         for (const auto &record : found.value().records) {
             if (lessons.size() == limits.max_retrieval_results)
                 break;
-            if (record.kind != kind || record.scope != scope ||
+            if (record.kind != kind || record.scope != expected_scope ||
                 record.status != MemoryStatus::Active)
                 continue;
             if (kind == MemoryKind::RecoveryLesson &&
@@ -589,14 +616,15 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
                                 signature->reason_code};
     if ((!signature->step_id || step) && key.validate()) {
         MemoryQuery exact;
-        exact.scopes = {scope};
+        exact.scopes = {skill_scope};
         exact.kinds = std::vector{MemoryKind::RecoveryLesson};
         exact.recovery_lesson_key = key;
         exact.deadline = remaining_time();
         exact.max_results = limits.max_retrieval_results;
         exact.token_budget = remaining_tokens;
         if (exact.deadline.count() > 0)
-            append(query_verified_recovery_lessons(*memory, exact), MemoryKind::RecoveryLesson);
+            append(query_verified_recovery_lessons(*memory, exact), MemoryKind::RecoveryLesson,
+                   skill_scope);
     } else {
         degraded = true;
     }
@@ -611,7 +639,7 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     if (!deadline_exceeded && episode_query.max_results > 0 &&
         remaining_tokens >= memory_statement_token_estimate({}) &&
         episode_query.deadline.count() > 0)
-        append(memory->query(episode_query), MemoryKind::Episode);
+        append(memory->query(episode_query), MemoryKind::Episode, episode_scope);
 
     if (!carrier_is_recovering())
         return;
@@ -675,6 +703,9 @@ WorkflowRuntime::record_recovery_lesson(const WorkflowRunId &run_id) {
         if (shut_down_) {
             return workflow_error(ErrorCode::InvalidState, "workflow runtime is shutting down");
         }
+        if (run.learning_environment_revision != learning_environment_revision_)
+            return workflow_error(ErrorCode::InvalidState,
+                                  "run skill learning environment changed");
         const auto replayed = recorded_lessons_.find(run_id);
         if (replayed != recorded_lessons_.end()) {
             return replayed->second;
@@ -703,7 +734,7 @@ WorkflowRuntime::record_recovery_lesson(const WorkflowRunId &run_id) {
                                   "run settlement event is missing as provenance");
         }
         memory = learning_memory_;
-        scope = learning_scope_;
+        scope = skill_learning_scope_locked();
         limits = learning_limits_;
         signature = *run.last_failure_signature;
         view = run.view;
@@ -1067,6 +1098,14 @@ Result<WorkflowRunView> WorkflowRuntime::create_run_locked(const WorkflowDefinit
                 accepting_);
         }
         ++active_runs_;
+        record->learning_environment_revision = learning_environment_revision_;
+        if (skill_depth != 0 && t_skill_dispatch_.owner) {
+            if (t_skill_dispatch_.owner == this)
+                record->learning_environment_revision = t_skill_dispatch_.environment_revision;
+            else if (learning_environment_revision_ != 0 ||
+                     t_skill_dispatch_.environment_revision != 0)
+                record->learning_environment_revision.reset();
+        }
         view = record->view;
         runs_.emplace(view.run_id, std::move(record));
     }
@@ -2050,19 +2089,19 @@ Result<ToolExecutionRecord> WorkflowRuntime::dispatch_tool_invocation(
     std::future<Result<ToolExecutionRecord>> future;
     try {
         future = executor_.submit_auto(
-            [tools, proposal, context, depth = run.skill_depth,
+            [tools, proposal, context,
+             dispatch =
+                 SkillDispatchContext{this, run.learning_environment_revision, run.skill_depth},
              preflight = std::move(preflight)]() -> Result<ToolExecutionRecord> {
                 if (preflight) {
                     if (auto checked = preflight(context); !checked)
                         return checked.error();
                 }
-                // TR2 (DEC-040 §18.3): publish the dispatching run's Skill depth
-                // to the handler thread; the guard restores 0 no matter how the
-                // handler exits, so no pooled worker keeps a stale depth.
-                struct DepthGuard {
-                    ~DepthGuard() { t_skill_dispatch_depth_ = 0; }
-                } guard;
-                t_skill_dispatch_depth_ = depth;
+                struct DispatchGuard {
+                    SkillDispatchContext previous;
+                    ~DispatchGuard() { t_skill_dispatch_ = previous; }
+                } guard{t_skill_dispatch_};
+                t_skill_dispatch_ = dispatch;
                 return tools->execute(proposal, context);
             });
     } catch (const std::exception &exception) {
@@ -3005,7 +3044,9 @@ void WorkflowRuntime::remember_skill_completion(const WorkflowRunId &run, const 
     if (shut_down_ || !learning_memory_ || revision != learning_revision_)
         return;
     const auto found = runs_.find(run);
-    if (found == runs_.end() || found->second->view.state != WorkflowRunState::Completed ||
+    if (found == runs_.end() ||
+        found->second->learning_environment_revision != learning_environment_revision_ ||
+        found->second->view.state != WorkflowRunState::Completed ||
         found->second->view.policy == WorkflowPolicy::DryRun || !found->second->settled_event)
         return;
     found->second->completed_skill_descriptor = descriptor;

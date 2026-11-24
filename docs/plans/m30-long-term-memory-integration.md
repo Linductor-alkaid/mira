@@ -67,6 +67,7 @@
 - [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)：按工作流版本和失败签名读取恢复经验。
 - [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)：自动失败升级优先读取精确恢复经验。
 - [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)：以已结算技能调用为证据记录 SkillHint。
+- [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)：技能记忆的环境范围。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -152,7 +153,8 @@
       重启和幂等恢复；主动派发与打断预算归 M33。
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
       当前发布 `Procedure` 读取与范围化写入见 M30-29/30，恢复经验的宿主精确读取见 M30-31。
-      自动升级路径接入见 M30-32，证据化 `SkillHint` 读写见 M30-33。独立环境索引待完成。
+      自动升级路径接入见 M30-32，证据化 `SkillHint` 读写见 M30-33，独立环境范围见 M30-34。
+      生产宿主与真实环境联动仍待验收。
 - [x] `M30-17` 交付 M30-12 的证据源增量，提供有界事件切片与 Record 水位，验证空页、
       文件重开、时间边界、错误传播及擦除屏障（Linux 离线）。
 - [x] `M30-18` 交付 M30-13 的社交身份目录，验收同名、跨域、版本覆盖与擦除后重开。
@@ -171,6 +173,7 @@
 - [x] `M30-31` 交付宿主按当前学习 scope、工作流版本与失败签名读取恢复经验，验收旧库和范围隔离（Linux 离线）。
 - [x] `M30-32` 接通自动失败升级的精确恢复经验检索，验收总预算、回补和迟到失效（Linux 离线）。
 - [x] `M30-33` 交付带技能调用证据的 `SkillHint` 写入与当前版本读取，验收归属、撤权和擦除（Linux 离线）。
+- [x] `M30-34` 交付按工作或社交环境隔离的技能记忆范围，验收换绑、事件与技能隔离及擦除。
 
 ## 6. 测试与退出条件
 
@@ -1133,3 +1136,43 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-hint-{test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24 技能记忆按工作和社交环境隔离
+
+基线 `4d17d2d`，分支 `feat/m30-memory-systems`。按 DEC-139 实施 M30-34。宿主可配置
+独立 `SkillEnvironment` scope，隔离发布投影、提示和恢复经验。事件范围继续独立配置。
+现有 SQLite 范围及失败键索引承载查询。Memory 记录 schema 1.6 支持环境范围，旧记录
+保留原身份。环境、事件范围或后端改换后，旧运行及其技能子运行的经验不会进入新绑定。
+
+`mira_m13_learning_persistence_test` 覆盖工作与社交共用内部 ID、租户不符拒绝、恢复经验
+实际写入、原事件范围读取、自动升级分范围查询、旧记录不回填、运行换绑后丢弃及单范围
+擦除。`mira_m13_learning_test` 覆盖换绑前后嵌套技能子运行继承父运行绑定。
+`mira_m7_tool_runtime_skill_test` 覆盖环境范围的发布投影、提示、跨租户和重开。
+`mira_m4_contracts_test` 复验现有记录与查询契约。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m13_learning_test mira_m13_learning_persistence_test \
+  mira_m7_tool_runtime_skill_test mira_m4_contracts_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m13_(learning|learning_persistence)|m7_tool_runtime_skill|m4_contracts)_test$'
+printf '%s\n' src/context/{skill_environment,memory_query_contract,memory_contracts,memory_agent_binding}.cpp \
+  src/workflow/{workflow_runtime,workflow_recovery_memory,workflow_skill_hint,tool_runtime_wiring}.cpp \
+  src/storage/sqlite_memory_store.cpp | xargs -P 2 -n 1 clang-tidy -p build/release --warnings-as-errors='*'
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 生产工作与社交环境绑定、自动技能提示提取 | Mira Maintainers 与宿主集成者，接入真实环境授权与候选入口后复跑检索、换版、撤权和擦除 |
+| Windows/Android、远端 CI 和真实模型 | Mira Maintainers，提交后运行目标矩阵并用当前环境场景回填 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-environment-{final-test,asan-test,tidy,nested-tidy,quality}.log`。

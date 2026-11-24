@@ -86,7 +86,7 @@ Result<WorkflowRuntime::SkillHintContext> WorkflowRuntime::skill_hint_context() 
         return hint_error(ErrorCode::Unavailable, "workflow runtime is shut down");
     if (!learning_memory_)
         return hint_error(ErrorCode::InvalidState, "skill hint requires a learning context");
-    return SkillHintContext{learning_memory_, learning_scope_, learning_limits_,
+    return SkillHintContext{learning_memory_, skill_learning_scope_locked(), learning_limits_,
                             learning_revision_};
 }
 

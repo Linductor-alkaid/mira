@@ -7,6 +7,7 @@
 
 #include "support/m13_support.hpp"
 
+#include <mira/tool_skill.hpp>
 #include <mira/workflow_learning.hpp>
 
 #include <thread>
@@ -582,6 +583,62 @@ int end_to_end_loop_feeds_the_next_failure() {
     return 0;
 }
 
+int nested_skill_run_keeps_parent_environment() {
+    WorkflowFixture fixture;
+    auto memory = std::make_shared<FakeLearningMemory>();
+    ScriptedTool tool{std::vector<int>{}};
+    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")));
+    auto workflow = fixture.make_workflow();
+    const SkillEnvironmentKey work{TenantId::generate(), SkillEnvironmentKind::Work,
+                                   Id128::generate()};
+    const SkillEnvironmentKey social{work.tenant, SkillEnvironmentKind::Social, work.environment};
+    auto episodes = learning_scope();
+    episodes.tenant_id = work.tenant.to_string();
+    MIRA_CHECK(workflow->set_learning_context(memory, episodes, {}, work));
+
+    auto child = base_definition("environment-child", false);
+    child.steps.push_back(tool_step("scripted", std::nullopt));
+    const auto published = workflow->publish_validated(child, "fixture", "publish child");
+    MIRA_CHECK(published);
+    const auto refs = workflow->workflow_tool_refs(child.workflow_id, published.value().ir_digest);
+    MIRA_CHECK(refs);
+    const auto view = fixture.registry_->exposed_tools();
+    const std::string name = "fixture.environment_skill";
+    const auto descriptor = make_skill_descriptor(child, refs.value(), view, name, {1, 0, 0});
+    MIRA_CHECK(descriptor);
+    WorkflowVersionHistory history{child.workflow_id, {}};
+    WorkflowVersionRecord version;
+    version.actor = "fixture";
+    version.reason = "published child";
+    version.content_digest = published.value().ir_digest;
+    version.validation = WorkflowValidationResult::DryRunPassed;
+    version.validation_evidence = digest_string("verified by fixture");
+    version.created_at = Timestamp::now();
+    MIRA_CHECK(append_workflow_version(history, version));
+    SkillPublicationRegistry skills;
+    MIRA_CHECK(skills.publish_skill(descriptor.value(), child, refs.value(), view, history));
+    auto registrations = workflow->skill_tool_registrations(skills);
+    MIRA_CHECK(registrations.size() == 1 &&
+               register_registration(*fixture.registry_, std::move(registrations.front())));
+
+    auto parent = base_definition("environment-parent", false);
+    auto invoke = tool_step(name, std::nullopt);
+    invoke.arguments = JsonValue::Object{{"tool", name}};
+    parent.steps.push_back(std::move(invoke));
+    const auto old = workflow->create_run(parent, JsonValue{}, std::nullopt);
+    MIRA_CHECK(old && workflow->set_learning_context(memory, episodes, {}, social));
+    const auto completed_old = workflow->execute_run(old.value().run_id, drive_context());
+    MIRA_CHECK(completed_old && completed_old.value().state == WorkflowRunState::Completed);
+    MIRA_CHECK(memory->stored_records() == 0);
+    const auto live = workflow->create_run(parent, JsonValue{}, std::nullopt);
+    MIRA_CHECK(live);
+    const auto completed_live = workflow->execute_run(live.value().run_id, drive_context());
+    MIRA_CHECK(completed_live && completed_live.value().state == WorkflowRunState::Completed);
+    MIRA_CHECK(memory->stored_records() == 2);
+    MIRA_CHECK(workflow->shutdown().clean);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -595,7 +652,7 @@ int main() {
          retrieval_degradation_keeps_the_escalation_path, checkpoint_handoffs_do_not_retrieve,
          recovery_lessons_derive_and_stay_idempotent,
          recovery_lesson_patch_form_records_the_recovery_actions,
-         end_to_end_loop_feeds_the_next_failure});
+         end_to_end_loop_feeds_the_next_failure, nested_skill_run_keeps_parent_environment});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

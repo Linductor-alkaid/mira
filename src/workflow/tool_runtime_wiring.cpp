@@ -275,7 +275,7 @@ Result<JsonValue> WorkflowRuntime::execute_skill_tool_call(SkillPublicationRegis
     if (context.cancellation_requested && context.cancellation_requested()) {
         return wiring_error(ErrorCode::Cancelled, "skill call was cancelled before dispatch");
     }
-    const std::uint32_t parent_depth = t_skill_dispatch_depth_;
+    const std::uint32_t parent_depth = t_skill_dispatch_.depth;
     if (parent_depth >= config_.max_skill_call_depth) {
         return wiring_error(ErrorCode::ResourceExhausted,
                             "skill call depth exceeds the configured bound");
@@ -365,7 +365,7 @@ WorkflowRuntime::sync_skill_procedure_index(const SkillPublicationRegistry &skil
                                 "procedure sync requires an installed learning context");
         }
         memory = learning_memory_;
-        scope = learning_scope_;
+        scope = skill_learning_scope_locked();
     }
     auto index = project_skill_procedure_index(skills.publications());
     if (!index.has_value()) {
@@ -457,7 +457,7 @@ Result<std::optional<MemoryRecord>> WorkflowRuntime::recall_skill_procedure(
             return wiring_error(ErrorCode::InvalidState,
                                 "skill recall requires a learning context");
         memory = learning_memory_;
-        scope = learning_scope_;
+        scope = skill_learning_scope_locked();
         revision = learning_revision_;
     }
     if (!procedure_access_allowed(authorize, scope, name))

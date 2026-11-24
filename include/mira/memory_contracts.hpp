@@ -21,8 +21,9 @@ namespace mira {
 // {1,1} adds the labels/importance metadata fields (DEC-112); {1,2} adds the
 // optional `alternative_of` coexistence link (DEC-115). {1,3} adds social
 // attribute assertions (DEC-124), {1,4} adds relationship assertions
-// (DEC-125), and {1,5} adds structured world facts (DEC-127).
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 5}; }
+// (DEC-125), {1,5} adds structured world facts (DEC-127), and {1,6} adds
+// the skill environment scope (DEC-139).
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 6}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -37,6 +38,7 @@ enum class MemoryScopeKind : std::uint8_t {
     SocialEnvironment, // Erasure-only scope.
     WorldEnvironment,
     WorldApplication,
+    SkillEnvironment,
 };
 
 [[nodiscard]] constexpr bool is_world_scope(MemoryScopeKind kind) noexcept {

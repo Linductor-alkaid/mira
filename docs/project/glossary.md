@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.30
+> 版本：1.31
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -368,6 +368,11 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Skill Hint（技能提示）**：
 由宿主记录、以成功技能调用的结算事件为证据的有界观察，按学习 scope 和发布摘要读取。
 见[DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)。
+
+**Skill Environment（技能环境）**
+
+宿主授权的技能记忆范围，由租户、工作或社交域及内部环境 ID 组成。按此范围读取技能提示、
+发布投影和恢复经验。见[DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定

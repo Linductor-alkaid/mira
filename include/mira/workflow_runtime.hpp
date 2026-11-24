@@ -5,6 +5,7 @@
 #include <mira/event_store.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/runtime.hpp>
+#include <mira/skill_environment.hpp>
 #include <mira/tool_executor.hpp>
 #include <mira/tool_reference.hpp>
 #include <mira/workflow_compiler.hpp>
@@ -275,14 +276,15 @@ class WorkflowRuntime final {
     // learning loop: settlement-time episode records, failure-driven
     // retrieval into agent continuations and recovery-lesson recording.
     // Without a context every learning path is a NoOp (M12 behavior). The
-    // scope is the single ACL scope learning records live in and retrieval
-    // queries against; User scope is rejected (episodes and lessons are
-    // automatic operational experience, not preferences). The memory backend
+    // scope owns Episode records. A host-authorized skill environment can
+    // independently own Procedure, SkillHint and RecoveryLesson records.
+    // Without an environment all learning uses the supplied scope. The memory backend
     // routes its own I/O through its store workers (M4 §17); the runtime
     // never owns storage workers.
     [[nodiscard]] Result<void>
     set_learning_context(std::shared_ptr<IMemory> memory, MemoryScope scope,
-                         WorkflowLearningLimits limits = kDefaultWorkflowLearningLimits);
+                         WorkflowLearningLimits limits = kDefaultWorkflowLearningLimits,
+                         std::optional<SkillEnvironmentKey> skill_environment = std::nullopt);
 
     // Appends one immutable version record for the definition to the runtime's
     // library and returns its content digest. Validation defaults to
@@ -495,11 +497,14 @@ class WorkflowRuntime final {
     struct WithdrawalMonitor;
     struct AppliedPatch;
     struct PendingPatch;
-    // TR2 (DEC-040 §18.3): the dispatching run's Skill depth published onto
-    // the worker thread that runs the BuiltIn handler, so a skill handler can
-    // read its parent depth. Reset to 0 after every dispatch; never read
-    // outside dispatch_tool_invocation / execute_skill_tool_call.
-    static thread_local std::uint32_t t_skill_dispatch_depth_;
+    // The current dispatch carries nesting and the parent's learning binding
+    // into a child run on the handler worker.
+    struct SkillDispatchContext final {
+        const WorkflowRuntime *owner = nullptr;
+        std::optional<std::uint64_t> environment_revision;
+        std::uint32_t depth = 0;
+    };
+    static thread_local SkillDispatchContext t_skill_dispatch_;
     struct VersionAppendResult final {
         Sha256Digest digest{};
         bool idempotent = false;
@@ -744,13 +749,18 @@ class WorkflowRuntime final {
     Sha256Digest app_model_installed_digest_;
     std::uint64_t navigation_revision_ = 0;
     std::shared_ptr<const NavigationWorldFacts> navigation_world_facts_;
-    // Stage F learning context (DEC-030 §1): the memory facade, its single
-    // ACL scope and the retrieval bounds. Guarded by mutex_; the memory
-    // facade is copied out and invoked without the lock.
+    // Learning backend, scopes and retrieval bounds (DEC-030 and DEC-139).
+    // Guarded by mutex_; store calls run without the lock.
     std::shared_ptr<IMemory> learning_memory_;
     MemoryScope learning_scope_;
+    std::optional<MemoryScope> learning_skill_scope_;
     WorkflowLearningLimits learning_limits_;
     std::uint64_t learning_revision_ = 0;
+    std::uint64_t learning_environment_revision_ = 0;
+    // Callers hold mutex_.
+    [[nodiscard]] const MemoryScope &skill_learning_scope_locked() const noexcept {
+        return learning_skill_scope_ ? *learning_skill_scope_ : learning_scope_;
+    }
     // Lessons already recorded per run (idempotent replay without a store
     // round-trip). Guarded by mutex_.
     std::unordered_map<WorkflowRunId, WorkflowRecoveryLesson, StrongIdHash<WorkflowRunId>>

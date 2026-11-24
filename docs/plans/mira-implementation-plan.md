@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md) 接通技能记忆的工作和社交环境范围，
+见 [M30-34](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md) 为技能提示接通结算证据与当前发布读取，
 见 [M30-33](m30-long-term-memory-integration.md#5-工作项)。
 

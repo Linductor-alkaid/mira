@@ -54,6 +54,8 @@ kind 在全部组内唯一，单组 max_records 为正、max_bytes 至少 64。�
 文本裁剪通过 degraded 可见。显式存储错误与硬截止通过 future 返回。全部使用工作既有
 scope、标签和撤权探针。组内所有 kind 允许语义检索时才使用该文本的查询向量；关键词
 召回沿现有策略。空配置保留默认行为。
+`SkillEnvironment` 范围从 Workflow 的宿主授权入口读取。见
+[按环境隔离技能记忆](workflow-contracts.md#按环境隔离技能记忆)。
 
 ```cpp
 config.recall_groups = {

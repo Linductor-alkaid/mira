@@ -384,7 +384,8 @@ auto lessons = workflow.recall_recovery_lessons(key, check_current_recovery_acce
 技能工具调用成功后，宿主可用结果中的 `run_id` 为当前发布保存一条 `SkillHint`。
 源 run 必须在当前学习绑定内完成并已有结算事件。提示上限为 512 字节，经保留与指令形态
 检查后作为 `Observed` 记录保存。重复提交同一来源会返回第一次写入的回执。
-允许的学习 scope 为 `TaskSkill`、`Task` 和 `Session`。
+沿单范围接线时，允许的学习 scope 为 `TaskSkill`、`Task` 和 `Session`。宿主也可以绑定
+独立的 `SkillEnvironment`。
 
 ```cpp
 auto receipt = workflow.record_skill_hint(skills, skill_name, skill_run_id, observation,
@@ -395,6 +396,23 @@ auto hints = workflow.recall_skill_hints(skills, skill_name, check_current_hint_
 授权探针收到精确学习 scope、技能名及读或写操作。读取按当前发布摘要标签过滤，可传入
 预期摘要以约束版本。已撤回或换版的提示可在原范围内做历史查证。见
 [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)。
+
+## 按环境隔离技能记忆
+
+宿主可在 `set_learning_context` 的第四个参数传入已授权的 `SkillEnvironmentKey`。
+地址由租户、`Work` 或 `Social` 域及环境的内部稳定 ID 组成。事件 scope 与技能环境
+需要属于同一租户。
+
+```cpp
+const SkillEnvironmentKey environment{principal.tenant_id, SkillEnvironmentKind::Work, workspace_id};
+auto bound = workflow.set_learning_context(memory, authorized_episode_scope, limits, environment);
+```
+
+发布投影、技能提示和恢复经验使用该环境 ID 派生的 scope，Episode 继续使用事件 scope。
+读取授权探针收到实际技能环境 scope。宿主可以用 `skill_environment_key_of` 解出地址，按
+当前环境策略授权。改换环境、事件 scope 或后端后，已接纳的运行仍可执行，其经验读取和
+写入会失效。没有传入环境时使用现有单范围接线。见
+[DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)。
 
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 

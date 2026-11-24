@@ -106,6 +106,8 @@ add_library(mira_core
     src/context/context_working_context_auto.cpp
     src/context/context_working_context_promotion.cpp
     src/context/memory_contracts.cpp
+    src/context/memory_query_contract.cpp
+    src/context/skill_environment.cpp
     src/context/memory_legacy_add.cpp
     src/context/memory_recovery_key.cpp
     src/context/social_profile.cpp

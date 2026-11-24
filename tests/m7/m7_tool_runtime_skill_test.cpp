@@ -964,13 +964,28 @@ int m30_skill_hint_uses_completed_skill_evidence() {
     auto opened = SqliteMemoryStore::open(fixture.executor_, options);
     MIRA_CHECK(opened);
     std::shared_ptr<SqliteMemoryStore> memory = std::move(opened).value();
-    const MemoryScope scope{MemoryScopeKind::Session, "hint-scope", "tenant-a"};
-    must(workflow->set_learning_context(memory, scope), "bind hint scope");
+    const SkillEnvironmentKey environment{TenantId::generate(), SkillEnvironmentKind::Work,
+                                          Id128::generate()};
+    const auto scope = must(skill_environment_scope(environment), "hint environment scope");
+    const auto bind = [&](const SkillEnvironmentKey &key) {
+        return workflow->set_learning_context(
+            memory, {MemoryScopeKind::Session, "hint-scope", key.tenant.to_string()}, {}, key);
+    };
+    must(bind(environment), "bind hint scope");
     const std::string name = "fixture.hint_skill";
     SkillPublicationRegistry skills;
     const auto published =
         publish_skill_source(*workflow, fixture.registry_->exposed_tools(), skills, kWorkflowAlpha,
                              name, "hint skill", "delta.lookup", {1, 0, 0});
+    const auto read_procedures = [&](const MemoryScope &requested, std::string_view) {
+        return requested == scope;
+    };
+    MIRA_CHECK(
+        must(workflow->sync_skill_procedure_index(skills), "write environment procedure").applied ==
+        1);
+    const auto procedure = must(workflow->recall_skill_procedure(skills, name, read_procedures),
+                                "read environment procedure");
+    MIRA_CHECK(procedure && procedure->scope == scope);
     register_skill_tools(*fixture.registry_, *workflow, skills);
     const auto view = fixture.registry_->exposed_tools();
     const auto *tool_spec = find_exposed(view, name);
@@ -1038,7 +1053,7 @@ int m30_skill_hint_uses_completed_skill_evidence() {
     auto reopened = SqliteMemoryStore::open(fixture.executor_, options);
     MIRA_CHECK(reopened);
     memory = std::move(reopened).value();
-    must(workflow->set_learning_context(memory, scope), "rebind reopened hints");
+    must(bind(environment), "rebind reopened hints");
     MIRA_CHECK(workflow->recall_skill_hints(skills, name, allowed).value().records.front().id ==
                retained.record);
 
@@ -1048,10 +1063,10 @@ int m30_skill_hint_uses_completed_skill_evidence() {
         [&](const MemoryScope &, std::string_view, Operation) { return ++probes == 1; });
     MIRA_CHECK(probes == 2 && !revoked_read &&
                revoked_read.error().code == ErrorCode::PermissionDenied);
-    must(workflow->set_learning_context(memory, {scope.kind, scope.subject_id, "tenant-b"}),
+    must(bind({TenantId::generate(), environment.kind, environment.environment}),
          "bind foreign hint scope");
     MIRA_CHECK(workflow->recall_skill_hints(skills, name, read_only).value().records.empty());
-    must(workflow->set_learning_context(memory, scope), "restore hint scope");
+    must(bind(environment), "restore hint scope");
     const auto v2 = make_lookup_definition(kWorkflowAlpha, {1, 0}, "hint skill v2");
     const auto refs = extract_or_abort(v2, view);
     const auto successor =

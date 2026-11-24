@@ -78,7 +78,7 @@ WorkflowRuntime::recall_recovery_lessons(const RecoveryLessonKey &key,
             return recovery_memory_error(ErrorCode::InvalidState,
                                          "recovery recall requires a learning context");
         memory = learning_memory_;
-        scope = learning_scope_;
+        scope = skill_learning_scope_locked();
         limits = learning_limits_;
         revision = learning_revision_;
     }

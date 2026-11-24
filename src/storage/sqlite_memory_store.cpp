@@ -726,7 +726,8 @@ class SqliteMemoryStore::Impl final {
         if (scope_key_of(existing.value()->scope) != scope_key) {
             return std::optional<MemoryRecord>{};
         }
-        if (is_social_scope(scope.kind) || is_world_scope(scope.kind)) {
+        if (is_social_scope(scope.kind) || is_world_scope(scope.kind) ||
+            scope.kind == MemoryScopeKind::SkillEnvironment) {
             if (auto held = check_scope_holds(db, scope, scope_key); !held)
                 return held.error();
         }

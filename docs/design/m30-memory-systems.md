@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.18
+> 版本：1.19
 > 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -23,7 +23,8 @@
 > [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)、
 > [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)、
 > [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)、
-> [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)
+> [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)、
+> [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -124,6 +125,10 @@ Episode。工作流等待世代、载体恢复世代或学习绑定变化会使�
 M30-33 记录技能调用的宿主提示。写入以成功子 run 的结算事件为证据，通过既有
 consolidation 校验。发布摘要标签在精确 scope 与 `SkillHint` 分类内缩小候选，读取
 复核当前授权和发布版本。见[技能提示 API](../api/workflow-contracts.md#记录和读取技能提示)。
+
+M30-34 将发布投影、技能提示和恢复经验绑定到宿主指定的工作或社交环境。范围包含租户、
+环境域和内部 ID，事件记忆仍使用原范围。重新绑定会阻止旧运行把经验带入新环境。
+见[环境技能记忆 API](../api/workflow-contracts.md#按环境隔离技能记忆)。
 
 ## 执行与验收
 
