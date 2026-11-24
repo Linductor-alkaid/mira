@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.29
+> 版本：1.30
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -364,6 +364,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Recovery Lesson Key（恢复经验键）**：
 按学习 scope 查询的一次版本化失败，由工作流 ID、IR 摘要、失败原因和可选步骤字段组成。
 见[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)。
+
+**Skill Hint（技能提示）**：
+由宿主记录、以成功技能调用的结算事件为证据的有界观察，按学习 scope 和发布摘要读取。
+见[DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定

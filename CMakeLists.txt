@@ -202,6 +202,7 @@ add_library(mira_workflow
     src/workflow/workflow_navigation.cpp
     src/workflow/workflow_learning.cpp
     src/workflow/workflow_recovery_memory.cpp
+    src/workflow/workflow_skill_hint.cpp
     src/workflow/workflow_recovery.cpp
     src/workflow/tool_reference.cpp
     src/workflow/tool_skill.cpp

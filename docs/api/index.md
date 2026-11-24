@@ -32,6 +32,7 @@
 | [日历及时区](durable-memory-host.md#日历及时区) | `goal_calendar.hpp` | 本地日期规则、固定时区快照和 UTC 触发时间 |
 | [当前技能记忆](workflow-contracts.md#当前技能记忆) | `workflow_runtime.hpp`、`tool_skill.hpp` | 按当前授权、归属和发布版本查技能 `Procedure` |
 | [按版本读取恢复经验](workflow-contracts.md#按版本读取恢复经验) | `workflow_runtime.hpp`、`memory_contracts.hpp` | 按当前归属、工作流版本和失败签名查 `RecoveryLesson` |
+| [记录和读取技能提示](workflow-contracts.md#记录和读取技能提示) | `workflow_runtime.hpp`、`memory_consolidation.hpp` | 按已结算技能调用记录 `SkillHint`，按当前发布版本读取 |
 | [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`embedding_math.hpp`、`content_markers.hpp`、`verified_fact.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`memory_embedding.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、共享向量数值边界、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |
 | [安全与权限](security.md) | `security.hpp` | Principal、能力授权、风险分级、PolicyEngine、Human Confirmation、脱敏 |
 | [交互协调层](interaction-coordinator.md) | `interaction_coordinator.hpp` | 主体级统一输入入口：输入信封与阶段、幂等台账、确定性路由裁决、Loop 输入汇、上下文归属、`mira.interaction.*.v1` 事件族（M28 / M29 / M30，DEC-068/102/106/107；含澄清回收、只读回补、恢复许可、P3 候选与记忆生命周期） |

@@ -39,6 +39,9 @@ struct MemoryCandidate final {
     // True when the IConsolidationModel produced the candidate; model output
     // is always untrusted and cannot claim HumanConfirmed.
     bool model_assisted = false;
+    // Host-only SkillHint observation with a durable retry identity. Add is
+    // immutable so a replay cannot merge it with another source or replace it.
+    std::optional<MutationId> immutable_add_id = std::nullopt;
 };
 
 // Optional model-assisted extractor. Implementations call external models on

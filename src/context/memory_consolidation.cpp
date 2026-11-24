@@ -230,7 +230,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         MemoryRecord proposed = std::move(candidate.proposed);
         const bool social = is_social_assertion(proposed.kind);
         const bool world = proposed.world_property.has_value() || is_world_scope(scope.kind);
-        const bool immutable = social || world;
+        const bool immutable = social || world || candidate.immutable_add_id.has_value();
         if (candidate.model_assisted && !policy_.allow_model_import_exemption)
             proposed.verification = MemoryVerification::Unverified;
         proposed.scope = scope;
@@ -248,7 +248,20 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                                            : context_text::to_lower_ascii(proposed.statement));
         ConsolidationEntry entry;
         entry.key = key;
-        entry.mutation = MutationId::generate();
+        entry.mutation =
+            candidate.immutable_add_id ? *candidate.immutable_add_id : MutationId::generate();
+
+        if (candidate.immutable_add_id &&
+            (candidate.immutable_add_id->is_nil() || proposed.kind != MemoryKind::SkillHint ||
+             candidate.model_assisted || proposed.source_namespace ||
+             proposed.verification != MemoryVerification::Observed ||
+             candidate.evidence.size() != 1 || candidate.evidence != proposed.provenance ||
+             candidate.evidence.front().is_nil())) {
+            entry.disposition = CandidateDisposition::RejectedInvalid;
+            entry.reason_code = "invalid-immutable-skill-hint";
+            report.entries.push_back(std::move(entry));
+            continue;
+        }
 
         // 1. Forbidden content never persists.
         if (context_text::carries_marker(proposed.statement, policy_.forbidden_markers)) {

@@ -294,6 +294,8 @@ struct WorkflowRuntime::RunRecord final {
     // the settlement event (memory-write provenance).
     std::optional<WorkflowFailureSignature> last_failure_signature;
     std::optional<EventId> settled_event;
+    std::optional<Hash> completed_skill_descriptor;
+    std::uint64_t completed_skill_learning_revision = 0;
     std::uint32_t executions = 0;
     // Failure escalations consumed against max_escalations_per_run (DEC-023
     // §1); checkpoint handoffs do not count.
@@ -2995,6 +2997,34 @@ Result<WorkflowRunView> WorkflowRuntime::run_snapshot(const WorkflowRunId &run_i
         return workflow_error(ErrorCode::NotFound, "workflow run was not found");
     }
     return found->second->view;
+}
+
+void WorkflowRuntime::remember_skill_completion(const WorkflowRunId &run, const Hash &descriptor,
+                                                std::uint64_t revision) {
+    std::lock_guard lock(mutex_);
+    if (shut_down_ || !learning_memory_ || revision != learning_revision_)
+        return;
+    const auto found = runs_.find(run);
+    if (found == runs_.end() || found->second->view.state != WorkflowRunState::Completed ||
+        found->second->view.policy == WorkflowPolicy::DryRun || !found->second->settled_event)
+        return;
+    found->second->completed_skill_descriptor = descriptor;
+    found->second->completed_skill_learning_revision = revision;
+}
+
+Result<EventId> WorkflowRuntime::skill_hint_evidence(const WorkflowRunId &run,
+                                                     const Hash &descriptor,
+                                                     std::uint64_t revision) const {
+    std::lock_guard lock(mutex_);
+    if (shut_down_ || revision != learning_revision_)
+        return workflow_error(ErrorCode::InvalidState, "skill hint learning context changed");
+    const auto found = runs_.find(run);
+    if (found == runs_.end() || found->second->completed_skill_descriptor != descriptor ||
+        found->second->completed_skill_learning_revision != revision ||
+        !found->second->settled_event)
+        return workflow_error(ErrorCode::InvalidState,
+                              "skill hint requires a completed skill call");
+    return *found->second->settled_event;
 }
 
 Result<WorkflowPatchOutcome>

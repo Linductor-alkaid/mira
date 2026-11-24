@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-138](../decisions/DEC-138-evidenced-skill-hints.md) 为技能提示接通结算证据与当前发布读取，
+见 [M30-33](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md) 将精确恢复经验接入自动失败升级，
 见 [M30-32](m30-long-term-memory-integration.md#5-工作项)。
 

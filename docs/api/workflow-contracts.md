@@ -379,6 +379,23 @@ auto lessons = workflow.recall_recovery_lessons(key, check_current_recovery_acce
 [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)、
 [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)。
 
+## 记录和读取技能提示
+
+技能工具调用成功后，宿主可用结果中的 `run_id` 为当前发布保存一条 `SkillHint`。
+源 run 必须在当前学习绑定内完成并已有结算事件。提示上限为 512 字节，经保留与指令形态
+检查后作为 `Observed` 记录保存。重复提交同一来源会返回第一次写入的回执。
+允许的学习 scope 为 `TaskSkill`、`Task` 和 `Session`。
+
+```cpp
+auto receipt = workflow.record_skill_hint(skills, skill_name, skill_run_id, observation,
+                                          check_current_hint_access);
+auto hints = workflow.recall_skill_hints(skills, skill_name, check_current_hint_access);
+```
+
+授权探针收到精确学习 scope、技能名及读或写操作。读取按当前发布摘要标签过滤，可传入
+预期摘要以约束版本。已撤回或换版的提示可在原范围内做历史查证。见
+[DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)。
+
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 
 - `WorkflowRecoveryOrchestrator`（Core，`mira_workflow` 目标内）：把一次失败升级变成

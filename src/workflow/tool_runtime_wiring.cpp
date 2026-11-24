@@ -280,6 +280,11 @@ Result<JsonValue> WorkflowRuntime::execute_skill_tool_call(SkillPublicationRegis
         return wiring_error(ErrorCode::ResourceExhausted,
                             "skill call depth exceeds the configured bound");
     }
+    std::uint64_t learning_revision = 0;
+    {
+        std::lock_guard lock(mutex_);
+        learning_revision = learning_revision_;
+    }
     auto created =
         create_skill_child_run(source_workflow_id, source_ir_digest, arguments, parent_depth + 1);
     if (!created.has_value()) {
@@ -309,6 +314,8 @@ Result<JsonValue> WorkflowRuntime::execute_skill_tool_call(SkillPublicationRegis
     object.emplace_back("run_id", created.value().run_id.to_string());
     object.emplace_back("state", std::string(workflow_run_state_name(result.state)));
     object.emplace_back("safe_summary", bounded_text(result.safe_summary, 512));
+    remember_skill_completion(created.value().run_id, registered_descriptor_digest,
+                              learning_revision);
     return JsonValue{std::move(object)};
 }
 

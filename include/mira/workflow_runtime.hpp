@@ -455,6 +455,20 @@ class WorkflowRuntime final {
                            const SkillProcedureAuthorizer &authorize,
                            std::optional<Hash> expected_descriptor = std::nullopt) const;
 
+    enum class SkillHintOperation : std::uint8_t { Read, Record };
+    using SkillHintAuthorizer =
+        std::function<bool(const MemoryScope &, std::string_view, SkillHintOperation)>;
+
+    // Host-only observations pinned to a successfully returned skill run.
+    [[nodiscard]] Result<MemoryMutationResult>
+    record_skill_hint(const SkillPublicationRegistry &skills, std::string_view name,
+                      const WorkflowRunId &source_run, std::string_view hint,
+                      const SkillHintAuthorizer &authorize);
+    [[nodiscard]] Result<MemoryQueryResult>
+    recall_skill_hints(const SkillPublicationRegistry &skills, std::string_view name,
+                       const SkillHintAuthorizer &authorize,
+                       std::optional<Hash> expected_descriptor = std::nullopt) const;
+
     // Stops run producers, cancels active runs through the control plane and
     // drains drive futures within the bounded budget. Never shuts the
     // executor down: the host owns it and follows with MiraRuntime shutdown
@@ -465,6 +479,18 @@ class WorkflowRuntime final {
 
   private:
     struct RunRecord;
+    struct SkillHintContext final {
+        std::shared_ptr<IMemory> memory;
+        MemoryScope scope;
+        WorkflowLearningLimits limits;
+        std::uint64_t revision = 0;
+    };
+    [[nodiscard]] Result<SkillHintContext> skill_hint_context() const;
+    void remember_skill_completion(const WorkflowRunId &run, const Hash &descriptor,
+                                   std::uint64_t revision);
+    [[nodiscard]] Result<EventId> skill_hint_evidence(const WorkflowRunId &run,
+                                                      const Hash &descriptor,
+                                                      std::uint64_t revision) const;
     struct DriveFlags;
     struct WithdrawalMonitor;
     struct AppliedPatch;
