@@ -77,6 +77,9 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   `memory_claim_key(statement).key` 比较，调用方用 `memory_normalize_claim_key()`
   归一化自己的主语。被 claim key 收窄的查询不再套用每 (scope, kind) 组的多样性上限。
   见 [DEC-061](../decisions/DEC-061-memory-claim-key.md)。
+- `MemoryQuery::record_id` 可在已授权的 scope 内按持久记录 ID 精确检索。SQLite 在构建
+  候选集时使用主键过滤，应用查询的状态、有效期参数和擦除屏障。与面向取证的 `get`
+  一样要求明确 scope。见 [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)。
 - 保留期清扫（设计 §16.4）：`IMemoryRetentionSweep::sweep(MemorySweepOptions)` 是存储
   所有者的跨 scope 入口，独立于每个方法都绑定 scope 的 `IMemory`。
   `MemorySweepOptions{max_records, max_versions, deadline}` 给出这一趟的上限；一趟在

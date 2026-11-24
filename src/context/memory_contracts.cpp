@@ -620,6 +620,9 @@ Result<void> MemoryQuery::validate() const {
     if (kinds.has_value() && kinds->empty()) {
         return memory_error(MemoryDomainCode::InvalidRecord, "kind filter must not be empty");
     }
+    if (record_id && record_id->is_nil()) {
+        return memory_error(MemoryDomainCode::InvalidRecord, "record filter must be non-nil");
+    }
     if (auto social = social_profile_detail::validate_query(*this); !social)
         return social.error();
     if (labels.has_value()) {

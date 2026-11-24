@@ -8,11 +8,13 @@
 
 #include <mira/workflow_runtime.hpp>
 
+#include <mira/tool_module.hpp>
 #include <mira/tool_skill.hpp>
 #include <mira/workflow_learning.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <span>
 #include <utility>
 
 namespace mira {
@@ -47,6 +49,15 @@ namespace {
     return "mira.workflow.skill_procedure|" + entry.name + "|" +
            std::to_string(entry.version.major) + "." + std::to_string(entry.version.minor) + "." +
            std::to_string(entry.version.patch) + "|" + entry.descriptor_digest.to_string();
+}
+
+[[nodiscard]] bool procedure_access_allowed(const WorkflowRuntime::SkillProcedureAuthorizer &probe,
+                                            const MemoryScope &scope, std::string_view name) {
+    try {
+        return probe && probe(scope, name);
+    } catch (...) {
+        return false;
+    }
 }
 
 } // namespace
@@ -416,6 +427,79 @@ WorkflowRuntime::sync_skill_procedure_index(const SkillPublicationRegistry &skil
         }
     }
     return report;
+}
+
+Result<std::optional<MemoryRecord>> WorkflowRuntime::recall_skill_procedure(
+    const SkillPublicationRegistry &skills, std::string_view name,
+    const SkillProcedureAuthorizer &authorize, std::optional<Hash> expected_descriptor) const {
+    if (!is_valid_vocabulary_id(name))
+        return wiring_error(ErrorCode::InvalidArgument, "invalid skill name");
+
+    std::shared_ptr<IMemory> memory;
+    MemoryScope scope;
+    std::uint64_t revision = 0;
+    {
+        std::lock_guard lock(mutex_);
+        if (shut_down_)
+            return wiring_error(ErrorCode::Unavailable, "workflow runtime is shut down");
+        if (!learning_memory_)
+            return wiring_error(ErrorCode::InvalidState,
+                                "skill recall requires a learning context");
+        memory = learning_memory_;
+        scope = learning_scope_;
+        revision = learning_revision_;
+    }
+    if (!procedure_access_allowed(authorize, scope, name))
+        return wiring_error(ErrorCode::PermissionDenied, "skill recall access denied");
+
+    const auto publication = skills.find(name);
+    if (!publication || publication->status != SkillPublicationStatus::Published ||
+        (expected_descriptor && publication->descriptor.digest != *expected_descriptor))
+        return std::optional<MemoryRecord>{};
+    const auto index = project_skill_procedure_index(std::span{&*publication, std::size_t{1}});
+    if (!index)
+        return index.error();
+    const auto &entry = index.value().entries.front();
+    const auto id = MemoryId{learning_id_from_seed(procedure_seed(entry))};
+    MemoryQuery query;
+    query.scopes = {scope};
+    query.kinds = std::vector{MemoryKind::Procedure};
+    query.record_id = id;
+    query.max_results = 1;
+    auto recalled = memory->query(query);
+
+    if (!procedure_access_allowed(authorize, scope, name))
+        return wiring_error(ErrorCode::PermissionDenied, "skill recall access denied");
+    {
+        std::lock_guard lock(mutex_);
+        if (shut_down_)
+            return wiring_error(ErrorCode::Unavailable, "workflow runtime is shut down");
+        if (learning_revision_ != revision)
+            return wiring_error(ErrorCode::InvalidState, "skill recall learning context changed");
+    }
+    const auto current = skills.find(name);
+    if (!current || current->status != SkillPublicationStatus::Published ||
+        current->descriptor.digest != entry.descriptor_digest)
+        return std::optional<MemoryRecord>{};
+    if (!recalled)
+        return recalled.error();
+    if (recalled.value().quality.deadline_exceeded)
+        return wiring_error(ErrorCode::DeadlineExceeded, "skill recall query timed out", true);
+    auto &records = recalled.value().records;
+    if (records.empty())
+        return std::optional<MemoryRecord>{};
+    auto &record = records.front();
+    if (records.size() != 1 || record.id != id || record.scope != scope ||
+        record.kind != MemoryKind::Procedure || record.source_namespace ||
+        record.statement != entry.statement)
+        return wiring_error(ErrorCode::DataLoss, "skill recall record does not match publication");
+    const auto now = std::chrono::system_clock::now();
+    if (record.status != MemoryStatus::Active || record.recorded_at > now ||
+        record.validity.valid_from > now ||
+        (record.validity.valid_until && *record.validity.valid_until <= now) ||
+        (record.expires_at && *record.expires_at <= now))
+        return std::optional<MemoryRecord>{};
+    return std::optional<MemoryRecord>{std::move(record)};
 }
 
 } // namespace mira

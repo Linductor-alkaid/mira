@@ -1,6 +1,6 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
-> 状态：In Progress（召回分组、人格、事件、社交记忆、世界事实和目标记忆已交付 Linux 增量）
+> 状态：In Progress（召回分组及六类记忆均有 Linux 增量，完整验收见工作项）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -62,6 +62,7 @@
 - [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)：目标纠正与提醒回执。
 - [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)：带时区快照的日历计划。
 - [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)：目标存储的当前授权。
+- [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)：按当前发布版本读取技能记忆。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -146,6 +147,7 @@
 - [ ] `M30-15` 持久化目标和承诺的状态、授权、到期索引及重复计划身份，验证兑现、取消、
       重启和幂等恢复；主动派发与打断预算归 M33。
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
+      当前发布 `Procedure` 读取见 M30-29，带失败签名的经验读取和跨 scope 写入身份仍待完成。
 - [x] `M30-17` 交付 M30-12 的证据源增量，提供有界事件切片与 Record 水位，验证空页、
       文件重开、时间边界、错误传播及擦除屏障（Linux 离线）。
 - [x] `M30-18` 交付 M30-13 的社交身份目录，验收同名、跨域、版本覆盖与擦除后重开。
@@ -159,6 +161,7 @@
 - [x] `M30-26` 交付一次性目标纠正与提醒回执，验收历史、计数、重试、重开和联合擦除。
 - [x] `M30-27` 交付按本地时分与星期计算的日历计划，验收夏令时、规则耗尽、重开和换版。
 - [x] `M30-28` 交付目标存储的当前授权入口，验收精确归属、操作隔离、撤权与重试（Linux 离线）。
+- [x] `M30-29` 交付按当前已授权发布版本读取 `Procedure`，验收版本切换、撤回、归属和重开（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -941,3 +944,39 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-goal-auth-{test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24 当前技能发布的记忆读取
+
+基线 `907d3fa`，分支 `feat/m30-memory-systems`。按 DEC-134 实施 M30-29。新增
+`WorkflowRuntime::recall_skill_procedure`。宿主提供当前授权，目录确定当前版本；
+`MemoryQuery::record_id` 在既有 SQLite 记忆查询中按主键过滤，沿用 exact scope 和擦除屏障。
+复用现有投影写入与持久记录身份。升级后等新版同步再返回，旧版可单独查证。
+
+M7 技能运行接线用 SQLite 验证目录与记忆同步、精确租户隔离、重开、升级、旧版本拒绝、
+失效记录、内容不一致、墓碑、读取期间撤回与撤权、学习绑定重载，以及运行时关闭。既有
+M7 技能执行测试继续验证已撤回的技能注册无法执行。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 8
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m7_tool_runtime_skill_test mira_m4_memory_retrieval_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m7_tool_runtime_skill|m4_memory_retrieval)_test$'
+clang-tidy -p build/release --warnings-as-errors='*' src/workflow/tool_runtime_wiring.cpp \
+  src/context/memory_contracts.cpp src/storage/sqlite_memory_store.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| `SkillHint` / `RecoveryLesson` 的版本及环境检索、同一发布写入多个 scope | Mira Maintainers，冻结索引键与现有写入身份的兼容方式后验收 |
+| 生产授权、目录重载、Windows/Android 与远端 CI | Mira Maintainers 与宿主集成者，接入真实策略/发布目录后验证，提交后运行对应平台矩阵 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-skill-{test,asan-test,tidy,quality}.log`。

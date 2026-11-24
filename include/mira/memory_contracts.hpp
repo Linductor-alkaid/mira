@@ -399,6 +399,8 @@ struct MemoryQuery final {
     std::optional<std::string> social_attribute_field;
     // Exact predicate in one authorized, directed SocialRelationship scope.
     std::optional<std::string> social_relationship_predicate;
+    // Exact record filter inside the scope and lifecycle checks of recall.
+    std::optional<MemoryId> record_id = std::nullopt;
 
     [[nodiscard]] Result<void> validate() const;
 };

@@ -1180,6 +1180,9 @@ class SqliteMemoryStore::Impl final {
         if (!bitemporal) {
             sql += " AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)";
         }
+        if (request.record_id) {
+            sql += " AND id = ?";
+        }
         if (kind_filter) {
             sql += " AND kind IN (";
             for (std::size_t index = 0; index < request.kinds->size(); ++index) {
@@ -1221,6 +1224,11 @@ class SqliteMemoryStore::Impl final {
         if (!bitemporal) {
             sqlite3_bind_int64(universe.get(), next_param, now);
             ++next_param;
+        }
+        if (request.record_id) {
+            const auto id = request.record_id->to_string();
+            sqlite3_bind_text(universe.get(), next_param++, id.c_str(), -1,
+                              storage::transient_copy());
         }
         if (kind_filter) {
             for (const auto kind : *request.kinds) {

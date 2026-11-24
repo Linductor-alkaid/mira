@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md) 交付按当前授权和发布版本的
+技能 `Procedure` 读取，见 [M30-29](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md) 为目标存储接入宿主当前授权，
 见 [M30-28](m30-long-term-memory-integration.md#5-工作项)。
 

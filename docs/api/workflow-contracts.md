@@ -341,6 +341,22 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
 - Executor 路由（设计 §7）：episode/lesson 写与失败检索均为同步 IMemory 门面调用
   （后端自路由 store worker，M4 §17）；无新任务类别、timer 或私有并发；关闭顺序不变。
 
+## 当前技能记忆
+
+宿主在串行控制面管理 `SkillPublicationRegistry`，并用 `sync_skill_procedure_index`
+将发布投影写入当前学习 scope。用精确技能名读取时，可指定预期描述符摘要。
+
+```cpp
+auto memory = workflow.recall_skill_procedure(
+    skills, "workspace.export_notes", check_current_skill_access, expected_descriptor_digest);
+```
+
+`check_current_skill_access` 是宿主的有界授权探针，接收精确 `MemoryScope` 和技能名，
+读取前后检查当前访问权。读取期间学习绑定发生变化时返回 `InvalidState`，授权失效返回
+`PermissionDenied`。未发布、已撤回、版本不符或当前记忆尚未同步时返回空。旧记录仍可按
+自身权限查证。宿主从已授权注册表解析后续执行入口。见
+[DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)。
+
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 
 - `WorkflowRecoveryOrchestrator`（Core，`mira_workflow` 目标内）：把一次失败升级变成

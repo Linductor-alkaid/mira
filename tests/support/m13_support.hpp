@@ -41,6 +41,9 @@ class FakeLearningMemory final : public IMemory {
             if (!scope_ok || record.status != MemoryStatus::Active) {
                 continue;
             }
+            if (query.record_id && record.id != *query.record_id) {
+                continue;
+            }
             if (query.kinds.has_value() && std::find(query.kinds->begin(), query.kinds->end(),
                                                      record.kind) == query.kinds->end()) {
                 continue;

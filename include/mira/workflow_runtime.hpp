@@ -21,11 +21,13 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -435,6 +437,16 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<WorkflowProcedureSyncReport>
     sync_skill_procedure_index(const SkillPublicationRegistry &skills);
 
+    // Host control-plane read. The authorizer checks live access to the
+    // installed learning scope and exact skill name before and after I/O.
+    // The current publication and memory row must agree. This returns data
+    // for recall; execution stays on the registered tool path.
+    using SkillProcedureAuthorizer = std::function<bool(const MemoryScope &, std::string_view)>;
+    [[nodiscard]] Result<std::optional<MemoryRecord>>
+    recall_skill_procedure(const SkillPublicationRegistry &skills, std::string_view name,
+                           const SkillProcedureAuthorizer &authorize,
+                           std::optional<Hash> expected_descriptor = std::nullopt) const;
+
     // Stops run producers, cancels active runs through the control plane and
     // drains drive futures within the bounded budget. Never shuts the
     // executor down: the host owns it and follows with MiraRuntime shutdown
@@ -702,6 +714,7 @@ class WorkflowRuntime final {
     std::shared_ptr<IMemory> learning_memory_;
     MemoryScope learning_scope_;
     WorkflowLearningLimits learning_limits_;
+    std::uint64_t learning_revision_ = 0;
     // Lessons already recorded per run (idempotent replay without a store
     // round-trip). Guarded by mutex_.
     std::unordered_map<WorkflowRunId, WorkflowRecoveryLesson, StrongIdHash<WorkflowRunId>>

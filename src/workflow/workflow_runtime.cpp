@@ -416,6 +416,7 @@ Result<void> WorkflowRuntime::set_learning_context(std::shared_ptr<IMemory> memo
     learning_memory_ = std::move(memory);
     learning_scope_ = std::move(scope);
     learning_limits_ = limits;
+    ++learning_revision_;
     return Result<void>{};
 }
 

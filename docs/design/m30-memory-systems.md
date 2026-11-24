@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.13
+> 版本：1.14
 > 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -18,7 +18,8 @@
 > [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)、
 > [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)、
 > [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)、
-> [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)
+> [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)、
+> [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -100,6 +101,10 @@ M30-27 增加本地时分和星期计划，使用宿主提供的版本化时区�
 M30-28 提供目标存储授权入口。宿主从认证身份指定精确归属。读写、分页和回执重试
 均在 SQLite worker 内向宿主复核当前策略，按资源及操作分别准入。存储的授权决定
 仅覆盖这次操作，后续派发前仍需当前授权。见[宿主 API](../api/durable-memory-host.md#目标存储授权)。
+
+M30-29 以宿主技能目录的当前描述符定位 `Procedure` 记录，在精确学习 scope 内按版本化
+记录 ID 查询。升级会切换索引，撤回和撤权会关闭当前召回，旧版保留作查证。运行入口仍由
+已授权工具注册表解析。见[当前技能记忆 API](../api/workflow-contracts.md#当前技能记忆)。
 
 ## 执行与验收
 

@@ -20,15 +20,19 @@
 #include "../support/test.hpp"
 #include "tr2_wiring_support.hpp"
 
+#include <mira/sqlite_memory_store.hpp>
+
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -695,6 +699,143 @@ int g5_episode_path_intact() {
     return 0;
 }
 
+int m30_current_procedure_recall() {
+    struct TemporaryDatabase {
+        const std::filesystem::path root = std::filesystem::temp_directory_path() /
+                                           ("mira-skill-" + Id128::generate().to_string());
+        ~TemporaryDatabase() {
+            std::error_code ignored;
+            std::filesystem::remove_all(root, ignored);
+        }
+    } database;
+    std::filesystem::create_directories(database.root);
+    WorkflowFixture fixture;
+    FixtureTool tool;
+    fixture.registry_ = registry_with(tool);
+    auto workflow = fixture.make_workflow();
+    SkillPublicationRegistry skills;
+    const std::string name = "fixture.recall_skill";
+    const auto v1 =
+        publish_skill_source(*workflow, fixture.registry_->exposed_tools(), skills, kWorkflowAlpha,
+                             name, "procedure recall v1", "delta.lookup", {1, 0, 0});
+    SqliteMemoryStoreOptions options;
+    options.path = database.root / "memory.db";
+    auto opened = SqliteMemoryStore::open(fixture.executor_, options);
+    MIRA_CHECK(opened);
+    std::shared_ptr<SqliteMemoryStore> memory = std::move(opened).value();
+    const MemoryScope scope{MemoryScopeKind::Agent, "fixture.current_procedure", "tenant-a"};
+    must(workflow->set_learning_context(memory, scope), "set procedure learning scope");
+    const auto authorized = [&](const MemoryScope &requested, std::string_view skill) {
+        return requested == scope && skill == name;
+    };
+
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorized).value());
+    MIRA_CHECK(must(workflow->sync_skill_procedure_index(skills), "sync v1").applied == 1);
+    const auto v1_record = workflow->recall_skill_procedure(skills, name, authorized).value();
+    MIRA_CHECK(v1_record && v1_record->kind == MemoryKind::Procedure && v1_record->scope == scope);
+    MIRA_CHECK(must(skill_procedure_entry_from_statement(v1_record->statement), "read v1 digest")
+                   .descriptor_digest == v1.descriptor.digest);
+    const auto denied = workflow->recall_skill_procedure(skills, name, {});
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
+    const auto probe_failure = workflow->recall_skill_procedure(
+        skills, name, [](const MemoryScope &, std::string_view) -> bool {
+            throw std::runtime_error("host failure");
+        });
+    MIRA_CHECK(!probe_failure && probe_failure.error().code == ErrorCode::PermissionDenied);
+    int probes = 0;
+    const auto withdrawn_during_read = workflow->recall_skill_procedure(
+        skills, name, [&](const MemoryScope &, std::string_view) { return ++probes == 1; });
+    MIRA_CHECK(probes == 2 && !withdrawn_during_read &&
+               withdrawn_during_read.error().code == ErrorCode::PermissionDenied);
+
+    const MemoryScope foreign{scope.kind, scope.subject_id, "tenant-b"};
+    must(workflow->set_learning_context(memory, foreign), "set foreign scope");
+    const auto authorize_any = [](const MemoryScope &, std::string_view) { return true; };
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorize_any).value());
+    must(workflow->set_learning_context(memory, scope), "restore scope");
+    probes = 0;
+    const auto rebound =
+        workflow->recall_skill_procedure(skills, name, [&](const MemoryScope &, std::string_view) {
+            if (++probes == 2)
+                must(workflow->set_learning_context(memory, scope), "replace learning binding");
+            return true;
+        });
+    MIRA_CHECK(!rebound && rebound.error().code == ErrorCode::InvalidState);
+
+    must(memory->close(), "close procedure memory");
+    auto reopened = SqliteMemoryStore::open(fixture.executor_, options);
+    MIRA_CHECK(reopened);
+    memory = std::move(reopened).value();
+    must(workflow->set_learning_context(memory, scope), "restore learning binding");
+    MIRA_CHECK(workflow->recall_skill_procedure(skills, name, authorized).value()->id ==
+               v1_record->id);
+
+    const auto v2 = make_lookup_definition(kWorkflowAlpha, {1, 0}, "procedure recall v2");
+    const auto view = fixture.registry_->exposed_tools();
+    const auto refs = extract_or_abort(v2, view);
+    const auto descriptor = must(make_skill_descriptor(v2, refs, view, name, {2, 0, 0}), "v2");
+    must(skills.upgrade_skill(name, descriptor, v2, refs, view,
+                              two_version_history(v1.definition, v2)),
+         "upgrade v2");
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorized).value());
+    MIRA_CHECK(must(workflow->sync_skill_procedure_index(skills), "sync v2").applied == 1);
+    MIRA_CHECK(
+        !workflow->recall_skill_procedure(skills, name, authorized, v1.descriptor.digest).value());
+    const auto record =
+        workflow->recall_skill_procedure(skills, name, authorized, descriptor.digest).value();
+    MIRA_CHECK(record && record->id != v1_record->id && memory->get(v1_record->id, scope).value());
+
+    MemoryMutation update;
+    update.type = MemoryMutationType::Update;
+    update.target = record->id;
+    update.scope = scope;
+    update.evidence = {EventId::generate()};
+    update.reason = MutationReasonCode::VerifiedEvent;
+    update.proposed = *record;
+    update.proposed.validity.valid_until = record->validity.valid_from;
+    update.expected_version = record->version;
+    update.id = MutationId::generate();
+    auto changed = must(memory->apply(update), "expire procedure validity");
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorized).value());
+    update.expected_version = changed.new_version;
+    update.id = MutationId::generate();
+    update.proposed = *record;
+    update.proposed.statement = "A different procedure";
+    changed = must(memory->apply(update), "change procedure statement");
+    const auto inconsistent = workflow->recall_skill_procedure(skills, name, authorized);
+    MIRA_CHECK(!inconsistent && inconsistent.error().code == ErrorCode::DataLoss);
+
+    update.expected_version = changed.new_version;
+    update.id = MutationId::generate();
+    update.proposed = *record;
+    changed = must(memory->apply(update), "restore procedure statement");
+    MIRA_CHECK(workflow->recall_skill_procedure(skills, name, authorized).value());
+    update.type = MemoryMutationType::Tombstone;
+    update.expected_version = changed.new_version;
+    update.id = MutationId::generate();
+    changed = must(memory->apply(update), "tombstone v2 procedure");
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorized).value());
+    update.type = MemoryMutationType::Update;
+    update.expected_version = changed.new_version;
+    update.id = MutationId::generate();
+    must(memory->apply(update), "restore recall fixture");
+    MIRA_CHECK(workflow->recall_skill_procedure(skills, name, authorized).value());
+    probes = 0;
+    const auto revoked_during_read =
+        workflow->recall_skill_procedure(skills, name, [&](const MemoryScope &, std::string_view) {
+            if (++probes == 2)
+                must(skills.revoke_skill(name, "no longer published"), "revoke v2");
+            return true;
+        });
+    MIRA_CHECK(probes == 2 && revoked_during_read && !revoked_during_read.value());
+    MIRA_CHECK(memory->get(record->id, scope).value()->status == MemoryStatus::Active);
+    MIRA_CHECK(!workflow->recall_skill_procedure(skills, name, authorized).value());
+    MIRA_CHECK(workflow->shutdown().clean);
+    const auto closed = workflow->recall_skill_procedure(skills, name, authorized);
+    MIRA_CHECK(!closed && closed.error().code == ErrorCode::Unavailable);
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // G6: consumer closure surface (M7-TR2-G6; consumer binary run via ctest)
 // ---------------------------------------------------------------------------
@@ -791,6 +932,7 @@ int main(int argc, char **argv) {
         {"G4 skill child passes compat gate", g4_skill_child_passes_compat_gate},
         {"G5 procedure sync wiring", g5_procedure_sync_wiring},
         {"G5 episode path intact", g5_episode_path_intact},
+        {"M30 current procedure recall", m30_current_procedure_recall},
         {"G6 public surface closure", g6_public_surface_closure},
     };
 
