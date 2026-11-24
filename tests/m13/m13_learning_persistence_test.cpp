@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <kairo/executor.hpp>
+#include <sqlite3.h>
 
 namespace {
 
@@ -824,13 +825,129 @@ int failing_store_keeps_cancel_and_shutdown_closed() {
     return 0;
 }
 
+int exact_recovery_recall_after_sqlite_upgrade() {
+    const auto root = temp_dir("recovery-key");
+    const MemoryScope current{MemoryScopeKind::Agent, "workspace-agent", "tenant-current"};
+    const MemoryScope foreign{current.kind, current.subject_id, "tenant-foreign"};
+    const RecoveryLessonKey key{WorkflowId::generate(), digest_string("current workflow version"),
+                                StepId::generate(), "tool_call", "mira.test:77"};
+    auto stale = key;
+    stale.ir_digest = digest_string("old workflow version");
+    auto other_reason = key;
+    other_reason.reason_code = "mira.test:770";
+    auto other_step = key;
+    other_step.step = StepId::generate();
+    auto other_kind = key;
+    other_kind.step_kind = "verify";
+    auto no_step = key;
+    no_step.step.reset();
+    no_step.step_kind.reset();
+    MemoryId local_id;
+    MemoryId foreign_id;
+    {
+        PersistenceHarness harness(root);
+        const auto insert = [&](const RecoveryLessonKey &address, const MemoryScope &scope,
+                                bool structured = true) -> Result<MemoryMutationResult> {
+            const auto now = Timestamp::now();
+            WorkflowRecoveryLesson lesson;
+            lesson.lesson_id = Id128::generate().to_string();
+            lesson.workflow_id = address.workflow.to_string();
+            lesson.ir_digest = address.ir_digest.to_string();
+            lesson.recovered_run_id = WorkflowRunId::generate().to_string();
+            lesson.failure = {lesson.workflow_id,
+                              address.step ? std::optional{address.step->to_string()}
+                                           : std::nullopt,
+                              address.step_kind, address.reason_code};
+            lesson.resumed_without_patch = true;
+            lesson.outcome = "recovered";
+            lesson.recorded_at_ms = wall_ms(now);
+            MemoryMutation add;
+            add.id = recovery_lesson_mutation_id(lesson.recovered_run_id);
+            add.scope = scope;
+            add.evidence = {EventId::generate()};
+            add.proposed = recovery_lesson_to_memory_record(lesson, scope, add.evidence, now.wall);
+            if (!structured)
+                add.proposed.statement = "legacy free-text lesson";
+            return harness.store->apply(add);
+        };
+        const auto local = insert(key, current);
+        const auto remote = insert(key, foreign);
+        MIRA_CHECK(local && remote);
+        local_id = local.value().record;
+        foreign_id = remote.value().record;
+        MIRA_CHECK(insert(stale, current) && insert(other_reason, current) &&
+                   insert(other_step, current) && insert(other_kind, current) &&
+                   insert(no_step, current) && insert(key, current, false));
+        harness.close();
+    }
+    {
+        sqlite3 *db = nullptr;
+        const auto path = (root / "learning.db").string();
+        MIRA_CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+        const int changed = sqlite3_exec(db,
+                                         "DROP INDEX memory_records_by_recovery_key;"
+                                         " UPDATE store_meta SET value='1.7'"
+                                         " WHERE key='schema_version';",
+                                         nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        MIRA_CHECK(changed == SQLITE_OK);
+    }
+    {
+        PersistenceHarness harness(root);
+        MIRA_CHECK(harness.store->diagnostics().disposition == StoreSchemaDisposition::Migrated);
+        WorkflowLearningLimits limits;
+        limits.max_retrieval_results = 1;
+        MIRA_CHECK(harness.workflow->set_learning_context(harness.store, current, limits));
+        const auto allowed = [&](const MemoryScope &scope, const RecoveryLessonKey &) {
+            return scope == current;
+        };
+        const auto matches = harness.workflow->recall_recovery_lessons(key, allowed);
+        MIRA_CHECK(matches && matches.value().records.size() == 1 &&
+                   matches.value().records.front().id == local_id);
+        MIRA_CHECK(matches.value().records.front().provenance.size() == 1);
+        const auto check_no_step = harness.workflow->recall_recovery_lessons(no_step, allowed);
+        MIRA_CHECK(check_no_step && check_no_step.value().records.size() == 1 &&
+                   check_no_step.value().records.front().id != local_id);
+        int probes = 0;
+        const auto revoked = harness.workflow->recall_recovery_lessons(
+            key, [&](const MemoryScope &, const RecoveryLessonKey &) { return ++probes == 1; });
+        MIRA_CHECK(probes == 2 && !revoked && revoked.error().code == ErrorCode::PermissionDenied);
+        probes = 0;
+        const auto changed = harness.workflow->recall_recovery_lessons(
+            key, [&](const MemoryScope &, const RecoveryLessonKey &) {
+                if (++probes == 2)
+                    static_cast<void>(
+                        harness.workflow->set_learning_context(harness.store, foreign));
+                return true;
+            });
+        MIRA_CHECK(!changed && changed.error().code == ErrorCode::InvalidState);
+        const auto denied = harness.workflow->recall_recovery_lessons(key, allowed);
+        MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
+        const auto remote = harness.workflow->recall_recovery_lessons(
+            key,
+            [&](const MemoryScope &scope, const RecoveryLessonKey &) { return scope == foreign; });
+        MIRA_CHECK(remote && remote.value().records.size() == 1 &&
+                   remote.value().records.front().id == foreign_id);
+        MIRA_CHECK(harness.workflow->set_learning_context(harness.store, current));
+        const auto erased = harness.store->erase({{}, local_id, "erase current lesson"});
+        MIRA_CHECK(erased && erased.value().counts.records_removed == 1);
+        const auto empty = harness.workflow->recall_recovery_lessons(key, allowed);
+        MIRA_CHECK(empty && empty.value().records.empty());
+        harness.close();
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+    return 0;
+}
+
 } // namespace
 
 int main() {
     const auto scenarios =
         std::to_array({sqlite_records_survive_owner_rebuild, event_recipe_rebuild_field_evidence,
                        slow_store_keeps_cancel_closed, slow_store_keeps_shutdown_drain_clean,
-                       failing_store_keeps_cancel_and_shutdown_closed});
+                       failing_store_keeps_cancel_and_shutdown_closed,
+                       exact_recovery_recall_after_sqlite_upgrade});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

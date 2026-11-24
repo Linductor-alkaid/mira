@@ -36,7 +36,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 7};
+constexpr SchemaVersion kMemoryStoreSchema{1, 8};
 constexpr const char *kStoreKind = "memory";
 constexpr const char *kSocialFieldIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
@@ -60,6 +60,24 @@ constexpr const char *kWorldPropertyIndex =
     " ON memory_records(scope_key, json_extract(document, '$.world_property.entity'),"
     " json_extract(document, '$.world_property.property'), valid_from DESC, recorded_at DESC, id)"
     " WHERE scope_kind IN ('world-environment','world-application');";
+constexpr const char *kRecoveryLessonKeySql =
+    "json_extract(CASE WHEN json_valid(statement) THEN statement END, '$.workflow_id',"
+    " '$.ir_digest', '$.failure.workflow_id', '$.failure.step_id', '$.failure.step_kind',"
+    " '$.failure.reason_code')";
+
+[[nodiscard]] std::string recovery_lesson_index_sql() {
+    return std::string("CREATE INDEX IF NOT EXISTS memory_records_by_recovery_key"
+                       " ON memory_records(scope_key, ") +
+           kRecoveryLessonKeySql + ", recorded_at DESC, id) WHERE kind='recovery-lesson';";
+}
+
+[[nodiscard]] std::string recovery_lesson_key_value(const RecoveryLessonKey &key) {
+    const auto workflow = key.workflow.to_string();
+    return canonical_json_string(
+        JsonValue::Array{workflow, key.ir_digest.to_string(), workflow,
+                         key.step ? JsonValue{key.step->to_string()} : JsonValue{},
+                         key.step_kind ? JsonValue{*key.step_kind} : JsonValue{}, key.reason_code});
+}
 
 constexpr const char *kSchemaDdl =
     "CREATE TABLE IF NOT EXISTS store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
@@ -1240,6 +1258,7 @@ class SqliteMemoryStore::Impl final {
             request.as_of_recorded.has_value() || request.as_of_valid.has_value();
         const bool relationship = request.social_relationship_predicate.has_value();
         const bool social = relationship || request.social_attribute_field.has_value();
+        const bool recovery = request.recovery_lesson_key.has_value();
         const bool kind_filter = request.kinds.has_value() && !social;
 
         // Base universe: exact scope equality, nothing crosses by similarity.
@@ -1279,11 +1298,18 @@ class SqliteMemoryStore::Impl final {
                          " AND json_extract(document, '$.social_relationship.predicate') = ?"
                        : " AND kind = 'social-attribute'"
                          " AND json_extract(document, '$.social_attribute.field') = ?";
+        }
+        if (recovery) {
+            sql += " AND kind='recovery-lesson' AND source_namespace IS NULL"
+                   " AND verification IN ('verified','human-confirmed') AND ";
+            sql += kRecoveryLessonKeySql;
+            sql += " = ?";
+        }
+        if (social || recovery)
             sql += " AND recorded_at <= ? AND valid_from <= ?"
                    " AND (valid_until IS NULL OR valid_until > ?)";
-        }
-        sql += social ? " ORDER BY recorded_at DESC, id LIMIT 4096"
-                      : " ORDER BY recorded_at DESC LIMIT 4096";
+        sql += social || recovery ? " ORDER BY recorded_at DESC, id LIMIT 4096"
+                                  : " ORDER BY recorded_at DESC LIMIT 4096";
         Statement universe(db, sql.c_str());
         if (!universe.valid()) {
             return store_error(ErrorCode::Internal, "memory query failed to prepare");
@@ -1323,6 +1349,13 @@ class SqliteMemoryStore::Impl final {
                                                  : *request.social_attribute_field;
             sqlite3_bind_text(universe.get(), next_param++, predicate.c_str(), -1,
                               storage::transient_copy());
+        }
+        if (recovery) {
+            const auto key = recovery_lesson_key_value(*request.recovery_lesson_key);
+            sqlite3_bind_text(universe.get(), next_param++, key.c_str(), -1,
+                              storage::transient_copy());
+        }
+        if (social || recovery) {
             const auto recorded_at =
                 request.as_of_recorded ? wall_nanos(*request.as_of_recorded) : now;
             const auto valid_at = request.as_of_valid ? wall_nanos(*request.as_of_valid) : now;
@@ -2608,7 +2641,7 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     }
     const std::string schema_ddl = std::string(kSchemaDdl) + kSocialFieldIndex +
                                    kSocialRelationshipIndexes + kSocialEnvironmentIndex +
-                                   kWorldPropertyIndex;
+                                   kWorldPropertyIndex + recovery_lesson_index_sql();
     auto opened = storage::open_reference_store(
         db_options, {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
                      [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
@@ -2647,7 +2680,13 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                              if (!migrated)
                                  return migrated.error();
                          }
-                         return storage::exec_sql(db, kWorldPropertyIndex);
+                         if (previous.minor < 7) {
+                             if (auto migrated = storage::exec_sql(db, kWorldPropertyIndex);
+                                 !migrated)
+                                 return migrated.error();
+                         }
+                         const auto sql = recovery_lesson_index_sql();
+                         return storage::exec_sql(db, sql.c_str());
                      }});
     if (!opened) {
         if (capacity && capacity->rejected())
@@ -2679,7 +2718,7 @@ SqliteMemoryStore::~SqliteMemoryStore() {
 
 Result<MemoryQueryResult> SqliteMemoryStore::query(const MemoryQuery &query) const {
     return impl_->run<MemoryQueryResult>(
-        [this, &query](sqlite3 *db) { return impl_->query(db, query); });
+        [this, query](sqlite3 *db) { return impl_->query(db, query); });
 }
 
 Result<WorldFactLookup> SqliteMemoryStore::lookup_world_fact(const WorldFactQuery &query) const {

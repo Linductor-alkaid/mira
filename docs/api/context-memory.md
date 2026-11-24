@@ -84,6 +84,9 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   ID。SQLite 在同一事务处理旧回执与新写入。默认实现提交旧身份以兼容已有后端。实现
   此接口的自定义后端需遵守 [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)
   的归属、保留与幂等规则。
+- `MemoryQuery::recovery_lesson_key` 在一个当前授权 scope 内按工作流、IR 摘要和完整失败键
+  查已核验的 `RecoveryLesson`。SQLite schema 1.8 在裁剪候选前匹配这些字段。省略步骤
+  字段时匹配记录中相应的空值。见 [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)。
 - 保留期清扫（设计 §16.4）：`IMemoryRetentionSweep::sweep(MemorySweepOptions)` 是存储
   所有者的跨 scope 入口，独立于每个方法都绑定 scope 的 `IMemory`。
   `MemorySweepOptions{max_records, max_versions, deadline}` 给出这一趟的上限；一趟在

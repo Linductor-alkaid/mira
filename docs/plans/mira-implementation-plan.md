@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md) 交付按工作流版本和失败签名读取
+验证后的恢复经验，见 [M30-31](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md) 交付同一技能发布在多个学习
 scope 的独立写入与旧回执兼容，见 [M30-30](m30-long-term-memory-integration.md#5-工作项)。
 

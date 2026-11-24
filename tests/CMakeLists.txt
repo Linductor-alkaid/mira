@@ -472,6 +472,7 @@ endfunction()
 
 mira_add_m13_persistence_test(mira_m13_learning_persistence_test
     m13/m13_learning_persistence_test.cpp)
+target_link_libraries(mira_m13_learning_persistence_test PRIVATE Mira::sqlite3)
 
 # M14 (DEC-031): the recovery orchestrator lives in Mira::workflow; its tests
 # also assemble a ModelGateway over a scripted provider.

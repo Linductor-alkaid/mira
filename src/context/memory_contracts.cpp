@@ -623,6 +623,14 @@ Result<void> MemoryQuery::validate() const {
     if (record_id && record_id->is_nil()) {
         return memory_error(MemoryDomainCode::InvalidRecord, "record filter must be non-nil");
     }
+    if (recovery_lesson_key) {
+        if (scopes.size() != 1 || as_of_recorded || as_of_valid || social_attribute_field ||
+            social_relationship_predicate)
+            return memory_error(MemoryDomainCode::InvalidRecord,
+                                "recovery lesson recall needs one current scope");
+        if (auto valid = recovery_lesson_key->validate(); !valid)
+            return valid.error();
+    }
     if (auto social = social_profile_detail::validate_query(*this); !social)
         return social.error();
     if (labels.has_value()) {

@@ -367,6 +367,18 @@ struct MemoryQueryQuality final {
     std::string note;
 };
 
+// Exact identity of one failure on one workflow version. Missing step fields
+// match only records with the respective fields absent.
+struct RecoveryLessonKey final {
+    WorkflowId workflow;
+    Sha256Digest ir_digest;
+    std::optional<StepId> step;
+    std::optional<std::string> step_kind;
+    std::string reason_code;
+
+    [[nodiscard]] Result<void> validate() const;
+};
+
 struct MemoryQuery final {
     // Mandatory ACL allowlist: results never include records outside these
     // exact scopes, regardless of similarity (design Context/Memory §6.1/§14.1).
@@ -408,6 +420,8 @@ struct MemoryQuery final {
     std::optional<std::string> social_relationship_predicate;
     // Exact record filter inside the scope and lifecycle checks of recall.
     std::optional<MemoryId> record_id = std::nullopt;
+    // Current verified RecoveryLesson records, in exactly one supplied scope.
+    std::optional<RecoveryLessonKey> recovery_lesson_key = std::nullopt;
 
     [[nodiscard]] Result<void> validate() const;
 };

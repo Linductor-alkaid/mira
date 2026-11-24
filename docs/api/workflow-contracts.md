@@ -363,6 +363,21 @@ SQLite 可以在宿主分别配置的学习 scope 内同步同一发布。新投
 后端沿用旧身份，支持独立写入需实现 `apply_add_with_legacy_identity`。见
 [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)。
 
+## 按版本读取恢复经验
+
+宿主从工作流版本和已知失败构造 `RecoveryLessonKey`，使用 `recall_recovery_lessons`
+查询当前学习 scope。缺少步骤 ID 或类型只匹配对应字段为空的旧经验。
+
+```cpp
+const RecoveryLessonKey key{workflow_id, ir_digest, failed_step_id, step_kind, reason_code};
+auto lessons = workflow.recall_recovery_lessons(key, check_current_recovery_access);
+```
+
+`check_current_recovery_access` 接收 scope 和完整失败键，在读取前后校验权限。学习绑定
+变更时旧结果失效。查询使用现有学习检索额度，返回记录 ID、来源事件和检索状态；结果仍需
+宿主按当前运行约束解释。自动失败升级沿现有经验装配路径。见
+[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)。
+
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 
 - `WorkflowRecoveryOrchestrator`（Core，`mira_workflow` 目标内）：把一次失败升级变成

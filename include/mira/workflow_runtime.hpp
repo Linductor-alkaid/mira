@@ -376,6 +376,14 @@ class WorkflowRuntime final {
     [[nodiscard]] Result<WorkflowRecoveryLesson>
     record_recovery_lesson(const WorkflowRunId &run_id);
 
+    // Host-only query of verified recovery experience in the installed
+    // learning scope. The probe authorizes exact access before and after I/O.
+    using RecoveryLessonAuthorizer =
+        std::function<bool(const MemoryScope &, const RecoveryLessonKey &)>;
+    [[nodiscard]] Result<MemoryQueryResult>
+    recall_recovery_lessons(const RecoveryLessonKey &key,
+                            const RecoveryLessonAuthorizer &authorize) const;
+
     // The stage-D publish gate (DEC-025 §3): structural validation, a DryRun
     // drive on the calling thread (empty parameters, defaults apply) and a
     // DryRunPassed version record with content-derived evidence. Gate
