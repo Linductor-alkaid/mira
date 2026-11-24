@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md) 接通一次性目标的待派发查询、准备身份与回执，
+见 [M30-43](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-144](../decisions/DEC-144-social-mention-extraction.md) 接通对已索引会话的自动正文引用提取，
 见 [M30-42](m30-long-term-memory-integration.md#5-工作项)。
 

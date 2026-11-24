@@ -91,6 +91,28 @@ struct GoalDuePage final {
     std::optional<GoalDueCursor> next; // Reuse the owner and cutoff on the next page.
 };
 
+struct GoalDispatchKey final {
+    GoalKey goal;
+    std::uint64_t revision = 0;
+    OperationId operation;
+    friend bool operator==(const GoalDispatchKey &, const GoalDispatchKey &) = default;
+};
+
+struct GoalDispatchSubmission final {
+    SessionId session;
+    TaskId task;
+    GoalTime submitted_at{};
+    friend bool operator==(const GoalDispatchSubmission &,
+                           const GoalDispatchSubmission &) = default;
+};
+
+struct GoalDispatchReceipt final {
+    GoalDispatchKey key;
+    GoalTime prepared_at{};
+    std::optional<GoalDispatchSubmission> submission;
+    friend bool operator==(const GoalDispatchReceipt &, const GoalDispatchReceipt &) = default;
+};
+
 struct GoalListQuery final {
     GoalOwner owner;
     std::optional<GoalState> state;
@@ -176,7 +198,11 @@ enum class GoalStoreOperation : std::uint8_t {
     Replace,
     Cancel,
     RecordOccurrence,
-    ReadOccurrence
+    ReadOccurrence,
+    ReadDispatchDue,
+    PrepareDispatch,
+    ReadDispatch,
+    RecordDispatchSubmission
 };
 
 struct GoalStoreAccess final {
@@ -223,6 +249,14 @@ class SqliteGoalStore final {
     [[nodiscard]] Result<GoalRecord> settle(const GoalKey &key, std::uint64_t expected_revision,
                                             GoalResolution resolution);
     [[nodiscard]] Result<GoalDuePage> due(const GoalDueQuery &query) const;
+    [[nodiscard]] Result<GoalDuePage> due_for_dispatch(const GoalDueQuery &query) const;
+    // Persists the stable dispatch identity. The host uses it on the task submission channel.
+    [[nodiscard]] Result<GoalDispatchReceipt>
+    prepare_dispatch(const GoalKey &key, std::uint64_t expected_revision, GoalTime cutoff);
+    [[nodiscard]] Result<std::optional<GoalDispatchReceipt>>
+    read_dispatch(const GoalKey &key) const;
+    [[nodiscard]] Result<GoalDispatchReceipt>
+    record_dispatch_submission(const GoalDispatchKey &key, GoalDispatchSubmission submission);
     [[nodiscard]] Result<GoalListPage> list(const GoalListQuery &query) const;
     [[nodiscard]] Result<void> erase(const GoalKey &key);
     [[nodiscard]] Result<GoalRecord> correct(const GoalKey &key, std::uint64_t expected_revision,

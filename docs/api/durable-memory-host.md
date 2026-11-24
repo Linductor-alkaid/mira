@@ -394,6 +394,30 @@ auto receipt = goals->record_reminder(key, corrected.value().revision,
 来自已登记的回执，纠正后继续计数。已结算目标可重试已有回执，不能登记新的回执。
 擦除目标会一并清理定义历史、提醒回执和计数。见 [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)。
 
+### 一次性目标的派发回执
+
+目标库 schema 1.4 提供 `due_for_dispatch`，以同样的截止时间和 ID 规则分页。已有提交
+回执、准备记录属于旧版本，以及取消、兑现或已经过期的目标从待派发查询中排除。
+`prepare_dispatch` 在事务中复核目标版本和期限，并持久分配 `key.operation`。同版本
+重试复用这个 ID，宿主可在提交结果不明或重启时用它对账。
+
+```cpp
+auto pending_dispatch = goals->due_for_dispatch({owner, cutoff, 32, {}});
+// 从已检查的查询结果中取出 due_goal。
+auto prepared = goals->prepare_dispatch(due_goal.key, due_goal.revision, cutoff);
+// 提交端确认任务和会话归属后登记原回执。
+auto submitted = goals->record_dispatch_submission(prepared.value().key,
+                                                    {session_id, task_id, submitted_at});
+```
+
+`read_dispatch` 可查询原准备时点和已记录的任务归属。相同回执可重放，已记录的会话、
+任务或时间冲突时返回 `AlreadyExists`。已取消或已纠正的目标仍可补记先前实际提交的
+任务。擦除时清除准备记录和提交回执。承诺兑现由独立结算事件推进。
+
+`open_authorized` 分别用 `ReadDispatchDue`、`PrepareDispatch`、`ReadDispatch` 和
+`RecordDispatchSubmission` 核对授权。集合查询依归属授权，其他操作带目标 ID。
+实际任务提交由协调层接线负责。见 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
+
 ## 重复计划与触发回执
 
 `SqliteGoalStore` schema 1.1 为固定 UTC 间隔的重复计划保存独立命名空间。计划的

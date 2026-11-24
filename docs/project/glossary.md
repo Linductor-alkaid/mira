@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.35
+> 版本：1.36
 > 更新日期：2026-11-24
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -362,6 +362,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Goal Reminder Receipt（目标提醒回执）**：
 宿主登记的已送达提醒，包含目标版本、送达事件 ID 和时间。回执是目标提醒计数的来源。
 见[DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)。
+
+**Goal Dispatch Receipt（目标派发回执）**：
+一次性目标的稳定派发操作 ID、目标版本和准备时点，以及提交后保存的任务、会话与
+提交时点。重试按原操作 ID 对账，目标兑现单独结算。见[DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
 **Goal Calendar Rule（目标日历规则）**：
 计划的本地时分、星期选择及带版本的时区偏移快照，用于计算确定的 UTC 触发时间。

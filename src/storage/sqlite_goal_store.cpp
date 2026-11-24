@@ -1,6 +1,7 @@
 #include <mira/sqlite_goal_store.hpp>
 
 #include "sqlite_goal_calendar.hpp"
+#include "sqlite_goal_store_internal.hpp"
 #include "sqlite_store_open.hpp"
 
 #include <mira/content_markers.hpp>
@@ -12,8 +13,18 @@
 
 namespace mira {
 namespace {
+using storage::bind_key;
+using storage::bind_owner;
+using storage::bind_text;
+using storage::bind_time;
+using storage::column_text;
+using storage::column_time;
+using storage::goal_error;
 using storage::Statement;
 using storage::Transaction;
+using storage::valid_key;
+using storage::valid_owner;
+using storage::valid_time;
 using Resource = GoalStoreResource;
 using Operation = GoalStoreOperation;
 
@@ -57,16 +68,6 @@ constexpr const char *kPlanColumns =
 constexpr const char *kCalendarSchema = "ALTER TABLE recurring_plans ADD COLUMN calendar TEXT;";
 constexpr auto kMaxSqlInteger = std::numeric_limits<std::int64_t>::max();
 
-Error goal_error(ErrorCode code, std::string message) {
-    return storage::store_error(code, "mira.goal_store", 0, std::move(message));
-}
-
-bool valid_owner(const GoalOwner &owner) { return !owner.tenant.is_nil() && !owner.user.is_nil(); }
-
-bool valid_key(const GoalKey &key) { return valid_owner(key.owner) && !key.id.is_nil(); }
-
-bool valid_time(GoalTime time) { return time.time_since_epoch().count() > 0; }
-
 bool valid_title(const std::string &title) {
     return title.size() <= 512 && title.find_first_not_of(" \t\r\n") != std::string::npos &&
            title.find('\0') == std::string::npos &&
@@ -96,37 +97,6 @@ bool resolution_matches_definition(const GoalResolution &resolution,
     if (resolution.state == GoalState::Expired)
         return expired;
     return resolution.state == GoalState::Cancelled || !expired;
-}
-
-bool bind_text(Statement &s, int position, const std::string &text) {
-    return sqlite3_bind_text(s.get(), position, text.data(), static_cast<int>(text.size()),
-                             storage::transient_copy()) == SQLITE_OK;
-}
-
-bool bind_owner(Statement &s, const GoalOwner &owner) {
-    return bind_text(s, 1, owner.tenant.to_string()) && bind_text(s, 2, owner.user.to_string());
-}
-
-bool bind_key(Statement &s, const GoalKey &key) {
-    return bind_owner(s, key.owner) && bind_text(s, 3, key.id.to_string());
-}
-
-bool bind_time(Statement &s, int position, std::optional<GoalTime> time) {
-    return (time ? sqlite3_bind_int64(s.get(), position, time->time_since_epoch().count())
-                 : sqlite3_bind_null(s.get(), position)) == SQLITE_OK;
-}
-
-std::string column_text(Statement &s, int index) {
-    const auto *text = sqlite3_column_text(s.get(), index);
-    return text ? std::string(reinterpret_cast<const char *>(text),
-                              static_cast<std::size_t>(sqlite3_column_bytes(s.get(), index)))
-                : std::string{};
-}
-
-std::optional<GoalTime> column_time(Statement &s, int index) {
-    if (sqlite3_column_type(s.get(), index) != SQLITE_INTEGER)
-        return std::nullopt;
-    return GoalTime{std::chrono::milliseconds{sqlite3_column_int64(s.get(), index)}};
 }
 
 bool null_column(Statement &s, int index) {
@@ -310,11 +280,22 @@ Result<std::vector<GoalRecord>> decode_rows(Statement &rows, const GoalOwner &ow
     return records;
 }
 
-Result<GoalDuePage> read_due(sqlite3 *db, const GoalDueQuery &query) {
-    const auto sql = std::string("SELECT ") + kColumns +
-                     " FROM goals WHERE tenant=?1 AND owner=?2 AND state=0 AND due_at<=?3"
-                     " AND (expires_at IS NULL OR expires_at>?3) AND (due_at,id)>(?4,?5)"
-                     " ORDER BY due_at,id LIMIT ?6";
+bool valid_due_query(const GoalDueQuery &query) {
+    return valid_owner(query.owner) && valid_time(query.cutoff) && query.limit > 0 &&
+           query.limit <= 128 &&
+           (!query.after || (valid_time(query.after->due_at) &&
+                             query.after->due_at <= query.cutoff && !query.after->goal.is_nil()));
+}
+
+Result<GoalDuePage> read_due(sqlite3 *db, const GoalDueQuery &query, bool for_dispatch = false) {
+    auto sql = std::string("SELECT ") + kColumns +
+               " FROM goals WHERE tenant=?1 AND owner=?2 AND state=0 AND due_at<=?3"
+               " AND (expires_at IS NULL OR expires_at>?3) AND (due_at,id)>(?4,?5)";
+    if (for_dispatch)
+        sql += " AND NOT EXISTS (SELECT 1 FROM goal_dispatches d WHERE d.tenant=goals.tenant"
+               " AND d.owner=goals.owner AND d.goal_id=goals.id"
+               " AND (d.task IS NOT NULL OR d.revision<>goals.revision))";
+    sql += " ORDER BY due_at,id LIMIT ?6";
     Statement rows(db, sql.c_str());
     if (!rows.valid() || !bind_owner(rows, query.owner) || !bind_time(rows, 3, query.cutoff) ||
         !bind_time(rows, 4, query.after ? query.after->due_at : GoalTime{}) ||
@@ -392,16 +373,18 @@ Result<void> erase_goal(sqlite3 *db, std::size_t capacity, const GoalKey &key) {
     }
     for (const char *sql :
          {"DELETE FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3",
-          "DELETE FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND goal_id=?3"}) {
+          "DELETE FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND goal_id=?3",
+          "DELETE FROM goal_dispatches WHERE tenant=?1 AND owner=?2 AND goal_id=?3"}) {
         Statement cleanup(db, sql);
         if (!cleanup.valid() || !bind_key(cleanup, key) ||
             sqlite3_step(cleanup.get()) != SQLITE_DONE)
             return goal_error(ErrorCode::Internal, "goal history erasure failed");
     }
-    Statement remaining(db,
-                        "SELECT 1 FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3"
-                        " UNION ALL SELECT 1 FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND "
-                        "goal_id=?3 LIMIT 1");
+    Statement remaining(
+        db, "SELECT 1 FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3"
+            " UNION ALL SELECT 1 FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND "
+            "goal_id=?3 UNION ALL SELECT 1 FROM goal_dispatches WHERE tenant=?1 AND owner=?2 AND "
+            "goal_id=?3 LIMIT 1");
     if (!remaining.valid() || !bind_key(remaining, key) ||
         sqlite3_step(remaining.get()) != SQLITE_DONE)
         return goal_error(ErrorCode::Internal, "goal history erasure did not complete");
@@ -897,34 +880,6 @@ Result<void> erase_plan_row(sqlite3 *db, std::size_t capacity, const GoalKey &ke
 }
 } // namespace
 
-class SqliteGoalStore::Impl final {
-  public:
-    Impl(kairo::Executor &executor, storage::DatabaseHandle handle, SqliteGoalStoreOptions config,
-         GoalStoreAuthorizer authorize)
-        : options(std::move(config)), authorizer(std::move(authorize)), database(std::move(handle)),
-          channel(executor, database.get(),
-                  {"mira-goal-store", options.max_pending_requests, options.operation_timeout}) {}
-
-    template <typename T, typename Op> Result<T> run(GoalStoreAccess access, Op op) {
-        return channel.run<T>([this, access, op = std::move(op)](sqlite3 *db) mutable -> Result<T> {
-            if (authorizer) {
-                try {
-                    if (!authorizer(access))
-                        return goal_error(ErrorCode::PermissionDenied, "goal store access denied");
-                } catch (...) {
-                    return goal_error(ErrorCode::PermissionDenied, "goal store access denied");
-                }
-            }
-            return op(db);
-        });
-    }
-
-    const SqliteGoalStoreOptions options;
-    const GoalStoreAuthorizer authorizer;
-    storage::DatabaseHandle database;
-    storage::StoreChannel channel;
-};
-
 SqliteGoalStore::SqliteGoalStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
 SqliteGoalStore::~SqliteGoalStore() { (void)close(); }
@@ -962,10 +917,11 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Execu
     db.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
     const std::string schema =
         std::string("CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);") +
-        kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema + kCalendarSchema;
+        kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema + kCalendarSchema +
+        storage::kGoalDispatchSchema;
     auto opened = storage::open_reference_store(
         db, {"goal-store",
-             {1, 3},
+             {1, 4},
              schema.c_str(),
              goal_error,
              [](sqlite3 *database, SchemaVersion previous) {
@@ -983,7 +939,11 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Execu
                      if (auto migrated = storage::exec_sql(database, migration.c_str()); !migrated)
                          return migrated;
                  }
-                 return storage::exec_sql(database, kCalendarSchema);
+                 if (previous.minor < 3) {
+                     if (auto migrated = storage::exec_sql(database, kCalendarSchema); !migrated)
+                         return migrated;
+                 }
+                 return storage::exec_sql(database, storage::kGoalDispatchSchema);
              }});
     if (!opened)
         return opened.error();
@@ -1026,13 +986,17 @@ Result<GoalRecord> SqliteGoalStore::settle(const GoalKey &key, std::uint64_t exp
 }
 
 Result<GoalDuePage> SqliteGoalStore::due(const GoalDueQuery &query) const {
-    if (!valid_owner(query.owner) || !valid_time(query.cutoff) || query.limit == 0 ||
-        query.limit > 128 ||
-        (query.after && (!valid_time(query.after->due_at) || query.after->due_at > query.cutoff ||
-                         query.after->goal.is_nil())))
+    if (!valid_due_query(query))
         return goal_error(ErrorCode::InvalidArgument, "invalid due goal query");
     return impl_->run<GoalDuePage>({query.owner, Resource::Goal, Operation::ReadDue, {}},
                                    [query](sqlite3 *db) { return read_due(db, query); });
+}
+
+Result<GoalDuePage> SqliteGoalStore::due_for_dispatch(const GoalDueQuery &query) const {
+    if (!valid_due_query(query))
+        return goal_error(ErrorCode::InvalidArgument, "invalid dispatch due query");
+    return impl_->run<GoalDuePage>({query.owner, Resource::Goal, Operation::ReadDispatchDue, {}},
+                                   [query](sqlite3 *db) { return read_due(db, query, true); });
 }
 
 Result<GoalListPage> SqliteGoalStore::list(const GoalListQuery &query) const {

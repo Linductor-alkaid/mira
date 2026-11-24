@@ -248,6 +248,7 @@ add_library(mira_state_store
     src/storage/sqlite_social_directory.cpp
     src/storage/social_message_inference.cpp
     src/storage/sqlite_goal_store.cpp
+    src/storage/sqlite_goal_dispatch.cpp
     src/storage/sqlite_goal_calendar.cpp
 )
 add_library(Mira::state_store ALIAS mira_state_store)
