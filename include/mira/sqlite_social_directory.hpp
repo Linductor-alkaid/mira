@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mira/memory_contracts.hpp>
 #include <mira/social_identity.hpp>
 
 #include <chrono>
@@ -35,12 +36,25 @@ struct SocialAliasResult final {
     bool truncated = false;
 };
 
+struct SocialAccountBinding final {
+    SocialObjectKey object;
+    std::uint64_t object_revision = 0;
+    EventId source_event; // First admitted source or link evidence.
+    friend bool operator==(const SocialAccountBinding &, const SocialAccountBinding &) = default;
+};
+
+struct SocialAccountAttributeRecall final {
+    SocialAccountBinding binding;
+    MemoryQueryResult assertions;
+};
+
 struct SqliteSocialDirectoryOptions final {
     std::filesystem::path path;
     std::size_t max_environments = 256;
     std::size_t max_objects = 4096; // Includes object erasure barriers.
     std::size_t max_pending_requests = 32;
     std::chrono::milliseconds operation_timeout{30000};
+    std::size_t max_accounts = 16384; // Includes account erasure barriers.
 };
 
 // Host-owned authoritative identity directory. All entry points require a
@@ -62,6 +76,18 @@ class SqliteSocialDirectory final {
     [[nodiscard]] Result<std::optional<SocialObjectIdentity>> read(const SocialObjectKey &) const;
     [[nodiscard]] Result<SocialAliasResult> resolve(const SocialEnvironmentKey &, std::string alias,
                                                     std::size_t limit = 8) const;
+    [[nodiscard]] Result<std::optional<SocialAccountBinding>>
+    resolve_account(const SocialEnvironmentKey &, const SocialAccountKey &) const;
+    // source_event is a committed event authorized and validated by the host.
+    // Supply a known object when evidence establishes the account's owner.
+    [[nodiscard]] Result<SocialAccountBinding>
+    observe_account(const SocialEnvironmentKey &, const SocialAccountKey &, EventId source_event,
+                    std::optional<SocialObjectKey> known_object = std::nullopt);
+    // Requires a paired memory store. The caller supplies the authorized
+    // environment and exact field from the agent's current conversation.
+    [[nodiscard]] Result<std::optional<SocialAccountAttributeRecall>>
+    recall_account_attribute(const SocialEnvironmentKey &, const SocialAccountKey &,
+                             std::string field, std::size_t limit = 8) const;
     [[nodiscard]] Result<void> erase_object(const SocialObjectKey &);
     [[nodiscard]] Result<void> erase_environment(const SocialEnvironmentKey &);
     [[nodiscard]] Result<void> close() noexcept;

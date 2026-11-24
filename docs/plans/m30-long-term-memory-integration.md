@@ -68,6 +68,9 @@
 - [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)：自动失败升级优先读取精确恢复经验。
 - [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)：以已结算技能调用为证据记录 SkillHint。
 - [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)：技能记忆的环境范围。
+- [DEC-140](../decisions/DEC-140-source-account-identity.md)：来源账号与当前交谈对象。
+- [DEC-141](../decisions/DEC-141-automatic-record-pages.md)：交互结算后自动处理多页事件。
+- [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -150,7 +153,7 @@
 - [ ] `M30-13` 提供社交对象与关系的稳定身份、属性级证据和环境内索引，验证同名歧义和跨域隔离。
 - [x] `M30-14` 接通环境/应用事实的实体、属性与时态查询，验证环境隔离及过期重新观察（Linux / Simulator）。
 - [ ] `M30-15` 持久化目标和承诺的状态、授权、到期索引及重复计划身份，验证兑现、取消、
-      重启和幂等恢复；主动派发与打断预算归 M33。
+      重启和幂等恢复。承诺到期派发见 M30-37，主动输出与打断预算见 M33。
 - [ ] `M30-16` 接通技能目录和带版本的经验检索，验证撤回、版本迁移及当前权限。
       当前发布 `Procedure` 读取与范围化写入见 M30-29/30，恢复经验的宿主精确读取见 M30-31。
       自动升级路径接入见 M30-32，证据化 `SkillHint` 读写见 M30-33，独立环境范围见 M30-34。
@@ -174,6 +177,11 @@
 - [x] `M30-32` 接通自动失败升级的精确恢复经验检索，验收总预算、回补和迟到失效（Linux 离线）。
 - [x] `M30-33` 交付带技能调用证据的 `SkillHint` 写入与当前版本读取，验收归属、撤权和擦除（Linux 离线）。
 - [x] `M30-34` 交付按工作或社交环境隔离的技能记忆范围，验收换绑、事件与技能隔离及擦除。
+- [x] `M30-35` 交付消息来源账号的持久身份解析与首次接纳，验收跨来源绑定、同名、重放、迁移和擦除（Linux 离线）。
+- [ ] `M30-36` 接通社交消息的自动事件记录、发言人及提及消歧、跨来源同人判断、关系与属性候选、证据关联和画像召回。验收 QQ/B 站合成双来源、多人群聊、反证拆分和跨环境隔离。
+- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
+- [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
+- [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1176,3 +1184,46 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **4/4**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-environment-{final-test,asan-test,tidy,nested-tidy,quality}.log`。
+
+### 2026-11-24 来源账号及结算后多页提取
+
+基线 `2d29886`，分支 `feat/m30-memory-systems`。DEC-140 交付从已认证来源取得当前发言者
+的持久目录 API、已有可靠证据时绑定新账号、按账号精确读取画像断言和擦除后的重放屏障。
+DEC-141 增加协调层终态 Record 的有界多页提取，复用已有作业、截止时间和提交管线。
+
+- `mira_m30_social_directory_test` 覆盖同名不同人、QQ 与 B 站合成来源、并发首次观察、
+  重开、来源回执、绑定冲突、跨租户和环境、账号容量、对象及环境擦除。
+- `mira_m30_social_erasure_recovery_test` 覆盖旧目录迁移及配对画像召回，验证联合擦除
+  未结算时读写封闭，恢复后旧账号消息被拒。
+- `mira_m30_recording_test` 覆盖结算后自动多页写入、页上限、同一快照排除后到事件、
+  部分提交后再次读取及无效页上限拒绝。`mira_m30_lifecycle_faults_test` 和
+  `mira_m36_memory_agent_test` 复验现有生命周期及服务契约。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3。复现命令如下。
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_recording_test mira_m30_lifecycle_faults_test \
+  mira_m30_social_directory_test mira_m30_social_profile_test mira_m30_social_relationship_test \
+  mira_m30_social_erasure_recovery_test mira_m36_memory_agent_test
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m30_(recording|lifecycle_faults|social_(directory|profile|relationship|erasure_recovery))|m36_memory_agent)_test$'
+printf '%s\n' src/storage/sqlite_social_directory.cpp src/context/memory_agent_jobs.cpp \
+  src/interaction/interaction_memory.cpp | xargs -P 2 -n 1 clang-tidy -p build/release --warnings-as-errors='*'
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实 QQ/B 站和模型推断 | 建立真实 Adapter 与证据提取后由 Mira Maintainers 和宿主集成者复跑多人对话、同人归并与反证纠正 |
+| 承诺自动派发及跨进程提取水位 | Mira Maintainers 按 M30-37/38 交付，在持久实现中补跑重启、漏触发、执行回执以及证据重放 |
+| Windows、Android 与远端 CI | Mira Maintainers 提交后运行目标平台矩阵 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **7/7**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-auto-record-{release-test,asan-test,tidy,quality}.log`
+和 `/tmp/mira-m30-accounts-tidy.log`。

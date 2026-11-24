@@ -30,6 +30,7 @@ class IConversationContextIndex;
 [[nodiscard]] Sha256Digest memory_erasure_scope_digest(const MemoryScope &scope);
 
 enum class MemoryAgentMode : std::uint8_t { Recall, Record, Compress };
+inline constexpr std::size_t kMaxRecordPagesPerJob = 8;
 
 enum class PreferenceProposalState : std::uint8_t {
     Pending,
@@ -132,6 +133,8 @@ struct MemoryAgentRequest final {
     // Foreground jobs may flow back through continuation_source().
     bool foreground = false;
     std::optional<std::uint64_t> expected_revision;
+    // Record only. Additional pages share the first page's event snapshot and deadline.
+    std::size_t record_page_limit = 1;
 };
 
 struct MemoryAgentResult final {

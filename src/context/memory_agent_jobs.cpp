@@ -89,6 +89,8 @@ Result<void> MemoryAgentService::State::emit(const Job &job, const char *type,
             detail.emplace_back("projection_digest",
                                 result->projection_artifact->digest.to_string());
         }
+    } else if (job.request.mode == MemoryAgentMode::Record) {
+        detail.emplace_back("through_sequence", std::to_string(job.after_sequence));
     }
     AppendRequest append;
     append.event_id = EventId::generate();
@@ -115,6 +117,9 @@ Result<MemoryAgentHandle> MemoryAgentService::State::submit(MemoryAgentRequest r
     if (request.mode != MemoryAgentMode::Recall && request.mode != MemoryAgentMode::Record &&
         request.mode != MemoryAgentMode::Compress)
         return error(ErrorCode::InvalidArgument, "unknown memory agent mode");
+    if (request.record_page_limit == 0 || request.record_page_limit > kMaxRecordPagesPerJob ||
+        (request.mode != MemoryAgentMode::Record && request.record_page_limit != 1))
+        return error(ErrorCode::InvalidArgument, "invalid memory record page limit");
     if (request.query.size() > 4 * 1024 || request.history.size() > config.max_history_items)
         return error(ErrorCode::ResourceExhausted, "memory job input capacity exceeded");
     if (request.mode == MemoryAgentMode::Compress &&
@@ -204,6 +209,27 @@ void MemoryAgentService::State::run(const std::shared_ptr<Job> &job, kairo::Stop
     Result<MemoryAgentResult> outcome = error(ErrorCode::Internal, "memory job failed");
     try {
         outcome = execute(job, context);
+        for (std::size_t pages = 1; pages < job->request.record_page_limit && outcome &&
+                                    outcome.value().more_pending && job->record_snapshot;
+             ++pages) {
+            auto next = execute(job, context);
+            if (!next) {
+                outcome = next.error();
+                break;
+            }
+            auto &combined = outcome.value();
+            auto &page = next.value();
+            combined.revision = page.revision;
+            combined.through_event_sequence = page.through_event_sequence;
+            combined.more_pending = page.more_pending;
+            combined.degraded = combined.degraded || page.degraded;
+            auto &report = combined.consolidation;
+            report.candidates_examined += page.consolidation.candidates_examined;
+            report.candidates_truncated += page.consolidation.candidates_truncated;
+            std::ranges::move(page.consolidation.entries, std::back_inserter(report.entries));
+            std::ranges::move(page.consolidation.pending_approval,
+                              std::back_inserter(report.pending_approval));
+        }
     } catch (...) {
         outcome = error(ErrorCode::Internal, "memory job raised an exception");
     }
@@ -518,6 +544,8 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         } else if (input.mode == MemoryAgentMode::Record) {
             work.recorded_through = std::max(work.recorded_through, result.through_event_sequence);
             work.record_snapshot = pending_record_snapshot;
+            job->after_sequence = work.recorded_through;
+            job->record_snapshot = work.record_snapshot;
         } else {
             std::string text = "[Memory agent checkpoint: untrusted historical data]\n";
             for (const auto &note : proposal.summary) {

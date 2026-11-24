@@ -21,6 +21,12 @@ constexpr std::size_t kMaxAliases = 16;
 constexpr const char *kErasureSchema =
     "CREATE TABLE social_erasure_pending(slot INTEGER PRIMARY KEY CHECK(slot=1),"
     " tenant TEXT NOT NULL, environment TEXT NOT NULL, object TEXT);";
+constexpr const char *kAccountsSchema =
+    "CREATE TABLE social_accounts(scope TEXT NOT NULL,account_key TEXT NOT NULL,"
+    " object TEXT,source_event TEXT,CHECK((object IS NULL)=(source_event IS NULL)),"
+    " PRIMARY KEY(scope,account_key));"
+    "CREATE INDEX social_accounts_by_object ON social_accounts(scope,object)"
+    " WHERE object IS NOT NULL;";
 constexpr const char *kSchema =
     "CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
     "CREATE TABLE social_environments(scope TEXT PRIMARY KEY,erased INTEGER NOT NULL"
@@ -42,6 +48,18 @@ bool valid_environment(const SocialEnvironmentKey &environment) {
 std::string scope_key(const SocialEnvironmentKey &environment) {
     return digest_string("mira.social.environment.v1/" + environment.tenant.to_string() + "/" +
                          environment.environment.to_string())
+        .to_string();
+}
+
+Result<std::string> account_key(const SocialAccountKey &account, const std::string &scope) {
+    if (account.account.is_nil() || account.source.empty() || account.source.size() > 64 ||
+        !std::ranges::all_of(account.source, [](char byte) {
+            return (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') || byte == '.' ||
+                   byte == '-' || byte == '_';
+        }))
+        return directory_error(ErrorCode::InvalidArgument, "invalid social account key");
+    return digest_string("mira.social.account.v1/" + scope + "/" + account.source + "/" +
+                         account.account.to_string())
         .to_string();
 }
 
@@ -323,6 +341,92 @@ Result<void> activate_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &
     return transaction.commit();
 }
 
+Result<std::optional<SocialAccountBinding>>
+read_account_binding(sqlite3 *db, const SocialEnvironmentKey &environment, const std::string &scope,
+                     const std::string &account) {
+    Statement lookup(db, "SELECT a.object,a.source_event,o.revision FROM social_accounts a"
+                         " LEFT JOIN social_objects o ON o.scope=a.scope AND o.object=a.object"
+                         " WHERE a.scope=?1 AND a.account_key=?2");
+    if (!lookup.valid() || !bind_text(lookup, 1, scope) || !bind_text(lookup, 2, account))
+        return directory_error(ErrorCode::Internal, "social account lookup preparation failed");
+    const auto step = sqlite3_step(lookup.get());
+    if (step == SQLITE_DONE)
+        return std::optional<SocialAccountBinding>{};
+    if (step != SQLITE_ROW)
+        return directory_error(ErrorCode::Internal, "social account lookup failed");
+    if (sqlite3_column_type(lookup.get(), 0) == SQLITE_NULL)
+        return directory_error(ErrorCode::PermissionDenied, "social account has been erased");
+    const auto object = Id128::parse(column(lookup, 0));
+    const auto source_event = EventId::parse(column(lookup, 1));
+    const auto version = sqlite3_column_int64(lookup.get(), 2);
+    if (!object || object->is_nil() || !source_event || source_event->is_nil() || version <= 0)
+        return directory_error(ErrorCode::DataLoss, "social account binding is malformed");
+    return std::optional{SocialAccountBinding{
+        {environment, *object}, static_cast<std::uint64_t>(version), *source_event}};
+}
+
+Result<SocialAccountBinding> admit_account(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
+                                           const SocialEnvironmentKey &environment,
+                                           const std::string &scope, const std::string &account,
+                                           EventId source_event,
+                                           const std::optional<SocialObjectKey> &known_object) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return directory_error(ErrorCode::Unavailable, "social account transaction unavailable");
+    const auto active = ensure_environment(db, scope, options.max_environments);
+    if (!active)
+        return active.error();
+    if (!active.value())
+        return directory_error(ErrorCode::PermissionDenied, "social environment has been erased");
+    const auto existing = read_account_binding(db, environment, scope, account);
+    if (!existing)
+        return existing.error();
+    if (existing.value()) {
+        if (known_object && existing.value()->object != *known_object)
+            return directory_error(ErrorCode::AlreadyExists,
+                                   "social account belongs to a different object");
+        return *existing.value();
+    }
+    if (auto room =
+            require_capacity(db, "SELECT count(*) FROM social_accounts", options.max_accounts);
+        !room)
+        return room.error();
+    const auto object = known_object ? known_object->object : Id128::generate();
+    const auto object_text = object.to_string();
+    const auto current = revision(db, scope, object_text);
+    if (!current)
+        return current.error();
+    std::uint64_t version = 1;
+    if (known_object) {
+        if (current.value() == 0)
+            return directory_error(ErrorCode::PermissionDenied, "social object has been erased");
+        if (!current.value())
+            return directory_error(ErrorCode::NotFound, "social object is missing");
+        if (*current.value() < 0)
+            return directory_error(ErrorCode::DataLoss, "social object revision is malformed");
+        version = static_cast<std::uint64_t>(*current.value());
+    } else {
+        if (current.value())
+            return directory_error(ErrorCode::AlreadyExists,
+                                   "generated social object already exists");
+        if (auto room =
+                require_capacity(db, "SELECT count(*) FROM social_objects", options.max_objects);
+            !room)
+            return room.error();
+        if (auto created = set_revision(db, scope, object_text, 1); !created)
+            return created.error();
+    }
+    Statement insert(db, "INSERT INTO social_accounts(scope,account_key,object,source_event)"
+                         " VALUES(?1,?2,?3,?4)");
+    if (!insert.valid() || !bind_text(insert, 1, scope) || !bind_text(insert, 2, account) ||
+        !bind_text(insert, 3, object_text) || !bind_text(insert, 4, source_event.to_string()) ||
+        sqlite3_step(insert.get()) != SQLITE_DONE)
+        return directory_error(ErrorCode::Internal, "social account binding write failed");
+    if (auto committed = transaction.commit(); !committed)
+        return committed.error();
+    return SocialAccountBinding{{environment, object}, version, source_event};
+}
+
 Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &options,
                             const ErasureTarget &target, bool paired) {
     Transaction transaction(db);
@@ -351,6 +455,12 @@ Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &opt
         }
         if (auto fenced = set_revision(db, scope, object, 0); !fenced)
             return fenced;
+        if (auto removed = delete_rows(db,
+                                       "UPDATE social_accounts SET object=NULL,source_event=NULL"
+                                       " WHERE scope=?1 AND object=?2 AND object IS NOT NULL",
+                                       scope, &object);
+            !removed)
+            return removed;
         if (auto removed = delete_rows(
                 db, "DELETE FROM social_aliases WHERE scope=?1 AND object=?2", scope, &object);
             !removed)
@@ -361,6 +471,9 @@ Result<void> erase_identity(sqlite3 *db, const SqliteSocialDirectoryOptions &opt
             sqlite3_step(fence.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
             return directory_error(ErrorCode::Internal, "social environment erasure fence failed");
         if (auto removed = delete_rows(db, "DELETE FROM social_aliases WHERE scope=?1", scope);
+            !removed)
+            return removed;
+        if (auto removed = delete_rows(db, "DELETE FROM social_accounts WHERE scope=?1", scope);
             !removed)
             return removed;
         if (auto removed = delete_rows(db, "DELETE FROM social_objects WHERE scope=?1", scope);
@@ -465,9 +578,9 @@ Result<std::unique_ptr<SqliteSocialDirectory>>
 SqliteSocialDirectory::open(kairo::Executor &executor, SqliteSocialDirectoryOptions options,
                             std::shared_ptr<SqliteMemoryStore> memory) {
     if (options.path.empty() || options.max_environments == 0 || options.max_environments > 4096 ||
-        options.max_objects == 0 || options.max_objects > 100000 ||
-        options.max_pending_requests == 0 || options.max_pending_requests > 256 ||
-        options.operation_timeout.count() <= 0 ||
+        options.max_objects == 0 || options.max_objects > 100000 || options.max_accounts == 0 ||
+        options.max_accounts > 1000000 || options.max_pending_requests == 0 ||
+        options.max_pending_requests > 256 || options.operation_timeout.count() <= 0 ||
         options.operation_timeout > std::chrono::minutes(10))
         return directory_error(ErrorCode::InvalidArgument, "invalid social directory options");
 
@@ -475,14 +588,19 @@ SqliteSocialDirectory::open(kairo::Executor &executor, SqliteSocialDirectoryOpti
     db_options.path = options.path;
     db_options.exclusive_owner = true;
     db_options.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
-    const std::string schema = std::string(kSchema) + kErasureSchema;
+    const std::string schema = std::string(kSchema) + kErasureSchema + kAccountsSchema;
     auto opened = storage::open_reference_store(
-        db_options,
-        {"social-directory",
-         {1, 1},
-         schema.c_str(),
-         directory_error,
-         [](sqlite3 *db, SchemaVersion) { return storage::exec_sql(db, kErasureSchema); }});
+        db_options, {"social-directory",
+                     {1, 2},
+                     schema.c_str(),
+                     directory_error,
+                     [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
+                         if (previous.minor < 1) {
+                             if (auto installed = storage::exec_sql(db, kErasureSchema); !installed)
+                                 return installed.error();
+                         }
+                         return storage::exec_sql(db, kAccountsSchema);
+                     }});
     if (!opened)
         return opened.error();
     if (opened.value().diagnostics.read_only)
@@ -598,6 +716,78 @@ Result<SocialAliasResult> SqliteSocialDirectory::resolve(const SocialEnvironment
         }
         return result;
     });
+}
+
+Result<std::optional<SocialAccountBinding>>
+SqliteSocialDirectory::resolve_account(const SocialEnvironmentKey &environment,
+                                       const SocialAccountKey &account) const {
+    if (!valid_environment(environment))
+        return directory_error(ErrorCode::InvalidArgument, "invalid social account environment");
+    auto scope = scope_key(environment);
+    auto hashed = account_key(account, scope);
+    if (!hashed)
+        return hashed.error();
+    return impl_->run<std::optional<SocialAccountBinding>>(
+        [environment, scope = std::move(scope), account = std::move(hashed).value()](sqlite3 *db) {
+            return read_account_binding(db, environment, scope, account);
+        });
+}
+
+Result<SocialAccountBinding>
+SqliteSocialDirectory::observe_account(const SocialEnvironmentKey &environment,
+                                       const SocialAccountKey &account, EventId source_event,
+                                       std::optional<SocialObjectKey> known_object) {
+    if (!valid_environment(environment) || source_event.is_nil() ||
+        (known_object && known_object->object.is_nil()))
+        return directory_error(ErrorCode::InvalidArgument, "invalid social account observation");
+    if (known_object && known_object->environment != environment)
+        return directory_error(ErrorCode::PermissionDenied,
+                               "known object is outside the social environment");
+    auto scope = scope_key(environment);
+    auto hashed = account_key(account, scope);
+    if (!hashed)
+        return hashed.error();
+    return impl_->run<SocialAccountBinding>(
+        [state = impl_.get(), environment, scope = std::move(scope),
+         account = std::move(hashed).value(), source_event, known_object](sqlite3 *db) {
+            return admit_account(db, state->options, environment, scope, account, source_event,
+                                 known_object);
+        });
+}
+
+Result<std::optional<SocialAccountAttributeRecall>>
+SqliteSocialDirectory::recall_account_attribute(const SocialEnvironmentKey &environment,
+                                                const SocialAccountKey &account, std::string field,
+                                                std::size_t limit) const {
+    if (!is_social_attribute_field(field) || limit == 0 || limit > 64)
+        return directory_error(ErrorCode::InvalidArgument,
+                               "invalid social account attribute query");
+    if (!impl_->memory)
+        return directory_error(ErrorCode::InvalidState,
+                               "social profile recall needs a paired store");
+    const auto binding = resolve_account(environment, account);
+    if (!binding)
+        return binding.error();
+    if (!binding.value())
+        return std::optional<SocialAccountAttributeRecall>{};
+    auto scope = social_object_scope(binding.value()->object);
+    if (!scope)
+        return scope.error();
+    MemoryQuery query;
+    query.scopes = {std::move(scope).value()};
+    query.social_attribute_field = std::move(field);
+    query.max_results = limit;
+    auto recalled = impl_->memory->query(query);
+    if (!recalled)
+        return recalled.error();
+    const auto current = resolve_account(environment, account);
+    if (!current)
+        return current.error();
+    if (current.value() != binding.value())
+        return directory_error(ErrorCode::InvalidState,
+                               "social account binding changed during recall");
+    return std::optional{
+        SocialAccountAttributeRecall{*current.value(), std::move(recalled).value()}};
 }
 
 Result<void> SqliteSocialDirectory::erase_object(const SocialObjectKey &key) {

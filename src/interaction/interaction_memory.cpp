@@ -143,6 +143,7 @@ void InteractionCoordinator::Impl::settle_memory(TaskId task) {
         request.mode = MemoryAgentMode::Record;
         request.write_scope =
             memory_session_scope(work.binding.principal, work.binding.work.session_id);
+        request.record_page_limit = kMaxRecordPagesPerJob;
         auto submitted = memory->submit(std::move(request), work_context(work.binding));
         if (submitted)
             work.status.job = std::move(submitted).value();

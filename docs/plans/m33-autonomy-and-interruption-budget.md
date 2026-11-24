@@ -70,7 +70,8 @@
   自主目标进入**同一条**注意力竞争队列；`Background` 只在焦点为空时执行；
   `High` 抢占仍受可中断性与授权约束。
 - [DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md)——
-  承诺实体是主动提醒的唯一触发源；承诺不可靠检索维持。
+  承诺实体是主动提醒的唯一触发源；到期承诺的自动发现和任务提交复用
+  [M30-37](m30-long-term-memory-integration.md#5-工作项) 的持久派发路径。
 - [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)——
   自主行为的状态实体计入其总量预算并受保护集合约束；
   周期清扫的 Executor 承载方式（`submit_delayed` 重装链）。

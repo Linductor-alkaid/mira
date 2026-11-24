@@ -25,7 +25,7 @@
 | [Workflow 契约](workflow-contracts.md) | `workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、`workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、`workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`、`workflow_recovery.hpp` | Workflow IR 序列化与校验、参数绑定、WorkflowRun 状态视图与转换表、资产版本化、事件载荷、操作 Tool 规格、执行/介入/编译/导航/学习/恢复编排各层 |
 | [事件、Checkpoint 与恢复](events-recovery.md) | `event_store.hpp`、`artifact_store.hpp`、`json.hpp`、`replay.hpp`、`task_checkpoint.hpp`、`task_recovery.hpp`、`state_store.hpp` | EventStore 事实源、Artifact 存储、崩溃恢复规划、SQLite 参考后端 |
 | [持久会话片段](durable-memory-host.md#持久会话片段索引) | `sqlite_conversation_index.hpp`、`context_retrieval.hpp` | 固定水位重建、按会话全文检索、联合擦除 |
-| [社交对象目录](durable-memory-host.md#社交对象目录)、[擦除恢复](durable-memory-host.md#社交记忆擦除恢复) | `sqlite_social_directory.hpp` | 环境内身份、版本化别名、歧义及跨库擦除恢复 |
+| [社交对象目录](durable-memory-host.md#社交对象目录)、[来源账号](durable-memory-host.md#按来源账号定位交谈对象)、[擦除恢复](durable-memory-host.md#社交记忆擦除恢复) | `sqlite_social_directory.hpp` | 环境内身份、精确账号与画像查找、别名歧义及跨库擦除恢复 |
 | [社交画像字段](durable-memory-host.md#社交画像字段)、[社交关系](durable-memory-host.md#社交关系断言) | `social_profile.hpp` | 字段和有向关系断言、来源与时态检索 |
 | [世界事实](durable-memory-host.md#世界事实的新鲜度) | `world_fact.hpp` | 环境与应用事实、实体属性索引和新鲜度 |
 | [目标与承诺](durable-memory-host.md#目标与承诺)、[重复计划](durable-memory-host.md#重复计划与触发回执)、[目标存储授权](durable-memory-host.md#目标存储授权) | `sqlite_goal_store.hpp` | 持久任务、承诺、纠正与提醒回执、重复计划和当前授权 |

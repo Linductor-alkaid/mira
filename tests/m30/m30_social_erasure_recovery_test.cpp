@@ -93,6 +93,7 @@ int object_erasure_before_knowledge_completion() {
     }
     MIRA_CHECK(change_db(options.path,
                          "DROP TABLE social_erasure_pending;"
+                         "DROP TABLE social_accounts;"
                          "UPDATE store_meta SET value='1.0' WHERE key='schema_version';"));
 
     const auto profile = attribute(target);
@@ -107,10 +108,24 @@ int object_erasure_before_knowledge_completion() {
     auto directory = std::move(opened).value();
     const auto legacy_alias = directory->resolve(env, "target");
     MIRA_CHECK(legacy_alias && legacy_alias.value().resolution == SocialAliasResolution::Unique);
+    const SocialAccountKey account{"qq", Id128::generate()};
+    const SocialAccountKey other_source{"bilibili", account.account};
+    const auto evidence = EventId::generate();
+    MIRA_CHECK(directory->observe_account(env, account, evidence, target));
+    MIRA_CHECK(directory->observe_account(env, other_source, evidence, target));
+    const auto recall = directory->recall_account_attribute(env, other_source, "team");
+    MIRA_CHECK(recall && recall.value() && recall.value()->binding.object == target);
+    MIRA_CHECK(recall.value()->assertions.records.size() == 1 &&
+               recall.value()->assertions.records.front().id == profile.value().id);
+    MIRA_CHECK(!directory->recall_account_attribute(env, other_source, "", 0));
+    const SocialEnvironmentKey foreign{TenantId::generate(), env.environment};
+    MIRA_CHECK(!directory->recall_account_attribute(foreign, other_source, "team").value());
     auto failed = directory->erase_object(target);
     MIRA_CHECK(!failed && failed.error().domain_code ==
                               static_cast<std::int32_t>(MemoryDomainCode::ErasurePending));
     MIRA_CHECK(!directory->resolve(env, "target"));
+    MIRA_CHECK(!directory->resolve_account(env, account));
+    MIRA_CHECK(!directory->recall_account_attribute(env, other_source, "team"));
     MIRA_CHECK(!directory->activate(neighbor, {1, {"Neighbor"}}));
     directory.reset();
 
@@ -130,6 +145,8 @@ int object_erasure_before_knowledge_completion() {
                absent(*fixture.memory, inbound.value()));
     MIRA_CHECK(fixture.memory->get(retained.value().id, retained.value().scope).value());
     MIRA_CHECK(recovered.value()->resolve(env, "target").value().matches.empty());
+    const auto replay = recovered.value()->observe_account(env, account, evidence);
+    MIRA_CHECK(!replay && replay.error().code == ErrorCode::PermissionDenied);
     const auto late = recovered.value()->activate(target, {2, {"Late"}});
     MIRA_CHECK(!late && late.error().code == ErrorCode::PermissionDenied);
     MIRA_CHECK(recovered.value()->erase_object(target));

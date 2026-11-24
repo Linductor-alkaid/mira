@@ -1,7 +1,7 @@
 # 持久记忆宿主接入
 
 > 状态：Active
-> 更新日期：2026-11-10
+> 更新日期：2026-11-24
 > 关联：[存储研究](../design/memory-storage-reference-study.md)、
 > [记忆代理 API](memory-agent.md)、[存储维护计划](../plans/maintenance-2026-11-memory-storage.md)
 
@@ -99,7 +99,7 @@ auto recalled = conversation_index->retrieve(query, RetrievalBudget{});
 
 `SqliteSocialDirectory` 保存宿主核准的对象身份和别名。数据库由宿主独占并在
 Executor 关闭前排空。调用前从当前授权绑定确定租户和社交环境。对象键包含
-完整环境键及稳定内部 ID，宿主负责外部账号与内部 ID 的映射。
+完整环境键及稳定内部 ID。宿主把认证来源账号转换为不透明 ID，目录在环境内持久解析。
 
 ```cpp
 const SocialEnvironmentKey environment{principal.tenant_id, authorized_environment_id};
@@ -119,6 +119,29 @@ auto resolved = directory->resolve(environment, "陈工");
 宿主处理原因并关闭实例。与记忆库配对时，重开自动恢复已提交的意图。独立目录的宿主
 可按原目标重试擦除。
 见 [DEC-123](../decisions/DEC-123-social-identity-directory.md)。
+
+### 按来源账号定位交谈对象
+
+已持久化消息到达时，宿主从已认证的信封读取来源命名空间和稳定账号 ID。命名空间
+使用 1 到 64 个 ASCII 小写字母、数字、点、短横线或下划线。每个来源的账号 ID 由宿主
+经过稳定映射后作为非空 `Id128` 传入，账号显示名仍使用别名入口。
+
+```cpp
+const SocialAccountKey sender{message_source, opaque_sender_id};
+auto participant = directory->observe_account(environment, sender, committed_message_id);
+auto exact = directory->resolve_account(environment, sender);
+auto team = directory->recall_account_attribute(environment, sender, "team");
+```
+
+首次观察原子创建内部对象和账号索引，重复接纳返回原绑定和首个来源事件。宿主已有
+可靠绑定证据时，可将同环境内的对象作为 `observe_account` 的第四个参数，将新账号
+绑定到该对象。已有其他绑定时返回 `AlreadyExists`。读取画像字段需要配对的记忆库，
+按当前账号解析出的精确对象 scope 查询，返回前复核账号绑定与对象版本。
+
+账号容量 `max_accounts` 默认为 16384，包含被擦除对象留下的账号屏障。对象擦除清除
+其绑定和事件引用，旧消息重试被拒。擦除环境清除该环境全部账号索引，重放由环境屏障
+拦截。消息网关负责来源验证与授权，自动身份推断与已建对象归并属于 M30-36。
+见 [DEC-140](../decisions/DEC-140-source-account-identity.md)。
 
 ## 社交画像字段
 

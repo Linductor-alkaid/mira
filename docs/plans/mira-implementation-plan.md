@@ -1,5 +1,9 @@
 # Mira 实施总计划
 
+[DEC-140](../decisions/DEC-140-source-account-identity.md) 接通社交账号与画像查询，
+[DEC-141](../decisions/DEC-141-automatic-record-pages.md) 接通结算后的多页提取，
+见 [M30-35 与 M30-39](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md) 接通技能记忆的工作和社交环境范围，
 见 [M30-34](m30-long-term-memory-integration.md#5-工作项)。
 

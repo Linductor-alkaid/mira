@@ -66,6 +66,11 @@ config.recall_groups = {
 ```
 
 Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型伪造的事件正文。
+`record_page_limit` 默认 1，最大为 `kMaxRecordPagesPerJob`。协调层在结算后使用上限 8。
+多页共用同一 EventStore 快照、截止时间和作业回执。每页提交后更新在途工作水位，结果
+汇总各页处置。`more_pending` 为真时可以继续提交 Record。后续页失败时，已成功页仍提交，
+重试从其水位续跑。只提供旧分页接口的事件适配器每次仍处理一页。见
+[DEC-141](../decisions/DEC-141-automatic-record-pages.md)。
 支持事件切片时按绑定 Session/Task 读取，在进程内工作绑定保留同轮分页的扫描水位与
 上界，跳过记忆服务自身的审计事件。旧 EventStore 后端通过 UnsupportedCapability
 回退到会话分页。

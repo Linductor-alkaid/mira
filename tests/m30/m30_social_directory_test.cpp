@@ -123,10 +123,96 @@ int failed_erasure_fences_until_host_retry() {
     MIRA_CHECK(directory->resolve(team, "owner").value().matches.empty());
     return 0;
 }
+
+int source_accounts_survive_reopen_and_respect_erasure() {
+    MemoryAgentFixture fixture;
+    const SocialEnvironmentKey community{fixture.principal.tenant_id, Id128::generate()};
+    const SocialEnvironmentKey other_room{community.tenant, Id128::generate()};
+    const SocialEnvironmentKey other_tenant{TenantId::generate(), community.environment};
+    const SocialAccountKey bilibili{"bilibili", Id128::generate()};
+    const SocialAccountKey qq{"qq", bilibili.account};
+    const SocialAccountKey other_qq{"qq", Id128::generate()};
+    const auto first_message = EventId::generate();
+    const auto link_evidence = EventId::generate();
+    const auto later_message = EventId::generate();
+    SqliteSocialDirectoryOptions options;
+    options.path = fixture.root / "social-accounts.db";
+    options.max_accounts = 4;
+    auto opened = SqliteSocialDirectory::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    auto directory = std::move(opened).value();
+
+    MIRA_CHECK(!directory->resolve_account(community, bilibili).value());
+    MIRA_CHECK(!directory->observe_account(community, {"QQ", qq.account}, first_message));
+    MIRA_CHECK(!directory->observe_account(community, qq, {}));
+    auto observed = fixture.executor.submit_auto(
+        [&] { return directory->observe_account(community, bilibili, first_message); });
+    const auto first = directory->observe_account(community, bilibili, first_message);
+    const auto concurrent = observed.get();
+    MIRA_CHECK(first && concurrent && first.value().object == concurrent.value().object);
+    const auto person = first.value().object;
+    MIRA_CHECK(first.value().source_event == first_message && first.value().object_revision == 1);
+    MIRA_CHECK(directory->read(person).value()->aliases.empty());
+    MIRA_CHECK(!directory->resolve_account(community, qq).value());
+    MIRA_CHECK(!directory->resolve_account(other_tenant, bilibili).value());
+    MIRA_CHECK(!directory->observe_account(other_room, qq, link_evidence, person));
+    const auto missing = directory->observe_account(community, qq, link_evidence,
+                                                    SocialObjectKey{community, Id128::generate()});
+    MIRA_CHECK(!missing && missing.error().code == ErrorCode::NotFound);
+    MIRA_CHECK(directory->observe_account(community, qq, link_evidence, person).value().object ==
+               person);
+
+    const auto other = directory->observe_account(community, other_qq, first_message);
+    MIRA_CHECK(other && other.value().object != person);
+    MIRA_CHECK(directory->activate(person, {2, {"同名"}}));
+    MIRA_CHECK(directory->activate(other.value().object, {2, {"同名"}}));
+    MIRA_CHECK(directory->resolve(community, "同名").value().resolution ==
+               SocialAliasResolution::Ambiguous);
+    MIRA_CHECK(directory->resolve_account(community, qq).value()->object == person);
+    MIRA_CHECK(directory->resolve_account(community, other_qq).value()->object ==
+               other.value().object);
+    const auto conflict = directory->observe_account(community, other_qq, link_evidence, person);
+    MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::AlreadyExists);
+    const auto separated = directory->observe_account(other_room, qq, first_message);
+    MIRA_CHECK(separated && separated.value().object != person);
+    const auto limit = directory->observe_account(other_tenant, qq, first_message);
+    MIRA_CHECK(!limit && limit.error().code == ErrorCode::ResourceExhausted);
+    MIRA_CHECK(directory->close());
+    directory.reset();
+
+    opened = SqliteSocialDirectory::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    directory = std::move(opened).value();
+    const auto replay = directory->observe_account(community, qq, later_message);
+    MIRA_CHECK(replay && replay.value().object == person && replay.value().object_revision == 2);
+    MIRA_CHECK(replay.value().source_event == link_evidence);
+    MIRA_CHECK(directory->erase_object(person));
+    const auto erased = directory->resolve_account(community, bilibili);
+    MIRA_CHECK(!erased && erased.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(!directory->observe_account(community, qq, later_message));
+    MIRA_CHECK(directory->resolve_account(other_room, qq).value()->object ==
+               separated.value().object);
+    MIRA_CHECK(directory->resolve_account(community, other_qq).value());
+    MIRA_CHECK(directory->erase_environment(other_room));
+    MIRA_CHECK(!directory->resolve_account(other_room, qq).value());
+    MIRA_CHECK(!directory->observe_account(other_room, qq, later_message));
+    MIRA_CHECK(directory->close());
+    directory.reset();
+
+    opened = SqliteSocialDirectory::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    directory = std::move(opened).value();
+    const auto late = directory->observe_account(community, qq, link_evidence);
+    MIRA_CHECK(!late && late.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(directory->observe_account(other_tenant, qq, later_message));
+    return 0;
+}
 } // namespace
 
 int main() {
     if (const auto result = scoped_identity_and_revision_resolution(); result != 0)
         return result;
-    return failed_erasure_fences_until_host_retry();
+    if (const auto result = failed_erasure_fences_until_host_retry(); result != 0)
+        return result;
+    return source_accounts_survive_reopen_and_respect_erasure();
 }

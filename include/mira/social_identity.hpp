@@ -17,6 +17,12 @@ struct SocialObjectKey final {
     friend constexpr bool operator==(const SocialObjectKey &, const SocialObjectKey &) = default;
 };
 
+struct SocialAccountKey final {
+    std::string source; // Stable connector namespace from authenticated message metadata.
+    Id128 account;      // Host-issued opaque account identity within that namespace.
+    friend bool operator==(const SocialAccountKey &, const SocialAccountKey &) = default;
+};
+
 struct SocialRelationshipKey final {
     SocialObjectKey from;
     SocialObjectKey to;
