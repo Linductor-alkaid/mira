@@ -433,6 +433,12 @@ struct MemoryQueryResult final {
     std::uint64_t tokens_estimate = 0;
 };
 
+// Estimate used for packing recalled statements, before full context admission.
+[[nodiscard]] inline std::uint64_t memory_statement_token_estimate(std::string_view statement) {
+    const std::uint64_t estimate = statement.size() / 4 + 8;
+    return estimate < 16 ? 16 : estimate;
+}
+
 // ---------------------------------------------------------------------------
 // Erasure and retention contracts (M4-13)
 // ---------------------------------------------------------------------------

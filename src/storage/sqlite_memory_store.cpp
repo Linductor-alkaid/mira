@@ -1895,8 +1895,7 @@ class SqliteMemoryStore::Impl final {
                 group_counts[group] >= options_.max_per_scope_kind) {
                 continue;
             }
-            const std::uint64_t tokens =
-                std::max<std::uint64_t>(16, entry.row->statement.size() / 4 + 8);
+            const auto tokens = memory_statement_token_estimate(entry.row->statement);
             if (result.tokens_estimate + tokens > request.token_budget) {
                 continue;
             }

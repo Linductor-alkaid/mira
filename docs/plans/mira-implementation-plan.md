@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md) 将精确恢复经验接入自动失败升级，
+见 [M30-32](m30-long-term-memory-integration.md#5-工作项)。
+
 [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md) 交付按工作流版本和失败签名读取
 验证后的恢复经验，见 [M30-31](m30-long-term-memory-integration.md#5-工作项)。
 

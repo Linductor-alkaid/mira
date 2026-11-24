@@ -58,6 +58,8 @@ set_learning_context(shared_ptr<IMemory> memory, MemoryScope scope,
 
 ### 3. 失败检索进入 Agent 续跑上下文（escalation hook）
 
+后续检索顺序和共享预算见 [DEC-137](DEC-137-exact-recovery-during-escalation.md)。
+
 - **时机**：仅**失败驱动的升级**（`escalate_waiting_agent`，即恢复链耗尽点进入
   `WaitingAgent`）触发；检查点让渡（`enter_waiting_agent`，AgentAssisted 到达驱动）不是
   失败，不检索。

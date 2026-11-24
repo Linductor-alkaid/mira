@@ -47,6 +47,21 @@ bool matches_lesson(const MemoryRecord &record, const MemoryScope &scope,
 } // namespace
 
 Result<MemoryQueryResult>
+WorkflowRuntime::query_verified_recovery_lessons(const IMemory &memory, const MemoryQuery &query) {
+    auto recalled = memory.query(query);
+    if (!recalled)
+        return recalled.error();
+    const auto now = std::chrono::system_clock::now();
+    if (recalled.value().records.size() > query.max_results ||
+        recalled.value().tokens_estimate > query.token_budget ||
+        !std::ranges::all_of(recalled.value().records, [&](const MemoryRecord &record) {
+            return matches_lesson(record, query.scopes.front(), *query.recovery_lesson_key, now);
+        }))
+        return recovery_memory_error(ErrorCode::DataLoss, "recovery recall returned invalid data");
+    return std::move(recalled).value();
+}
+
+Result<MemoryQueryResult>
 WorkflowRuntime::recall_recovery_lessons(const RecoveryLessonKey &key,
                                          const RecoveryLessonAuthorizer &authorize) const {
     if (auto valid = key.validate(); !valid)
@@ -72,11 +87,12 @@ WorkflowRuntime::recall_recovery_lessons(const RecoveryLessonKey &key,
         return recovery_memory_error(ErrorCode::PermissionDenied, "recovery recall access denied");
     MemoryQuery query;
     query.scopes = {scope};
+    query.kinds = std::vector{MemoryKind::RecoveryLesson};
     query.recovery_lesson_key = key;
     query.max_results = limits.max_retrieval_results;
     query.token_budget = limits.retrieval_token_budget;
     query.deadline = limits.retrieval_deadline;
-    auto recalled = memory->query(query);
+    auto recalled = query_verified_recovery_lessons(*memory, query);
     if (!recovery_access_allowed(authorize, scope, key))
         return recovery_memory_error(ErrorCode::PermissionDenied, "recovery recall access denied");
     {
@@ -87,16 +103,7 @@ WorkflowRuntime::recall_recovery_lessons(const RecoveryLessonKey &key,
             return recovery_memory_error(ErrorCode::InvalidState,
                                          "recovery learning context changed");
     }
-    if (!recalled)
-        return recalled.error();
-    const auto now = std::chrono::system_clock::now();
-    if (recalled.value().records.size() > query.max_results ||
-        recalled.value().tokens_estimate > query.token_budget ||
-        !std::ranges::all_of(recalled.value().records, [&](const MemoryRecord &record) {
-            return matches_lesson(record, scope, key, now);
-        }))
-        return recovery_memory_error(ErrorCode::DataLoss, "recovery recall returned invalid data");
-    return std::move(recalled).value();
+    return recalled;
 }
 
 } // namespace mira

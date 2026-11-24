@@ -1,7 +1,7 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.16
+> 版本：1.17
 > 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
@@ -21,7 +21,8 @@
 > [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)、
 > [DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md)、
 > [DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md)、
-> [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)
+> [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)、
+> [DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -115,6 +116,9 @@ M30-30 把学习 scope 纳入新 `Procedure` 记录与写入身份。SQLite 保�
 M30-31 为宿主提供按工作流版本和失败签名读取 `RecoveryLesson` 的入口。SQLite 在现有
 记录上索引完整失败键，按精确学习 scope 查询。返回前复核权限、学习绑定、来源及文档内容。
 历史记录通过原 ID 查证。见[按版本读取恢复经验 API](../api/workflow-contracts.md#按版本读取恢复经验)。
+
+M30-32 接通自动升级。在学习 scope 内读取 run 当前的精确恢复经验，再以剩余额度补充
+Episode。工作流等待世代、载体恢复世代或学习绑定变化会使迟到的续跑材料失效。
 
 ## 执行与验收
 

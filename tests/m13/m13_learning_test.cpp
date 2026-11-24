@@ -238,6 +238,9 @@ int escalation_retrieval_feeds_the_agent_continuation() {
         MIRA_CHECK(memory->apply(seed).has_value());
     }
 
+    // The exact leg may fail independently while Episode recall still works.
+    memory->fail_recovery_queries = true;
+
     const auto run = workflow->create_run(definition, JsonValue{}, std::nullopt);
     MIRA_CHECK(run.has_value());
     OperationContext context;
@@ -250,7 +253,70 @@ int escalation_retrieval_feeds_the_agent_continuation() {
     MIRA_CHECK(continuation.value().relevant_lessons.size() == 1);
     MIRA_CHECK(continuation.value().relevant_lessons[0].kind == MemoryKind::Episode);
     MIRA_CHECK(continuation.value().relevant_lessons[0].statement == record.statement);
+    MIRA_CHECK(memory->queries.load() == 2);
     static_cast<void>(workflow->shutdown());
+    return 0;
+}
+
+int learning_rebind_discards_inflight_escalation_recall() {
+    WorkflowFixture fixture;
+    auto memory = std::make_shared<FakeLearningMemory>();
+    auto replacement = std::make_shared<FakeLearningMemory>();
+    ScriptedTool tool{std::vector<int>{1}};
+    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")));
+    auto workflow = fixture.make_workflow();
+    const auto scope = learning_scope();
+    MIRA_CHECK(workflow->set_learning_context(memory, scope));
+    bool rebound = false;
+    memory->query_probe = [&](const MemoryQuery &query) {
+        if (query.recovery_lesson_key)
+            rebound = workflow->set_learning_context(replacement, scope).has_value();
+    };
+    const auto run = workflow->create_run(escalate_definition(WorkflowPolicy::Recoverable),
+                                          JsonValue{}, std::nullopt);
+    MIRA_CHECK(run);
+    OperationContext context;
+    context.session = fixture.session_id_;
+    context.started_at = Timestamp::now();
+    const auto escalated = workflow->execute_run(run.value().run_id, context);
+    MIRA_CHECK(escalated && escalated.value().state == WorkflowRunState::WaitingAgent);
+    MIRA_CHECK(rebound && memory->queries.load() == 1 && replacement->queries.load() == 0);
+    const auto continuation = workflow->agent_continuation(run.value().run_id);
+    MIRA_CHECK(continuation && continuation.value().relevant_lessons.empty());
+    static_cast<void>(workflow->shutdown());
+    return 0;
+}
+
+int cancelled_carrier_discards_inflight_escalation_recall() {
+    WorkflowFixture fixture;
+    auto memory = std::make_shared<FakeLearningMemory>();
+    ScriptedTool tool{std::vector<int>{1}};
+    MIRA_CHECK(register_registration(*fixture.registry_, tool.registration("scripted")));
+    auto workflow = fixture.make_workflow();
+    MIRA_CHECK(workflow->set_learning_context(memory, learning_scope()));
+    const auto run = workflow->create_run(escalate_definition(WorkflowPolicy::Recoverable),
+                                          JsonValue{}, std::nullopt);
+    MIRA_CHECK(run);
+    bool cancelled = false;
+    memory->query_probe = [&](const MemoryQuery &query) {
+        if (!query.recovery_lesson_key)
+            return;
+        const auto continuation = workflow->agent_continuation(run.value().run_id);
+        if (!continuation)
+            return;
+        const auto command = fixture.runtime_->cancel_task(continuation.value().carrier_task_id);
+        if (command)
+            cancelled = command.value().outcome(std::chrono::seconds{2}).has_value();
+    };
+    auto context = drive_context();
+    context.session = fixture.session_id_;
+    MIRA_CHECK(workflow->execute_run(run.value().run_id, context));
+    MIRA_CHECK(cancelled && memory->queries.load() == 1);
+    const auto continuation = workflow->agent_continuation(run.value().run_id);
+    MIRA_CHECK(!continuation || continuation.value().relevant_lessons.empty());
+    const auto settled = workflow->cancel_run(run.value().run_id);
+    MIRA_CHECK(settled && settled.value().state == WorkflowRunState::Cancelled);
+    MIRA_CHECK(workflow->shutdown().clean);
     return 0;
 }
 
@@ -524,6 +590,8 @@ int main() {
          settlement_records_episodes_for_non_dryrun_terminals,
          dry_run_and_missing_context_record_nothing, memory_write_failure_never_breaks_settlement,
          escalation_retrieval_feeds_the_agent_continuation,
+         learning_rebind_discards_inflight_escalation_recall,
+         cancelled_carrier_discards_inflight_escalation_recall,
          retrieval_degradation_keeps_the_escalation_path, checkpoint_handoffs_do_not_retrieve,
          recovery_lessons_derive_and_stay_idempotent,
          recovery_lesson_patch_form_records_the_recovery_actions,

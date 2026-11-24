@@ -825,6 +825,27 @@ int failing_store_keeps_cancel_and_shutdown_closed() {
     return 0;
 }
 
+MemoryMutation recovery_lesson_fixture(const RecoveryLessonKey &address, const MemoryScope &scope) {
+    const auto now = Timestamp::now();
+    WorkflowRecoveryLesson lesson;
+    lesson.lesson_id = Id128::generate().to_string();
+    lesson.workflow_id = address.workflow.to_string();
+    lesson.ir_digest = address.ir_digest.to_string();
+    lesson.recovered_run_id = WorkflowRunId::generate().to_string();
+    lesson.failure = {lesson.workflow_id,
+                      address.step ? std::optional{address.step->to_string()} : std::nullopt,
+                      address.step_kind, address.reason_code};
+    lesson.resumed_without_patch = true;
+    lesson.outcome = "recovered";
+    lesson.recorded_at_ms = wall_ms(now);
+    MemoryMutation add;
+    add.id = recovery_lesson_mutation_id(lesson.recovered_run_id);
+    add.scope = scope;
+    add.evidence = {EventId::generate()};
+    add.proposed = recovery_lesson_to_memory_record(lesson, scope, add.evidence, now.wall);
+    return add;
+}
+
 int exact_recovery_recall_after_sqlite_upgrade() {
     const auto root = temp_dir("recovery-key");
     const MemoryScope current{MemoryScopeKind::Agent, "workspace-agent", "tenant-current"};
@@ -848,24 +869,7 @@ int exact_recovery_recall_after_sqlite_upgrade() {
         PersistenceHarness harness(root);
         const auto insert = [&](const RecoveryLessonKey &address, const MemoryScope &scope,
                                 bool structured = true) -> Result<MemoryMutationResult> {
-            const auto now = Timestamp::now();
-            WorkflowRecoveryLesson lesson;
-            lesson.lesson_id = Id128::generate().to_string();
-            lesson.workflow_id = address.workflow.to_string();
-            lesson.ir_digest = address.ir_digest.to_string();
-            lesson.recovered_run_id = WorkflowRunId::generate().to_string();
-            lesson.failure = {lesson.workflow_id,
-                              address.step ? std::optional{address.step->to_string()}
-                                           : std::nullopt,
-                              address.step_kind, address.reason_code};
-            lesson.resumed_without_patch = true;
-            lesson.outcome = "recovered";
-            lesson.recorded_at_ms = wall_ms(now);
-            MemoryMutation add;
-            add.id = recovery_lesson_mutation_id(lesson.recovered_run_id);
-            add.scope = scope;
-            add.evidence = {EventId::generate()};
-            add.proposed = recovery_lesson_to_memory_record(lesson, scope, add.evidence, now.wall);
+            auto add = recovery_lesson_fixture(address, scope);
             if (!structured)
                 add.proposed.statement = "legacy free-text lesson";
             return harness.store->apply(add);
@@ -940,14 +944,106 @@ int exact_recovery_recall_after_sqlite_upgrade() {
     return 0;
 }
 
+int escalation_prioritizes_exact_recovery_and_shares_budget() {
+    const auto root = temp_dir("exact-escalation");
+    PersistenceHarness harness(root);
+    ScriptedTool tool{std::vector<int>{1, 2, 3, 4, 5}};
+    MIRA_CHECK(register_registration(*harness.registry, tool.registration("scripted")));
+    const auto scope = learning_scope();
+    const auto definition = mnt25_recoverable_definition();
+    const auto first = harness.workflow->create_run(definition, JsonValue{}, std::nullopt);
+    MIRA_CHECK(first);
+    const auto &step = definition.steps.front();
+    const RecoveryLessonKey key{definition.workflow_id, first.value().ir_digest, step.id,
+                                workflow_step_kind_name(step.kind), "mira.workflow:6"};
+    const auto current = recovery_lesson_fixture(key, scope);
+    MIRA_CHECK(harness.store->apply(current));
+    auto old = key;
+    old.ir_digest = digest_string("previous workflow version");
+    auto wrong_reason = key;
+    wrong_reason.reason_code = "mira.workflow:60";
+    // Both are newer than the exact lesson and share its legacy lexical terms.
+    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(old, scope)));
+    MIRA_CHECK(harness.store->apply(recovery_lesson_fixture(wrong_reason, scope)));
+
+    WorkflowEpisodeRecord prior;
+    prior.run_id = WorkflowRunId::generate().to_string();
+    prior.workflow_id = key.workflow.to_string();
+    prior.ir_digest = key.ir_digest.to_string();
+    prior.policy = "strict";
+    prior.outcome = "failed";
+    prior.failed_step_id = step.id.to_string();
+    prior.failure_reason_code = key.reason_code;
+    const auto now = Timestamp::now();
+    prior.recorded_at_ms = wall_ms(now);
+    MemoryMutation episode;
+    episode.id = workflow_episode_mutation_id(prior.run_id);
+    episode.scope = scope;
+    episode.evidence = {EventId::generate()};
+    episode.proposed = episode_to_memory_record(prior, scope, episode.evidence, now.wall);
+    MIRA_CHECK(harness.store->apply(episode));
+    const auto drive = [&](const WorkflowRunId &run) -> Result<WorkflowAgentContinuation> {
+        auto context = drive_context();
+        context.session = harness.session;
+        const auto outcome = harness.workflow->execute_run(run, context);
+        if (!outcome)
+            return outcome.error();
+        return harness.workflow->agent_continuation(run);
+    };
+    const auto next = [&]() -> Result<WorkflowAgentContinuation> {
+        const auto run = harness.workflow->create_run(definition, JsonValue{}, std::nullopt);
+        if (!run)
+            return run.error();
+        return drive(run.value().run_id);
+    };
+    WorkflowLearningLimits limits;
+    limits.max_retrieval_results = 1;
+    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    const auto only_exact = drive(first.value().run_id);
+    MIRA_CHECK(only_exact && only_exact.value().relevant_lessons.size() == 1 &&
+               only_exact.value().relevant_lessons.front().statement == current.proposed.statement);
+
+    const auto combined_tokens = memory_statement_token_estimate(current.proposed.statement) +
+                                 memory_statement_token_estimate(episode.proposed.statement);
+    limits.max_retrieval_results = 2;
+    limits.retrieval_token_budget = combined_tokens - 1;
+    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    const auto invalidated = harness.workflow->agent_continuation(first.value().run_id);
+    MIRA_CHECK(invalidated && invalidated.value().relevant_lessons.empty());
+    const auto token_limited = next();
+    MIRA_CHECK(token_limited && token_limited.value().relevant_lessons.size() == 1 &&
+               token_limited.value().relevant_lessons.front().kind == MemoryKind::RecoveryLesson);
+
+    limits.retrieval_token_budget = combined_tokens;
+    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    const auto both = next();
+    MIRA_CHECK(both && both.value().relevant_lessons.size() == 2 &&
+               both.value().relevant_lessons[0].statement == current.proposed.statement &&
+               both.value().relevant_lessons[1].statement == episode.proposed.statement);
+
+    MIRA_CHECK(harness.store->erase({{}, current.proposed.id, "erase verified recovery"}));
+    const auto fallback = next();
+    MIRA_CHECK(fallback && fallback.value().relevant_lessons.size() == 1 &&
+               fallback.value().relevant_lessons.front().kind == MemoryKind::Episode);
+
+    limits.retrieval_deadline = std::chrono::milliseconds{0};
+    MIRA_CHECK(harness.workflow->set_learning_context(harness.store, scope, limits));
+    const auto expired = next();
+    MIRA_CHECK(expired && expired.value().relevant_lessons.empty());
+    harness.close();
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+    return 0;
+}
+
 } // namespace
 
 int main() {
-    const auto scenarios =
-        std::to_array({sqlite_records_survive_owner_rebuild, event_recipe_rebuild_field_evidence,
-                       slow_store_keeps_cancel_closed, slow_store_keeps_shutdown_drain_clean,
-                       failing_store_keeps_cancel_and_shutdown_closed,
-                       exact_recovery_recall_after_sqlite_upgrade});
+    const auto scenarios = std::to_array(
+        {sqlite_records_survive_owner_rebuild, event_recipe_rebuild_field_evidence,
+         slow_store_keeps_cancel_closed, slow_store_keeps_shutdown_drain_clean,
+         failing_store_keeps_cancel_and_shutdown_closed, exact_recovery_recall_after_sqlite_upgrade,
+         escalation_prioritizes_exact_recovery_and_shares_budget});
     for (const auto scenario : scenarios) {
         if (const int code = scenario(); code != 0) {
             return code;

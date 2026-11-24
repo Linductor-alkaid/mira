@@ -11,6 +11,7 @@
 #include <mira/workflow_learning.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <mutex>
 
 namespace mira::testing {
@@ -24,7 +25,9 @@ class FakeLearningMemory final : public IMemory {
   public:
     Result<MemoryQueryResult> query(const MemoryQuery &query) const override {
         ++queries;
-        if (fail_queries.load()) {
+        if (query_probe)
+            query_probe(query);
+        if (fail_queries.load() || (query.recovery_lesson_key && fail_recovery_queries.load())) {
             Error error;
             error.code = ErrorCode::Unavailable;
             error.domain = "mira.test";
@@ -48,6 +51,18 @@ class FakeLearningMemory final : public IMemory {
                                                      record.kind) == query.kinds->end()) {
                 continue;
             }
+            if (query.recovery_lesson_key) {
+                const auto &key = *query.recovery_lesson_key;
+                const auto lesson = recovery_lesson_from_record(record);
+                const auto workflow = key.workflow.to_string();
+                const auto step = key.step ? std::optional{key.step->to_string()} : std::nullopt;
+                const WorkflowFailureSignature failure{workflow, step, key.step_kind,
+                                                       key.reason_code};
+                if (!lesson || record.kind != MemoryKind::RecoveryLesson ||
+                    lesson.value().ir_digest != key.ir_digest.to_string() ||
+                    lesson.value().workflow_id != workflow || lesson.value().failure != failure)
+                    continue;
+            }
             const bool terms_ok = std::all_of(
                 query.exact_terms.begin(), query.exact_terms.end(), [&](const std::string &term) {
                     return record.statement.find(term) != std::string::npos;
@@ -67,10 +82,15 @@ class FakeLearningMemory final : public IMemory {
                   [](const MemoryRecord *left, const MemoryRecord *right) {
                       return left->recorded_at > right->recorded_at;
                   });
-        const std::size_t bounded = std::min(matches.size(), query.max_results);
         double score = 1.0;
-        for (std::size_t index = 0; index < bounded; ++index) {
-            result.records.push_back(*matches[index]);
+        for (const auto *record : matches) {
+            if (result.records.size() == query.max_results)
+                break;
+            const auto tokens = memory_statement_token_estimate(record->statement);
+            if (tokens > query.token_budget - result.tokens_estimate)
+                continue;
+            result.tokens_estimate += tokens;
+            result.records.push_back(*record);
             result.scores.push_back(score);
             score = std::max(0.0, score - 0.1);
         }
@@ -147,6 +167,8 @@ class FakeLearningMemory final : public IMemory {
     }
 
     mutable std::atomic<bool> fail_queries{false};
+    std::atomic<bool> fail_recovery_queries{false};
+    std::function<void(const MemoryQuery &)> query_probe;
     std::atomic<bool> fail_applies{false};
     std::atomic<std::uint64_t> applies{0};
     mutable std::atomic<std::uint64_t> queries{0};

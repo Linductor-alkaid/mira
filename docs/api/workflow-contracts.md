@@ -324,11 +324,10 @@ reader，支持宿主直接读取；不因内部无消费者删除，也不因�
   `WorkflowRunSettled` 事件 ID；无事件存储则无可锚定记录，按设计跳过）；DryRun 跳过
   （设计行为，无事件）；写失败不影响已结算终态，转诊断计数器与
   `WorkflowEpisodeRecorded`（failed + 原因码）。
-- 失败检索（DEC-030 §3）：仅**失败驱动升级**（`escalate_waiting_agent`）在驱动线程
-  同步查询（互斥锁外），结果存 RunRecord 并经 `agent_continuation().relevant_lessons`
-  透出（每项 kind/statement/confidence，statement 为 canonical 学习契约 JSON、按构造
-  脱敏）；检查点让渡不检索；查询失败降级为空结果 + 诊断计数器（升级路径不受阻）；
-  结果条数/token/deadline 受配置约束（`RULE-08`）。
+- 失败检索（DEC-030 §3、DEC-137）：仅失败驱动升级在驱动线程按当前版本与失败签名先查
+  `RecoveryLesson`，再用剩余条数、文本额度和软截止查询 `Episode`。结果经
+  `agent_continuation().relevant_lessons` 暴露。故障计入诊断，保留已取得的有效结果。
+  检查点让渡不查询。退出本次等待、学习绑定变化或载体撤回后丢弃迟到结果。
 - `WorkflowRuntime::record_recovery_lesson(run_id)`（DEC-030 §4）：宿主专用（不注册为
   模型工具，`W-04`）；准入 = `Completed` + 非 DryRun + 失败升级计数 > 0 + 学习上下文
   已安装；恢复动作 = 最后一次失败升级后应用的 patch（patch_id/digest/目标摘要，无
@@ -375,8 +374,10 @@ auto lessons = workflow.recall_recovery_lessons(key, check_current_recovery_acce
 
 `check_current_recovery_access` 接收 scope 和完整失败键，在读取前后校验权限。学习绑定
 变更时旧结果失效。查询使用现有学习检索额度，返回记录 ID、来源事件和检索状态；结果仍需
-宿主按当前运行约束解释。自动失败升级沿现有经验装配路径。见
-[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)。
+宿主按当前运行约束解释。自动失败升级使用同一精确查询，并以剩余额度补充 Episode。
+同步后端耗时受后端约束，软截止耗尽后停止启动后续查询。见
+[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)、
+[DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md)。
 
 ## Workflow 恢复编排（`workflow_recovery.hpp`，M14，DEC-031）
 

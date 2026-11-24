@@ -608,11 +608,13 @@ class WorkflowRuntime final {
     // a memory write failure never touches the already-settled terminal
     // state (it lands in a diagnostic counter and the failed audit event).
     // retrieve_lessons runs on the drive thread after a failure-driven
-    // escalation commits: the store query happens without the runtime mutex
+    // escalation commits: store queries happen without the runtime mutex
     // and the bounded results land in the run record under it. Both are
     // NoOps without a learning context.
     void record_episode(RunRecord &run, WorkflowRunState terminal_state);
     void retrieve_lessons(RunRecord &run);
+    [[nodiscard]] static Result<MemoryQueryResult>
+    query_verified_recovery_lessons(const IMemory &memory, const MemoryQuery &query);
     void emit_episode_recorded(const RunRecord &run, const Sha256Digest &digest,
                                const std::string &outcome, const std::string &reason_code);
     void emit_lesson_recorded(const RunRecord &run, const Sha256Digest &digest,

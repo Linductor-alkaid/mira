@@ -262,6 +262,8 @@ struct WorkflowRuntime::RunRecord final {
     // Stage F learning state (DEC-030): the applied-patch watermark at the
     // last failure-driven escalation (lesson derivation anchor).
     std::size_t patches_at_last_escalation = 0;
+    std::uint64_t retrieved_lessons_revision = 0;
+    std::uint64_t retrieved_lessons_epoch = 0;
     std::shared_future<Result<WorkflowRunResult>> drive_future;
     // Resolved ToolCall arguments per step index (binding applied at
     // admission); other kinds keep the raw arguments.
@@ -494,51 +496,131 @@ void WorkflowRuntime::retrieve_lessons(RunRecord &run) {
     MemoryScope scope;
     WorkflowLearningLimits limits;
     std::optional<WorkflowFailureSignature> signature;
+    WorkflowId workflow;
+    Sha256Digest digest;
+    TaskId task;
+    std::uint64_t run_epoch = 0;
+    std::uint64_t task_epoch = 0;
+    std::uint64_t revision = 0;
     {
         std::lock_guard lock(mutex_);
-        if (!learning_memory_) {
+        if (shut_down_ || !learning_memory_ || run.view.state != WorkflowRunState::WaitingAgent) {
             return;
         }
         memory = learning_memory_;
         scope = learning_scope_;
         limits = learning_limits_;
         signature = run.last_failure_signature;
-        // Cover, not accumulate: only the latest escalation's retrieval is
-        // attached (DEC-030 §3).
-        run.retrieved_lessons.clear();
+        workflow = run.view.workflow_id;
+        digest = run.view.ir_digest;
+        task = run.task;
+        task_epoch = run.task_epoch;
+        run_epoch = run.view.run_epoch;
+        revision = learning_revision_;
     }
-    if (!signature.has_value()) {
+    if (!signature || limits.retrieval_deadline.count() == 0) {
         return;
     }
-    auto query = failure_retrieval_query(*signature, scope, limits);
-    if (!query.has_value()) {
+    auto episodes = failure_retrieval_query(*signature, scope, limits);
+    if (!episodes) {
         ++retrieval_failures_;
         return;
     }
-    const auto found = memory->query(query.value());
-    if (!found.has_value()) {
-        // Degraded retrieval keeps the escalation path intact (DEC-030 §3);
-        // the diagnostic counter discloses the miss.
-        ++retrieval_failures_;
+
+    const auto same_binding_and_run = [&] {
+        return !shut_down_ && learning_revision_ == revision && run.view.run_epoch == run_epoch &&
+               run.view.state == WorkflowRunState::WaitingAgent;
+    };
+    const auto carrier_is_recovering = [&] {
+        const auto carrier = runtime_.task_snapshot(task);
+        return carrier && carrier.value().epoch == task_epoch &&
+               carrier.value().state == TaskState::Recovering;
+    };
+    const auto still_waiting = [&] {
+        {
+            std::lock_guard lock(mutex_);
+            if (!same_binding_and_run())
+                return false;
+        }
+        return carrier_is_recovering();
+    };
+    if (!still_waiting())
         return;
-    }
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto remaining_time = [&] {
+        return limits.retrieval_deadline - std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::steady_clock::now() - started);
+    };
     std::vector<WorkflowRetrievedLesson> lessons;
-    lessons.reserve(found.value().records.size());
-    for (const auto &record : found.value().records) {
-        if (record.kind != MemoryKind::Episode && record.kind != MemoryKind::RecoveryLesson) {
-            continue;
+    std::uint64_t remaining_tokens = limits.retrieval_token_budget;
+    bool degraded = false;
+    bool deadline_exceeded = false;
+    const auto append = [&](const Result<MemoryQueryResult> &found, MemoryKind kind) {
+        if (!found) {
+            degraded = true;
+            return;
         }
-        WorkflowRetrievedLesson lesson;
-        lesson.kind = record.kind;
-        lesson.statement = record.statement.substr(0, limits.max_document_bytes);
-        lesson.confidence = record.confidence;
-        lessons.push_back(std::move(lesson));
-        if (lessons.size() >= limits.max_retrieval_results) {
-            break;
+        deadline_exceeded = found.value().quality.deadline_exceeded;
+        degraded = degraded || deadline_exceeded || found.value().quality.degraded;
+        for (const auto &record : found.value().records) {
+            if (lessons.size() == limits.max_retrieval_results)
+                break;
+            if (record.kind != kind || record.scope != scope ||
+                record.status != MemoryStatus::Active)
+                continue;
+            if (kind == MemoryKind::RecoveryLesson &&
+                record.statement.size() > limits.max_document_bytes)
+                continue;
+            const auto statement =
+                std::string_view(record.statement).substr(0, limits.max_document_bytes);
+            const auto tokens = memory_statement_token_estimate(statement);
+            if (tokens > remaining_tokens)
+                continue;
+            lessons.push_back({kind, std::string(statement), record.confidence});
+            remaining_tokens -= tokens;
         }
+    };
+
+    const auto step = signature->step_id ? StepId::parse(*signature->step_id) : std::nullopt;
+    const RecoveryLessonKey key{workflow, digest, step, signature->step_kind,
+                                signature->reason_code};
+    if ((!signature->step_id || step) && key.validate()) {
+        MemoryQuery exact;
+        exact.scopes = {scope};
+        exact.kinds = std::vector{MemoryKind::RecoveryLesson};
+        exact.recovery_lesson_key = key;
+        exact.deadline = remaining_time();
+        exact.max_results = limits.max_retrieval_results;
+        exact.token_budget = remaining_tokens;
+        if (exact.deadline.count() > 0)
+            append(query_verified_recovery_lessons(*memory, exact), MemoryKind::RecoveryLesson);
+    } else {
+        degraded = true;
     }
+    if (!still_waiting())
+        return;
+
+    auto &episode_query = episodes.value();
+    episode_query.kinds = std::vector{MemoryKind::Episode};
+    episode_query.max_results = limits.max_retrieval_results - lessons.size();
+    episode_query.token_budget = remaining_tokens;
+    episode_query.deadline = remaining_time();
+    if (!deadline_exceeded && episode_query.max_results > 0 &&
+        remaining_tokens >= memory_statement_token_estimate({}) &&
+        episode_query.deadline.count() > 0)
+        append(memory->query(episode_query), MemoryKind::Episode);
+
+    if (!carrier_is_recovering())
+        return;
     std::lock_guard lock(mutex_);
-    run.retrieved_lessons = std::move(lessons);
+    if (same_binding_and_run()) {
+        if (degraded)
+            ++retrieval_failures_;
+        run.retrieved_lessons_revision = revision;
+        run.retrieved_lessons_epoch = run_epoch;
+        run.retrieved_lessons = std::move(lessons);
+    }
 }
 
 void WorkflowRuntime::emit_episode_recorded(const RunRecord &run, const Sha256Digest &digest,
@@ -1860,6 +1942,7 @@ std::optional<Error> WorkflowRuntime::enter_waiting_agent(RunRecord &run,
         if (recovered_epoch.has_value()) {
             run.task_epoch = *recovered_epoch;
         }
+        run.retrieved_lessons.clear();
         run.safe_summary = bounded_summary("waiting for agent: " + reason);
     }
     return std::nullopt;
@@ -3595,7 +3678,9 @@ WorkflowRuntime::agent_continuation(const WorkflowRunId &run_id) const {
     continuation.step_history = run.settled;
     continuation.failure_reason = run.failure_reason;
     continuation.pending_decision = run.view.pending_decision;
-    continuation.relevant_lessons = run.retrieved_lessons;
+    if (!shut_down_ && run.retrieved_lessons_revision == learning_revision_ &&
+        run.retrieved_lessons_epoch == run.view.run_epoch)
+        continuation.relevant_lessons = run.retrieved_lessons;
     continuation.carrier_task_id = run.task;
     continuation.carrier_task_epoch = run.task_epoch;
     continuation.run_epoch = run.view.run_epoch;
