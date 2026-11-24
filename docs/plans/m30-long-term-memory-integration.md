@@ -1,6 +1,6 @@
 # M30：长期记忆接入——提取、检索、纠正、删除与回忆反馈
 
-> 状态：In Progress（召回分组、人格、事件、社交记忆、世界事实、一次性目标与固定间隔计划已验收 Linux 增量）
+> 状态：In Progress（召回分组、人格、事件、社交记忆、世界事实、目标状态与提醒回执已验收 Linux 增量）
 > 负责人：Mira Maintainers
 > 所属计划：[Mira 实施总计划](mira-implementation-plan.md)（承载
 > [DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)
@@ -59,6 +59,7 @@
 - [DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md)：导航重新观察和 AppModel 世代。
 - [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)：一次性目标与承诺持久状态。
 - [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)：重复计划与持久触发标识。
+- [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)：目标纠正与提醒回执。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
 - [DEC-120](../decisions/DEC-120-agent-persona-admission.md)：人格目录、宿主任务绑定与 Gateway 版本准入。
@@ -153,6 +154,7 @@
 - [x] `M30-23` 交付导航重新观察及 AppModel 版本联动，验收过期、换版、取消和撤权。
 - [x] `M30-24` 交付一次性任务与承诺的持久状态和到期索引，验收归属、结算、重开和擦除。
 - [x] `M30-25` 交付固定 UTC 间隔重复计划，验收到期索引、版本化触发、重开去重和取消。
+- [x] `M30-26` 交付一次性目标纠正与提醒回执，验收历史、计数、重试、重开和联合擦除。
 
 ## 6. 测试与退出条件
 
@@ -827,3 +829,40 @@ git diff --check
 
 Linux Release 全量 **206/206**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
 平台边界和架构门禁通过。日志见 `/tmp/mira-m30-recurring-{full-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-24：一次性目标纠正与提醒回执
+
+基线 `8e68713`，分支 `feat/m30-memory-systems`。按 DEC-131 实施 M30-26。目标库
+schema 1.2 保存此前的目标定义及提醒回执。纠正以期望版本和新来源事件提交，旧定义、
+新期限和版本在同一事务落盘。提醒计数从送达证据计算，重试、纠正和结算均不重复计数。
+擦除同时清理正文、定义历史与提醒回执并保留 ID 屏障。
+
+测试覆盖从 1.0 和 1.1 迁移、旧修订上限放宽、迁移标记失败后重试、纠正历史回滚、
+变更后的到期页、竞争登记、提醒与纠正额度、终态、擦除失败回滚、重开、租户隔离及
+同 ID 的重复计划不受一次性目标擦除影响。
+
+构建环境为 Linux x86_64、GCC 13.3.0、CMake 3.28.3。复现命令：
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DMIRA_BUILD_TESTS=ON
+cmake --build build/release -j 9
+ctest --test-dir build/release -j 6 --output-on-failure
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_goal_store_test \
+  mira_m30_social_erasure_recovery_test mira_m4_store_open_test
+ctest --test-dir build/asan --output-on-failure \
+  -R 'mira_(m30_(goal_store|social_erasure_recovery)|m4_store_open)_test'
+clang-tidy -p build/release --warnings-as-errors='*' src/storage/sqlite_goal_store.cpp
+cmake --build build/release --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行/待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 日历及时区计划 | Mira Maintainers，冻结日历规则与夏令时行为后验证 |
+| 提醒送达、主动派发与生产授权 | Mira Maintainers 和宿主集成者，宿主及 M33 接入当前授权和送达回执后验证 |
+| Windows/Android、远端 CI 与其他 sanitizer | Mira Maintainers，提交后运行对应矩阵并按被测 head 回填 |
+
+Linux Release 全量 **206/206**，ASAN 定向 **3/3**。严格 clang-tidy、格式、文档、SBOM、
+平台边界和架构门禁通过。日志见 `/tmp/mira-m30-goal-history-{full-test,asan-test,tidy,quality}.log`。

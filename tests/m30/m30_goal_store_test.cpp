@@ -209,6 +209,7 @@ int recurring_plan_versions_and_restart() {
     MIRA_CHECK(fixture.store->create(plan, task));
     MIRA_CHECK(
         fixture.update_database("DROP TABLE recurring_occurrences; DROP TABLE recurring_plans;"
+                                " DROP TABLE goal_corrections; DROP TABLE goal_reminders;"
                                 " UPDATE store_meta SET value='1.0' WHERE key='schema_version';"));
     MIRA_CHECK(fixture.reopen());
     MIRA_CHECK(fixture.store->read(plan).value()->definition == task);
@@ -326,6 +327,118 @@ int occurrence_rollback_and_quota() {
     MIRA_CHECK(fixture.store->record_occurrence({next_plan, 1, first_at}, fixture.now));
     return 0;
 }
+
+int corrections_and_reminders_survive_restart() {
+    GoalFixture fixture(4, 3);
+    fixture.options.max_corrections_per_goal = 2;
+    fixture.options.max_reminders_per_goal = 2;
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey goal{fixture.owner, Id128::generate()};
+    const GoalKey foreign{{TenantId::generate(), fixture.owner.user}, goal.id};
+    const auto original = commitment(fixture.now, "Original deadline");
+    MIRA_CHECK(fixture.store->create(goal, original));
+    MIRA_CHECK(fixture.store->create(foreign, original));
+    const RecurringPlanDefinition plan{"Keep the plan", EventId::generate(), fixture.now, 1h};
+    MIRA_CHECK(fixture.store->create_plan(goal, plan));
+    MIRA_CHECK(fixture.update_database(
+        "DROP TABLE goal_corrections; DROP TABLE goal_reminders;"
+        " ALTER TABLE goals RENAME TO fixture_goal_source;"
+        " CREATE TABLE goals(tenant TEXT NOT NULL,owner TEXT NOT NULL,id TEXT NOT NULL,"
+        " state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 4),"
+        " revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 3),"
+        " kind INTEGER,title TEXT,source_event TEXT,created_at INTEGER,due_at INTEGER,"
+        " expires_at INTEGER,resolution_event TEXT,resolved_at INTEGER,PRIMARY "
+        "KEY(tenant,owner,id));"
+        " INSERT INTO goals SELECT * FROM fixture_goal_source; DROP TABLE fixture_goal_source;"
+        " CREATE INDEX goals_due ON goals(tenant,owner,due_at,id) WHERE state=0;"
+        " CREATE INDEX goals_by_owner_state ON goals(tenant,owner,state,id);"
+        " UPDATE store_meta SET value='1.1' WHERE key='schema_version';"
+        " CREATE TRIGGER block_schema_version BEFORE UPDATE ON store_meta"
+        " WHEN NEW.key='schema_version' BEGIN SELECT RAISE(ABORT, 'fixture rejects migration'); "
+        "END;"));
+    MIRA_CHECK(!fixture.reopen());
+    MIRA_CHECK(fixture.update_database("DROP TRIGGER block_schema_version;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->read_plan(goal).value()->definition == plan);
+    MIRA_CHECK(fixture.store->read(goal).value()->definition == original);
+
+    const GoalReminder reminder{EventId::generate(), fixture.now};
+    const auto notify = [&] { return fixture.store->record_reminder(goal, 1, reminder); };
+    auto one = fixture.executor.submit_auto(notify);
+    auto two = fixture.executor.submit_auto(notify);
+    const auto first = one.get();
+    const auto repeated = two.get();
+    MIRA_CHECK(first && repeated &&
+               first.value().idempotent_replay != repeated.value().idempotent_replay);
+    MIRA_CHECK(fixture.store->read(goal).value()->reminder_count == 1);
+    MIRA_CHECK(fixture.store->read(foreign).value()->reminder_count == 0);
+    MIRA_CHECK(!fixture.store->record_reminder(goal, 1, {reminder.evidence, fixture.now + 1ms}));
+
+    auto modified = original;
+    modified.title = "Revised deadline";
+    modified.due_at = fixture.now + 15min;
+    modified.source_event = EventId::generate();
+    MIRA_CHECK(
+        fixture.update_database("CREATE TRIGGER block_correction BEFORE UPDATE OF title ON goals"
+                                " BEGIN SELECT RAISE(ABORT, 'fixture rejects correction'); END;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(!fixture.store->correct(goal, 1, modified));
+    MIRA_CHECK(fixture.store->correction_history(goal).value().empty());
+    MIRA_CHECK(fixture.store->read(goal).value()->definition == original);
+    MIRA_CHECK(fixture.update_database("DROP TRIGGER block_correction;"));
+    MIRA_CHECK(fixture.reopen());
+    const auto changed = fixture.store->correct(goal, 1, modified);
+    MIRA_CHECK(changed && changed.value().revision == 2 && changed.value().reminder_count == 1);
+    MIRA_CHECK(fixture.store->correct(goal, 1, modified).value().revision == 2);
+    MIRA_CHECK(fixture.store->due({fixture.owner, fixture.now, 8, {}}).value().records.empty());
+    MIRA_CHECK(!fixture.store->correct(goal, 2, original));
+    MIRA_CHECK(fixture.store->correction_history(foreign).value().empty());
+    auto history = fixture.store->correction_history(goal);
+    MIRA_CHECK(history && history.value().size() == 1 && history.value().front().revision == 1 &&
+               history.value().front().definition == original);
+
+    const GoalReminder new_reminder{EventId::generate(), fixture.now + 5min};
+    MIRA_CHECK(!fixture.store->record_reminder(goal, 1, new_reminder));
+    MIRA_CHECK(fixture.store->record_reminder(goal, 1, reminder).value().idempotent_replay);
+    MIRA_CHECK(!fixture.store->record_reminder(goal, 2, reminder));
+    MIRA_CHECK(fixture.store->record_reminder(goal, 2, new_reminder));
+    const auto full = fixture.store->record_reminder(goal, 2, {EventId::generate(), fixture.now});
+    MIRA_CHECK(!full && full.error().code == ErrorCode::ResourceExhausted);
+
+    auto latest = modified;
+    latest.title = "Final deadline";
+    latest.source_event = EventId::generate();
+    MIRA_CHECK(fixture.store->correct(goal, 2, latest).value().revision == 3);
+    auto more = latest;
+    more.source_event = EventId::generate();
+    const auto quota = fixture.store->correct(goal, 3, more);
+    MIRA_CHECK(!quota && quota.error().code == ErrorCode::ResourceExhausted);
+    const GoalResolution complete{GoalState::Fulfilled, EventId::generate(), fixture.now + 30min};
+    MIRA_CHECK(!fixture.store->settle(goal, 1, complete));
+    MIRA_CHECK(fixture.store->settle(goal, 3, complete).value().revision == 4);
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->settle(goal, 3, complete).value().reminder_count == 2);
+    MIRA_CHECK(fixture.store->record_reminder(goal, 2, new_reminder).value().idempotent_replay);
+    MIRA_CHECK(!fixture.store->correct(goal, 4, more));
+
+    MIRA_CHECK(fixture.update_database(
+        "CREATE TRIGGER block_reminder_erasure BEFORE DELETE ON goal_reminders"
+        " BEGIN SELECT RAISE(ABORT, 'fixture rejects erasure'); END;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(!fixture.store->erase(goal));
+    MIRA_CHECK(fixture.store->read(goal).value()->reminder_count == 2 &&
+               fixture.store->correction_history(goal).value().size() == 2);
+    MIRA_CHECK(fixture.update_database("DROP TRIGGER block_reminder_erasure;"));
+    MIRA_CHECK(fixture.reopen() && fixture.store->erase(goal) && fixture.reopen());
+    MIRA_CHECK(fixture.store->read(goal).value()->state == GoalState::Erased &&
+               fixture.store->read(goal).value()->reminder_count == 0);
+    MIRA_CHECK(fixture.store->correction_history(goal).value().empty());
+    MIRA_CHECK(!fixture.store->record_reminder(goal, 1, reminder));
+    MIRA_CHECK(!fixture.store->create(goal, original));
+    MIRA_CHECK(fixture.store->read(foreign).value()->definition == original);
+    MIRA_CHECK(fixture.store->read_plan(goal).value()->definition == plan);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -335,5 +448,7 @@ int main() {
         return result;
     if (const int result = recurring_plan_versions_and_restart(); result != 0)
         return result;
-    return occurrence_rollback_and_quota();
+    if (const int result = occurrence_rollback_and_quota(); result != 0)
+        return result;
+    return corrections_and_reminders_survive_restart();
 }

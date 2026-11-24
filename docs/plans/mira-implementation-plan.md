@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-24：[DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md) 交付
+一次性目标纠正、历史与提醒回执，见 [M30-26](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-23：[DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md) 交付
 重复计划与版本化触发回执，见 [M30-25](m30-long-term-memory-integration.md#5-工作项)。
 

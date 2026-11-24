@@ -14,18 +14,29 @@ namespace {
 using storage::Statement;
 using storage::Transaction;
 
-constexpr const char *kColumns = "id,state,revision,kind,title,source_event,created_at,due_at,"
-                                 "expires_at,resolution_event,resolved_at";
-constexpr const char *kSchema =
-    "CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
+constexpr const char *kColumns =
+    "id,state,revision,kind,title,source_event,created_at,due_at,"
+    "expires_at,resolution_event,resolved_at,(SELECT count(*) FROM goal_reminders r"
+    " WHERE r.tenant=goals.tenant AND r.owner=goals.owner AND r.goal_id=goals.id)";
+constexpr const char *kGoalTable =
     "CREATE TABLE goals(tenant TEXT NOT NULL,owner TEXT NOT NULL,id TEXT NOT NULL,"
     " state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 4),"
-    " revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 3),"
+    " revision INTEGER NOT NULL CHECK(revision >= 1),"
     " kind INTEGER,title TEXT,source_event TEXT,created_at INTEGER,due_at INTEGER,expires_at "
     "INTEGER,"
-    " resolution_event TEXT,resolved_at INTEGER,PRIMARY KEY(tenant,owner,id));"
+    " resolution_event TEXT,resolved_at INTEGER,PRIMARY KEY(tenant,owner,id));";
+constexpr const char *kGoalIndexes =
     "CREATE INDEX goals_due ON goals(tenant,owner,due_at,id) WHERE state=0;"
     "CREATE INDEX goals_by_owner_state ON goals(tenant,owner,state,id);";
+constexpr const char *kGoalHistorySchema =
+    "CREATE TABLE goal_corrections(tenant TEXT NOT NULL,owner TEXT NOT NULL,goal_id TEXT NOT NULL,"
+    " revision INTEGER NOT NULL,kind INTEGER NOT NULL,title TEXT NOT NULL,source_event TEXT NOT "
+    "NULL,"
+    " created_at INTEGER NOT NULL,due_at INTEGER,expires_at INTEGER,"
+    " PRIMARY KEY(tenant,owner,goal_id,revision), UNIQUE(tenant,owner,goal_id,source_event));"
+    "CREATE TABLE goal_reminders(tenant TEXT NOT NULL,owner TEXT NOT NULL,goal_id TEXT NOT NULL,"
+    " evidence TEXT NOT NULL,revision INTEGER NOT NULL,delivered_at INTEGER NOT NULL,"
+    " PRIMARY KEY(tenant,owner,goal_id,evidence));";
 constexpr const char *kRecurringSchema =
     "CREATE TABLE recurring_plans(tenant TEXT NOT NULL,owner TEXT NOT NULL,id TEXT NOT NULL,"
     " state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 2),"
@@ -120,42 +131,59 @@ bool null_column(Statement &s, int index) {
 
 Error corrupt_row() { return goal_error(ErrorCode::DataLoss, "goal store row is invalid"); }
 
+Result<GoalDefinition> decode_definition(Statement &s, int column) {
+    const auto kind = sqlite3_column_int64(s.get(), column);
+    const auto source = EventId::parse(column_text(s, column + 2));
+    const auto created = column_time(s, column + 3);
+    const auto due_at = column_time(s, column + 4);
+    const auto expires_at = column_time(s, column + 5);
+    if (sqlite3_column_type(s.get(), column) != SQLITE_INTEGER || kind < 0 || kind > 1 || !source ||
+        !created || (!due_at && !null_column(s, column + 4)) ||
+        (!expires_at && !null_column(s, column + 5)))
+        return corrupt_row();
+    GoalDefinition value{static_cast<GoalKind>(kind),
+                         column_text(s, column + 1),
+                         *source,
+                         *created,
+                         due_at,
+                         expires_at};
+    if (!valid_definition(value))
+        return corrupt_row();
+    return value;
+}
+
 Result<GoalRecord> decode_record(Statement &s, const GoalOwner &owner) {
     const auto id = Id128::parse(column_text(s, 0));
     const int state = sqlite3_column_int(s.get(), 1);
     const auto revision = sqlite3_column_int64(s.get(), 2);
+    const auto reminders = sqlite3_column_int64(s.get(), 11);
     if (!id || id->is_nil() || sqlite3_column_type(s.get(), 1) != SQLITE_INTEGER ||
         sqlite3_column_type(s.get(), 2) != SQLITE_INTEGER || state < 0 || state > 4 ||
-        revision < 1 || revision > 3)
+        revision < 1 || reminders < 0 || reminders > 128)
         return corrupt_row();
     GoalRecord record{
         {owner, *id}, static_cast<GoalState>(state), static_cast<std::uint64_t>(revision), {}, {}};
+    record.reminder_count = static_cast<std::size_t>(reminders);
     if (record.state == GoalState::Erased) {
+        if (reminders != 0)
+            return corrupt_row();
         for (int column = 3; column <= 10; ++column)
             if (!null_column(s, column))
                 return corrupt_row();
         return record;
     }
-    const int kind = sqlite3_column_int(s.get(), 3);
-    const auto source = EventId::parse(column_text(s, 5));
-    const auto created = column_time(s, 6);
-    const auto due_at = column_time(s, 7);
-    const auto expires_at = column_time(s, 8);
-    if (sqlite3_column_type(s.get(), 3) != SQLITE_INTEGER || kind < 0 || kind > 1 || !source ||
-        !created || (!due_at && !null_column(s, 7)) || (!expires_at && !null_column(s, 8)))
-        return corrupt_row();
-    record.definition = GoalDefinition{
-        static_cast<GoalKind>(kind), column_text(s, 4), *source, *created, due_at, expires_at};
-    if (!valid_definition(*record.definition))
-        return corrupt_row();
+    auto definition = decode_definition(s, 3);
+    if (!definition)
+        return definition.error();
+    record.definition = std::move(definition).value();
     if (record.state == GoalState::Pending) {
-        if (revision != 1 || !null_column(s, 9) || !null_column(s, 10))
+        if (!null_column(s, 9) || !null_column(s, 10))
             return corrupt_row();
         return record;
     }
     const auto evidence = EventId::parse(column_text(s, 9));
     const auto resolved_at = column_time(s, 10);
-    if (revision != 2 || !evidence || !resolved_at)
+    if (revision < 2 || !evidence || !resolved_at)
         return corrupt_row();
     record.resolution = GoalResolution{record.state, *evidence, *resolved_at};
     if (!valid_resolution(*record.resolution) ||
@@ -201,7 +229,8 @@ Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &option
     if (!prior)
         return prior.error();
     if (prior.value()) {
-        if (prior.value()->state == GoalState::Pending && prior.value()->definition == definition)
+        if (prior.value()->state == GoalState::Pending && prior.value()->revision == 1 &&
+            prior.value()->definition == definition)
             return std::move(*prior.value());
         return goal_error(ErrorCode::InvalidState, "goal ID is already recorded or erased");
     }
@@ -238,24 +267,26 @@ Result<GoalRecord> settle_goal(sqlite3 *db, const GoalKey &key, std::uint64_t ex
     if (!prior.value())
         return goal_error(ErrorCode::NotFound, "goal is unavailable for resolution");
     auto record = std::move(*prior.value());
-    if (expected == 1 && record.revision == 2 && record.resolution == resolution)
+    if (record.revision == expected + 1 && record.resolution == resolution)
         return record;
     if (record.state != GoalState::Pending || record.revision != expected || !record.definition)
         return goal_error(ErrorCode::InvalidState, "goal state or revision changed");
     if (!resolution_matches_definition(resolution, *record.definition))
         return goal_error(ErrorCode::InvalidArgument,
                           "goal resolution time conflicts with its definition");
-    Statement update(db, "UPDATE goals SET state=?4, revision=2, resolution_event=?5,resolved_at=?6"
-                         " WHERE tenant=?1 AND owner=?2 AND id=?3 AND state=0 AND revision=1");
+    Statement update(
+        db, "UPDATE goals SET state=?4, revision=revision+1, resolution_event=?5,resolved_at=?6"
+            " WHERE tenant=?1 AND owner=?2 AND id=?3 AND state=0 AND revision=?7");
     if (!update.valid() || !bind_key(update, key) ||
         sqlite3_bind_int(update.get(), 4, static_cast<int>(resolution.state)) != SQLITE_OK ||
         !bind_text(update, 5, resolution.evidence.to_string()) ||
-        !bind_time(update, 6, resolution.at) || sqlite3_step(update.get()) != SQLITE_DONE ||
-        sqlite3_changes(db) != 1)
+        !bind_time(update, 6, resolution.at) ||
+        sqlite3_bind_int64(update.get(), 7, static_cast<std::int64_t>(expected)) != SQLITE_OK ||
+        sqlite3_step(update.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
         return goal_error(ErrorCode::Internal, "goal resolution failed");
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    record.revision = 2;
+    ++record.revision;
     record.state = resolution.state;
     record.resolution = resolution;
     return record;
@@ -338,23 +369,154 @@ Result<void> erase_goal(sqlite3 *db, std::size_t capacity, const GoalKey &key) {
                         "id=?3 AND state<>4");
     if (!erase.valid() || !bind_key(erase, key) || sqlite3_step(erase.get()) != SQLITE_DONE)
         return goal_error(ErrorCode::Internal, "goal erasure failed");
-    if (sqlite3_changes(db) == 1)
-        return transaction.commit();
-    auto prior = read_goal(db, key);
-    if (!prior)
-        return prior.error();
-    if (prior.value()) {
-        if (prior.value()->state != GoalState::Erased)
-            return goal_error(ErrorCode::Internal, "goal erasure did not apply");
-        return {};
+    if (sqlite3_changes(db) != 1) {
+        auto prior = read_goal(db, key);
+        if (!prior)
+            return prior.error();
+        if (prior.value()) {
+            if (prior.value()->state != GoalState::Erased)
+                return goal_error(ErrorCode::Internal, "goal erasure did not apply");
+        } else {
+            if (auto room = require_capacity(db, "SELECT count(*) FROM goals", capacity); !room)
+                return room.error();
+            Statement fence(
+                db, "INSERT INTO goals(tenant,owner,id,state,revision) VALUES(?1,?2,?3,4,1)");
+            if (!fence.valid() || !bind_key(fence, key) ||
+                sqlite3_step(fence.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
+                return goal_error(ErrorCode::Internal, "goal erasure barrier failed");
+        }
     }
-    if (auto room = require_capacity(db, "SELECT count(*) FROM goals", capacity); !room)
-        return room.error();
-    Statement fence(db, "INSERT INTO goals(tenant,owner,id,state,revision) VALUES(?1,?2,?3,4,1)");
-    if (!fence.valid() || !bind_key(fence, key) || sqlite3_step(fence.get()) != SQLITE_DONE ||
-        sqlite3_changes(db) != 1)
-        return goal_error(ErrorCode::Internal, "goal erasure barrier failed");
+    for (const char *sql :
+         {"DELETE FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3",
+          "DELETE FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND goal_id=?3"}) {
+        Statement cleanup(db, sql);
+        if (!cleanup.valid() || !bind_key(cleanup, key) ||
+            sqlite3_step(cleanup.get()) != SQLITE_DONE)
+            return goal_error(ErrorCode::Internal, "goal history erasure failed");
+    }
+    Statement remaining(db,
+                        "SELECT 1 FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3"
+                        " UNION ALL SELECT 1 FROM goal_reminders WHERE tenant=?1 AND owner=?2 AND "
+                        "goal_id=?3 LIMIT 1");
+    if (!remaining.valid() || !bind_key(remaining, key) ||
+        sqlite3_step(remaining.get()) != SQLITE_DONE)
+        return goal_error(ErrorCode::Internal, "goal history erasure did not complete");
     return transaction.commit();
+}
+
+Result<std::vector<GoalDefinitionVersion>> read_corrections(sqlite3 *db, const GoalKey &key) {
+    Statement rows(db, "SELECT revision,kind,title,source_event,created_at,due_at,expires_at"
+                       " FROM goal_corrections WHERE tenant=?1 AND owner=?2 AND goal_id=?3"
+                       " ORDER BY revision LIMIT 129");
+    if (!rows.valid() || !bind_key(rows, key))
+        return goal_error(ErrorCode::Internal, "goal correction history preparation failed");
+    std::vector<GoalDefinitionVersion> entries;
+    int step = SQLITE_OK;
+    while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
+        auto definition = decode_definition(rows, 1);
+        const auto revision = sqlite3_column_int64(rows.get(), 0);
+        if (!definition || revision <= 0 || entries.size() >= 128)
+            return corrupt_row();
+        entries.push_back({static_cast<std::uint64_t>(revision), std::move(definition).value()});
+    }
+    if (step != SQLITE_DONE)
+        return goal_error(ErrorCode::Internal, "goal correction history read failed");
+    return entries;
+}
+
+Result<GoalRecord> correct_goal(sqlite3 *db, const GoalKey &key, std::uint64_t expected,
+                                GoalDefinition replacement, std::size_t capacity) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return goal_error(ErrorCode::Unavailable, "goal correction transaction unavailable");
+    auto current = read_goal(db, key);
+    if (!current)
+        return current.error();
+    if (!current.value() || current.value()->state != GoalState::Pending)
+        return goal_error(ErrorCode::InvalidState, "goal is unavailable for correction");
+    auto record = std::move(*current.value());
+    const auto &original = *record.definition;
+    if ((record.revision == expected || record.revision == expected + 1) && original == replacement)
+        return record;
+    if (record.revision != expected || original.kind != replacement.kind ||
+        original.created_at != replacement.created_at ||
+        original.source_event == replacement.source_event)
+        return goal_error(ErrorCode::InvalidState,
+                          "goal version, identity or correction source changed");
+    if (record.revision > capacity)
+        return goal_error(ErrorCode::ResourceExhausted, "goal correction quota reached");
+    Statement archive(
+        db,
+        "INSERT INTO goal_corrections(tenant,owner,goal_id,revision,kind,title,source_event,"
+        " created_at,due_at,expires_at) SELECT tenant,owner,id,revision,kind,title,source_event,"
+        " created_at,due_at,expires_at FROM goals WHERE tenant=?1 AND owner=?2 AND id=?3");
+    if (!archive.valid() || !bind_key(archive, key) || sqlite3_step(archive.get()) != SQLITE_DONE ||
+        sqlite3_changes(db) != 1)
+        return goal_error(ErrorCode::Internal, "goal correction history write failed");
+    Statement update(
+        db, "UPDATE goals SET revision=revision+1,title=?4,source_event=?5,due_at=?6,expires_at=?7"
+            " WHERE tenant=?1 AND owner=?2 AND id=?3 AND state=0 AND revision=?8"
+            " AND NOT EXISTS(SELECT 1 FROM goal_corrections WHERE tenant=?1 AND owner=?2"
+            " AND goal_id=?3 AND source_event=?5)");
+    if (!update.valid() || !bind_key(update, key) || !bind_text(update, 4, replacement.title) ||
+        !bind_text(update, 5, replacement.source_event.to_string()) ||
+        !bind_time(update, 6, replacement.due_at) ||
+        !bind_time(update, 7, replacement.expires_at) ||
+        sqlite3_bind_int64(update.get(), 8, static_cast<std::int64_t>(expected)) != SQLITE_OK ||
+        sqlite3_step(update.get()) != SQLITE_DONE)
+        return goal_error(ErrorCode::Internal, "goal correction failed");
+    if (sqlite3_changes(db) != 1)
+        return goal_error(ErrorCode::InvalidState, "goal correction source was already used");
+    if (auto committed = transaction.commit(); !committed)
+        return committed.error();
+    ++record.revision;
+    record.definition = std::move(replacement);
+    return record;
+}
+
+Result<GoalReminderReceipt> store_reminder(sqlite3 *db, const GoalKey &key, std::uint64_t expected,
+                                           const GoalReminder &reminder, std::size_t capacity) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return goal_error(ErrorCode::Unavailable, "goal reminder transaction unavailable");
+    const auto evidence = reminder.evidence.to_string();
+    Statement prior(db,
+                    "SELECT revision,delivered_at FROM goal_reminders WHERE tenant=?1 AND owner=?2"
+                    " AND goal_id=?3 AND evidence=?4");
+    if (!prior.valid() || !bind_key(prior, key) || !bind_text(prior, 4, evidence))
+        return goal_error(ErrorCode::Internal, "goal reminder receipt preparation failed");
+    const auto step = sqlite3_step(prior.get());
+    if (step == SQLITE_ROW) {
+        if (sqlite3_column_int64(prior.get(), 0) == static_cast<std::int64_t>(expected) &&
+            column_time(prior, 1) == reminder.delivered_at)
+            return GoalReminderReceipt{expected, reminder, true};
+        return goal_error(ErrorCode::InvalidState, "goal reminder evidence already recorded");
+    }
+    if (step != SQLITE_DONE)
+        return goal_error(ErrorCode::Internal, "goal reminder receipt read failed");
+    auto record = read_goal(db, key);
+    if (!record)
+        return record.error();
+    if (!record.value() || record.value()->state != GoalState::Pending ||
+        record.value()->revision != expected)
+        return goal_error(ErrorCode::InvalidState, "goal is unavailable for reminders");
+    const auto &definition = *record.value()->definition;
+    if (reminder.delivered_at < definition.created_at ||
+        (definition.expires_at && reminder.delivered_at >= *definition.expires_at))
+        return goal_error(ErrorCode::InvalidArgument, "goal reminder time is outside its lifetime");
+    if (record.value()->reminder_count >= capacity)
+        return goal_error(ErrorCode::ResourceExhausted, "goal reminder quota reached");
+    Statement insert(
+        db, "INSERT INTO goal_reminders(tenant,owner,goal_id,evidence,revision,delivered_at)"
+            " VALUES(?1,?2,?3,?4,?5,?6)");
+    if (!insert.valid() || !bind_key(insert, key) || !bind_text(insert, 4, evidence) ||
+        sqlite3_bind_int64(insert.get(), 5, static_cast<std::int64_t>(expected)) != SQLITE_OK ||
+        !bind_time(insert, 6, reminder.delivered_at) || sqlite3_step(insert.get()) != SQLITE_DONE ||
+        sqlite3_changes(db) != 1)
+        return goal_error(ErrorCode::Internal, "goal reminder write failed");
+    if (auto committed = transaction.commit(); !committed)
+        return committed.error();
+    return GoalReminderReceipt{expected, reminder, false};
 }
 
 bool valid_plan(const RecurringPlanDefinition &plan) {
@@ -712,18 +874,35 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open(kairo::Executor &
         options.operation_timeout > std::chrono::minutes{10} || options.max_plans == 0 ||
         options.max_plans > 100'000 || options.max_active_plans_per_owner == 0 ||
         options.max_active_plans_per_owner > options.max_plans || options.max_occurrences == 0 ||
-        options.max_occurrences > 1'000'000)
+        options.max_occurrences > 1'000'000 || options.max_corrections_per_goal == 0 ||
+        options.max_corrections_per_goal > 128 || options.max_reminders_per_goal == 0 ||
+        options.max_reminders_per_goal > 128)
         return goal_error(ErrorCode::InvalidArgument, "invalid goal store options");
     storage::DbOpenOptions db;
     db.path = options.path;
     db.exclusive_owner = true;
     db.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
-    const std::string schema = std::string(kSchema) + kRecurringSchema;
+    const std::string schema =
+        std::string("CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);") +
+        kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema;
     auto opened = storage::open_reference_store(
-        db,
-        {"goal-store", {1, 1}, schema.c_str(), goal_error, [](sqlite3 *database, SchemaVersion) {
-             return storage::exec_sql(database, kRecurringSchema);
-         }});
+        db, {"goal-store",
+             {1, 2},
+             schema.c_str(),
+             goal_error,
+             [](sqlite3 *database, SchemaVersion previous) {
+                 if (previous.minor < 1) {
+                     if (auto migrated = storage::exec_sql(database, kRecurringSchema); !migrated)
+                         return migrated;
+                 }
+                 const auto migration =
+                     std::string("ALTER TABLE goals RENAME TO goals_before_revision;") +
+                     kGoalTable +
+                     "INSERT INTO goals SELECT * FROM goals_before_revision;"
+                     "DROP TABLE goals_before_revision;" +
+                     kGoalIndexes + kGoalHistorySchema;
+                 return storage::exec_sql(database, migration.c_str());
+             }});
     if (!opened)
         return opened.error();
     if (auto secure = storage::exec_sql(opened.value().database.get(), "PRAGMA secure_delete=ON;");
@@ -753,7 +932,8 @@ Result<std::optional<GoalRecord>> SqliteGoalStore::read(const GoalKey &key) cons
 
 Result<GoalRecord> SqliteGoalStore::settle(const GoalKey &key, std::uint64_t expected_revision,
                                            GoalResolution resolution) {
-    if (!valid_key(key) || expected_revision == 0 || !valid_resolution(resolution))
+    if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
+        !valid_resolution(resolution))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal resolution");
     return impl_->channel.run<GoalRecord>([key, expected_revision, resolution](sqlite3 *db) {
         return settle_goal(db, key, expected_revision, resolution);
@@ -782,6 +962,41 @@ Result<void> SqliteGoalStore::erase(const GoalKey &key) {
     return impl_->channel.run<void>([key, capacity = impl_->options.max_goals](sqlite3 *db) {
         return erase_goal(db, capacity, key);
     });
+}
+
+Result<GoalRecord> SqliteGoalStore::correct(const GoalKey &key, std::uint64_t expected_revision,
+                                            GoalDefinition definition) {
+    if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
+        !valid_definition(definition))
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal correction");
+    if (matches_content_marker(definition.title, default_forbidden_content_markers()))
+        return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
+    return impl_->channel.run<GoalRecord>(
+        [key, expected_revision, definition = std::move(definition),
+         capacity = impl_->options.max_corrections_per_goal](sqlite3 *db) mutable {
+            return correct_goal(db, key, expected_revision, std::move(definition), capacity);
+        });
+}
+
+Result<std::vector<GoalDefinitionVersion>>
+SqliteGoalStore::correction_history(const GoalKey &key) const {
+    if (!valid_key(key))
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal key");
+    return impl_->channel.run<std::vector<GoalDefinitionVersion>>(
+        [key](sqlite3 *db) { return read_corrections(db, key); });
+}
+
+Result<GoalReminderReceipt> SqliteGoalStore::record_reminder(const GoalKey &key,
+                                                             std::uint64_t expected_revision,
+                                                             GoalReminder reminder) {
+    if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
+        reminder.evidence.is_nil() || !valid_time(reminder.delivered_at))
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal reminder");
+    return impl_->channel.run<GoalReminderReceipt>(
+        [key, expected_revision, reminder,
+         capacity = impl_->options.max_reminders_per_goal](sqlite3 *db) {
+            return store_reminder(db, key, expected_revision, reminder, capacity);
+        });
 }
 
 Result<RecurringPlanRecord> SqliteGoalStore::create_plan(const GoalKey &key,

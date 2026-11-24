@@ -28,7 +28,7 @@
 | [社交对象目录](durable-memory-host.md#社交对象目录)、[擦除恢复](durable-memory-host.md#社交记忆擦除恢复) | `sqlite_social_directory.hpp` | 环境内身份、版本化别名、歧义及跨库擦除恢复 |
 | [社交画像字段](durable-memory-host.md#社交画像字段)、[社交关系](durable-memory-host.md#社交关系断言) | `social_profile.hpp` | 字段和有向关系断言、来源与时态检索 |
 | [世界事实](durable-memory-host.md#世界事实的新鲜度) | `world_fact.hpp` | 环境与应用事实、实体属性索引和新鲜度 |
-| [目标与承诺](durable-memory-host.md#目标与承诺)、[重复计划](durable-memory-host.md#重复计划与触发回执) | `sqlite_goal_store.hpp` | 持久任务与承诺、到期索引、重复计划回执和擦除 |
+| [目标与承诺](durable-memory-host.md#目标与承诺)、[重复计划](durable-memory-host.md#重复计划与触发回执) | `sqlite_goal_store.hpp` | 持久任务、承诺、纠正与提醒回执、重复计划 |
 | [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`embedding_math.hpp`、`content_markers.hpp`、`verified_fact.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`memory_embedding.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、共享向量数值边界、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |
 | [安全与权限](security.md) | `security.hpp` | Principal、能力授权、风险分级、PolicyEngine、Human Confirmation、脱敏 |
 | [交互协调层](interaction-coordinator.md) | `interaction_coordinator.hpp` | 主体级统一输入入口：输入信封与阶段、幂等台账、确定性路由裁决、Loop 输入汇、上下文归属、`mira.interaction.*.v1` 事件族（M28 / M29 / M30，DEC-068/102/106/107；含澄清回收、只读回补、恢复许可、P3 候选与记忆生命周期） |

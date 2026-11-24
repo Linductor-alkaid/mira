@@ -288,6 +288,25 @@ ID 分页，返回截至指定时点已到期、仍为 Pending 且未超过 `exp
 独立限额。宿主在 Executor 关闭前关闭目标库。到期查询产生待处理候选，执行授权沿
 宿主既有策略。见 [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
 
+### 纠正与提醒回执
+
+`SqliteGoalStore` schema 1.2 支持纠正 Pending 目标。宿主保留目标类型与创建时间，以
+新来源事件提交标题、截止时间和过期时间。成功后版本递增，到期页反映新期限；可用
+`correction_history` 读取先前的定义及其来源事件。
+
+```cpp
+auto corrected = goals->correct(key, current_revision, revised_definition);
+auto previous = goals->correction_history(key);
+// 检查 corrected，并在新版本的提醒送达后登记。
+auto receipt = goals->record_reminder(key, corrected.value().revision,
+                                      {delivery_event, delivered_at});
+```
+
+`record_reminder` 登记已经送达的提醒。调用方传入送达时目标的版本、证据和送达时间。
+相同回执重试保持幂等，已存在的证据若带不同时间或版本则拒绝。`GoalRecord.reminder_count`
+来自已登记的回执，纠正后继续计数。已结算目标可重试已有回执，不能登记新的回执。
+擦除目标会一并清理定义历史、提醒回执和计数。见 [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)。
+
 ## 重复计划与触发回执
 
 `SqliteGoalStore` schema 1.1 为固定 UTC 间隔的重复计划保存独立命名空间。计划的

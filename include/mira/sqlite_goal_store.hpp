@@ -55,6 +55,24 @@ struct GoalRecord final {
     std::uint64_t revision = 1;
     std::optional<GoalDefinition> definition; // Absent after erasure.
     std::optional<GoalResolution> resolution;
+    std::size_t reminder_count = 0;
+};
+
+struct GoalDefinitionVersion final {
+    std::uint64_t revision = 0;
+    GoalDefinition definition;
+};
+
+struct GoalReminder final {
+    EventId evidence;
+    GoalTime delivered_at{};
+    friend bool operator==(const GoalReminder &, const GoalReminder &) = default;
+};
+
+struct GoalReminderReceipt final {
+    std::uint64_t revision = 0;
+    GoalReminder reminder;
+    bool idempotent_replay = false;
 };
 
 struct GoalDueCursor final {
@@ -152,6 +170,8 @@ struct SqliteGoalStoreOptions final {
     std::size_t max_plans = 1024;
     std::size_t max_active_plans_per_owner = 32;
     std::size_t max_occurrences = 8192;
+    std::size_t max_corrections_per_goal = 16;
+    std::size_t max_reminders_per_goal = 32;
 };
 
 // The host authenticates the exact owner and authorizes each operation. Due
@@ -172,6 +192,12 @@ class SqliteGoalStore final {
     [[nodiscard]] Result<GoalDuePage> due(const GoalDueQuery &query) const;
     [[nodiscard]] Result<GoalListPage> list(const GoalListQuery &query) const;
     [[nodiscard]] Result<void> erase(const GoalKey &key);
+    [[nodiscard]] Result<GoalRecord> correct(const GoalKey &key, std::uint64_t expected_revision,
+                                             GoalDefinition definition);
+    [[nodiscard]] Result<std::vector<GoalDefinitionVersion>>
+    correction_history(const GoalKey &key) const;
+    [[nodiscard]] Result<GoalReminderReceipt>
+    record_reminder(const GoalKey &key, std::uint64_t expected_revision, GoalReminder reminder);
 
     [[nodiscard]] Result<RecurringPlanRecord> create_plan(const GoalKey &key,
                                                           RecurringPlanDefinition definition);
