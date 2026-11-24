@@ -14,6 +14,8 @@ namespace mira {
 namespace {
 using storage::Statement;
 using storage::Transaction;
+using Resource = GoalStoreResource;
+using Operation = GoalStoreOperation;
 
 constexpr const char *kColumns =
     "id,state,revision,kind,title,source_event,created_at,due_at,"
@@ -897,12 +899,28 @@ Result<void> erase_plan_row(sqlite3 *db, std::size_t capacity, const GoalKey &ke
 
 class SqliteGoalStore::Impl final {
   public:
-    Impl(kairo::Executor &executor, storage::DatabaseHandle handle, SqliteGoalStoreOptions config)
-        : options(std::move(config)), database(std::move(handle)),
+    Impl(kairo::Executor &executor, storage::DatabaseHandle handle, SqliteGoalStoreOptions config,
+         GoalStoreAuthorizer authorize)
+        : options(std::move(config)), authorizer(std::move(authorize)), database(std::move(handle)),
           channel(executor, database.get(),
                   {"mira-goal-store", options.max_pending_requests, options.operation_timeout}) {}
 
+    template <typename T, typename Op> Result<T> run(GoalStoreAccess access, Op op) {
+        return channel.run<T>([this, access, op = std::move(op)](sqlite3 *db) mutable -> Result<T> {
+            if (authorizer) {
+                try {
+                    if (!authorizer(access))
+                        return goal_error(ErrorCode::PermissionDenied, "goal store access denied");
+                } catch (...) {
+                    return goal_error(ErrorCode::PermissionDenied, "goal store access denied");
+                }
+            }
+            return op(db);
+        });
+    }
+
     const SqliteGoalStoreOptions options;
+    const GoalStoreAuthorizer authorizer;
     storage::DatabaseHandle database;
     storage::StoreChannel channel;
 };
@@ -913,6 +931,20 @@ SqliteGoalStore::~SqliteGoalStore() { (void)close(); }
 
 Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open(kairo::Executor &executor,
                                                                SqliteGoalStoreOptions options) {
+    return open_impl(executor, std::move(options), {});
+}
+
+Result<std::unique_ptr<SqliteGoalStore>>
+SqliteGoalStore::open_authorized(kairo::Executor &executor, SqliteGoalStoreOptions options,
+                                 GoalStoreAuthorizer authorize) {
+    if (!authorize)
+        return goal_error(ErrorCode::InvalidArgument, "goal store authorizer is required");
+    return open_impl(executor, std::move(options), std::move(authorize));
+}
+
+Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Executor &executor,
+                                                                    SqliteGoalStoreOptions options,
+                                                                    GoalStoreAuthorizer authorize) {
     if (options.path.empty() || options.max_goals == 0 || options.max_goals > 100'000 ||
         options.max_pending_per_owner == 0 || options.max_pending_per_owner > options.max_goals ||
         options.max_pending_requests == 0 || options.max_pending_requests > 256 ||
@@ -958,8 +990,8 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open(kairo::Executor &
     if (auto secure = storage::exec_sql(opened.value().database.get(), "PRAGMA secure_delete=ON;");
         !secure)
         return secure.error();
-    return std::unique_ptr<SqliteGoalStore>(new SqliteGoalStore(
-        std::make_unique<Impl>(executor, std::move(opened.value().database), std::move(options))));
+    return std::unique_ptr<SqliteGoalStore>(new SqliteGoalStore(std::make_unique<Impl>(
+        executor, std::move(opened.value().database), std::move(options), std::move(authorize))));
 }
 
 Result<GoalRecord> SqliteGoalStore::create(const GoalKey &key, GoalDefinition definition) {
@@ -967,7 +999,8 @@ Result<GoalRecord> SqliteGoalStore::create(const GoalKey &key, GoalDefinition de
         return goal_error(ErrorCode::InvalidArgument, "invalid goal definition");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
-    return impl_->channel.run<GoalRecord>(
+    return impl_->run<GoalRecord>(
+        {key.owner, Resource::Goal, Operation::Create, key.id},
         [key, options = &impl_->options, definition = std::move(definition)](sqlite3 *db) mutable {
             return create_goal(db, *options, key, std::move(definition));
         });
@@ -976,7 +1009,8 @@ Result<GoalRecord> SqliteGoalStore::create(const GoalKey &key, GoalDefinition de
 Result<std::optional<GoalRecord>> SqliteGoalStore::read(const GoalKey &key) const {
     if (!valid_key(key))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal key");
-    return impl_->channel.run<std::optional<GoalRecord>>(
+    return impl_->run<std::optional<GoalRecord>>(
+        {key.owner, Resource::Goal, Operation::Read, key.id},
         [key](sqlite3 *db) { return read_goal(db, key); });
 }
 
@@ -985,9 +1019,10 @@ Result<GoalRecord> SqliteGoalStore::settle(const GoalKey &key, std::uint64_t exp
     if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
         !valid_resolution(resolution))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal resolution");
-    return impl_->channel.run<GoalRecord>([key, expected_revision, resolution](sqlite3 *db) {
-        return settle_goal(db, key, expected_revision, resolution);
-    });
+    return impl_->run<GoalRecord>({key.owner, Resource::Goal, Operation::Settle, key.id},
+                                  [key, expected_revision, resolution](sqlite3 *db) {
+                                      return settle_goal(db, key, expected_revision, resolution);
+                                  });
 }
 
 Result<GoalDuePage> SqliteGoalStore::due(const GoalDueQuery &query) const {
@@ -996,22 +1031,25 @@ Result<GoalDuePage> SqliteGoalStore::due(const GoalDueQuery &query) const {
         (query.after && (!valid_time(query.after->due_at) || query.after->due_at > query.cutoff ||
                          query.after->goal.is_nil())))
         return goal_error(ErrorCode::InvalidArgument, "invalid due goal query");
-    return impl_->channel.run<GoalDuePage>([query](sqlite3 *db) { return read_due(db, query); });
+    return impl_->run<GoalDuePage>({query.owner, Resource::Goal, Operation::ReadDue, {}},
+                                   [query](sqlite3 *db) { return read_due(db, query); });
 }
 
 Result<GoalListPage> SqliteGoalStore::list(const GoalListQuery &query) const {
     if (!valid_owner(query.owner) || query.limit == 0 || query.limit > 128 ||
         (query.after && query.after->is_nil()) || (query.state && *query.state > GoalState::Erased))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal list query");
-    return impl_->channel.run<GoalListPage>([query](sqlite3 *db) { return list_goals(db, query); });
+    return impl_->run<GoalListPage>({query.owner, Resource::Goal, Operation::List, {}},
+                                    [query](sqlite3 *db) { return list_goals(db, query); });
 }
 
 Result<void> SqliteGoalStore::erase(const GoalKey &key) {
     if (!valid_key(key))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal erasure key");
-    return impl_->channel.run<void>([key, capacity = impl_->options.max_goals](sqlite3 *db) {
-        return erase_goal(db, capacity, key);
-    });
+    return impl_->run<void>({key.owner, Resource::Goal, Operation::Erase, key.id},
+                            [key, capacity = impl_->options.max_goals](sqlite3 *db) {
+                                return erase_goal(db, capacity, key);
+                            });
 }
 
 Result<GoalRecord> SqliteGoalStore::correct(const GoalKey &key, std::uint64_t expected_revision,
@@ -1021,7 +1059,8 @@ Result<GoalRecord> SqliteGoalStore::correct(const GoalKey &key, std::uint64_t ex
         return goal_error(ErrorCode::InvalidArgument, "invalid goal correction");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
-    return impl_->channel.run<GoalRecord>(
+    return impl_->run<GoalRecord>(
+        {key.owner, Resource::Goal, Operation::Correct, key.id},
         [key, expected_revision, definition = std::move(definition),
          capacity = impl_->options.max_corrections_per_goal](sqlite3 *db) mutable {
             return correct_goal(db, key, expected_revision, std::move(definition), capacity);
@@ -1032,7 +1071,8 @@ Result<std::vector<GoalDefinitionVersion>>
 SqliteGoalStore::correction_history(const GoalKey &key) const {
     if (!valid_key(key))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal key");
-    return impl_->channel.run<std::vector<GoalDefinitionVersion>>(
+    return impl_->run<std::vector<GoalDefinitionVersion>>(
+        {key.owner, Resource::Goal, Operation::ReadHistory, key.id},
         [key](sqlite3 *db) { return read_corrections(db, key); });
 }
 
@@ -1042,7 +1082,8 @@ Result<GoalReminderReceipt> SqliteGoalStore::record_reminder(const GoalKey &key,
     if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
         reminder.evidence.is_nil() || !valid_time(reminder.delivered_at))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal reminder");
-    return impl_->channel.run<GoalReminderReceipt>(
+    return impl_->run<GoalReminderReceipt>(
+        {key.owner, Resource::Goal, Operation::RecordReminder, key.id},
         [key, expected_revision, reminder,
          capacity = impl_->options.max_reminders_per_goal](sqlite3 *db) {
             return store_reminder(db, key, expected_revision, reminder, capacity);
@@ -1055,7 +1096,8 @@ Result<RecurringPlanRecord> SqliteGoalStore::create_plan(const GoalKey &key,
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan definition");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "recurring plan title is not retainable");
-    return impl_->channel.run<RecurringPlanRecord>(
+    return impl_->run<RecurringPlanRecord>(
+        {key.owner, Resource::RecurringPlan, Operation::Create, key.id},
         [key, options = &impl_->options, definition = std::move(definition)](sqlite3 *db) mutable {
             return create_plan_row(db, *options, key, std::move(definition));
         });
@@ -1069,7 +1111,8 @@ Result<RecurringPlanRecord> SqliteGoalStore::replace_plan(const GoalKey &key,
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan replacement");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "recurring plan title is not retainable");
-    return impl_->channel.run<RecurringPlanRecord>(
+    return impl_->run<RecurringPlanRecord>(
+        {key.owner, Resource::RecurringPlan, Operation::Replace, key.id},
         [key, expected_revision, definition = std::move(definition)](sqlite3 *db) mutable {
             return replace_plan_row(db, key, expected_revision, std::move(definition));
         });
@@ -1081,7 +1124,8 @@ Result<RecurringPlanRecord> SqliteGoalStore::cancel_plan(const GoalKey &key,
     if (!valid_key(key) || expected_revision == 0 || expected_revision >= kMaxSqlInteger ||
         cancellation.evidence.is_nil() || !valid_time(cancellation.at))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan cancellation");
-    return impl_->channel.run<RecurringPlanRecord>(
+    return impl_->run<RecurringPlanRecord>(
+        {key.owner, Resource::RecurringPlan, Operation::Cancel, key.id},
         [key, expected_revision, cancellation](sqlite3 *db) {
             return cancel_plan_row(db, key, expected_revision, cancellation);
         });
@@ -1090,7 +1134,8 @@ Result<RecurringPlanRecord> SqliteGoalStore::cancel_plan(const GoalKey &key,
 Result<std::optional<RecurringPlanRecord>> SqliteGoalStore::read_plan(const GoalKey &key) const {
     if (!valid_key(key))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan key");
-    return impl_->channel.run<std::optional<RecurringPlanRecord>>(
+    return impl_->run<std::optional<RecurringPlanRecord>>(
+        {key.owner, Resource::RecurringPlan, Operation::Read, key.id},
         [key](sqlite3 *db) { return read_plan_row(db, key); });
 }
 
@@ -1100,7 +1145,8 @@ Result<RecurringDuePage> SqliteGoalStore::due_plans(const RecurringDueQuery &que
         (query.after && (!valid_time(query.after->scheduled_at) ||
                          query.after->scheduled_at > query.cutoff || query.after->plan.is_nil())))
         return goal_error(ErrorCode::InvalidArgument, "invalid due plan query");
-    return impl_->channel.run<RecurringDuePage>(
+    return impl_->run<RecurringDuePage>(
+        {query.owner, Resource::RecurringPlan, Operation::ReadDue, {}},
         [query](sqlite3 *db) { return read_due_plans(db, query); });
 }
 
@@ -1109,7 +1155,8 @@ Result<GoalOccurrenceReceipt> SqliteGoalStore::record_occurrence(const GoalOccur
     if (!valid_key(key.plan) || key.plan_revision == 0 || key.plan_revision >= kMaxSqlInteger ||
         !valid_time(key.scheduled_at) || recorded_at < key.scheduled_at)
         return goal_error(ErrorCode::InvalidArgument, "invalid occurrence recording");
-    return impl_->channel.run<GoalOccurrenceReceipt>(
+    return impl_->run<GoalOccurrenceReceipt>(
+        {key.plan.owner, Resource::RecurringPlan, Operation::RecordOccurrence, key.plan.id},
         [key, recorded_at, capacity = impl_->options.max_occurrences](sqlite3 *db) {
             return record_occurrence_row(db, capacity, key, recorded_at);
         });
@@ -1120,16 +1167,18 @@ SqliteGoalStore::read_occurrence(const GoalOccurrenceKey &key) const {
     if (!valid_key(key.plan) || key.plan_revision == 0 || key.plan_revision >= kMaxSqlInteger ||
         !valid_time(key.scheduled_at))
         return goal_error(ErrorCode::InvalidArgument, "invalid occurrence key");
-    return impl_->channel.run<std::optional<GoalOccurrenceReceipt>>(
+    return impl_->run<std::optional<GoalOccurrenceReceipt>>(
+        {key.plan.owner, Resource::RecurringPlan, Operation::ReadOccurrence, key.plan.id},
         [key](sqlite3 *db) { return read_occurrence_row(db, key); });
 }
 
 Result<void> SqliteGoalStore::erase_plan(const GoalKey &key) {
     if (!valid_key(key))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan erasure key");
-    return impl_->channel.run<void>([key, capacity = impl_->options.max_plans](sqlite3 *db) {
-        return erase_plan_row(db, capacity, key);
-    });
+    return impl_->run<void>({key.owner, Resource::RecurringPlan, Operation::Erase, key.id},
+                            [key, capacity = impl_->options.max_plans](sqlite3 *db) {
+                                return erase_plan_row(db, capacity, key);
+                            });
 }
 
 Result<void> SqliteGoalStore::close() noexcept { return impl_->channel.close(); }

@@ -351,6 +351,23 @@ auto created = goals->create_plan(key, std::move(definition));
 回执。规则覆盖耗尽后，`read_plan` 返回 Active 和空的 `next_at`，到期页省略该计划。
 宿主可用新的来源事件和快照换版，恢复将来的触发。见 [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)。
 
+### 目标存储授权
+
+宿主从认证主体构造 `GoalOwner`，并可用 `SqliteGoalStore::open_authorized` 接入当前策略。
+目标归属、资源类型、操作与单条记录 ID 随 `GoalStoreAccess` 传给宿主。状态列表用
+`List`，到期页用 `ReadDue`。两种集合操作的 ID 为空，按相应归属与资源类型授权。
+
+```cpp
+// check_current_goal_access 由宿主提供，签名为 bool(const GoalStoreAccess &)。
+auto goals = SqliteGoalStore::open_authorized(executor, options, check_current_goal_access);
+```
+
+探针在 StoreChannel worker 开始访问数据库前运行，需要有界、线程安全且不得重入目标库。
+宿主让探针捕获的策略存活至目标库关闭。拒绝和探针异常均返回 `PermissionDenied`。
+下一页和幂等重试均复核当前权限。已获准的单次存储操作可以结束，后续动作派发与提醒
+送达仍由宿主重新授权。普通 `open` 由调用方在外层执行当前授权。
+见 [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)。
+
 ## 宿主身份
 
 宿主必须保存稳定的内部 Principal/User/Session 身份，按当前授权构造 scope。不要在每次

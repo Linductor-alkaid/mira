@@ -6,7 +6,9 @@
 #include <kairo/executor.hpp>
 #include <sqlite3.h>
 
+#include <atomic>
 #include <cstdlib>
+#include <stdexcept>
 
 namespace {
 using namespace mira;
@@ -34,11 +36,13 @@ struct GoalFixture final {
         std::filesystem::remove_all(root, ignored);
     }
 
-    bool reopen() {
+    bool reopen(GoalStoreAuthorizer authorize = {}) {
         if (store && !store->close())
             return false;
         store.reset();
-        auto opened = SqliteGoalStore::open(executor, options);
+        auto opened =
+            authorize ? SqliteGoalStore::open_authorized(executor, options, std::move(authorize))
+                      : SqliteGoalStore::open(executor, options);
         if (!opened)
             return false;
         store = std::move(opened).value();
@@ -547,6 +551,114 @@ int calendar_plan_reopen_and_rules_exhaustion() {
                !fixture.store->read_occurrence(occurrence).value());
     return 0;
 }
+
+int live_host_authorization() {
+    using Operation = GoalStoreOperation;
+    using Resource = GoalStoreResource;
+    GoalFixture fixture(8, 8);
+    const auto no_authorizer =
+        SqliteGoalStore::open_authorized(fixture.executor, fixture.options, {});
+    MIRA_CHECK(!no_authorizer && no_authorizer.error().code == ErrorCode::InvalidArgument);
+    MIRA_CHECK(!std::filesystem::exists(fixture.options.path));
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey key{fixture.owner, Id128::generate()};
+    const GoalKey another{fixture.owner, Id128::generate()};
+    const GoalKey other_user{{key.owner.tenant, UserId::generate()}, key.id};
+    const GoalKey other_tenant{{TenantId::generate(), key.owner.user}, key.id};
+    const auto definition = commitment(fixture.now, "A pending goal");
+    const RecurringPlanDefinition plan{"A recurring plan", EventId::generate(), fixture.now, 1h};
+    MIRA_CHECK(fixture.store->create(key, definition));
+    MIRA_CHECK(fixture.store->create(another, definition));
+    MIRA_CHECK(fixture.store->create(other_user, definition));
+    MIRA_CHECK(fixture.store->create(other_tenant, definition));
+    MIRA_CHECK(fixture.store->create_plan(key, plan));
+
+    enum class Policy { Deny, ReadGoal, ListGoals, DueGoals, Reminder, Occurrence, Throw };
+    const auto policy = std::make_shared<std::atomic<Policy>>(Policy::Deny);
+    MIRA_CHECK(fixture.reopen([key, policy](const GoalStoreAccess &access) {
+        if (access.owner != key.owner)
+            return false;
+        switch (policy->load()) {
+        case Policy::Deny:
+            return false;
+        case Policy::ReadGoal:
+            return access.resource == Resource::Goal && access.operation == Operation::Read &&
+                   access.id == key.id;
+        case Policy::ListGoals:
+            return access.resource == Resource::Goal && access.operation == Operation::List &&
+                   !access.id;
+        case Policy::DueGoals:
+            return access.resource == Resource::Goal && access.operation == Operation::ReadDue &&
+                   !access.id;
+        case Policy::Reminder:
+            return access.resource == Resource::Goal &&
+                   access.operation == Operation::RecordReminder && access.id == key.id;
+        case Policy::Occurrence:
+            return access.resource == Resource::RecurringPlan &&
+                   access.operation == Operation::RecordOccurrence && access.id == key.id;
+        case Policy::Throw:
+            throw std::runtime_error("private authorization detail");
+        }
+        return false;
+    }));
+    auto &store = *fixture.store;
+    const auto denied = [](const auto &result) {
+        return !result && result.error().code == ErrorCode::PermissionDenied;
+    };
+
+    policy->store(Policy::ReadGoal);
+    MIRA_CHECK(store.read(key).value()->definition == definition);
+    MIRA_CHECK(denied(store.read(another)) && denied(store.read(other_user)) &&
+               denied(store.read(other_tenant)));
+    MIRA_CHECK(denied(store.read_plan(key)) && denied(store.correction_history(key)));
+    MIRA_CHECK(denied(store.due({key.owner, fixture.now, 1, {}})));
+    MIRA_CHECK(
+        denied(store.create(key, definition)) && denied(store.correct(key, 1, definition)) &&
+        denied(store.settle(key, 1, {GoalState::Fulfilled, EventId::generate(), fixture.now})) &&
+        denied(store.erase(key)));
+    MIRA_CHECK(denied(store.create_plan(key, plan)) && denied(store.replace_plan(key, 1, plan)) &&
+               denied(store.cancel_plan(key, 1, {EventId::generate(), fixture.now})) &&
+               denied(store.erase_plan(key)));
+
+    policy->store(Policy::ListGoals);
+    MIRA_CHECK(store.list({key.owner, GoalState::Pending, 8, {}}).value().records.size() == 2);
+    MIRA_CHECK(denied(store.due({key.owner, fixture.now, 1, {}})));
+    policy->store(Policy::DueGoals);
+    const auto due = store.due({key.owner, fixture.now, 1, {}});
+    MIRA_CHECK(due && due.value().records.size() == 1 && due.value().next &&
+               due.value().records.front().key.owner == key.owner);
+    MIRA_CHECK(denied(store.list({key.owner, GoalState::Pending, 8, {}})));
+    MIRA_CHECK(denied(store.due_plans({key.owner, fixture.now, 1, {}})) && denied(store.read(key)));
+    policy->store(Policy::Deny);
+    MIRA_CHECK(denied(store.due({key.owner, fixture.now, 1, due.value().next})));
+
+    const GoalReminder reminder{EventId::generate(), fixture.now};
+    const GoalOccurrenceKey occurrence{key, 1, fixture.now};
+    MIRA_CHECK(denied(store.record_reminder(key, 1, reminder)) &&
+               denied(store.record_occurrence(occurrence, fixture.now)));
+    policy->store(Policy::Reminder);
+    const auto reminder_receipt = store.record_reminder(key, 1, reminder);
+    MIRA_CHECK(reminder_receipt && !reminder_receipt.value().idempotent_replay);
+    MIRA_CHECK(denied(store.record_occurrence(occurrence, fixture.now)));
+    policy->store(Policy::Occurrence);
+    const auto occurrence_receipt = store.record_occurrence(occurrence, fixture.now);
+    MIRA_CHECK(occurrence_receipt && !occurrence_receipt.value().idempotent_replay);
+    MIRA_CHECK(denied(store.read_occurrence(occurrence)));
+    MIRA_CHECK(denied(store.record_reminder(key, 1, reminder)));
+
+    policy->store(Policy::Throw);
+    const auto failed_probe = store.record_occurrence(occurrence, fixture.now);
+    MIRA_CHECK(denied(failed_probe) &&
+               failed_probe.error().safe_message == "goal store access denied");
+    policy->store(Policy::Occurrence);
+    MIRA_CHECK(store.record_occurrence(occurrence, fixture.now).value().idempotent_replay);
+    policy->store(Policy::Reminder);
+    MIRA_CHECK(store.record_reminder(key, 1, reminder).value().idempotent_replay);
+    MIRA_CHECK(store.close());
+    const auto closed = store.read(key);
+    MIRA_CHECK(!closed && closed.error().code == ErrorCode::Unavailable);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -562,5 +674,7 @@ int main() {
         return result;
     if (const int result = calendar_gap_fold_and_weekday(); result != 0)
         return result;
-    return calendar_plan_reopen_and_rules_exhaustion();
+    if (const int result = calendar_plan_reopen_and_rules_exhaustion(); result != 0)
+        return result;
+    return live_host_authorization();
 }

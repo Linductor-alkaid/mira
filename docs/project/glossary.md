@@ -1,7 +1,7 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.25
+> 版本：1.26
 > 更新日期：2026-11-23
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
@@ -350,6 +350,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 **Goal Calendar Rule（目标日历规则）**：
 计划的本地时分、星期选择及带版本的时区偏移快照，用于计算确定的 UTC 触发时间。
 见[DEC-132](../decisions/DEC-132-calendar-goal-plans.md)。
+
+**Goal Store Access（目标存储访问）**：
+宿主当前策略核验的一次目标或重复计划操作，带租户和用户归属、资源、操作与可选记录 ID。
+集合读取按归属及资源类别授权。见[DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)。
 
 **Model Context Snapshot（模型上下文快照）**:
 一次 infer 读取的不可变候选清单及版本探针；最终由 Gateway 的 Layer 0 准入决定

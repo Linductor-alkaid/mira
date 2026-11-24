@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -160,6 +161,35 @@ struct GoalOccurrenceReceipt final {
     bool idempotent_replay = false;
 };
 
+enum class GoalStoreResource : std::uint8_t { Goal, RecurringPlan };
+
+enum class GoalStoreOperation : std::uint8_t {
+    Read,
+    List,
+    ReadDue,
+    Create,
+    Correct,
+    Settle,
+    Erase,
+    ReadHistory,
+    RecordReminder,
+    Replace,
+    Cancel,
+    RecordOccurrence,
+    ReadOccurrence
+};
+
+struct GoalStoreAccess final {
+    GoalOwner owner;
+    GoalStoreResource resource;
+    GoalStoreOperation operation;
+    std::optional<Id128> id; // Absent for collection reads, including due queries.
+};
+
+// A bounded, thread-safe host policy query. Runs on the store worker and
+// must not call back into the store. A false result or exception denies access.
+using GoalStoreAuthorizer = std::function<bool(const GoalStoreAccess &)>;
+
 struct SqliteGoalStoreOptions final {
     std::filesystem::path path;
     std::size_t max_goals = 4096; // Includes erased IDs.
@@ -173,12 +203,16 @@ struct SqliteGoalStoreOptions final {
     std::size_t max_reminders_per_goal = 32;
 };
 
-// The host authenticates the exact owner and authorizes each operation. Due
-// records describe work; their presence does not authorize its execution.
+// The host authenticates the exact owner. Due records describe work; their
+// presence does not authorize its execution.
 class SqliteGoalStore final {
   public:
+    // Trusted callers enforce current authorization outside the store.
     [[nodiscard]] static Result<std::unique_ptr<SqliteGoalStore>>
     open(kairo::Executor &executor, SqliteGoalStoreOptions options);
+    [[nodiscard]] static Result<std::unique_ptr<SqliteGoalStore>>
+    open_authorized(kairo::Executor &executor, SqliteGoalStoreOptions options,
+                    GoalStoreAuthorizer authorize);
     ~SqliteGoalStore();
 
     SqliteGoalStore(const SqliteGoalStore &) = delete;
@@ -218,6 +252,9 @@ class SqliteGoalStore final {
 
   private:
     class Impl;
+    [[nodiscard]] static Result<std::unique_ptr<SqliteGoalStore>>
+    open_impl(kairo::Executor &executor, SqliteGoalStoreOptions options,
+              GoalStoreAuthorizer authorize);
     explicit SqliteGoalStore(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
 };

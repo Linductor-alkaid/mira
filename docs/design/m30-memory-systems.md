@@ -1,8 +1,8 @@
 # M30 六类记忆体系
 
 > 状态：Active（契约冻结，实施状态见 M30）
-> 版本：1.12
-> 更新日期：2026-11-23
+> 版本：1.13
+> 更新日期：2026-11-24
 > 负责人：Mira Maintainers
 > 决策：[DEC-119](../decisions/DEC-119-six-memory-systems.md)、
 > [DEC-120](../decisions/DEC-120-agent-persona-admission.md)、
@@ -17,7 +17,8 @@
 > [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)、
 > [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)、
 > [DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md)、
-> [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)
+> [DEC-132](../decisions/DEC-132-calendar-goal-plans.md)、
+> [DEC-133](../decisions/DEC-133-goal-store-live-authorization.md)
 
 持续工作需要身份连续性、经历查证、对象关系、环境认知、待办恢复和能力复用。
 六类分别规定权威来源、写入时机、可用查询键、可见范围与变更传播。
@@ -47,7 +48,7 @@ owner 处理，候选摘要仅可引用其已提交版本。
 索引的前导键跟随各自的授权与读取边界。事件索引以 Session、事件类型、时间和序列
 支持分页，任务通过稳定关联索引读取。画像以授权环境和对象 ID 查字段，别名索引
 返回有界候选。世界事实以环境、实体和属性查有效区间，并保留记录时间。目标的主键
-由租户和目标 ID 绑定，按归属、未完成状态及下一次到期顺序读取。重复计划的一次触发
+由租户、用户和目标 ID 绑定，按归属、未完成状态及下一次到期顺序读取。重复计划的一次触发
 以计划 ID、版本及计划触发时间去重，恢复仅恢复待办状态。技能经验按资产 ID、版本
 与环境索引，能力词和失败签名用于寻找相关候选。人格配置由宿主以 Agent ID 和版本
 管理，Gateway 依请求绑定的配置版本复核。
@@ -95,6 +96,10 @@ M30-24 由独立 SQLite 目标库保存一次性任务和承诺。宿主按租�
 
 M30-27 增加本地时分和星期计划，使用宿主提供的版本化时区规则计算 UTC。夏令时缺口
 跳过，回拨选较早时间。规则耗尽后保留已登记回执，宿主换版可恢复下一次触发。
+
+M30-28 提供目标存储授权入口。宿主从认证身份指定精确归属。读写、分页和回执重试
+均在 SQLite worker 内向宿主复核当前策略，按资源及操作分别准入。存储的授权决定
+仅覆盖这次操作，后续派发前仍需当前授权。见[宿主 API](../api/durable-memory-host.md#目标存储授权)。
 
 ## 执行与验收
 

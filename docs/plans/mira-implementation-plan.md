@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+[DEC-133](../decisions/DEC-133-goal-store-live-authorization.md) 为目标存储接入宿主当前授权，
+见 [M30-28](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-24：[DEC-132](../decisions/DEC-132-calendar-goal-plans.md) 交付
 按本地时分和星期运行的日历计划，见 [M30-27](m30-long-term-memory-integration.md#5-工作项)。
 
