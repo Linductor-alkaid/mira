@@ -4,6 +4,7 @@
 
 #include <mira/sqlite_goal_store.hpp>
 
+#include <limits>
 #include <utility>
 
 namespace mira::storage {
@@ -16,6 +17,16 @@ inline constexpr const char *kGoalDispatchSchema =
     " CHECK((session IS NULL)=(task IS NULL) AND (session IS NULL)=(submitted_at IS NULL)),"
     " CHECK(submitted_at IS NULL OR submitted_at>=prepared_at),"
     " PRIMARY KEY(tenant,owner,goal_id));";
+
+inline constexpr const char *kRecurringDispatchSchema =
+    "ALTER TABLE recurring_occurrences ADD COLUMN dispatch_operation TEXT;"
+    "ALTER TABLE recurring_occurrences ADD COLUMN dispatch_session TEXT;"
+    "ALTER TABLE recurring_occurrences ADD COLUMN dispatch_task TEXT;"
+    "ALTER TABLE recurring_occurrences ADD COLUMN dispatched_at INTEGER;"
+    "CREATE UNIQUE INDEX recurring_occurrences_operation ON recurring_occurrences"
+    " (dispatch_operation) WHERE dispatch_operation IS NOT NULL;";
+
+inline constexpr auto kMaxSqlInteger = std::numeric_limits<std::int64_t>::max();
 
 inline Error goal_error(ErrorCode code, std::string message) {
     return store_error(code, "mira.goal_store", 0, std::move(message));
@@ -59,6 +70,24 @@ inline std::optional<GoalTime> column_time(Statement &s, int index) {
         return std::nullopt;
     return GoalTime{std::chrono::milliseconds{sqlite3_column_int64(s.get(), index)}};
 }
+
+inline bool bind_revision(Statement &statement, int parameter, std::uint64_t revision) {
+    return sqlite3_bind_int64(statement.get(), parameter, static_cast<std::int64_t>(revision)) ==
+           SQLITE_OK;
+}
+
+inline Result<void> require_goal_capacity(sqlite3 *db, const char *sql, std::size_t limit,
+                                          const GoalOwner *owner = nullptr) {
+    Statement count(db, sql);
+    if (!count.valid() || (owner && !bind_owner(count, *owner)) ||
+        sqlite3_step(count.get()) != SQLITE_ROW)
+        return goal_error(ErrorCode::Internal, "goal capacity check failed");
+    if (sqlite3_column_int64(count.get(), 0) >= static_cast<std::int64_t>(limit))
+        return goal_error(ErrorCode::ResourceExhausted, "goal store quota reached");
+    return {};
+}
+
+Result<std::optional<RecurringPlanRecord>> read_goal_plan(sqlite3 *db, const GoalKey &key);
 
 } // namespace mira::storage
 

@@ -193,6 +193,101 @@ int close_drains_confirmed_submission_and_stops_following_goals() {
     return 0;
 }
 
+int recurring_pagination_and_recovery_share_the_goal_poller() {
+    PollFixture fixture;
+    const auto now = clock_now();
+    const GoalKey goal{fixture.owner, Id128::generate()};
+    const GoalKey first{fixture.owner, Id128::generate()};
+    const GoalKey second{fixture.owner, Id128::generate()};
+    const GoalKey future{fixture.owner, Id128::generate()};
+    const GoalOccurrenceKey missed{first, 1, now - 8min};
+    const GoalOccurrenceKey catchup{first, 1, now - 3min};
+    const GoalOccurrenceKey independent{second, 1, now - 2min};
+    const GoalOccurrenceKey upcoming{future, 1, now + 1h};
+    MIRA_CHECK(fixture.create(goal, now - 1min, "Send the latest report"));
+    MIRA_CHECK(fixture.store->create_plan(
+        first, {"Review the queue", EventId::generate(), missed.scheduled_at, 5min}));
+    MIRA_CHECK(fixture.store->create_plan(
+        second, {"Check the report", EventId::generate(), independent.scheduled_at, 1h}));
+    MIRA_CHECK(fixture.store->create_plan(
+        future, {"Check next report", EventId::generate(), upcoming.scheduled_at, 1h}));
+    std::optional<GoalDispatchSubmission> first_acceptance;
+    std::optional<GoalOccurrenceDispatchKey> first_dispatch;
+    std::atomic<std::size_t> real_admissions{0};
+    auto started = GoalDispatchPoller::start(
+        fixture.executor, fixture.store, fixture.owner,
+        [&](const GoalRecord &, const GoalDispatchKey &, const OperationContext &) {
+            ++real_admissions;
+            return accepted();
+        },
+        {10ms, 2s, 1},
+        [&](const RecurringPlanRecord &plan, const GoalOccurrenceDispatchKey &key,
+            const OperationContext &context) -> Result<GoalDispatchSubmission> {
+            Error failure;
+            failure.code = ErrorCode::InvalidState;
+            if (key.operation != context.operation || plan.key != key.occurrence.plan ||
+                plan.revision != key.occurrence.plan_revision ||
+                plan.next_at != key.occurrence.scheduled_at)
+                return failure;
+            if (key.occurrence == missed) {
+                if (!first_dispatch) {
+                    first_dispatch = key;
+                    first_acceptance = accepted();
+                    ++real_admissions;
+                }
+                if (*first_dispatch != key)
+                    return failure;
+                failure.code = ErrorCode::ExecutionUncertain;
+                return failure;
+            }
+            if (key.occurrence != independent)
+                return failure;
+            ++real_admissions;
+            return accepted();
+        });
+    MIRA_CHECK(started);
+    auto poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 2; }));
+    MIRA_CHECK(poller->close());
+    const auto status = poller->status();
+    MIRA_CHECK(status.failures >= 1 && status.last_error &&
+               status.last_error->code == ErrorCode::ExecutionUncertain);
+    MIRA_CHECK(real_admissions == 3 && first_dispatch && first_acceptance);
+    MIRA_CHECK(fixture.store->read_dispatch(goal).value()->submission);
+    MIRA_CHECK(fixture.store->read_occurrence_dispatch(independent).value()->submission);
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(missed).value()->submission);
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(catchup).value());
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(upcoming).value());
+    poller.reset();
+    MIRA_CHECK(fixture.reopen());
+
+    auto resumed = GoalDispatchPoller::start(
+        fixture.executor, fixture.store, fixture.owner, {}, {10ms, 2s, 1},
+        [&](const RecurringPlanRecord &, const GoalOccurrenceDispatchKey &key,
+            const OperationContext &context) -> Result<GoalDispatchSubmission> {
+            if (context.operation == key.operation) {
+                if (key == *first_dispatch)
+                    return *first_acceptance;
+                if (key.occurrence == catchup && key.operation != first_dispatch->operation) {
+                    ++real_admissions;
+                    return accepted();
+                }
+            }
+            Error failure;
+            failure.code = ErrorCode::InvalidState;
+            return failure;
+        });
+    MIRA_CHECK(resumed);
+    poller = std::move(resumed).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 2; }));
+    MIRA_CHECK(poller->close() && real_admissions == 4);
+    MIRA_CHECK(fixture.store->read_occurrence_dispatch(missed).value()->submission ==
+               first_acceptance);
+    MIRA_CHECK(fixture.store->read_occurrence_dispatch(catchup).value()->submission);
+    MIRA_CHECK(fixture.store->read_plan(first).value()->next_at == now + 2min);
+    return 0;
+}
+
 int observes_store_failure_and_timer_shutdown() {
     PollFixture fixture;
     const GoalDispatchSubmitter callback = [](const GoalRecord &, const GoalDispatchKey &,
@@ -220,6 +315,8 @@ int main() {
         return result;
     if (const int result = close_drains_confirmed_submission_and_stops_following_goals();
         result != 0)
+        return result;
+    if (const int result = recurring_pagination_and_recovery_share_the_goal_poller(); result != 0)
         return result;
     return observes_store_failure_and_timer_shutdown();
 }

@@ -365,8 +365,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 稳定 ID。M30-24 提供一次性任务和承诺。见[DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
 
 **Goal Occurrence（计划触发）**：
-由计划 ID、计划版本和预定时间确定的一次到期。其登记回执与计划的下一次时间共同
-提交，供宿主重开后去重。见[DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)。
+由计划归属、ID、版本和预定时间确定的一次到期。自动派发先为触发保留操作 ID，再将确认
+的任务提交回执与计划的下一次时间一起保存。见
+[DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md) 与
+[DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)。
 
 **Goal Reminder Receipt（目标提醒回执）**：
 宿主登记的已送达提醒，包含目标版本、送达事件 ID 和时间。回执是目标提醒计数的来源。

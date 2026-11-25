@@ -424,14 +424,15 @@ auto submitted = goals->record_dispatch_submission(prepared.value().key,
 `RecordDispatchSubmission` 核对授权。集合查询依归属授权，其他操作带目标 ID。
 实际任务提交由协调层接线负责。见 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
-### 周期检查到期的一次性目标
+### 周期检查到期目标和计划
 
-`GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的待派发列表。每轮只
-读取一页，并沿到期索引继续。上一轮结束后才登记下一轮。`status()` 提供检查、提交和
-失败计数以及最近错误。
+`GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的待派发列表。每轮
+最多读取一页一次性目标和一页重复计划，两类各自沿到期索引继续，轮换处理顺序。上一轮
+结束后才登记下一轮。`status()` 提供检查、提交和失败总计及最近错误。
 
 ```cpp
-auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_goal_task);
+auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_goal_task,
+                                        {}, submit_recurring_task);
 // 关闭执行器或存储前，从外部 owner 关闭派发器并检查结果。
 auto drained = poller.value()->close();
 ```
@@ -439,8 +440,11 @@ auto drained = poller.value()->close();
 `submit_goal_task` 是宿主的 `GoalDispatchSubmitter`，须按 `GoalDispatchKey::operation`
 核对和去重任务提交。已受理的重复调用返回原任务、会话和时间，并在常驻授权策略下
 复核是否可以执行。该接口接收协作取消和截止时间。确认提交后，即使当轮正在关闭，
-派发器也会登记回执。未知结果保留稳定身份供后续检查。生产协调层适配及重复计划的
-执行接线由 M30-37 跟踪。见 [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md)。
+派发器也会登记回执。`submit_recurring_task` 接收 `RecurringPlanRecord`、
+`GoalOccurrenceDispatchKey` 与同样的 `OperationContext`，沿用稳定操作 ID 的对账和
+当前授权规约。宿主可只绑定其中一个提交入口。未知结果保留稳定身份供后续检查，未就绪的
+触发仍占用原到期位置。生产协调层的持久对账适配由 M30-37 跟踪。见
+[DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 与 [DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)。
 
 ## 重复计划与触发回执
 
@@ -464,6 +468,26 @@ auto receipt = goals->record_occurrence({key, active_revision, scheduled_at}, re
 取消移除到期候选。两种操作都会拦截旧版未登记的触发，已有回执仍可查证。`erase_plan`
 清理计划定义与回执，保留 ID 屏障。同 ID 的一次性任务使用单独的命名空间。回执供宿主
 判断去重；派发前仍须核对现行授权和计划版本。见 [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)。
+
+### 重复计划派发回执
+
+目标库 schema 1.5 在触发记录上保存准备身份和任务提交回执。`prepare_occurrence_dispatch`
+需要当前计划版本的下一次到期触发，准备成功后占用一个触发额度，原到期位置保持待处理。
+触发仍待提交时，再次准备会返回原操作 ID。`read_occurrence_dispatch` 查询准备记录及已确认的
+任务归属，早期版本的手动回执仍通过 `read_occurrence` 查询。
+
+```cpp
+auto prepared = goals->prepare_occurrence_dispatch({key, active_revision, scheduled_at}, cutoff);
+// 宿主按 prepared.value().key.operation 对账，确认准入后保存原提交信息。
+auto saved = goals->record_occurrence_submission(prepared.value().key,
+                                                {session_id, task_id, submitted_at});
+```
+
+回执和下一次时间在同一事务写入。重复提交相同回执可重放，冲突返回 `AlreadyExists`。
+换版或取消会关闭对旧触发的准备，宿主仍可补记已确认的历史提交，并保留当前版本的计划
+进度。擦除会清理准备身份和已登记回执。`open_authorized` 在 `RecurringPlan` 资源上
+分别核对 `PrepareDispatch`、`ReadDispatch` 和 `RecordDispatchSubmission`。
+见 [DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)。
 
 ### 日历及时区
 

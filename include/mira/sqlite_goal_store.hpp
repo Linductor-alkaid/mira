@@ -183,6 +183,21 @@ struct GoalOccurrenceReceipt final {
     bool idempotent_replay = false;
 };
 
+struct GoalOccurrenceDispatchKey final {
+    GoalOccurrenceKey occurrence;
+    OperationId operation;
+    friend bool operator==(const GoalOccurrenceDispatchKey &,
+                           const GoalOccurrenceDispatchKey &) = default;
+};
+
+struct GoalOccurrenceDispatchReceipt final {
+    GoalOccurrenceDispatchKey key;
+    GoalTime prepared_at{};
+    std::optional<GoalDispatchSubmission> submission;
+    friend bool operator==(const GoalOccurrenceDispatchReceipt &,
+                           const GoalOccurrenceDispatchReceipt &) = default;
+};
+
 enum class GoalStoreResource : std::uint8_t { Goal, RecurringPlan };
 
 enum class GoalStoreOperation : std::uint8_t {
@@ -280,6 +295,15 @@ class SqliteGoalStore final {
                                                                   GoalTime recorded_at);
     [[nodiscard]] Result<std::optional<GoalOccurrenceReceipt>>
     read_occurrence(const GoalOccurrenceKey &key) const;
+    // Preparation reserves the occurrence without advancing the plan.
+    [[nodiscard]] Result<GoalOccurrenceDispatchReceipt>
+    prepare_occurrence_dispatch(const GoalOccurrenceKey &key, GoalTime cutoff);
+    [[nodiscard]] Result<std::optional<GoalOccurrenceDispatchReceipt>>
+    read_occurrence_dispatch(const GoalOccurrenceKey &key) const;
+    // Records admission and advances the plan if the occurrence is still current.
+    [[nodiscard]] Result<GoalOccurrenceDispatchReceipt>
+    record_occurrence_submission(const GoalOccurrenceDispatchKey &key,
+                                 GoalDispatchSubmission submission);
     [[nodiscard]] Result<void> erase_plan(const GoalKey &key);
 
     [[nodiscard]] Result<void> close() noexcept;

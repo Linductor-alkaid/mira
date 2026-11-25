@@ -12,7 +12,7 @@
 > M23 Memory Promotion 关闭（已满足，[DEC-035](../decisions/DEC-035-context-curator-working-context.md)）；
 > DEC-070 契约冻结（已满足，2026-10-28 随 M28 登记一并冻结）
 > 建议发布点：非发布物；M31 价值驱动淘汰的输入侧前提
-> 更新日期：2026-11-24
+> 更新日期：2026-11-25
 
 ## 1. 目标
 
@@ -75,6 +75,7 @@
 - [DEC-144](../decisions/DEC-144-social-mention-extraction.md)：从已索引消息提取正文对象引用。
 - [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)：一次性目标的持久派发身份与回执。
 - [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md)：一次性目标的周期到期派发。
+- [DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)：重复目标触发的周期派发与提交回执。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -184,7 +185,7 @@
 - [x] `M30-34` 交付按工作或社交环境隔离的技能记忆范围，验收换绑、事件与技能隔离及擦除。
 - [x] `M30-35` 交付消息来源账号的持久身份解析与首次接纳，验收跨来源绑定、同名、重放、迁移和擦除（Linux 离线）。
 - [ ] `M30-36` 接通社交消息的自动事件记录、发言人及提及消歧、跨来源同人判断、关系与属性候选、证据关联和画像召回。验收 QQ/B 站合成双来源、多人群聊、反证拆分和跨环境隔离。
-- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
+- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。一次性与重复计划的宿主派发入口见 M30-43 至 M30-45。生产协调层仍需接入持久任务对账与兑现。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
 - [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 - [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
@@ -192,6 +193,7 @@
 - [x] `M30-42` 交付已索引对话的模型正文引用提取，验收群聊中名称、前序发言指代、证据边界、取消和擦除（Linux 离线）。
 - [x] `M30-43` 交付一次性目标的待派发查询、稳定准备身份与提交回执，验收重启去重、纠正、取消和擦除（Linux 离线）。
 - [x] `M30-44` 通过 Executor 周期发现一次性到期目标，复用稳定 ID 调用宿主任务提交接口，验收分页、重开续派、取消和关闭（Linux 离线）。
+- [x] `M30-45` 通过同一 Executor 派发器发现重复计划到期触发，在提交确认后原子推进计划，验收历史回执、积压补跑、重启对账、撤权和擦除（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1415,3 +1417,46 @@ git diff --check
 Linux Release 全量 **208/208**，周期派发器连续复跑 **30/30**，ASAN 定向 **2/2**。
 严格 clang-tidy、格式、文档、SBOM、平台边界和架构门禁通过。日志见
 `/tmp/mira-m30-poller-{test,repeat-test,asan-test,tidy,quality}.log`。
+
+### 2026-11-25 重复计划的周期派发与持久回执
+
+基线 `5fda1f9`，分支 `feat/m30-memory-systems`。DEC-148 交付 M30-45。待提交的触发
+占用一条原有的触发记录额度，数据库重开后用原操作 ID 继续对账。宿主确认任务准入后，
+目标库在一个事务中保存提交回执并推进原计划版本。一次性目标和重复计划沿独立游标
+在同一 Executor 定时任务中轮换检查。
+
+`mira_m30_goal_store_test` 覆盖 1.4 迁移、已有手动回执、日历规则耗尽、并发准备、
+提交写入失败的事务回滚、重放、额度、撤权、换版、取消及擦除。
+`mira_m30_goal_dispatch_poller_test` 覆盖混合检查、分页绕过结果未知的触发、跨重开
+对账及按序补跑。使用离线宿主提交回调。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 10
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_goal_dispatch_poller_test$' \
+  --repeat until-fail:30
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 5 --target mira_m30_goal_store_test mira_m30_goal_dispatch_poller_test
+ctest --test-dir build/asan --output-on-failure -j 2 -R '^mira_m30_goal_(store|dispatch_poller)_test$'
+cmake -S . -B build/ubsan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_UBSAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/ubsan -j 4 --target mira_m30_goal_store_test mira_m30_goal_dispatch_poller_test
+ctest --test-dir build/ubsan --output-on-failure -j 2 -R '^mira_m30_goal_(store|dispatch_poller)_test$'
+printf '%s\n' src/storage/sqlite_goal_store.cpp src/storage/sqlite_goal_occurrence.cpp \
+  src/storage/goal_dispatch_poller.cpp | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 真实协调层任务提交、持久对账和实际兑现 | Mira Maintainers 与宿主集成者接入真实提交端后，按 M30-37 验收停机补跑和任务结算 |
+| Windows、Android、远端 CI | Mira Maintainers 提交 PR 后运行平台矩阵 |
+
+Linux Debug 全量 **213/213**，派发器连续复跑 **30/30**，ASan 和 UBSan 各 **2/2**。
+三个实现文件通过严格 clang-tidy，格式、文档、SBOM、平台边界和架构检查通过。
+日志见 `/tmp/mira-m30-recurring-final-*.log`、`/tmp/mira-m30-recurring-tidy*.log` 和
+`/tmp/mira-m30-recurring-quality.log`。

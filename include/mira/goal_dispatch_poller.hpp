@@ -30,12 +30,15 @@ struct GoalDispatchPollerStatus final {
 // with the context deadline and cancellation without awaiting a pool peer.
 using GoalDispatchSubmitter = std::function<Result<GoalDispatchSubmission>(
     const GoalRecord &, const GoalDispatchKey &, const OperationContext &)>;
+// The recurring channel uses the same admission and reconciliation contract.
+using RecurringGoalDispatchSubmitter = std::function<Result<GoalDispatchSubmission>(
+    const RecurringPlanRecord &, const GoalOccurrenceDispatchKey &, const OperationContext &)>;
 
 class GoalDispatchPoller final {
   public:
     [[nodiscard]] static Result<std::unique_ptr<GoalDispatchPoller>>
     start(kairo::Executor &, std::shared_ptr<SqliteGoalStore>, GoalOwner, GoalDispatchSubmitter,
-          GoalDispatchPollerOptions = {});
+          GoalDispatchPollerOptions = {}, RecurringGoalDispatchSubmitter = {});
     ~GoalDispatchPoller();
     GoalDispatchPoller(const GoalDispatchPoller &) = delete;
     GoalDispatchPoller &operator=(const GoalDispatchPoller &) = delete;

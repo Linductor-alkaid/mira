@@ -49,16 +49,25 @@ struct GoalFixture final {
         return true;
     }
 
-    bool update_database(const char *sql) {
+    bool update_database(const std::string &sql) {
         if (store && !store->close())
             return false;
         store.reset();
         sqlite3 *raw = nullptr;
         const bool opened = sqlite3_open(options.path.string().c_str(), &raw) == SQLITE_OK;
         const bool changed =
-            opened && sqlite3_exec(raw, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
+            opened && sqlite3_exec(raw, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
         sqlite3_close(raw);
         return changed;
+    }
+
+    bool restore_legacy_occurrence_layout(const std::string &sql) {
+        return update_database("DROP INDEX recurring_occurrences_operation;"
+                               " ALTER TABLE recurring_occurrences DROP COLUMN dispatch_operation;"
+                               " ALTER TABLE recurring_occurrences DROP COLUMN dispatch_session;"
+                               " ALTER TABLE recurring_occurrences DROP COLUMN dispatch_task;"
+                               " ALTER TABLE recurring_occurrences DROP COLUMN dispatched_at;" +
+                               sql);
     }
 
     kairo::Executor executor;
@@ -344,7 +353,7 @@ int corrections_and_reminders_survive_restart() {
     MIRA_CHECK(fixture.store->create(foreign, original));
     const RecurringPlanDefinition plan{"Keep the plan", EventId::generate(), fixture.now, 1h};
     MIRA_CHECK(fixture.store->create_plan(goal, plan));
-    MIRA_CHECK(fixture.update_database(
+    MIRA_CHECK(fixture.restore_legacy_occurrence_layout(
         "DROP TABLE goal_corrections; DROP TABLE goal_reminders; DROP TABLE goal_dispatches;"
         " ALTER TABLE recurring_plans DROP COLUMN calendar;"
         " ALTER TABLE goals RENAME TO fixture_goal_source;"
@@ -498,7 +507,7 @@ int calendar_plan_reopen_and_rules_exhaustion() {
     const RecurringPlanDefinition existing{"Existing interval", EventId::generate(), start + 2h,
                                            30min};
     MIRA_CHECK(fixture.store->create_plan(fixed, existing));
-    MIRA_CHECK(fixture.update_database(
+    MIRA_CHECK(fixture.restore_legacy_occurrence_layout(
         "ALTER TABLE recurring_plans DROP COLUMN calendar; DROP TABLE goal_dispatches;"
         " UPDATE store_meta SET value='1.2' WHERE key='schema_version';"));
     MIRA_CHECK(fixture.reopen());
@@ -525,7 +534,11 @@ int calendar_plan_reopen_and_rules_exhaustion() {
     MIRA_CHECK(due && due.value().records.size() == 2 &&
                due.value().records.back().key == calendar);
     const GoalOccurrenceKey occurrence{calendar, 1, first};
-    MIRA_CHECK(fixture.store->record_occurrence(occurrence, first));
+    const auto prepared = fixture.store->prepare_occurrence_dispatch(occurrence, first);
+    MIRA_CHECK(prepared);
+    MIRA_CHECK(fixture.store->read_plan(calendar).value()->next_at == first);
+    MIRA_CHECK(fixture.store->record_occurrence_submission(
+        prepared.value().key, {SessionId::generate(), TaskId::generate(), first}));
     MIRA_CHECK(fixture.reopen());
     const auto exhausted = fixture.store->read_plan(calendar);
     MIRA_CHECK(exhausted && exhausted.value() && !exhausted.value()->next_at &&
@@ -677,9 +690,9 @@ int durable_dispatch_preparation_and_receipts() {
     MIRA_CHECK(fixture.store->create(future, commitment(now + 10min, "Review the final report")));
     MIRA_CHECK(fixture.store->create(expired, commitment(now - 3h, "A missed deadline")));
     MIRA_CHECK(fixture.store->create(foreign, commitment(now - 6min, "Other user")));
-    MIRA_CHECK(
-        fixture.update_database("DROP TABLE goal_dispatches;"
-                                " UPDATE store_meta SET value='1.3' WHERE key='schema_version';"));
+    MIRA_CHECK(fixture.restore_legacy_occurrence_layout(
+        "DROP TABLE goal_dispatches;"
+        " UPDATE store_meta SET value='1.3' WHERE key='schema_version';"));
     MIRA_CHECK(fixture.reopen());
     const GoalDueQuery all{fixture.owner, now, 16, {}};
     GoalDueQuery query{fixture.owner, now, 1, {}};
@@ -795,6 +808,120 @@ int dispatch_authorization_is_operation_specific() {
     MIRA_CHECK(!fixture.store->record_dispatch_submission(prepared.value().key, result));
     return 0;
 }
+
+int recurring_dispatch_is_durable_and_advances_atomically() {
+    GoalFixture fixture(4, 4);
+    fixture.options.max_occurrences = 2;
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey plan{fixture.owner, Id128::generate()};
+    const auto now = fixture.now;
+    const GoalOccurrenceKey legacy{plan, 1, now - 2h};
+    const GoalOccurrenceKey due{plan, 1, now - 1h};
+    const GoalOccurrenceKey next{plan, 1, now};
+    MIRA_CHECK(fixture.store->create_plan(
+        plan, {"Review releases hourly", EventId::generate(), legacy.scheduled_at, 1h}));
+    MIRA_CHECK(fixture.store->record_occurrence(legacy, now));
+    MIRA_CHECK(fixture.restore_legacy_occurrence_layout(
+        "UPDATE store_meta SET value='1.4' WHERE key='schema_version';"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->read_occurrence(legacy).value()->recorded_at == now);
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(legacy).value());
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(next, now));
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(due, due.scheduled_at - 1ms));
+
+    auto concurrent = fixture.executor.submit_auto(
+        [&] { return fixture.store->prepare_occurrence_dispatch(due, now); });
+    const auto prepared = fixture.store->prepare_occurrence_dispatch(due, now);
+    const auto parallel = concurrent.get();
+    MIRA_CHECK(prepared && parallel && prepared.value() == parallel.value());
+    MIRA_CHECK(!prepared.value().key.operation.is_nil() && !prepared.value().submission);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == due.scheduled_at);
+    MIRA_CHECK(!fixture.store->read_occurrence(due).value());
+    MIRA_CHECK(!fixture.store->record_occurrence(due, now));
+    auto foreign = due;
+    foreign.plan.owner.user = UserId::generate();
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(foreign).value());
+    MIRA_CHECK(fixture.update_database(
+        "CREATE TRIGGER reject_dispatch_fixture BEFORE UPDATE OF dispatched_at"
+        " ON recurring_occurrences BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;"));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->prepare_occurrence_dispatch(due, now + 1s).value() ==
+               prepared.value());
+    const GoalDispatchSubmission submission{SessionId::generate(), TaskId::generate(), now + 1s};
+    MIRA_CHECK(!fixture.store->record_occurrence_submission(prepared.value().key, submission));
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == due.scheduled_at);
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(due).value()->submission);
+    MIRA_CHECK(fixture.update_database("DROP TRIGGER reject_dispatch_fixture;"));
+    MIRA_CHECK(fixture.reopen());
+    const auto saved =
+        fixture.store->record_occurrence_submission(prepared.value().key, submission);
+    MIRA_CHECK(saved && saved.value().submission == submission);
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(fixture.store->read_occurrence(due).value()->recorded_at == submission.submitted_at);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == next.scheduled_at);
+    MIRA_CHECK(
+        fixture.store->record_occurrence_submission(prepared.value().key, submission).value() ==
+        saved.value());
+    auto different = submission;
+    different.task = TaskId::generate();
+    const auto conflict =
+        fixture.store->record_occurrence_submission(prepared.value().key, different);
+    MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::AlreadyExists);
+    const auto full = fixture.store->prepare_occurrence_dispatch(next, now);
+    MIRA_CHECK(!full && full.error().code == ErrorCode::ResourceExhausted);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == next.scheduled_at);
+    MIRA_CHECK(fixture.store->erase_plan(plan));
+    MIRA_CHECK(fixture.reopen());
+    MIRA_CHECK(!fixture.store->read_occurrence_dispatch(due).value());
+    MIRA_CHECK(!fixture.store->record_occurrence_submission(prepared.value().key, submission));
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(next, now));
+    return 0;
+}
+
+int recurring_dispatch_revalidates_access_and_preserves_history() {
+    using Operation = GoalStoreOperation;
+    GoalFixture fixture(4, 4);
+    MIRA_CHECK(fixture.reopen());
+    const GoalKey plan{fixture.owner, Id128::generate()};
+    const auto now = fixture.now;
+    const GoalOccurrenceKey due{plan, 1, now};
+    const GoalOccurrenceKey replacement{plan, 2, now};
+    MIRA_CHECK(fixture.store->create_plan(plan, {"Review notes", EventId::generate(), now, 1h}));
+    std::atomic<Operation> permission{Operation::PrepareDispatch};
+    MIRA_CHECK(fixture.reopen([&](const GoalStoreAccess &access) {
+        return access.owner == plan.owner && access.resource == GoalStoreResource::RecurringPlan &&
+               access.id == plan.id && access.operation == permission.load();
+    }));
+    const auto prepared = fixture.store->prepare_occurrence_dispatch(due, now);
+    MIRA_CHECK(prepared);
+    permission.store(Operation::ReadDispatch);
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(due, now));
+    MIRA_CHECK(fixture.store->read_occurrence_dispatch(due).value() == prepared.value());
+    permission.store(Operation::Replace);
+    MIRA_CHECK(fixture.store->replace_plan(plan, 1,
+                                           {"Review revised notes", EventId::generate(), now, 2h}));
+    permission.store(Operation::PrepareDispatch);
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(due, now));
+    const auto current = fixture.store->prepare_occurrence_dispatch(replacement, now);
+    MIRA_CHECK(current && current.value().key.operation != prepared.value().key.operation);
+    const GoalDispatchSubmission submitted{SessionId::generate(), TaskId::generate(), now + 1s};
+    MIRA_CHECK(!fixture.store->record_occurrence_submission(prepared.value().key, submitted));
+    permission.store(Operation::RecordDispatchSubmission);
+    MIRA_CHECK(fixture.store->record_occurrence_submission(prepared.value().key, submitted));
+    permission.store(Operation::Read);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == now);
+    permission.store(Operation::Cancel);
+    MIRA_CHECK(fixture.store->cancel_plan(plan, 2, {EventId::generate(), now}));
+    permission.store(Operation::PrepareDispatch);
+    MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(replacement, now));
+    permission.store(Operation::RecordDispatchSubmission);
+    MIRA_CHECK(fixture.store->record_occurrence_submission(current.value().key, submitted));
+    permission.store(Operation::Read);
+    MIRA_CHECK(fixture.store->read_plan(plan).value()->state == RecurringPlanState::Cancelled);
+    MIRA_CHECK(!fixture.store->read_plan(plan).value()->next_at);
+    MIRA_CHECK(fixture.store->close());
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -816,5 +943,9 @@ int main() {
         return result;
     if (const int result = durable_dispatch_preparation_and_receipts(); result != 0)
         return result;
-    return dispatch_authorization_is_operation_specific();
+    if (const int result = dispatch_authorization_is_operation_specific(); result != 0)
+        return result;
+    if (const int result = recurring_dispatch_is_durable_and_advances_atomically(); result != 0)
+        return result;
+    return recurring_dispatch_revalidates_access_and_preserves_history();
 }

@@ -8,18 +8,21 @@
 #include <mira/json.hpp>
 
 #include <algorithm>
-#include <limits>
 #include <utility>
 
 namespace mira {
 namespace {
 using storage::bind_key;
 using storage::bind_owner;
+using storage::bind_revision;
 using storage::bind_text;
 using storage::bind_time;
 using storage::column_text;
 using storage::column_time;
 using storage::goal_error;
+using storage::kMaxSqlInteger;
+using storage::read_goal_plan;
+using storage::require_goal_capacity;
 using storage::Statement;
 using storage::Transaction;
 using storage::valid_key;
@@ -66,7 +69,6 @@ constexpr const char *kPlanColumns =
     "id,state,revision,title,source_event,first_at,interval_ms,next_at,"
     "cancellation_event,cancelled_at,calendar";
 constexpr const char *kCalendarSchema = "ALTER TABLE recurring_plans ADD COLUMN calendar TEXT;";
-constexpr auto kMaxSqlInteger = std::numeric_limits<std::int64_t>::max();
 
 bool valid_title(const std::string &title) {
     return title.size() <= 512 && title.find_first_not_of(" \t\r\n") != std::string::npos &&
@@ -183,17 +185,6 @@ Result<std::optional<GoalRecord>> read_goal(sqlite3 *db, const GoalKey &key) {
     return std::optional{std::move(result).value()};
 }
 
-Result<void> require_capacity(sqlite3 *db, const char *sql, std::size_t limit,
-                              const GoalOwner *owner = nullptr) {
-    Statement count(db, sql);
-    if (!count.valid() || (owner && !bind_owner(count, *owner)) ||
-        sqlite3_step(count.get()) != SQLITE_ROW)
-        return goal_error(ErrorCode::Internal, "goal capacity check failed");
-    if (sqlite3_column_int64(count.get(), 0) >= static_cast<std::int64_t>(limit))
-        return goal_error(ErrorCode::ResourceExhausted, "goal store quota reached");
-    return {};
-}
-
 Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &options,
                                const GoalKey &key, GoalDefinition definition) {
     Transaction transaction(db);
@@ -208,9 +199,10 @@ Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &option
             return std::move(*prior.value());
         return goal_error(ErrorCode::InvalidState, "goal ID is already recorded or erased");
     }
-    if (auto room = require_capacity(db, "SELECT count(*) FROM goals", options.max_goals); !room)
+    if (auto room = require_goal_capacity(db, "SELECT count(*) FROM goals", options.max_goals);
+        !room)
         return room.error();
-    if (auto room = require_capacity(
+    if (auto room = require_goal_capacity(
             db, "SELECT count(*) FROM goals WHERE tenant=?1 AND owner=?2 AND state=0",
             options.max_pending_per_owner, &key.owner);
         !room)
@@ -362,7 +354,8 @@ Result<void> erase_goal(sqlite3 *db, std::size_t capacity, const GoalKey &key) {
             if (prior.value()->state != GoalState::Erased)
                 return goal_error(ErrorCode::Internal, "goal erasure did not apply");
         } else {
-            if (auto room = require_capacity(db, "SELECT count(*) FROM goals", capacity); !room)
+            if (auto room = require_goal_capacity(db, "SELECT count(*) FROM goals", capacity);
+                !room)
                 return room.error();
             Statement fence(
                 db, "INSERT INTO goals(tenant,owner,id,state,revision) VALUES(?1,?2,?3,4,1)");
@@ -589,7 +582,10 @@ Result<RecurringPlanRecord> decode_plan(Statement &row, const GoalOwner &owner) 
     return plan;
 }
 
-Result<std::optional<RecurringPlanRecord>> read_plan_row(sqlite3 *db, const GoalKey &key) {
+} // namespace
+
+Result<std::optional<RecurringPlanRecord>> storage::read_goal_plan(sqlite3 *db,
+                                                                   const GoalKey &key) {
     const auto sql = std::string("SELECT ") + kPlanColumns +
                      " FROM recurring_plans WHERE tenant=?1 AND owner=?2 AND id=?3";
     Statement row(db, sql.c_str());
@@ -606,11 +602,7 @@ Result<std::optional<RecurringPlanRecord>> read_plan_row(sqlite3 *db, const Goal
     return std::optional{std::move(plan).value()};
 }
 
-bool bind_revision(Statement &statement, int parameter, std::uint64_t revision) {
-    return sqlite3_bind_int64(statement.get(), parameter, static_cast<std::int64_t>(revision)) ==
-           SQLITE_OK;
-}
-
+namespace {
 bool bind_plan(Statement &statement, const RecurringPlanDefinition &definition, GoalTime next) {
     return bind_text(statement, 4, definition.title) &&
            bind_text(statement, 5, definition.source_event.to_string()) &&
@@ -628,7 +620,7 @@ Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOp
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "plan creation transaction unavailable");
-    auto prior = read_plan_row(db, key);
+    auto prior = read_goal_plan(db, key);
     if (!prior)
         return prior.error();
     if (prior.value()) {
@@ -638,10 +630,11 @@ Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOp
             return std::move(*prior.value());
         return goal_error(ErrorCode::InvalidState, "plan ID is already recorded or erased");
     }
-    if (auto room = require_capacity(db, "SELECT count(*) FROM recurring_plans", options.max_plans);
+    if (auto room =
+            require_goal_capacity(db, "SELECT count(*) FROM recurring_plans", options.max_plans);
         !room)
         return room.error();
-    if (auto room = require_capacity(
+    if (auto room = require_goal_capacity(
             db, "SELECT count(*) FROM recurring_plans WHERE tenant=?1 AND owner=?2 AND state=0",
             options.max_active_plans_per_owner, &key.owner);
         !room)
@@ -667,7 +660,7 @@ Result<RecurringPlanRecord> replace_plan_row(sqlite3 *db, const GoalKey &key,
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "plan replacement transaction unavailable");
-    auto prior = read_plan_row(db, key);
+    auto prior = read_goal_plan(db, key);
     if (!prior)
         return prior.error();
     if (!prior.value())
@@ -703,7 +696,7 @@ Result<RecurringPlanRecord> cancel_plan_row(sqlite3 *db, const GoalKey &key, std
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "plan cancellation transaction unavailable");
-    auto prior = read_plan_row(db, key);
+    auto prior = read_goal_plan(db, key);
     if (!prior)
         return prior.error();
     if (!prior.value())
@@ -762,81 +755,6 @@ Result<RecurringDuePage> read_due_plans(sqlite3 *db, const RecurringDueQuery &qu
     return page;
 }
 
-bool bind_occurrence(Statement &statement, const GoalOccurrenceKey &key) {
-    return bind_key(statement, key.plan) && bind_revision(statement, 4, key.plan_revision) &&
-           bind_time(statement, 5, key.scheduled_at);
-}
-
-Result<std::optional<GoalOccurrenceReceipt>> read_occurrence_row(sqlite3 *db,
-                                                                 const GoalOccurrenceKey &key) {
-    Statement row(db, "SELECT recorded_at FROM recurring_occurrences WHERE tenant=?1 AND owner=?2"
-                      " AND plan_id=?3 AND revision=?4 AND scheduled_at=?5");
-    if (!row.valid() || !bind_occurrence(row, key))
-        return goal_error(ErrorCode::Internal, "occurrence read preparation failed");
-    const auto step = sqlite3_step(row.get());
-    if (step == SQLITE_DONE)
-        return std::optional<GoalOccurrenceReceipt>{};
-    if (step != SQLITE_ROW)
-        return goal_error(ErrorCode::Internal, "occurrence read failed");
-    const auto recorded_at = column_time(row, 0);
-    if (!recorded_at || *recorded_at < key.scheduled_at)
-        return goal_error(ErrorCode::DataLoss, "occurrence receipt is invalid");
-    return std::optional{GoalOccurrenceReceipt{key, *recorded_at, false}};
-}
-
-Result<GoalOccurrenceReceipt> record_occurrence_row(sqlite3 *db, std::size_t capacity,
-                                                    const GoalOccurrenceKey &key,
-                                                    GoalTime recorded_at) {
-    Transaction transaction(db);
-    if (!transaction.valid())
-        return goal_error(ErrorCode::Unavailable, "occurrence transaction unavailable");
-    auto recorded = read_occurrence_row(db, key);
-    if (!recorded)
-        return recorded.error();
-    if (recorded.value()) {
-        recorded.value()->idempotent_replay = true;
-        return *recorded.value();
-    }
-    const auto result = read_plan_row(db, key.plan);
-    if (!result)
-        return result.error();
-    if (!result.value() || result.value()->state != RecurringPlanState::Active ||
-        result.value()->revision != key.plan_revision ||
-        result.value()->next_at != key.scheduled_at)
-        return goal_error(ErrorCode::InvalidState,
-                          "occurrence does not match the current due plan");
-    if (auto room = require_capacity(db, "SELECT count(*) FROM recurring_occurrences", capacity);
-        !room)
-        return room.error();
-    const auto &definition = *result.value()->definition;
-    const auto interval = definition.interval;
-    if (key.scheduled_at.time_since_epoch().count() > kMaxSqlInteger - interval.count())
-        return goal_error(ErrorCode::ResourceExhausted, "recurring plan time range reached");
-    std::optional<GoalTime> next = key.scheduled_at + interval;
-    if (definition.calendar) {
-        const auto calculated = next_goal_calendar_occurrence(
-            *definition.calendar, key.scheduled_at + std::chrono::milliseconds{1});
-        if (!calculated)
-            return calculated.error();
-        next = calculated.value();
-    }
-    Statement insert(
-        db,
-        "INSERT INTO recurring_occurrences(tenant,owner,plan_id,revision,scheduled_at,recorded_at)"
-        " VALUES(?1,?2,?3,?4,?5,?6)");
-    if (!insert.valid() || !bind_occurrence(insert, key) || !bind_time(insert, 6, recorded_at) ||
-        sqlite3_step(insert.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
-        return goal_error(ErrorCode::Internal, "occurrence write failed");
-    Statement advance(db, "UPDATE recurring_plans SET next_at=?6 WHERE tenant=?1 AND owner=?2"
-                          " AND id=?3 AND revision=?4 AND next_at=?5 AND state=0");
-    if (!advance.valid() || !bind_occurrence(advance, key) || !bind_time(advance, 6, next) ||
-        sqlite3_step(advance.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
-        return goal_error(ErrorCode::Internal, "recurring plan advance failed");
-    if (auto committed = transaction.commit(); !committed)
-        return committed.error();
-    return GoalOccurrenceReceipt{key, recorded_at, false};
-}
-
 Result<void> erase_plan_row(sqlite3 *db, std::size_t capacity, const GoalKey &key) {
     Transaction transaction(db);
     if (!transaction.valid())
@@ -848,13 +766,14 @@ Result<void> erase_plan_row(sqlite3 *db, std::size_t capacity, const GoalKey &ke
     if (!wipe.valid() || !bind_key(wipe, key) || sqlite3_step(wipe.get()) != SQLITE_DONE)
         return goal_error(ErrorCode::Internal, "plan erasure failed");
     if (sqlite3_changes(db) == 0) {
-        auto prior = read_plan_row(db, key);
+        auto prior = read_goal_plan(db, key);
         if (!prior)
             return prior.error();
         if (prior.value() && prior.value()->state != RecurringPlanState::Erased)
             return goal_error(ErrorCode::Internal, "plan erasure did not apply");
         if (!prior.value()) {
-            if (auto room = require_capacity(db, "SELECT count(*) FROM recurring_plans", capacity);
+            if (auto room =
+                    require_goal_capacity(db, "SELECT count(*) FROM recurring_plans", capacity);
                 !room)
                 return room.error();
             Statement fence(
@@ -918,10 +837,10 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Execu
     const std::string schema =
         std::string("CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);") +
         kGoalTable + kGoalIndexes + kRecurringSchema + kGoalHistorySchema + kCalendarSchema +
-        storage::kGoalDispatchSchema;
+        storage::kGoalDispatchSchema + storage::kRecurringDispatchSchema;
     auto opened = storage::open_reference_store(
         db, {"goal-store",
-             {1, 4},
+             {1, 5},
              schema.c_str(),
              goal_error,
              [](sqlite3 *database, SchemaVersion previous) {
@@ -943,7 +862,12 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Execu
                      if (auto migrated = storage::exec_sql(database, kCalendarSchema); !migrated)
                          return migrated;
                  }
-                 return storage::exec_sql(database, storage::kGoalDispatchSchema);
+                 if (previous.minor < 4) {
+                     if (auto migrated = storage::exec_sql(database, storage::kGoalDispatchSchema);
+                         !migrated)
+                         return migrated;
+                 }
+                 return storage::exec_sql(database, storage::kRecurringDispatchSchema);
              }});
     if (!opened)
         return opened.error();
@@ -1100,7 +1024,7 @@ Result<std::optional<RecurringPlanRecord>> SqliteGoalStore::read_plan(const Goal
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan key");
     return impl_->run<std::optional<RecurringPlanRecord>>(
         {key.owner, Resource::RecurringPlan, Operation::Read, key.id},
-        [key](sqlite3 *db) { return read_plan_row(db, key); });
+        [key](sqlite3 *db) { return read_goal_plan(db, key); });
 }
 
 Result<RecurringDuePage> SqliteGoalStore::due_plans(const RecurringDueQuery &query) const {
@@ -1112,28 +1036,6 @@ Result<RecurringDuePage> SqliteGoalStore::due_plans(const RecurringDueQuery &que
     return impl_->run<RecurringDuePage>(
         {query.owner, Resource::RecurringPlan, Operation::ReadDue, {}},
         [query](sqlite3 *db) { return read_due_plans(db, query); });
-}
-
-Result<GoalOccurrenceReceipt> SqliteGoalStore::record_occurrence(const GoalOccurrenceKey &key,
-                                                                 GoalTime recorded_at) {
-    if (!valid_key(key.plan) || key.plan_revision == 0 || key.plan_revision >= kMaxSqlInteger ||
-        !valid_time(key.scheduled_at) || recorded_at < key.scheduled_at)
-        return goal_error(ErrorCode::InvalidArgument, "invalid occurrence recording");
-    return impl_->run<GoalOccurrenceReceipt>(
-        {key.plan.owner, Resource::RecurringPlan, Operation::RecordOccurrence, key.plan.id},
-        [key, recorded_at, capacity = impl_->options.max_occurrences](sqlite3 *db) {
-            return record_occurrence_row(db, capacity, key, recorded_at);
-        });
-}
-
-Result<std::optional<GoalOccurrenceReceipt>>
-SqliteGoalStore::read_occurrence(const GoalOccurrenceKey &key) const {
-    if (!valid_key(key.plan) || key.plan_revision == 0 || key.plan_revision >= kMaxSqlInteger ||
-        !valid_time(key.scheduled_at))
-        return goal_error(ErrorCode::InvalidArgument, "invalid occurrence key");
-    return impl_->run<std::optional<GoalOccurrenceReceipt>>(
-        {key.plan.owner, Resource::RecurringPlan, Operation::ReadOccurrence, key.plan.id},
-        [key](sqlite3 *db) { return read_occurrence_row(db, key); });
 }
 
 Result<void> SqliteGoalStore::erase_plan(const GoalKey &key) {

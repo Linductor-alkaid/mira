@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md) 接通重复目标的到期发现、
+派发身份及提交后原子推进，见 [M30-45](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md) 修复词法腿的
 中文分词与查询组合，交付 store 的纯词法 R@10 从 0.100 到 0.95；会话索引改为按相关度
 排序。范围、验证与待重测的基准见
