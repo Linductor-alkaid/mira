@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-158](../decisions/DEC-158-loop-settlement-memory.md) 接通实际循环结算事件的
+Episode 提取，并在持久页回执中按类型统计候选处置。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-156](../decisions/DEC-156-m30-implementation-freeze.md) 补齐 M30 实施细则，
 [DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md) 接通范围独立的 Record 页回执。
 见 [M30-01 与 M30-03](m30-long-term-memory-integration.md#5-工作项)。

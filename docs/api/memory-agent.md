@@ -85,6 +85,10 @@ Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型�
 结果 consolidation 给出 Applied、PendingApproval、Rejected 等状态；待审批 mutation
 只有经过宿主当前权限/删除屏障复核后，才可通过既有 apply_pending 提交。
 
+结算后的 Record 可直接从已提交的设备循环完成事件、会话回答事件提取 `Episode`，无需
+配置提取模型。新事件记忆保留原事件 ID 与发生时间。候选处置及工具状态带 `kind`，
+持久页回执的 `by_kind` 按类型汇总生效及拒绝数量。见 [DEC-158](../decisions/DEC-158-loop-settlement-memory.md)。
+
 Compress 指定 history 与 protected_items。history 须为完整 User/Assistant 协议，前缀
 也必须完整。压缩前缀和模型引用结果存为 Artifact，返回 projection_artifact；缺少
 ArtifactStore、无耐久元数据确认、引用越界或来源不匹配都不会发布压缩投影。

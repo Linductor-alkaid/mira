@@ -91,6 +91,7 @@ struct ConsolidationEntry final {
     // DEC-115: the incumbent claim this entry duplicates, appends evidence
     // to, promotes, supersedes or preserves an alternative of.
     std::optional<MemoryId> incumbent;
+    MemoryKind kind = MemoryKind::Preference;
 };
 
 struct ConsolidationReport final {

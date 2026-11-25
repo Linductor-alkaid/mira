@@ -37,6 +37,44 @@ parse_verified_fact(const EventEnvelope &event) {
     return std::make_pair(*key->as_string(), *value->as_string());
 }
 
+enum class EpisodeSettlement { LegacyTask, Task, Conversation };
+
+std::optional<EpisodeSettlement> parse_episode_settlement(const EventEnvelope &event) {
+    const bool conversation = event.payload.type == "ConversationSettled";
+    if (!conversation && event.payload.type != "LoopSettled")
+        return {};
+    const auto payload = parse_json(event.payload.data);
+    if (!payload || !payload.value().is_object())
+        return {};
+    const auto *detail = payload.value().find("detail");
+    if (!detail) {
+        const auto *outcome = payload.value().find("outcome");
+        if (!conversation && outcome && outcome->is_string() &&
+            *outcome->as_string() == "Completed")
+            return EpisodeSettlement::LegacyTask;
+        return {};
+    }
+    const auto *task = payload.value().find("task_id");
+    const auto *epoch = payload.value().find("task_epoch");
+    const auto *outcome = detail->find("outcome");
+    if (event.payload.classification != EventClass::State || event.session_id.is_nil() ||
+        event.runtime_id.is_nil() || event.event_id.is_nil() || !event.task_id ||
+        event.task_id->is_nil() || !task || !task->is_string() ||
+        TaskId::parse(*task->as_string()) != event.task_id || !epoch || !epoch->is_integer() ||
+        *epoch->as_integer() < 0 || !outcome || !outcome->is_string() ||
+        *outcome->as_string() != (conversation ? "Answered" : "Completed"))
+        return {};
+    return conversation ? EpisodeSettlement::Conversation : EpisodeSettlement::Task;
+}
+
+std::string episode_statement(EpisodeSettlement settlement, const EventEnvelope &event) {
+    if (settlement == EpisodeSettlement::LegacyTask)
+        return "task settled: outcome=completed sequence=" + std::to_string(event.session_sequence);
+    return "episode " + event.event_id.to_string() +
+           (settlement == EpisodeSettlement::Conversation ? "=conversation answered"
+                                                          : "=task completed");
+}
+
 } // namespace
 
 std::string candidate_disposition_name(CandidateDisposition disposition) {
@@ -141,19 +179,12 @@ MemoryConsolidator::extract_deterministic(std::span<const EventEnvelope> events,
             candidates.push_back(std::move(candidate));
             continue;
         }
-        if (event.payload.type == "LoopSettled") {
-            auto parsed = parse_json(event.payload.data);
-            if (!parsed || parsed.value().find("outcome") == nullptr ||
-                !parsed.value().find("outcome")->is_string() ||
-                *parsed.value().find("outcome")->as_string() != "Completed") {
-                continue;
-            }
+        if (const auto settlement = parse_episode_settlement(event)) {
             MemoryRecord record;
             record.id = MemoryId::generate();
             record.scope = scope;
             record.kind = MemoryKind::Episode;
-            record.statement = "task settled: outcome=completed sequence=" +
-                               std::to_string(event.session_sequence);
+            record.statement = episode_statement(*settlement, event);
             record.validity.valid_from = event_wall(event);
             record.recorded_at = event_wall(event);
             record.provenance = {event.event_id};
@@ -182,13 +213,9 @@ Result<ConsolidationReport> MemoryConsolidator::consolidate(IMemory &memory,
     for (const auto &event : events) {
         if (event.timestamp_origin != EventTimestampOrigin::UnavailableLegacy)
             continue;
-        auto body = parse_json(event.payload.data);
-        if (!body || body.value().find("schema"))
-            continue;
-        const bool fact = parse_verified_fact(event).has_value();
-        const auto *outcome = body.value().find("outcome");
-        const bool episode = event.payload.type == "LoopSettled" && outcome &&
-                             outcome->is_string() && *outcome->as_string() == "Completed";
+        const auto body = parse_json(event.payload.data);
+        const bool fact = body && !body.value().find("schema") && parse_verified_fact(event);
+        const bool episode = parse_episode_settlement(event).has_value();
         if (fact || episode)
             return make_memory_error(
                 MemoryDomainCode::InvalidMutation,
@@ -248,6 +275,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                                            : context_text::to_lower_ascii(proposed.statement));
         ConsolidationEntry entry;
         entry.key = key;
+        entry.kind = proposed.kind;
         entry.mutation =
             candidate.immutable_add_id ? *candidate.immutable_add_id : MutationId::generate();
 

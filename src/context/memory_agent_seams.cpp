@@ -11,6 +11,7 @@ JsonValue report_json(const MemoryAgentResult &result) {
     for (const auto &entry : result.consolidation.entries)
         entries.emplace_back(
             JsonValue::Object{{"disposition", candidate_disposition_name(entry.disposition)},
+                              {"kind", memory_kind_name(entry.kind)},
                               {"reason", entry.reason_code}});
     return JsonValue::Object{
         {"operation", result.operation.to_string()},

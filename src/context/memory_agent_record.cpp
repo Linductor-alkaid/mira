@@ -1,11 +1,13 @@
 #include "memory_agent_support.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 
 namespace mira {
 namespace {
 constexpr std::string_view kRecordPage = "mira.memory-agent.record-page.v1";
+constexpr std::size_t kRecordPagePayloadMax = 1024;
 
 Id128 digest_id(std::string_view text) {
     const auto digest = digest_string(text);
@@ -50,7 +52,7 @@ Result<void> MemoryAgentService::State::restore_record_cursor(Job &job) {
     query.session_id = receipt_partition(job.binding, *job.request.write_scope);
     query.limit = 1;
     query.scan_limit = 1;
-    query.byte_limit = 512;
+    query.byte_limit = kRecordPagePayloadMax + kRecordPage.size();
     const auto first = events->read_slice(query);
     if (!first)
         return first.error();
@@ -73,7 +75,8 @@ Result<void> MemoryAgentService::State::restore_record_cursor(Job &job) {
     const auto &event = page.events.front();
     if (event.session_id != query.session_id || event.session_sequence != head || event.task_id ||
         event.task_sequence || event.runtime_id.is_nil() || event.payload.type != kRecordPage ||
-        event.payload.classification != EventClass::Critical || event.payload.data.size() > 384)
+        event.payload.classification != EventClass::Critical ||
+        event.payload.data.size() > kRecordPagePayloadMax)
         return invalid_receipt();
     const auto decoded = parse_json(event.payload.data);
     if (!decoded)
@@ -96,7 +99,17 @@ Result<void> MemoryAgentService::State::save_record_cursor(const Job &job,
                                                            const Work::RecordCursor &cursor,
                                                            const ConsolidationReport &report) {
     const auto partition = receipt_partition(job.binding, *job.request.write_scope);
-    const auto applied = report.count_of(CandidateDisposition::Applied);
+    std::map<std::string, std::array<std::int64_t, 2>> counts;
+    std::size_t applied = 0;
+    for (const auto &entry : report.entries) {
+        const bool accepted = entry.disposition == CandidateDisposition::Applied;
+        ++counts[memory_kind_name(entry.kind)][accepted ? 0 : 1];
+        applied += accepted ? 1U : 0U;
+    }
+    JsonValue::Object by_kind;
+    for (const auto &[kind, count] : counts)
+        by_kind.emplace_back(kind,
+                             JsonValue::Object{{"applied", count[0]}, {"rejected", count[1]}});
     const auto payload = to_json_string(JsonValue::Object{
         {"after", std::to_string(job.after_sequence)},
         {"through", std::to_string(cursor.through)},
@@ -104,6 +117,7 @@ Result<void> MemoryAgentService::State::save_record_cursor(const Job &job,
         {"examined", static_cast<std::int64_t>(report.candidates_examined)},
         {"applied", static_cast<std::int64_t>(applied)},
         {"rejected", static_cast<std::int64_t>(report.entries.size() - applied)},
+        {"by_kind", std::move(by_kind)},
     });
     const AppendRequest request{receipt_id(partition, cursor.through),
                                 runtime,

@@ -363,6 +363,11 @@ SQLite Memory/query，并验证文件重开幂等及取消/接管后的拒绝。
 
 ## memory_consolidation.hpp
 
+设备循环 `LoopSettled/Completed` 和会话循环 `ConversationSettled/Answered` 可产生
+以原事件为证据的 `Observed` Episode。结构化信封须与事件任务归属一致。历史平面
+`LoopSettled` 保留既有行为。`ConsolidationEntry::kind` 表示管线处置的候选类型。
+见 [DEC-158](../decisions/DEC-158-loop-settlement-memory.md)。
+
 Verified Event 到 Memory candidate 的确定性管道：
 
 - `MemoryConsolidator::consolidate(store, events, scope, now)` 产出

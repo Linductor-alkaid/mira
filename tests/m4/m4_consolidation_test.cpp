@@ -311,6 +311,53 @@ int completed_loop_becomes_episode() {
     return 0;
 }
 
+int wrapped_settlements_keep_independent_event_identity() {
+    Fixture fixture;
+    const auto scope = scope_of("shared-learning-scope");
+    const auto runtime = RuntimeId::generate();
+    const auto task = TaskId::generate();
+    TaskEventLog first(runtime, SessionId::generate(), task);
+    TaskEventLog second(runtime, SessionId::generate(), task);
+    const auto wrapped = [](TaskId owner, const char *outcome) {
+        return JsonValue::Object{{"task_id", owner.to_string()},
+                                 {"task_epoch", 0},
+                                 {"detail", JsonValue::Object{{"outcome", outcome}}}};
+    };
+    first.add("LoopSettled", wrapped(task, "Completed"));
+    first.add("LoopSettled", wrapped(TaskId::generate(), "Completed"));
+    first.add("LoopSettled", wrapped(task, "Completed"), EventClass::Diagnostic);
+    first.add("ConversationSettled", wrapped(task, "Failed"));
+    first.add("ConversationSettled", JsonValue::Object{{"outcome", "Answered"}});
+    second.add("LoopSettled", wrapped(task, "Completed"));
+    MIRA_CHECK(first.envelopes().front().session_sequence ==
+               second.envelopes().front().session_sequence);
+    const auto consolidate = [&](std::span<const EventEnvelope> evidence) {
+        return MemoryConsolidator{}.consolidate(*fixture.store, evidence, scope, Timestamp::now());
+    };
+    const auto one = consolidate(first.envelopes());
+    const auto two = consolidate(second.envelopes());
+    MIRA_CHECK(one && two && one.value().entries.size() == 1 && two.value().entries.size() == 1);
+    MIRA_CHECK(one.value().entries.front().kind == MemoryKind::Episode &&
+               two.value().entries.front().kind == MemoryKind::Episode);
+    const auto replay = consolidate(first.envelopes());
+    MIRA_CHECK(replay && replay.value().entries.size() == 1 &&
+               replay.value().entries.front().reason_code == "duplicate-noop");
+    MemoryQuery query;
+    query.scopes = {scope};
+    const auto records = fixture.store->query(query);
+    MIRA_CHECK(records && records.value().records.size() == 2);
+    for (const auto &episode : records.value().records)
+        MIRA_CHECK(episode.kind == MemoryKind::Episode &&
+                   episode.verification == MemoryVerification::Observed &&
+                   episode.provenance.size() == 1);
+
+    auto undated = first.envelopes().front();
+    undated.timestamp_origin = EventTimestampOrigin::UnavailableLegacy;
+    const auto unavailable = consolidate(std::span{&undated, 1});
+    MIRA_CHECK(!unavailable);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -320,6 +367,7 @@ int main() {
     failures += custom_markers_and_candidate_keys_use_ascii_folding();
     failures += preference_writes_automatically_and_policy_keeps_approval();
     failures += completed_loop_becomes_episode();
+    failures += wrapped_settlements_keep_independent_event_identity();
     std::filesystem::remove_all(temp_dir());
     return failures == 0 ? 0 : 1;
 }

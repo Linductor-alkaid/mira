@@ -85,6 +85,7 @@
 - [DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md)：在 Runtime 发布成功终态前持久化验证事实。
 - [DEC-156](../decisions/DEC-156-m30-implementation-freeze.md)：冻结 M30 剩余实施细则。
 - [DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md)：按写入范围保存 Record 页回执。
+- [DEC-158](../decisions/DEC-158-loop-settlement-memory.md)：从设备和会话循环的结算事件提取事件记忆。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -156,7 +157,7 @@
 
 - [x] `M30-01` 立项与实施细则冻结。DEC-107/109 和 DEC-119 的已落地契约由 DEC-156 补齐，验收归属见 §4.1。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
-- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径。终态 Session Record、显式 User 偏好提案及持久审批已接通。Record 按写入范围记录进度，宿主可保存持久页回执。其他类型候选报告的统一收集与触发继续验收。
+- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径。终态 Session Record、实际循环结算 Episode、显式 User 偏好提案及持久审批已接通。Record 按写入范围记录进度，持久页回执可按类型核对处置计数。专用 owner 的候选报告汇集及触发继续验收。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
 - [ ] `M30-05` 「记住 / 忘掉 / 纠正」的路由、范围判定与可解释输出（偏好提案、版本冻结的纠正、确认/拒绝/过期/未知结果已交付；完整意图与遗忘交互仍待完成）。
 - [ ] `M30-06` 价值信号（importance / 使用信号）产出（供 M31 使用）。
@@ -1802,3 +1803,42 @@ ASan 定向 **1/1**。严格 clang-tidy、格式、文档、SBOM、平台边界�
 日志见 `/tmp/mira-m30-early-debug-*.log`、`/tmp/mira-m30-early-record-repeat.log`、
 `/tmp/mira-m30-early-asan-*.log`、`/tmp/mira-m30-early-tidy.log` 和
 `/tmp/mira-m30-early-quality-final.log`。
+
+### 2026-11-25 记录实际循环结算及按类型核对候选
+
+基线 `c32ffbd`，分支 `feat/m30-memory-systems`。DEC-158 在 M30-03 交付设备循环
+和会话循环结算的 Episode 提取。旧平面设备事件继续兼容，新信封按任务和原事件 ID
+校验并去重。持久 Record 页回执同步保存按 `MemoryKind` 归类的处置计数。
+
+`mira_m30_recording_test` 通过真实 ConversationLoop、协调层、FileEventStore 和 SQLite
+验证普通问答后无需提取模型即可写入 Episode，并校验证据及分类回执。
+`mira_m4_consolidation_test` 验证旧格式、归属不符、非状态事件、失败结果、同序号隔离、
+重放及可靠时间缺失。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 9
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug -j 2 --output-on-failure \
+  -R '^mira_(m30_recording|m4_consolidation)_test$' --repeat until-fail:25
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_recording_test mira_m4_consolidation_test
+ctest --test-dir build/asan -j 2 --output-on-failure -R '^mira_(m30_recording|m4_consolidation)_test$'
+printf '%s\n' src/context/memory_consolidation.cpp src/context/memory_agent_record.cpp \
+  src/context/memory_agent_seams.cpp | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 专用 owner 的候选汇集和触发 | Mira Maintainers 完成 M30-03 的各写入入口接线后，核对来源、范围、分类和持久处置回执。M30-38 验收六类自动路由 |
+| 真实模型、Windows、Android 与远端 CI | Mira Maintainers 提供模型验收环境并提交 PR 后执行目标平台矩阵 |
+
+Linux Debug 全量 **214/214**，提取与合并测试各连续通过 **25/25**，ASan 定向 **2/2**。
+严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。
+日志见 `/tmp/mira-m30-loop-debug-*.log`、`/tmp/mira-m30-loop-repeat.log`、
+`/tmp/mira-m30-loop-asan-*.log`、`/tmp/mira-m30-loop-tidy.log` 和 `/tmp/mira-m30-loop-quality.log`。
