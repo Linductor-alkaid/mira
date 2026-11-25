@@ -245,6 +245,25 @@ auto matching = memory.query(query);
 宿主负责同步授权撤销、目录状态和访问，通用 MemoryAgent 工作绑定拒绝画像 scope。
 画像擦除接入下述配对目录。见 [DEC-124](../decisions/DEC-124-social-attribute-assertions.md)。
 
+### 从已索引消息推断并记录画像字段
+
+入站宿主在 `index_message` 成功后，可通过 `mira/social_attribute_inference.hpp` 传入当前
+会话、字段词表和获准的模型。入口在同一受管作业内提取、复核并提交画像候选。
+
+```cpp
+const std::vector<std::string> fields{"team", "role"};
+auto report = executor.submit_auto([&] {
+    return infer_and_record_social_message_attributes(
+        *directory, *events, *provider, environment, message, fields, operation);
+}).get();
+```
+
+目录须与记忆库配对。字段和值来自本次候选，对象和来源由已索引消息确定。每个值必须
+逐字出现在原文中，断言以 `Inferred`、`Unverified` 保存。已有结构化候选也可直接调用
+`record_inferred_message_attributes`。报告包含发言证据和逐条 `ConsolidationReport`
+处置。重试同一来源和内容可得到幂等结果。画像擦除或授权作业取消后，迟到结果无法写入。
+见 [DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md)。
+
 ## 社交关系断言
 
 宿主在同一租户和社交环境中核对两个对象的当前目录版本、授权和证据。关系有方向，

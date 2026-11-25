@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mira/event_store.hpp>
+#include <mira/memory_consolidation.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/social_identity.hpp>
 
@@ -20,6 +21,7 @@ class Executor;
 namespace mira {
 
 class SqliteMemoryStore;
+struct OperationContext;
 
 struct SocialObjectIdentity final {
     std::uint64_t revision = 0;
@@ -65,6 +67,16 @@ struct SocialMessageEvidence final {
     Sha256Digest account_digest;
     Sha256Digest event_integrity;
     friend bool operator==(const SocialMessageEvidence &, const SocialMessageEvidence &) = default;
+};
+
+struct SocialMessageAttributeCandidate final {
+    std::string field;
+    std::string quote; // Exact value excerpt from the indexed speaker's message.
+};
+
+struct SocialMessageAttributeReport final {
+    SocialMessageEvidence speaker;
+    ConsolidationReport consolidation;
 };
 
 struct SocialMessagePage final {
@@ -137,6 +149,11 @@ class SqliteSocialDirectory final {
     resolve_message_participants(const SocialEnvironmentKey &, const SocialMessageLocator &,
                                  std::span<const SocialMentionReference> mentions,
                                  std::size_t alias_limit = 8) const;
+    // For a currently authorized, managed host operation with a paired store.
+    // The indexed speaker and original message supply the scope and evidence.
+    [[nodiscard]] Result<SocialMessageAttributeReport> record_inferred_message_attributes(
+        const SocialEnvironmentKey &, const SocialMessageLocator &, const IEventStore &,
+        std::span<const SocialMessageAttributeCandidate>, const OperationContext &);
     [[nodiscard]] Result<void> erase_object(const SocialObjectKey &);
     [[nodiscard]] Result<void> erase_environment(const SocialEnvironmentKey &);
     [[nodiscard]] Result<void> close() noexcept;

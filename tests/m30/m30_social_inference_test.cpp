@@ -3,6 +3,7 @@
 #include "support/test.hpp"
 
 #include <mira/model_provider.hpp>
+#include <mira/social_attribute_inference.hpp>
 #include <mira/social_mention_inference.hpp>
 
 namespace {
@@ -34,10 +35,11 @@ class MentionProvider final : public IModelProvider {
 
 class SocialFixture final {
   public:
-    SocialFixture() {
+    explicit SocialFixture(bool paired = false) {
         SqliteSocialDirectoryOptions options;
         options.path = storage.root / "social-inference.db";
-        auto opened = SqliteSocialDirectory::open(storage.executor, options);
+        auto opened = SqliteSocialDirectory::open(storage.executor, options,
+                                                  paired ? storage.memory : nullptr);
         if (!opened)
             std::abort();
         directory = std::move(opened).value();
@@ -199,6 +201,109 @@ int invalidates_erased_or_cancelled_evidence() {
     MIRA_CHECK(erased && !stale && stale.error().code == ErrorCode::InvalidState);
     return 0;
 }
+
+int records_grounded_attributes_for_the_indexed_speaker() {
+    SocialFixture fixture(true);
+    const auto first = fixture.record(fixture.qq, "我负责导航开发和接口文档，团队是夜航。");
+    MIRA_CHECK(first);
+    const auto linked = fixture.directory->observe_account(
+        fixture.environment, fixture.bilibili, first.value().message.event, first.value().speaker);
+    MIRA_CHECK(linked && linked.value().object == first.value().speaker);
+    const auto unrelated =
+        fixture.record(SocialAccountKey{"qq", Id128::generate()}, "我做设备运维。");
+    MIRA_CHECK(unrelated && unrelated.value().speaker != first.value().speaker);
+    MentionProvider provider;
+    const std::vector<std::string> fields{"role", "team"};
+    const auto infer = [&](const SocialMessageLocator &message, const OperationContext &context) {
+        return fixture.storage.executor
+            .submit_auto([&] {
+                return infer_and_record_social_message_attributes(
+                    *fixture.directory, *fixture.storage.events, provider, fixture.environment,
+                    message, fields, context);
+            })
+            .get();
+    };
+    const auto recall = [&] {
+        return fixture.directory->recall_account_attribute(fixture.environment, fixture.bilibili,
+                                                           "role");
+    };
+    auto foreign = fixture.operation();
+    foreign.session = SessionId::generate();
+    const auto denied = infer(first.value().message, foreign);
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied && !provider.captured);
+    provider.answer = R"({"attributes":[{"field":"role","quote":"未出现"}]})";
+    const auto fabricated = infer(first.value().message, fixture.operation());
+    MIRA_CHECK(!fabricated && fabricated.error().code == ErrorCode::InvalidModelOutput);
+    provider.answer = R"({"attributes":[{"field":"private_field","quote":"导航开发"}]})";
+    const auto invalid_field = infer(first.value().message, fixture.operation());
+    MIRA_CHECK(!invalid_field && invalid_field.error().code == ErrorCode::InvalidModelOutput);
+    const std::vector<SocialMessageAttributeCandidate> invalid_batch{{"role", "导航开发"},
+                                                                     {"team", "不存在"}};
+    const auto invalid = fixture.storage.executor
+                             .submit_auto([&] {
+                                 return fixture.directory->record_inferred_message_attributes(
+                                     fixture.environment, first.value().message,
+                                     *fixture.storage.events, invalid_batch, fixture.operation());
+                             })
+                             .get();
+    MIRA_CHECK(!invalid && recall().value()->assertions.records.empty());
+    provider.answer =
+        R"({"attributes":[{"field":"role","quote":"导航开发"},{"field":"team","quote":"夜航"}]})";
+    const auto result = infer(first.value().message, fixture.operation());
+    MIRA_CHECK(result && result.value().speaker == first.value() &&
+               result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
+    MIRA_CHECK(result.value().consolidation.entries.front().kind == MemoryKind::SocialAttribute);
+    MIRA_CHECK(provider.captured && provider.captured->tools.empty() &&
+               !provider.captured->data_policy.allow_uploads &&
+               provider.captured->data_policy.store == false);
+    const auto observed = recall();
+    MIRA_CHECK(observed && observed.value() && observed.value()->assertions.records.size() == 1);
+    const auto &record = observed.value()->assertions.records.front();
+    MIRA_CHECK(record.statement == "导航开发" &&
+               record.verification == MemoryVerification::Unverified &&
+               record.social_attribute->source == SocialAttributeSource::Inferred &&
+               record.provenance == std::vector{first.value().message.event});
+    MIRA_CHECK(fixture.directory->close());
+    fixture.directory.reset();
+    SqliteSocialDirectoryOptions options;
+    options.path = fixture.storage.root / "social-inference.db";
+    auto reopened =
+        SqliteSocialDirectory::open(fixture.storage.executor, options, fixture.storage.memory);
+    MIRA_CHECK(reopened);
+    fixture.directory = std::move(reopened).value();
+    const auto replay = infer(first.value().message, fixture.operation());
+    MIRA_CHECK(replay && replay.value().consolidation.entries.front().idempotent_replay);
+    provider.answer = R"({"attributes":[{"field":"role","quote":"接口文档"}]})";
+    const auto conflict = infer(first.value().message, fixture.operation());
+    MIRA_CHECK(conflict && conflict.value().consolidation.count_of(
+                               CandidateDisposition::RejectedConflict) == 1);
+    const auto later = fixture.record(fixture.bilibili, "我现在负责质量验证。");
+    MIRA_CHECK(later && later.value().speaker == first.value().speaker);
+    provider.answer = R"({"attributes":[{"field":"role","quote":"质量验证"}]})";
+    MIRA_CHECK(infer(later.value().message, fixture.operation()));
+    const auto with_later = recall();
+    MIRA_CHECK(with_later && with_later.value()->assertions.records.size() == 2);
+
+    bool cancelled = false;
+    auto interrupted = fixture.operation();
+    interrupted.cancellation_requested = [&] { return cancelled; };
+    provider.on_infer = [&] { cancelled = true; };
+    const auto stopped = infer(later.value().message, interrupted);
+    MIRA_CHECK(!stopped && stopped.error().code == ErrorCode::Cancelled);
+    bool erased = false;
+    provider.on_infer = [&] {
+        erased = fixture.directory->erase_object(first.value().speaker).has_value();
+    };
+    const auto stale = infer(later.value().message, fixture.operation());
+    MIRA_CHECK(erased && !stale && !recall());
+    MIRA_CHECK(fixture.directory->read(unrelated.value().speaker).value());
+    bool closed = false;
+    provider.answer = R"({"attributes":[{"field":"role","quote":"设备运维"}]})";
+    provider.on_infer = [&] { closed = fixture.directory->close().has_value(); };
+    const auto after_close = infer(unrelated.value().message, fixture.operation());
+    MIRA_CHECK(closed && !after_close);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -206,5 +311,7 @@ int main() {
         return result;
     if (const auto result = rejects_fabricated_mentions_and_out_of_scope_sources(); result != 0)
         return result;
-    return invalidates_erased_or_cancelled_evidence();
+    if (const auto result = invalidates_erased_or_cancelled_evidence(); result != 0)
+        return result;
+    return records_grounded_attributes_for_the_indexed_speaker();
 }

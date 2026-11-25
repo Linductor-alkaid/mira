@@ -1,6 +1,10 @@
+#include <mira/social_attribute_inference.hpp>
 #include <mira/social_mention_inference.hpp>
 
+#include "social_message_source.hpp"
+
 #include <mira/environment.hpp>
+#include <mira/social_profile.hpp>
 
 #include <algorithm>
 
@@ -22,8 +26,10 @@ Result<void> check_operation(const OperationContext &context) {
     return {};
 }
 
-Result<std::string> read_message_text(const IEventStore &events,
-                                      const SocialMessageEvidence &source) {
+} // namespace
+
+Result<EventEnvelope> storage::read_social_message_source(const IEventStore &events,
+                                                          const SocialMessageEvidence &source) {
     EventSliceQuery query;
     query.session_id = source.message.session;
     query.after_sequence = source.message.sequence - 1;
@@ -31,14 +37,14 @@ Result<std::string> read_message_text(const IEventStore &events,
     query.limit = 1;
     query.scan_limit = 1;
     query.byte_limit = 4096 + kSocialMessageTextEvent.size();
-    const auto page = events.read_slice(query);
+    auto page = events.read_slice(query);
     if (!page)
         return page.error();
     if (page.value().events.size() != 1 || page.value().has_more ||
         page.value().snapshot_through != source.message.sequence ||
         page.value().scanned_through != source.message.sequence)
         return source_error(ErrorCode::DataLoss, "social message evidence has no matching source");
-    const auto &event = page.value().events.front();
+    auto &event = page.value().events.front();
     if (event.session_id != source.message.session ||
         event.session_sequence != source.message.sequence ||
         event.event_id != source.message.event || event.integrity != source.event_integrity)
@@ -46,9 +52,48 @@ Result<std::string> read_message_text(const IEventStore &events,
     if (event.payload.type != kSocialMessageTextEvent)
         return source_error(ErrorCode::UnsupportedCapability,
                             "social inference needs a message text event");
-    return event.payload.data;
+    return std::move(event);
 }
 
+Result<std::vector<MemoryCandidate>> storage::prepare_social_message_attributes(
+    const SocialMessageEvidence &source, const EventEnvelope &event,
+    std::span<const SocialMessageAttributeCandidate> attributes) {
+    constexpr std::size_t kMaxAttributes = 8;
+    constexpr std::size_t kMaxQuoteBytes = 256;
+    if (attributes.size() > kMaxAttributes)
+        return source_error(ErrorCode::ResourceExhausted,
+                            "too many social attributes for one message");
+    if (event.timestamp_origin == EventTimestampOrigin::UnavailableLegacy ||
+        event.timestamp.wall.time_since_epoch().count() <= 0)
+        return source_error(ErrorCode::DataLoss, "social message source time is unavailable");
+    const auto recorded =
+        std::chrono::time_point_cast<std::chrono::system_clock::duration>(event.timestamp.wall);
+    std::vector<MemoryCandidate> prepared;
+    prepared.reserve(attributes.size());
+    for (const auto &attribute : attributes) {
+        if (!is_social_attribute_field(attribute.field) || attribute.quote.empty() ||
+            attribute.quote.size() > kMaxQuoteBytes ||
+            event.payload.data.find(attribute.quote) == std::string::npos ||
+            std::ranges::any_of(prepared, [&](const MemoryCandidate &candidate) {
+                return candidate.proposed.social_attribute->field == attribute.field;
+            }))
+            return source_error(ErrorCode::InvalidArgument,
+                                "social attribute requires a unique field and a source excerpt");
+        auto record = make_social_attribute(
+            source.speaker, {attribute.field, SocialAttributeSource::Inferred}, attribute.quote,
+            source.message.event, {recorded, {}}, recorded);
+        if (!record)
+            return record.error();
+        MemoryCandidate candidate;
+        candidate.proposed = std::move(record).value();
+        candidate.evidence = {source.message.event};
+        candidate.reason = MutationReasonCode::Consolidation;
+        prepared.push_back(std::move(candidate));
+    }
+    return prepared;
+}
+
+namespace {
 Result<void> check_sources(const SocialMessageParticipants &participants,
                            const SocialMessageEvidence &current,
                            std::span<const SocialMessageEvidence> history) {
@@ -99,14 +144,14 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
     const auto add_row = [&](const SocialMessageEvidence &source) -> Result<void> {
         if (auto active = check_operation(context); !active)
             return active.error();
-        auto text = read_message_text(events, source);
-        if (!text)
-            return text.error();
+        auto evidence = storage::read_social_message_source(events, source);
+        if (!evidence)
+            return evidence.error();
         const auto existing = std::ranges::find(speakers, source.speaker);
         const auto slot = static_cast<std::size_t>(existing - speakers.begin());
         if (existing == speakers.end())
             speakers.push_back(source.speaker);
-        transcript.push_back({slot, std::move(text).value()});
+        transcript.push_back({slot, std::move(evidence).value().payload.data});
         return {};
     };
     for (const auto &previous : history) {
@@ -149,6 +194,32 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
              std::move(resolved.value().mentions.at(history.size() + index))});
     }
     return result;
+}
+
+Result<SocialMessageAttributeReport> infer_and_record_social_message_attributes(
+    SqliteSocialDirectory &directory, const IEventStore &events, IModelProvider &provider,
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    std::span<const std::string> fields, const OperationContext &operation) {
+    if (operation.session != message.session || operation.session.is_nil())
+        return source_error(ErrorCode::PermissionDenied,
+                            "social attribute inference needs its authorized session");
+    auto context = operation;
+    const auto limit = Timestamp::now().monotonic + std::chrono::seconds{15};
+    context.deadline = std::min(context.deadline.value_or(limit), limit);
+    if (auto active = check_operation(context); !active)
+        return active.error();
+    const auto indexed = directory.resolve_message_participants(environment, message, {});
+    if (!indexed)
+        return indexed.error();
+    const auto event = storage::read_social_message_source(events, indexed.value().speaker);
+    if (!event)
+        return event.error();
+    auto proposed =
+        extract_social_message_attributes(provider, event.value().payload.data, fields, context);
+    if (!proposed)
+        return proposed.error();
+    return directory.record_inferred_message_attributes(environment, message, events,
+                                                        proposed.value(), context);
 }
 
 } // namespace mira

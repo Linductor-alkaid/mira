@@ -1,13 +1,16 @@
 #include <mira/sqlite_social_directory.hpp>
 
+#include "social_message_source.hpp"
 #include "sqlite_store_open.hpp"
 
 #include <mira/content_markers.hpp>
+#include <mira/environment.hpp>
 #include <mira/social_profile.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <iterator>
 #include <limits>
 #include <map>
 
@@ -1089,6 +1092,75 @@ Result<SocialMessageParticipants> SqliteSocialDirectory::resolve_message_partici
         });
 }
 
+Result<SocialMessageAttributeReport> SqliteSocialDirectory::record_inferred_message_attributes(
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    const IEventStore &events, std::span<const SocialMessageAttributeCandidate> attributes,
+    const OperationContext &context) {
+    if (context.session.is_nil() || context.session != message.session)
+        return directory_error(ErrorCode::PermissionDenied,
+                               "social attribute recording needs its authorized session");
+    if (!impl_->memory)
+        return directory_error(ErrorCode::InvalidState,
+                               "social attribute recording needs a paired store");
+    const auto check_operation = [&]() -> Result<void> {
+        if (context.cancelled())
+            return directory_error(ErrorCode::Cancelled,
+                                   "social attribute recording was cancelled");
+        if (context.expired(Timestamp::now()))
+            return directory_error(ErrorCode::DeadlineExceeded,
+                                   "social attribute recording expired");
+        return {};
+    };
+    if (auto active = check_operation(); !active)
+        return active.error();
+    const auto indexed = resolve_message_participants(environment, message, {});
+    if (!indexed)
+        return indexed.error();
+    const auto &speaker = indexed.value().speaker;
+    const auto event = storage::read_social_message_source(events, speaker);
+    if (!event)
+        return event.error();
+    auto prepared = storage::prepare_social_message_attributes(speaker, event.value(), attributes);
+    if (!prepared)
+        return prepared.error();
+
+    const std::unique_lock serialize(impl_->erasure_mutex, std::try_to_lock);
+    if (!serialize.owns_lock()) {
+        auto error =
+            directory_error(ErrorCode::ResourceExhausted, "social profile write boundary is busy");
+        error.retryable = true;
+        return error;
+    }
+    const auto current = resolve_message_participants(environment, message, {});
+    if (!current)
+        return current.error();
+    if (current.value().speaker != speaker)
+        return directory_error(ErrorCode::InvalidState, "social attribute source was invalidated");
+    if (auto active = check_operation(); !active)
+        return active.error();
+    const auto scope = social_object_scope(speaker.speaker);
+    if (!scope)
+        return scope.error();
+    ConsolidationReport report;
+    const MemoryConsolidator consolidator;
+    for (auto &candidate : prepared.value()) {
+        if (auto active = check_operation(); !active)
+            return active.error();
+        std::vector<MemoryCandidate> batch;
+        batch.push_back(std::move(candidate));
+        auto consolidated = consolidator.consolidate_candidates(*impl_->memory, std::move(batch),
+                                                                scope.value(), Timestamp::now());
+        if (!consolidated)
+            return consolidated.error();
+        auto &completed = consolidated.value();
+        report.candidates_examined += completed.candidates_examined;
+        report.candidates_truncated += completed.candidates_truncated;
+        std::ranges::move(completed.entries, std::back_inserter(report.entries));
+        std::ranges::move(completed.pending_approval, std::back_inserter(report.pending_approval));
+    }
+    return SocialMessageAttributeReport{speaker, std::move(report)};
+}
+
 Result<void> SqliteSocialDirectory::erase_object(const SocialObjectKey &key) {
     if (!valid_environment(key.environment) || key.object.is_nil())
         return directory_error(ErrorCode::InvalidArgument, "invalid social object erasure target");
@@ -1102,6 +1174,9 @@ Result<void> SqliteSocialDirectory::erase_environment(const SocialEnvironmentKey
     return impl_->erase({key, std::nullopt});
 }
 
-Result<void> SqliteSocialDirectory::close() noexcept { return impl_->channel.close(); }
+Result<void> SqliteSocialDirectory::close() noexcept {
+    const std::lock_guard serialize(impl_->erasure_mutex);
+    return impl_->channel.close();
+}
 
 } // namespace mira

@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md) 接通已
+索引消息的发言者画像属性提取和候选报告。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-158](../decisions/DEC-158-loop-settlement-memory.md) 接通实际循环结算事件的
 Episode 提取，并在持久页回执中按类型统计候选处置。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
 
