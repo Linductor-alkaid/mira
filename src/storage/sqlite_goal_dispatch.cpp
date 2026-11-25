@@ -92,8 +92,8 @@ Result<std::optional<GoalDispatchReceipt>> read_dispatch_row(sqlite3 *db, const 
     return std::optional{receipt};
 }
 
-Result<GoalDispatchReceipt> prepare_dispatch_row(sqlite3 *db, const GoalKey &goal,
-                                                 std::uint64_t revision, GoalTime cutoff) {
+Result<GoalDispatchPreparation> prepare_dispatch_row(sqlite3 *db, const GoalKey &goal,
+                                                     std::uint64_t revision, GoalTime cutoff) {
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "goal dispatch transaction unavailable");
@@ -117,7 +117,7 @@ Result<GoalDispatchReceipt> prepare_dispatch_row(sqlite3 *db, const GoalKey &goa
         if (stored.value()->key.revision != revision)
             return goal_error(ErrorCode::InvalidState,
                               "goal dispatch belongs to a previous version");
-        return *stored.value();
+        return GoalDispatchPreparation{*stored.value(), false};
     }
     GoalDispatchReceipt receipt{{goal, revision, OperationId::generate()}, cutoff, {}};
     Statement insert(
@@ -130,7 +130,7 @@ Result<GoalDispatchReceipt> prepare_dispatch_row(sqlite3 *db, const GoalKey &goa
         return goal_error(ErrorCode::Internal, "goal dispatch preparation failed");
     if (auto saved = transaction.commit(); !saved)
         return saved.error();
-    return receipt;
+    return GoalDispatchPreparation{receipt, true};
 }
 
 Result<GoalDispatchReceipt> record_dispatch_row(sqlite3 *db, const GoalDispatchKey &key,
@@ -170,9 +170,18 @@ Result<GoalDispatchReceipt> record_dispatch_row(sqlite3 *db, const GoalDispatchK
 Result<GoalDispatchReceipt> SqliteGoalStore::prepare_dispatch(const GoalKey &goal,
                                                               std::uint64_t expected_revision,
                                                               GoalTime cutoff) {
+    auto prepared = prepare_dispatch_attempt(goal, expected_revision, cutoff);
+    if (!prepared)
+        return prepared.error();
+    return std::move(prepared).value().receipt;
+}
+
+Result<GoalDispatchPreparation>
+SqliteGoalStore::prepare_dispatch_attempt(const GoalKey &goal, std::uint64_t expected_revision,
+                                          GoalTime cutoff) {
     if (!valid_key(goal) || !valid_dispatch_revision(expected_revision) || !valid_time(cutoff))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal dispatch preparation");
-    return impl_->run<GoalDispatchReceipt>(
+    return impl_->run<GoalDispatchPreparation>(
         {goal.owner, GoalStoreResource::Goal, GoalStoreOperation::PrepareDispatch, goal.id},
         [goal, expected_revision, cutoff](sqlite3 *db) {
             return prepare_dispatch_row(db, goal, expected_revision, cutoff);

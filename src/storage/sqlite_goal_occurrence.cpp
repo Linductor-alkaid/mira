@@ -162,9 +162,9 @@ Result<GoalOccurrenceReceipt> record_occurrence_row(sqlite3 *db, std::size_t cap
     return GoalOccurrenceReceipt{key, recorded_at, false};
 }
 
-Result<GoalOccurrenceDispatchReceipt> prepare_occurrence(sqlite3 *db, std::size_t capacity,
-                                                         const GoalOccurrenceKey &key,
-                                                         GoalTime cutoff) {
+Result<GoalOccurrenceDispatchPreparation> prepare_occurrence(sqlite3 *db, std::size_t capacity,
+                                                             const GoalOccurrenceKey &key,
+                                                             GoalTime cutoff) {
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "occurrence dispatch transaction unavailable");
@@ -178,7 +178,7 @@ Result<GoalOccurrenceDispatchReceipt> prepare_occurrence(sqlite3 *db, std::size_
         return stored.error();
     if (stored.value()) {
         if (stored.value()->dispatch && !stored.value()->dispatch->submission)
-            return *stored.value()->dispatch;
+            return GoalOccurrenceDispatchPreparation{*stored.value()->dispatch, false};
         return goal_error(ErrorCode::InvalidState, "occurrence is already recorded");
     }
     if (auto next = next_occurrence(key, *plan.value()->definition); !next)
@@ -188,7 +188,7 @@ Result<GoalOccurrenceDispatchReceipt> prepare_occurrence(sqlite3 *db, std::size_
         return inserted.error();
     if (auto saved = transaction.commit(); !saved)
         return saved.error();
-    return GoalOccurrenceDispatchReceipt{{key, operation}, cutoff, {}};
+    return GoalOccurrenceDispatchPreparation{{{key, operation}, cutoff, {}}, true};
 }
 
 Result<GoalOccurrenceDispatchReceipt> record_submission(sqlite3 *db,
@@ -263,9 +263,18 @@ SqliteGoalStore::read_occurrence(const GoalOccurrenceKey &key) const {
 
 Result<GoalOccurrenceDispatchReceipt>
 SqliteGoalStore::prepare_occurrence_dispatch(const GoalOccurrenceKey &key, GoalTime cutoff) {
+    auto prepared = prepare_occurrence_dispatch_attempt(key, cutoff);
+    if (!prepared)
+        return prepared.error();
+    return std::move(prepared).value().receipt;
+}
+
+Result<GoalOccurrenceDispatchPreparation>
+SqliteGoalStore::prepare_occurrence_dispatch_attempt(const GoalOccurrenceKey &key,
+                                                     GoalTime cutoff) {
     if (!valid_occurrence(key) || cutoff < key.scheduled_at)
         return goal_error(ErrorCode::InvalidArgument, "invalid occurrence dispatch preparation");
-    return impl_->run<GoalOccurrenceDispatchReceipt>(
+    return impl_->run<GoalOccurrenceDispatchPreparation>(
         {key.plan.owner, GoalStoreResource::RecurringPlan, GoalStoreOperation::PrepareDispatch,
          key.plan.id},
         [key, cutoff, capacity = impl_->options.max_occurrences](sqlite3 *db) {

@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <future>
+#include <map>
 
 namespace {
 using namespace mira;
@@ -288,6 +289,125 @@ int recurring_pagination_and_recovery_share_the_goal_poller() {
     return 0;
 }
 
+int guarded_submissions_reconcile_without_admitting_twice() {
+    PollFixture fixture;
+    const auto now = clock_now();
+    const GoalKey unconfirmed{fixture.owner, Id128::generate()};
+    const GoalKey first_goal{fixture.owner, Id128::generate()};
+    const GoalKey next_goal{fixture.owner, Id128::generate()};
+    const GoalKey first_plan{fixture.owner, Id128::generate()};
+    const GoalKey next_plan{fixture.owner, Id128::generate()};
+    const GoalOccurrenceKey first_occurrence{first_plan, 1, now - 5min};
+    const GoalOccurrenceKey next_occurrence{next_plan, 1, now - 2min};
+    MIRA_CHECK(fixture.create(unconfirmed, now - 8min, "A previously prepared task"));
+    MIRA_CHECK(fixture.create(first_goal, now - 4min, "Review the notes"));
+    MIRA_CHECK(fixture.create(next_goal, now - 1min, "Review the appendix"));
+    MIRA_CHECK(fixture.store->prepare_dispatch(unconfirmed, 1, now));
+    MIRA_CHECK(fixture.store->create_plan(first_plan, {"Review the backlog", EventId::generate(),
+                                                       first_occurrence.scheduled_at, 1h}));
+    MIRA_CHECK(fixture.store->create_plan(
+        next_plan, {"Review the queue", EventId::generate(), next_occurrence.scheduled_at, 1h}));
+
+    // Simulated host admission ledger stays available when the goal store and poller reopen.
+    std::map<OperationId, GoalDispatchSubmission> host_receipts;
+    std::atomic<bool> can_reconcile{false};
+    std::size_t repeated_or_unexpected_admissions = 0;
+    const auto admit = [&](OperationId operation, const OperationContext &context,
+                           bool lose_confirmation) -> Result<GoalDispatchSubmission> {
+        if (context.operation != operation || host_receipts.contains(operation)) {
+            ++repeated_or_unexpected_admissions;
+            Error error;
+            error.code = ErrorCode::InvalidState;
+            return error;
+        }
+        const auto receipt = accepted();
+        host_receipts.emplace(operation, receipt);
+        if (!lose_confirmation)
+            return receipt;
+        Error error;
+        error.code = ErrorCode::ExecutionUncertain;
+        return error;
+    };
+    const auto lookup =
+        [&](OperationId operation,
+            const OperationContext &context) -> Result<std::optional<GoalDispatchSubmission>> {
+        if (context.operation != operation) {
+            Error error;
+            error.code = ErrorCode::InvalidState;
+            return error;
+        }
+        const auto receipt = host_receipts.find(operation);
+        if (!can_reconcile.load() || receipt == host_receipts.end())
+            return std::optional<GoalDispatchSubmission>{};
+        return std::optional{receipt->second};
+    };
+    GoalDispatchPollerOptions options{10ms, 2s, 1};
+    options.reconcile_submission = [&](const GoalDispatchKey &key,
+                                       const OperationContext &context) {
+        return lookup(key.operation, context);
+    };
+    options.reconcile_recurring_submission = [&](const GoalOccurrenceDispatchKey &key,
+                                                 const OperationContext &context) {
+        return lookup(key.operation, context);
+    };
+    const auto start = [&] {
+        return GoalDispatchPoller::start(
+            fixture.executor, fixture.store, fixture.owner,
+            [&](const GoalRecord &goal, const GoalDispatchKey &key,
+                const OperationContext &context) {
+                if (goal.key != first_goal && goal.key != next_goal)
+                    ++repeated_or_unexpected_admissions;
+                return admit(key.operation, context, goal.key == first_goal);
+            },
+            options,
+            [&](const RecurringPlanRecord &, const GoalOccurrenceDispatchKey &key,
+                const OperationContext &context) {
+                if (key.occurrence != first_occurrence && key.occurrence != next_occurrence)
+                    ++repeated_or_unexpected_admissions;
+                return admit(key.operation, context, key.occurrence == first_occurrence);
+            });
+    };
+    auto started = start();
+    MIRA_CHECK(started);
+    auto poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] {
+        const auto status = poller->status();
+        return status.submitted == 2 && status.unresolved_reconciliations > 0;
+    }));
+    MIRA_CHECK(poller->close());
+    MIRA_CHECK(repeated_or_unexpected_admissions == 0 && host_receipts.size() == 4);
+    const auto awaiting_goal = fixture.store->read_dispatch(first_goal);
+    const auto awaiting_occurrence = fixture.store->read_occurrence_dispatch(first_occurrence);
+    MIRA_CHECK(awaiting_goal && awaiting_goal.value() && !awaiting_goal.value()->submission);
+    MIRA_CHECK(awaiting_occurrence && awaiting_occurrence.value() &&
+               !awaiting_occurrence.value()->submission);
+    MIRA_CHECK(fixture.store->read_dispatch(next_goal).value()->submission);
+    MIRA_CHECK(fixture.store->read_occurrence_dispatch(next_occurrence).value()->submission);
+    poller.reset();
+    MIRA_CHECK(fixture.reopen());
+    can_reconcile.store(true);
+
+    started = start();
+    MIRA_CHECK(started);
+    poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 2; }));
+    MIRA_CHECK(poller->close());
+    MIRA_CHECK(poller->status().failures == 0 && repeated_or_unexpected_admissions == 0 &&
+               host_receipts.size() == 4);
+    const auto settled_goal = fixture.store->read_dispatch(first_goal).value();
+    MIRA_CHECK(settled_goal && settled_goal->key == awaiting_goal.value()->key &&
+               settled_goal->submission == host_receipts.at(settled_goal->key.operation));
+    const auto settled_occurrence =
+        fixture.store->read_occurrence_dispatch(first_occurrence).value();
+    MIRA_CHECK(settled_occurrence && settled_occurrence->key == awaiting_occurrence.value()->key &&
+               settled_occurrence->submission ==
+                   host_receipts.at(settled_occurrence->key.operation));
+    MIRA_CHECK(!fixture.store->read_dispatch(unconfirmed).value()->submission);
+    MIRA_CHECK(fixture.store->read_plan(first_plan).value()->next_at ==
+               first_occurrence.scheduled_at + 1h);
+    return 0;
+}
+
 int observes_store_failure_and_timer_shutdown() {
     PollFixture fixture;
     const GoalDispatchSubmitter callback = [](const GoalRecord &, const GoalDispatchKey &,
@@ -317,6 +437,8 @@ int main() {
         result != 0)
         return result;
     if (const int result = recurring_pagination_and_recovery_share_the_goal_poller(); result != 0)
+        return result;
+    if (const int result = guarded_submissions_reconcile_without_admitting_twice(); result != 0)
         return result;
     return observes_store_failure_and_timer_shutdown();
 }

@@ -16,6 +16,13 @@ struct OperationContext;
 using GoalCompletionPublisher = std::function<Result<bool>(
     const GoalDispatchKey &, const GoalDispatchSubmission &, const OperationContext &)>;
 
+// Read-only lookup by the existing operation ID. An empty result leaves the
+// handoff unresolved. The callback must never start work under this operation.
+using GoalDispatchReconciler = std::function<Result<std::optional<GoalDispatchSubmission>>(
+    const GoalDispatchKey &, const OperationContext &)>;
+using RecurringGoalDispatchReconciler = std::function<Result<std::optional<GoalDispatchSubmission>>(
+    const GoalOccurrenceDispatchKey &, const OperationContext &)>;
+
 struct GoalDispatchPollerOptions final {
     std::chrono::milliseconds interval{1000};
     std::chrono::milliseconds scan_timeout{5000};
@@ -23,6 +30,8 @@ struct GoalDispatchPollerOptions final {
     // Opt in to fulfillment from the host's trusted task event store.
     std::shared_ptr<IEventStore> completion_events = {};
     GoalCompletionPublisher publish_completion = {};
+    GoalDispatchReconciler reconcile_submission = {};
+    RecurringGoalDispatchReconciler reconcile_recurring_submission = {};
 };
 
 struct GoalDispatchPollerStatus final {
@@ -32,6 +41,7 @@ struct GoalDispatchPollerStatus final {
     std::size_t failures = 0;
     std::optional<Error> last_error;
     std::size_t fulfilled = 0;
+    std::size_t unresolved_reconciliations = 0;
 };
 
 // Host task admission. Reconcile by key.operation before retrying, and

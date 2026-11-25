@@ -116,6 +116,11 @@ struct GoalDispatchReceipt final {
     friend bool operator==(const GoalDispatchReceipt &, const GoalDispatchReceipt &) = default;
 };
 
+struct GoalDispatchPreparation final {
+    GoalDispatchReceipt receipt;
+    bool newly_prepared = false;
+};
+
 struct GoalPendingFulfillmentQuery final {
     GoalOwner owner;
     std::size_t limit = 32;
@@ -212,6 +217,11 @@ struct GoalOccurrenceDispatchReceipt final {
                            const GoalOccurrenceDispatchReceipt &) = default;
 };
 
+struct GoalOccurrenceDispatchPreparation final {
+    GoalOccurrenceDispatchReceipt receipt;
+    bool newly_prepared = false;
+};
+
 enum class GoalStoreResource : std::uint8_t { Goal, RecurringPlan };
 
 enum class GoalStoreOperation : std::uint8_t {
@@ -283,6 +293,9 @@ class SqliteGoalStore final {
     // Persists the stable dispatch identity. The host uses it on the task submission channel.
     [[nodiscard]] Result<GoalDispatchReceipt>
     prepare_dispatch(const GoalKey &key, std::uint64_t expected_revision, GoalTime cutoff);
+    // Only the transaction inserting the durable receipt reports newly_prepared.
+    [[nodiscard]] Result<GoalDispatchPreparation>
+    prepare_dispatch_attempt(const GoalKey &key, std::uint64_t expected_revision, GoalTime cutoff);
     [[nodiscard]] Result<std::optional<GoalDispatchReceipt>>
     read_dispatch(const GoalKey &key) const;
     [[nodiscard]] Result<GoalDispatchReceipt>
@@ -320,6 +333,8 @@ class SqliteGoalStore final {
     // Preparation reserves the occurrence without advancing the plan.
     [[nodiscard]] Result<GoalOccurrenceDispatchReceipt>
     prepare_occurrence_dispatch(const GoalOccurrenceKey &key, GoalTime cutoff);
+    [[nodiscard]] Result<GoalOccurrenceDispatchPreparation>
+    prepare_occurrence_dispatch_attempt(const GoalOccurrenceKey &key, GoalTime cutoff);
     [[nodiscard]] Result<std::optional<GoalOccurrenceDispatchReceipt>>
     read_occurrence_dispatch(const GoalOccurrenceKey &key) const;
     // Records admission and advances the plan if the occurrence is still current.

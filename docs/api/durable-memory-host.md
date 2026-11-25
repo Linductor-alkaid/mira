@@ -424,6 +424,11 @@ auto submitted = goals->record_dispatch_submission(prepared.value().key,
 `RecordDispatchSubmission` 核对授权。集合查询依归属授权，其他操作带目标 ID。
 实际任务提交由协调层接线负责。见 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
+宿主直接承接任务提交时，可通过 `prepare_dispatch_attempt` 或
+`prepare_occurrence_dispatch_attempt` 同时取得准备回执和 `newly_prepared`。只有首次插入
+准备记录的调用得到 `true`。重开或并发重试时通过回执中的同一操作 ID 查询已提交任务。
+见 [DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md)。
+
 ### 按任务完成证据兑现一次性目标
 
 任务实际进入无错误的 `Completed` 终态后，宿主通过协调层保存完成证据。该事件和目标
@@ -461,6 +466,24 @@ auto drained = poller.value()->close();
 当前授权规约。宿主可只绑定其中一个提交入口。未知结果保留稳定身份供后续检查，未就绪的
 触发仍占用原到期位置。生产协调层的持久对账适配由 M30-37 跟踪。见
 [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 与 [DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)。
+
+#### 按原操作 ID 对账
+
+宿主可按通道启用只读对账，复用现有的提交回调处理首次准备的操作。
+
+```cpp
+GoalDispatchPollerOptions options;
+options.reconcile_submission = find_goal_submission;
+options.reconcile_recurring_submission = find_occurrence_submission;
+auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_goal_task,
+                                        options, submit_recurring_task);
+```
+
+每个查询回调按原操作 ID 查询宿主的持久准入结果，返回已受理的原会话、任务和时间，或
+返回空值继续等待。已有准备身份的派发只走查询回调。`status().unresolved_reconciliations`
+累加未查到回执的次数，派发器继续检查后续目标。离开到期集合的历史回执仍可显式登记。
+未配置查询回调的通道由提交回调按原操作 ID 去重。见
+[DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md)。
 
 #### 自动核对完成证据
 

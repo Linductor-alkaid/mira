@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md) 区分目标的首次
+提交与持久只读对账，见 [M30-49](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-151](../decisions/DEC-151-live-goal-completion-publication.md) 接通已派发
 一次性目标的 live 完成证据发布，见 [M30-48](m30-long-term-memory-integration.md#5-工作项)。
 

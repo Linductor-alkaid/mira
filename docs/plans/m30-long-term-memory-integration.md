@@ -79,6 +79,7 @@
 - [DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)：用 Runtime 完成证据兑现一次性目标。
 - [DEC-150](../decisions/DEC-150-goal-fulfillment-polling.md)：用持久回执周期发现待结算的一次性目标。
 - [DEC-151](../decisions/DEC-151-live-goal-completion-publication.md)：核对时通过协调层自动发布 live 任务完成证据。
+- [DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md)：通过持久派发身份区分首次提交和只读对账。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -188,7 +189,7 @@
 - [x] `M30-34` 交付按工作或社交环境隔离的技能记忆范围，验收换绑、事件与技能隔离及擦除。
 - [x] `M30-35` 交付消息来源账号的持久身份解析与首次接纳，验收跨来源绑定、同名、重放、迁移和擦除（Linux 离线）。
 - [ ] `M30-36` 接通社交消息的自动事件记录、发言人及提及消歧、跨来源同人判断、关系与属性候选、证据关联和画像召回。验收 QQ/B 站合成双来源、多人群聊、反证拆分和跨环境隔离。
-- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。宿主派发、兑现与 live 完成证据发布见 M30-43 至 M30-48。生产协调层仍需接入自主准入、持久提交对账及持久快照的恢复。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
+- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。宿主派发、兑现、live 完成证据发布和只读对账见 M30-43 至 M30-49。生产协调层仍需接入自主准入、宿主持久准入结果与持久快照恢复。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
 - [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 - [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
@@ -200,6 +201,7 @@
 - [x] `M30-46` 通过唯一的持久任务完成证据兑现原版本的一次性目标，验收 Runtime 终态和主体归属、重启重放、冲突及擦除（Linux 离线）。
 - [x] `M30-47` 在 Executor 派发器内分页核对已派发的一次性目标并补结算，验收重开、授权、过期后的合法兑现及其他派发继续推进（Linux 离线）。
 - [x] `M30-48` 在待结算扫描中自动从匹配的 live Runtime 终态发布完成证据并兑现，验收并存任务、授权恢复和跨重开补结算（Linux 离线）。
+- [x] `M30-49` 在一次性目标和重复计划的派发器中区分首次提交与按原操作 ID 的只读对账，验收并发、重开与后续项继续推进（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1586,3 +1588,44 @@ Linux Debug 全量 **214/214**，兑现测试连续复跑 **25/25**，ASan 定�
 严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。日志见
 `/tmp/mira-m30-live-proof-recheck-*.log`、`/tmp/mira-m30-live-proof-tidy.log` 和
 `/tmp/mira-m30-live-proof-quality-final.log`。
+
+### 2026-11-25 区分目标首次提交与持久只读对账
+
+基线 `53db56e`，分支 `feat/m30-memory-systems`。DEC-152 交付 M30-49。复用已有派发
+准备事务，只在新插入并确认持久化后返回首次准备资格。配置对账回调后，已有准备记录的
+目标沿原操作 ID 查询宿主回执，查不到时保留准备身份并继续分页。
+
+`mira_m30_goal_store_test` 覆盖一次性和重复触发的并发准备，验证二者都只产生一次
+首次准备资格。`mira_m30_goal_dispatch_poller_test` 模拟宿主准入成功而确认丢失，覆盖
+一次性和重复计划重开后的只读对账、既有未确认准备记录、分页继续推进和原回执回填。
+兑现测试复验已有任务完成证据和结算接线。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 10
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_goal_dispatch_poller_test$' \
+  --repeat until-fail:30
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_goal_fulfillment_test \
+  mira_m30_goal_store_test mira_m30_goal_dispatch_poller_test
+ctest --test-dir build/asan -j 3 --output-on-failure \
+  -R '^mira_m30_goal_(fulfillment|store|dispatch_poller)_test$'
+printf '%s\n' src/storage/sqlite_goal_dispatch.cpp src/storage/sqlite_goal_occurrence.cpp \
+  src/storage/goal_dispatch_poller.cpp | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 生产自主准入、宿主持久准入结果和不明准备身份的确认 | Mira Maintainers 与宿主集成者接入 M30-37 的真实任务提交台账后，验收停机中断和跨进程对账 |
+| Windows、Android、远端 CI | Mira Maintainers 提交 PR 后运行平台矩阵 |
+
+Linux Debug 全量 **214/214**，派发器测试连续复跑 **30/30**，ASan 定向 **3/3**。
+严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。日志见
+`/tmp/mira-m30-submit-reconcile-recheck-*.log`、`/tmp/mira-m30-submit-reconcile-tidy*.log`
+和 `/tmp/mira-m30-submit-reconcile-quality-final.log`。

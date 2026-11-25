@@ -102,26 +102,39 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
         position = page.value().next;
     }
 
-    template <typename Prepared, typename Admit, typename Record>
+    template <typename Prepared, typename Admit, typename Reconcile, typename Record>
     void handoff(const Prepared &prepared, const OperationContext &context,
-                 GoalDispatchPollerStatus &report, Admit admit, Record record) {
+                 GoalDispatchPollerStatus &report, Admit admit, const Reconcile &reconcile,
+                 Record record) {
         if (!prepared) {
             report_failure(report, prepared.error());
             return;
         }
-        if (prepared.value().submission || !ready(context, report))
+        const auto &attempt = prepared.value();
+        if (attempt.receipt.submission || !ready(context, report))
             return;
         auto dispatch_context = context;
-        const auto &key = prepared.value().key;
+        const auto &key = attempt.receipt.key;
         dispatch_context.operation = key.operation;
         try {
-            const auto submitted = admit(key, dispatch_context);
+            const auto submitted = [&]() -> Result<std::optional<GoalDispatchSubmission>> {
+                if (reconcile && !attempt.newly_prepared)
+                    return reconcile(key, dispatch_context);
+                auto receipt = admit(key, dispatch_context);
+                if (!receipt)
+                    return receipt.error();
+                return std::optional{std::move(receipt).value()};
+            }();
             if (!submitted) {
                 report_failure(report, submitted.error());
                 return;
             }
+            if (!submitted.value()) {
+                ++report.unresolved_reconciliations;
+                return;
+            }
             // A confirmed submission must be recorded even if this scan is stopping.
-            const auto recorded = record(key, submitted.value());
+            const auto recorded = record(key, *submitted.value());
             if (!recorded) {
                 report_failure(report, recorded.error());
                 return;
@@ -146,11 +159,12 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
             },
             [&](const GoalRecord &goal) {
                 handoff(
-                    store->prepare_dispatch(goal.key, goal.revision, dispatch_now()), context,
-                    report,
+                    store->prepare_dispatch_attempt(goal.key, goal.revision, dispatch_now()),
+                    context, report,
                     [&](const GoalDispatchKey &key, const OperationContext &dispatch_context) {
                         return submit(goal, key, dispatch_context);
                     },
+                    options.reconcile_submission,
                     [&](const GoalDispatchKey &key, const GoalDispatchSubmission &submission) {
                         return store->record_dispatch_submission(key, submission);
                     });
@@ -172,11 +186,13 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
             [&](const RecurringPlanRecord &plan) {
                 const GoalOccurrenceKey occurrence{plan.key, plan.revision, *plan.next_at};
                 handoff(
-                    store->prepare_occurrence_dispatch(occurrence, dispatch_now()), context, report,
+                    store->prepare_occurrence_dispatch_attempt(occurrence, dispatch_now()), context,
+                    report,
                     [&](const GoalOccurrenceDispatchKey &key,
                         const OperationContext &dispatch_context) {
                         return submit_recurring(plan, key, dispatch_context);
                     },
+                    options.reconcile_recurring_submission,
                     [&](const GoalOccurrenceDispatchKey &key,
                         const GoalDispatchSubmission &submission) {
                         return store->record_occurrence_submission(key, submission);
@@ -297,6 +313,7 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
         ++diagnostics.scans;
         diagnostics.submitted += report.submitted;
         diagnostics.fulfilled += report.fulfilled;
+        diagnostics.unresolved_reconciliations += report.unresolved_reconciliations;
         diagnostics.failures += report.failures;
         if (report.last_error)
             diagnostics.last_error = std::move(report.last_error);
@@ -352,6 +369,10 @@ GoalDispatchPoller::start(kairo::Executor &executor, std::shared_ptr<SqliteGoalS
     if (options.publish_completion && !options.completion_events)
         return poll_error(ErrorCode::InvalidArgument,
                           "goal completion publication needs an event store");
+    if ((options.reconcile_submission && !submit) ||
+        (options.reconcile_recurring_submission && !submit_recurring))
+        return poll_error(ErrorCode::InvalidArgument,
+                          "goal submission reconciliation needs its submission callback");
     auto state = std::make_shared<State>(executor, std::move(store), owner, std::move(submit),
                                          std::move(options), std::move(submit_recurring));
     auto poller = std::unique_ptr<GoalDispatchPoller>(new GoalDispatchPoller(state));

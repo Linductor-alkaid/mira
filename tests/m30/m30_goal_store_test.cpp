@@ -709,15 +709,20 @@ int durable_dispatch_preparation_and_receipts() {
     MIRA_CHECK(!fixture.store->prepare_dispatch(primary, 2, now));
 
     auto concurrent = fixture.executor.submit_auto(
-        [&] { return fixture.store->prepare_dispatch(primary, 1, now); });
-    const auto prepared = fixture.store->prepare_dispatch(primary, 1, now);
+        [&] { return fixture.store->prepare_dispatch_attempt(primary, 1, now); });
+    const auto attempt = fixture.store->prepare_dispatch_attempt(primary, 1, now);
     const auto parallel = concurrent.get();
-    MIRA_CHECK(prepared && parallel && prepared.value() == parallel.value());
+    MIRA_CHECK(attempt && parallel && attempt.value().receipt == parallel.value().receipt &&
+               attempt.value().newly_prepared != parallel.value().newly_prepared);
+    const auto prepared = fixture.store->prepare_dispatch(primary, 1, now);
+    MIRA_CHECK(prepared && prepared.value() == attempt.value().receipt);
     MIRA_CHECK(!prepared.value().key.operation.is_nil() && !prepared.value().submission);
     MIRA_CHECK(!fixture.store->read_dispatch(foreign).value());
     MIRA_CHECK(fixture.reopen());
     MIRA_CHECK(fixture.store->read_dispatch(primary).value() == std::optional{prepared.value()});
-    MIRA_CHECK(fixture.store->prepare_dispatch(primary, 1, now + 1s).value() == prepared.value());
+    const auto replayed = fixture.store->prepare_dispatch_attempt(primary, 1, now + 1s);
+    MIRA_CHECK(replayed && replayed.value().receipt == prepared.value() &&
+               !replayed.value().newly_prepared);
     MIRA_CHECK(fixture.store->due_for_dispatch(all).value().records.size() == 3);
 
     const GoalDispatchSubmission submission{SessionId::generate(), TaskId::generate(), now + 1s};
@@ -830,10 +835,13 @@ int recurring_dispatch_is_durable_and_advances_atomically() {
     MIRA_CHECK(!fixture.store->prepare_occurrence_dispatch(due, due.scheduled_at - 1ms));
 
     auto concurrent = fixture.executor.submit_auto(
-        [&] { return fixture.store->prepare_occurrence_dispatch(due, now); });
-    const auto prepared = fixture.store->prepare_occurrence_dispatch(due, now);
+        [&] { return fixture.store->prepare_occurrence_dispatch_attempt(due, now); });
+    const auto attempt = fixture.store->prepare_occurrence_dispatch_attempt(due, now);
     const auto parallel = concurrent.get();
-    MIRA_CHECK(prepared && parallel && prepared.value() == parallel.value());
+    MIRA_CHECK(attempt && parallel && attempt.value().receipt == parallel.value().receipt &&
+               attempt.value().newly_prepared != parallel.value().newly_prepared);
+    const auto prepared = fixture.store->prepare_occurrence_dispatch(due, now);
+    MIRA_CHECK(prepared && prepared.value() == attempt.value().receipt);
     MIRA_CHECK(!prepared.value().key.operation.is_nil() && !prepared.value().submission);
     MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == due.scheduled_at);
     MIRA_CHECK(!fixture.store->read_occurrence(due).value());
@@ -845,8 +853,9 @@ int recurring_dispatch_is_durable_and_advances_atomically() {
         "CREATE TRIGGER reject_dispatch_fixture BEFORE UPDATE OF dispatched_at"
         " ON recurring_occurrences BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;"));
     MIRA_CHECK(fixture.reopen());
-    MIRA_CHECK(fixture.store->prepare_occurrence_dispatch(due, now + 1s).value() ==
-               prepared.value());
+    const auto replayed = fixture.store->prepare_occurrence_dispatch_attempt(due, now + 1s);
+    MIRA_CHECK(replayed && replayed.value().receipt == prepared.value() &&
+               !replayed.value().newly_prepared);
     const GoalDispatchSubmission submission{SessionId::generate(), TaskId::generate(), now + 1s};
     MIRA_CHECK(!fixture.store->record_occurrence_submission(prepared.value().key, submission));
     MIRA_CHECK(fixture.store->read_plan(plan).value()->next_at == due.scheduled_at);
