@@ -192,8 +192,9 @@ issue #111 §4 明确：可验证回忆反馈、importance/使用信号与查询
 
 ## 验证方式
 
-由 [M30 计划](../plans/m30-long-term-memory-integration.md) 承载，
-门禁矩阵 `M30-G1`–`M30-G8`：
+[M30 计划](../plans/m30-long-term-memory-integration.md)登记工作归属，
+[M30 验收](../plans/m30-memory-acceptance.md#1-当前验收矩阵)登记门禁的证据和执行状态。
+门禁 `M30-G1`–`M30-G8` 的判定条件如下。
 
 - `M30-G1` 写入路径唯一性：候选 → 既有管线 → 校验 → 提交；
   宿主直写 `IMemory::apply` 被拒或被标记为绕过。

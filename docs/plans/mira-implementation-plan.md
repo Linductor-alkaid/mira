@@ -1,129 +1,8 @@
 # Mira 实施总计划
 
-2026-11-25：[DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md) 交付
-可引用前序发言的社交关系及双证据存储。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md) 接通已
-归因消息的有向社交关系提取与写入。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md) 接通已
-索引消息的发言者画像属性提取和候选报告。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-158](../decisions/DEC-158-loop-settlement-memory.md) 接通实际循环结算事件的
-Episode 提取，并在持久页回执中按类型统计候选处置。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-156](../decisions/DEC-156-m30-implementation-freeze.md) 补齐 M30 实施细则，
-[DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md) 接通范围独立的 Record 页回执。
-见 [M30-01 与 M30-03](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md) 接通发布成功
-终态前的持久完成证据，见 [M30-52](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md) 接通按操作 ID
-持久记录与回查任务准入，见 [M30-50](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md) 区分目标的首次
-提交与持久只读对账，见 [M30-49](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-151](../decisions/DEC-151-live-goal-completion-publication.md) 接通已派发
-一次性目标的 live 完成证据发布，见 [M30-48](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-150](../decisions/DEC-150-goal-fulfillment-polling.md) 接通已派发一次性目标的
-周期核对与补结算，见 [M30-47](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md) 接通一次性目标的任务
-证据核验与兑现，见 [M30-46](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md) 接通重复目标的到期发现、
-派发身份及提交后原子推进，见 [M30-45](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-25：[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md) 修复词法腿的
-中文分词与查询组合，交付 store 的纯词法 R@10 从 0.100 到 0.95；会话索引改为按相关度
-排序。范围、验证与待重测的基准见
-[词法分词维护记录](maintenance-2026-11-lexical-segmentation.md)。
-
-[DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 接通一次性目标的周期发现与宿主派发，
-见 [M30-44](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md) 接通一次性目标的待派发查询、准备身份与回执，
-见 [M30-43](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-144](../decisions/DEC-144-social-mention-extraction.md) 接通对已索引会话的自动正文引用提取，
-见 [M30-42](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-143](../decisions/DEC-143-social-message-references.md) 接通已索引消息的发言者与引用对象查询，
-见 [M30-41](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-142](../decisions/DEC-142-social-message-evidence.md) 接通会话事件和社交发言者的持久证据索引，
-见 [M30-40](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-140](../decisions/DEC-140-source-account-identity.md) 接通社交账号与画像查询，
-[DEC-141](../decisions/DEC-141-automatic-record-pages.md) 接通结算后的多页提取，
-见 [M30-35 与 M30-39](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md) 接通技能记忆的工作和社交环境范围，
-见 [M30-34](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-138](../decisions/DEC-138-evidenced-skill-hints.md) 为技能提示接通结算证据与当前发布读取，
-见 [M30-33](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-137](../decisions/DEC-137-exact-recovery-during-escalation.md) 将精确恢复经验接入自动失败升级，
-见 [M30-32](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md) 交付按工作流版本和失败签名读取
-验证后的恢复经验，见 [M30-31](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-135](../decisions/DEC-135-scoped-skill-procedure-writes.md) 交付同一技能发布在多个学习
-scope 的独立写入与旧回执兼容，见 [M30-30](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-134](../decisions/DEC-134-current-skill-procedure-recall.md) 交付按当前授权和发布版本的
-技能 `Procedure` 读取，见 [M30-29](m30-long-term-memory-integration.md#5-工作项)。
-
-[DEC-133](../decisions/DEC-133-goal-store-live-authorization.md) 为目标存储接入宿主当前授权，
-见 [M30-28](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-24：[DEC-132](../decisions/DEC-132-calendar-goal-plans.md) 交付
-按本地时分和星期运行的日历计划，见 [M30-27](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-24：[DEC-131](../decisions/DEC-131-goal-corrections-and-reminder-receipts.md) 交付
-一次性目标纠正、历史与提醒回执，见 [M30-26](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md) 交付
-重复计划与版本化触发回执，见 [M30-25](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md) 交付
-一次性目标与承诺的持久状态及到期索引，见 [M30-24](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-128](../decisions/DEC-128-navigation-world-fact-refresh.md) 接通 Navigate
-的重新观察及 AppModel 版本联动，见 [M30-23](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md) 接通 M30 的
-结构化世界事实及新鲜度读取，见 [M30-22](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-126](../decisions/DEC-126-social-erasure-recovery.md) 接通 M30 的
-社交目录及记忆库擦除恢复，见 [M30-21](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-125](../decisions/DEC-125-social-relationship-assertions.md) 接通 M30 的
-有向社交关系断言及双端点擦除，见 [M30-20](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-124](../decisions/DEC-124-social-attribute-assertions.md) 接通 M30 的
-社交画像字段断言及独立字段索引，见 [M30-19](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-123](../decisions/DEC-123-social-identity-directory.md) 接通 M30 的
-社交对象与别名目录，见 [M30-18](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-23：[DEC-122](../decisions/DEC-122-durable-conversation-index.md) 接通 SQLite
-会话片段与 FTS5 召回，并将其纳入 Session scope 擦除重放，见 [M30-12](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-20：[DEC-121](../decisions/DEC-121-indexed-event-slices.md) 在 M30 下接通事件
-切片和受管 Record 水位，详见 [M30-17](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-20：[DEC-120](../decisions/DEC-120-agent-persona-admission.md) 接通按租户及
-Agent ID 加载人格的目录与模型准入，详见 [M30-11](m30-long-term-memory-integration.md#5-工作项)。
-
-2026-11-20：[DEC-119](../decisions/DEC-119-six-memory-systems.md) 冻结 M30 的六类记忆
-及其写入、检索与索引边界。首个增量按已交付 MemoryKind 接入宿主可配置的分类召回；
-实体、专用索引及验收进度见 [M30-10～16](m30-long-term-memory-integration.md#5-工作项)。
+2026-11-25：[M30 长期记忆接入](m30-long-term-memory-integration.md)处于 In Progress。
+已交付增量、剩余工作和汇总范围以里程碑计划为准。平台矩阵、行为门禁与历史测试结果见
+[M30 验收文档](m30-memory-acceptance.md)。
 
 2026-11-19：将 Mirage 已使用的 Mira 分支增量整合入主线。
 [DEC-116](../decisions/DEC-116-bounded-sqlite-memory-files.md) 将有界 SQLite 文件
@@ -183,18 +62,6 @@ schema 1.2 迁移、记忆代理 recall 的 opt-in 查询向量（失败只降�
 边界，修复 FTS/vector 的全库截断干扰，并补齐跨进程持久化示例。外部项目研究与后续
 持久索引、事件后端、迁移和基准工作见[存储报告](../design/memory-storage-reference-study.md)
 与[维护计划](maintenance-2026-11-memory-storage.md)；不关闭 M30/M31 的剩余范围。
-
-M30 后续增量基于主干 `23f1291`（PR #125，含 DEC-108 召回）推进：
-[DEC-109](../decisions/DEC-109-memory-preference-approval.md)提供长期偏好的持久提案、
-宿主显式确认/拒绝、冻结版本和重开幂等；审批不会提升事实验证等级。完整 M30 的承诺、
-价值信号及删除后新世代仍未完成，验证与限制见[M30 记录](m30-long-term-memory-integration.md)。
-
-[M30](m30-long-term-memory-integration.md) 已开始首批生命周期增量，依据
-[DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)接通主体 scope、输入队列
-接纳后的 Recall、结算后的既有管线 Record 与有界回执。M29 前置已满足；承诺实体、
-完整纠正/审批/删除、价值信号和删除后的新世代接纳继续按未完成项推进。
-Linux Debug 176/176、ASAN+UBSAN 与 TSan 定向各 23/23、严格 clang-tidy 8 单元及
-质量门禁通过；本增量的远端 CI/平台仍待补跑，完整 M30 保持 In Progress。
 
 [M29](m29-interaction-coordinator-concurrency-and-recovery.md) 已补齐本地澄清/恢复接线：
 [DEC-106](../decisions/DEC-106-interaction-durable-recovery.md) 冻结 Sensitive 正文/工作投影、
@@ -650,8 +517,8 @@ M5/M6 的交付项（本地 OCR/检测/任务 ONNX 感知、连续轨迹与摇�
 | [M27](m27-world-state-projection-core.md) | 会话 World State 投影首阶段——实体词表对齐与确定性投影核心（[DEC-041](../decisions/DEC-041-session-world-state-projection.md)/[DEC-046](../decisions/DEC-046-entity-vocabulary-alignment.md)：四组契约实体集词表 v1 单一承载、`WorldState` 投影核（前台/页面 `Believed`/`Stale`/`Unknown` 三态假设、存活实体表、变化环）、五类输入记录 + 八个纯函数更新算子 + `rebuild_world_state` 重放重建 + 确定性淘汰序、`mira.worldstate.v1` wire schema 与 `mira.world_state` 错误域；无平台、无感知、无模型依赖，零 Executor 注册面） | DEC-041 冻结（已满足）；实体词表对齐与专项设计（已满足——DEC-046 + 词表/投影专项设计随立项同批交付）；M27 §4 冻结 | DEC-038 首阶段与 Temporal Policy T2+ 世界视图映射的契约锚点（非发布物）；已交付（[PR #71](https://github.com/Linductor-alkaid/mira/pull/71) CI 全绿） | Completed |
 | [M28](m28-interaction-coordinator-first-stage.md) | 交互协调层首阶段——主体级输入接纳与最小路由闭环（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md)/[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111)：主体级 `InputEnvelope` 入口与四阶段 `InputStage`、耐久幂等台账 `IInputLedger`（宿主 `input_id` 去重 + 窗口外明确过期）、确定性路由裁决八意图闭集（含「指代不清 → 自然语言澄清」）、结果关联与迟到结果处置、`IUserInputSink` 输入缝与 `ConversationLoop` 对称入队通道、按工作组织的上下文归属；无模型、无平台） | DEC-068 冻结（已满足）；M25 供给缝接线形态（已满足，[DEC-045](../decisions/DEC-045-agent-loop-working-context-seam.md)）；M28 §4 冻结 | M29/M30/M31 的接线前提（非发布物） | Completed |
 | [M29](m29-interaction-coordinator-concurrency-and-recovery.md) | 交互协调层第二阶段——执行中插话、切换/恢复、并发归属、持久化与断线回补（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §5/§8；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §2、§5） | M28 关闭（**已满足**——2026-10-29 随 PR #113 合并） | M30 长期记忆接入的接线前提（非发布物） | Completed |
-| [M30](m30-long-term-memory-integration.md) | 长期记忆接入——提取、检索、纠正、删除与可选回忆反馈（[DEC-068](../decisions/DEC-068-interaction-coordinator-and-principal-input-entry.md) §6 / [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md) §3；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**已满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | In Progress |
-| [M31](m31-capacity-admission-and-archival-recovery.md) | 容量准入、自动归档与可恢复清理（[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：分层容量预算与主体份额、四层遗忘与冻结淘汰序、保护集合、会话退出生命周期与归档资格、跨存储可证明回收、周期清扫宿主、部署档位数值冻结；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6） | M28、M30 关闭（**未满足**）；DEC-069 数值档位冻结；[`EXE-20261028-001`](../executor_feedback/ledger.md) 临时边界确定 | 部署档位与有限容量契约的冻结锚点（非发布物） | Planned |
+| [M30](m30-long-term-memory-integration.md) | 六类长期记忆接入，覆盖提取、检索、纠正、删除与可选回忆反馈（[DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md) / [DEC-119](../decisions/DEC-119-six-memory-systems.md)；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §4） | M28、M29 关闭（**已满足**）；M23 Memory Promotion（已满足） | M31 价值驱动淘汰的输入侧前提（非发布物） | In Progress（[验收矩阵](m30-memory-acceptance.md#1-当前验收矩阵)） |
+| [M31](m31-capacity-admission-and-archival-recovery.md) | 容量准入、自动归档与可恢复清理（[DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)：分层容量预算与主体份额、四层遗忘与冻结淘汰序、保护集合、会话退出生命周期与归档资格、跨存储可证明回收、周期清扫宿主、部署档位数值冻结；[Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6） | M28 关闭（**已满足**）；M30 关闭（**未满足**）；DEC-069 数值档位冻结；[`EXE-20261028-001`](../executor_feedback/ledger.md) 临时边界确定 | 部署档位与有限容量契约的冻结锚点（非发布物） | Planned |
 | [M32](m32-attention-focus-and-safe-switch.md) | 注意力焦点与安全切换协议（[DEC-071](../decisions/DEC-071-attention-focus-and-safe-switch.md)：`TaskOrigin`×`TaskPriority` 优先级正交化、纯函数只读的 `Interruptibility` 判定、`Prepare→Suspend→Release→Commit→Resume` 五阶段协议与失败回滚、焦点只读投影与变更事件、租约-焦点对照视图、`TaskCheckpoint` 追加 `held_resources`/`in_progress_step`、崩溃可识别；来源为 Mirage 路线图 §4.3/§4.9，**未**进入 #111；无模型、无平台） | DEC-071 冻结（已满足）；M28/M29 关闭（**已满足**）；M32 §4 冻结 | M33 自主行为通道的接线前提（非发布物） | Planned |
 | [M33](m33-autonomy-and-interruption-budget.md) | 主动行为通道与打断预算（[DEC-072](../decisions/DEC-072-autonomy-and-interruption-budget.md)：独立第二输入源 `AutonomousIntent`、权限三分类、九道确定性打断预算闸门（类别/全局开关、权限、最小间隔、合并窗口、每类别频率上限、配额、静默期、冷却）、Core 强制的用户否决禁用状态、跨重启预算账本与显式日界时区、不依赖模型请求的主动输出面、崩溃后自主任务不自动恢复；来源为 Mirage 路线图 §4.6，**未**进入 #111；无模型、无平台） | DEC-072 冻结（已满足）；M32/M30 关闭（**未满足**）；M33 §4 冻结 | 部署档位与主动交互契约的冻结锚点（非发布物） | Planned |
 

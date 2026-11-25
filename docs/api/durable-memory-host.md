@@ -724,5 +724,6 @@ writer，最后由非 worker 的外部 owner 调用 `executor.shutdown(true)`。
 需要记录各层已处理水位并验证恢复。SQLite 的逻辑删除不等于磁盘字节已回收，隐私删除、
 checkpoint/WAL、vacuum、备份保留和索引重建屏障必须分别结算。
 
-会话资产持久索引、旧 JSON 导入、事件后端选择以及规模基准仍在维护计划中；这个示例
-不提供自动迁移，更不把任务 checkpoint 等同于全部 Warm 层持久化。
+持久会话片段索引的范围与证据见 [M30-12 验收](../plans/m30-memory-acceptance.md#history-conversation-index)。
+其他上下文资产、事件后端选择和规模基准由[存储维护计划](../plans/maintenance-2026-11-memory-storage.md)追踪。
+旧 JSON 导入仍待冻结。本示例的 checkpoint 持久化限于任务恢复。

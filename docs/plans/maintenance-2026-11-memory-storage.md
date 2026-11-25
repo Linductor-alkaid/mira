@@ -3,7 +3,7 @@
 > 状态：In Progress
 > 负责人：Mira Maintainers
 > 所属计划：[总计划](mira-implementation-plan.md)
-> 更新日期：2026-11-10
+> 更新日期：2026-11-25
 > 关联：M30-03/04/08、M31-02/05/06/09/10；不改变其退出条件
 
 ## 目标与边界
@@ -29,14 +29,14 @@
       无命中保持空、重启后仍生效；跑相关 Debug、ASAN/UBSAN、TSan 和质量检查。
 - [x] `MNT-202611-MS-03` 持久化示例使用 FileEventStore + SQLite memory/checkpoint，
       从真实事件派生投影；显式目录不被删除，独立进程恢复后检查 FTS、scope 与 checkpoint。
-- [ ] `MNT-202611-MS-04` 持久会话资产索引：先冻结 SQLite schema、来源水位、
-      确定性身份、ACL、异步修复和删除协议，再实现 IContextRetriever 后端及重启测试。
-      [DEC-122](../decisions/DEC-122-durable-conversation-index.md) 交付会话片段首期。
-      其他资产类型、增量修复及目标负载验证继续跟踪。
+- [ ] `MNT-202611-MS-04` 扩展持久会话索引到其他上下文资产并补齐增量修复。
+      会话片段的 SQLite 索引、来源水位、范围隔离、重开和联合擦除已由 M30-12 验收，
+      本项剩余验收覆盖其他资产类型及目标负载下的修复。见 [DEC-122](../decisions/DEC-122-durable-conversation-index.md)
+      与[会话片段验收](m30-memory-acceptance.md#history-conversation-index)。
 - [ ] `MNT-202611-MS-05` 冻结事件索引/分段或 SQLite EventStore 的选择与迁移契约，
       对比启动常驻内存、分页查询与崩溃一致性；与 M31-05/06 同步，不能替代其容量治理。
       [DEC-121](../decisions/DEC-121-indexed-event-slices.md) 已提供原日志上的任务切片与
-      重开索引，分段、持久后端选择与规模对照仍在本项。
+      重开索引，验收归 M30-17。分段、持久后端选择与规模对照仍在本项。
 - [ ] `MNT-202611-MS-06` 真实规模基准与生命周期：候选池截断、中文检索、向量 profile、
       删除重建、空间回收；固定 1万/10万数据、查询集、目标机与负载，报告扫描量/命中率/
       启动 RSS/p50/p95，不先承诺性能。
@@ -44,7 +44,7 @@
       malformed event 拒绝规则；补齐缺失/非法结果字段回归与 Release 验证，
       核对旧分支的代码与文档整合情况（代码验收 head 与 CI 证据见记录）。
 
-04–06 是后续待冻结工作，不因本轮交付而标为实现。03 复用已有能力，不声称实现了 04。
+04–06 的剩余范围继续独立验收。03 验收跨进程宿主示例，04 的会话片段证据引用 M30-12。
 07 的代码验收与交付操作分别记录：PR #126 最终 head 的完整 CI 通过后才合并 master、
 清理已整合分支；合并和清理结果以 PR 元数据及 Git refs 为准。
 

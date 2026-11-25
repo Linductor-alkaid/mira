@@ -8,8 +8,9 @@
 > [DEC-069](../decisions/DEC-069-bounded-capacity-and-forgetting-lifecycle.md)；
 > 来源需求为
 > [Issue #111](https://github.com/Linductor-alkaid/mira/issues/111) §6）
-> 前置：M28 关闭（**未满足**，台账与注册表须计入预算）；M30 关闭（**未满足**，
-> 价值信号是淘汰裁决的输入）；DEC-069 数值档位冻结（本立项完成）；
+> 前置：M28 关闭（**已满足**，台账与注册表计入预算由 M31 验收）；
+> [M30](m30-long-term-memory-integration.md) 关闭（**未满足**，M30-06 的价值信号是淘汰裁决的输入）；
+> DEC-069 数值档位冻结（本立项完成）；
 > [`EXE-20261028-001`](../executor_feedback/ledger.md) 的临时边界确定
 > 建议发布点：非发布物；部署档位与有限容量契约的冻结锚点
 > 更新日期：2026-11-19
@@ -181,7 +182,8 @@ FileEventStore 在写入前检查事件条数和可选的日志字节预算。�
 
 ## 7. 风险与阻塞
 
-- **依赖 M28/M30**：台账/注册表与价值信号是本阶段的输入。
+- **依赖 M28/M30**：台账与注册表沿用 M28 实现，计量和预算充足性由 M31 验收。
+  价值信号和显式擦除后的新世代分别依赖 M30-06 与 M30-09，见 [M30 验收](m30-memory-acceptance.md)。
 - **Executor 缺口**：`EXE-20261028-001`（按主体份额准入）**上游已交付**——
   kairo PR [#223](https://github.com/Linductor-alkaid/kairo/pull/223) 合并入 master
   并关闭 [#222](https://github.com/Linductor-alkaid/kairo/issues/222)，
