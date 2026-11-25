@@ -86,6 +86,7 @@ add_library(mira_core
     src/runtime/context_memory_supervisor.cpp
     src/interaction/interaction_events.cpp
     src/interaction/task_completion.cpp
+    src/interaction/task_admission.cpp
     src/interaction/input_ledger.cpp
     src/interaction/interaction_routing.cpp
     src/interaction/interaction_coordinator.cpp

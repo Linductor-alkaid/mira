@@ -299,8 +299,12 @@ struct TaskSpec {
     VerificationPolicy verification_policy;
     RecoveryPolicy recovery_policy;
     Metadata metadata;
+    std::optional<OperationId> admission_operation;
 };
 ```
+
+`admission_operation` 关联宿主的稳定任务准入记录，并随 `TaskSnapshot` 投影。宿主可在命令
+确认生效后用它登记[持久任务准入回执](../api/interaction-coordinator.md#持久任务准入回执)。
 
 `max_steps`、deadline 和 wall time 是停止条件，不是强杀线程的保证。达到限制时 Runtime 发出
 协作式取消，停止新动作，并等待正在执行的输入安全收敛。

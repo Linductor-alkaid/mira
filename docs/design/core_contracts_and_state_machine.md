@@ -168,6 +168,7 @@ struct TaskSnapshot {
     ContextQuality context_quality;
     std::vector<PendingEffect> uncertain_effects;
     std::vector<std::string> user_constraints;   // M28/DEC-068 §4.5
+    std::optional<OperationId> admission_operation;
 };
 ```
 

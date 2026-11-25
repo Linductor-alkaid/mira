@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md) 接通按操作 ID
+持久记录与回查任务准入，见 [M30-50](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md) 区分目标的首次
 提交与持久只读对账，见 [M30-49](m30-long-term-memory-integration.md#5-工作项)。
 

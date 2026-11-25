@@ -287,6 +287,23 @@ Runtime 快照，校验会话的租户与用户归属及无错误的 `Completed`
 返回 `true`。与输入准入竞争时，发布返回可重试的 `ResourceExhausted`。
 见[周期核对](durable-memory-host.md#自动核对完成证据)。
 
+### 持久任务准入回执
+
+宿主按已授权任务路径提交 `TaskSpec` 时，可附带 `admission_operation`。Runtime 返回
+已生效的 `SubmitTask` 命令后，协调层会核对命令、任务、会话与当前主体，再登记已受理的
+原会话、任务和时间。相同的操作与任务可以重放。已有操作绑定其他任务时返回冲突。
+
+```cpp
+auto saved = coordinator.record_task_admission(principal, operation_id, task_submission, context);
+// 重开协调层后可查同一个稳定操作 ID。
+auto admitted = coordinator.lookup_task_admission(principal, operation_id, context);
+```
+
+每个归属与操作的记录存于独立事件分区，并要求 `ProcessCrash` 持久性。两个调用复核
+当前主体授权及截止时间，协调层繁忙时返回可重试错误。记录入口读取已就绪的命令结果。
+查询可在原 Runtime 丢失后继续使用，尚无证据时返回空值。见
+[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)。
+
 ## 错误域
 
 `Error::domain == "mira.interaction"`，`domain_code` 是稳定枚举

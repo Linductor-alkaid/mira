@@ -199,6 +199,8 @@ class InteractionCoordinator::Impl final {
                                                              std::optional<SessionId>) const;
     [[nodiscard]] Result<AppendReceipt> append_verified_completion(const PrincipalContext &,
                                                                    const TaskSnapshot &);
+    [[nodiscard]] Result<void> check_task_admission_access(const PrincipalContext &,
+                                                           OperationId) const;
     [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
                                                            const LedgerEntry &);
     void stage_memory(const InputEnvelope &, const PrincipalTaskEntry &);

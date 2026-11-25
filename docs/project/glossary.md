@@ -378,6 +378,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 一次性目标的稳定派发操作 ID、目标版本和准备时点，以及提交后保存的任务、会话与
 提交时点。重试按原操作 ID 对账，目标兑现单独结算。见[DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
+**Task Admission Receipt（任务准入回执）**：
+协调层根据 Runtime 已生效的提交命令保存的归属内回执，包含稳定操作 ID、原会话、任务
+与接纳时间。见[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)。
+
 **Verified Task Completion（任务完成证据）**：
 协调层核对当前主体归属后，依据 Runtime 无错误完成终态写入的持久任务事件。一次性目标
 可按派发回执引用此事件兑现。见[DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)。

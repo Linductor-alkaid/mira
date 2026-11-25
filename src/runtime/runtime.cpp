@@ -577,6 +577,8 @@ Result<SessionSubmission> MiraRuntime::open_session(std::shared_ptr<IEnvironment
 Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task) {
     if (task.goal.empty())
         return make_error(ErrorCode::InvalidArgument, "task goal must not be empty");
+    if (task.admission_operation && task.admission_operation->is_nil())
+        return make_error(ErrorCode::InvalidArgument, "task admission operation must not be nil");
     const auto task_id = TaskId::generate();
     auto command = impl_->enqueue(CommandKind::SubmitTask, [this, session_id, task_id,
                                                             task = std::move(task)](
@@ -602,6 +604,7 @@ Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec t
         // (M28/DEC-068 §4.5); later constraints travel through the loop input
         // seam.
         snapshot.user_constraints = task.user_constraints;
+        snapshot.admission_operation = task.admission_operation;
         impl_->tasks.emplace(task_id, Impl::TaskRecord{snapshot, task.goal, session_id});
         Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
         Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);

@@ -551,6 +551,15 @@ struct VerifiedTaskCompletion final {
     WallTimePoint completed_at;
 };
 
+struct TaskAdmissionReceipt final {
+    OperationId operation;
+    SessionId session;
+    TaskId task;
+    WallTimePoint admitted_at;
+    EventId evidence;
+    friend bool operator==(const TaskAdmissionReceipt &, const TaskAdmissionReceipt &) = default;
+};
+
 // Validates the envelope and payload from the host's trusted task event store.
 [[nodiscard]] Result<VerifiedTaskCompletion> parse_verified_task_completion(const EventEnvelope &);
 
@@ -636,6 +645,13 @@ class InteractionCoordinator final {
     [[nodiscard]] Result<bool> publish_verified_task_completion_if_ready(const PrincipalContext &,
                                                                          SessionId, TaskId,
                                                                          const OperationContext &);
+    // Records a completed Runtime submission command in the durable task ledger.
+    [[nodiscard]] Result<TaskAdmissionReceipt> record_task_admission(const PrincipalContext &,
+                                                                     OperationId,
+                                                                     const TaskSubmission &,
+                                                                     const OperationContext &);
+    [[nodiscard]] Result<std::optional<TaskAdmissionReceipt>>
+    lookup_task_admission(const PrincipalContext &, OperationId, const OperationContext &) const;
     // Records an explicit rejection of an accepted input.
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);

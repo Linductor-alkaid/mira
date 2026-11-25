@@ -527,6 +527,143 @@ int publication_yields_when_the_coordinator_is_busy() {
     MIRA_CHECK(published && published.value());
     return 0;
 }
+
+int durable_task_admission_survives_runtime_restart() {
+    FulfillmentFixture fixture;
+    const GoalKey goal{fixture.owner, Id128::generate()};
+    const auto now = now_ms();
+    MIRA_CHECK(fixture.goals->create(goal, {GoalKind::Commitment,
+                                            "Review the archive",
+                                            EventId::generate(),
+                                            now - 2h,
+                                            now - 1min,
+                                            {}}));
+    const auto prepared = fixture.goals->prepare_dispatch_attempt(goal, 1, now);
+    MIRA_CHECK(prepared && prepared.value().newly_prepared);
+    const auto dispatch = prepared.value().receipt.key;
+    auto &runtime = *fixture.host.runtime_;
+    auto &coordinator = *fixture.host.coordinator_;
+    const auto session = runtime.open_session(fixture.host.environment_, {fixture.principal});
+    MIRA_CHECK(session && session.value().command.outcome(5s));
+    MIRA_CHECK(!runtime.submit_task(session.value().id,
+                                    {"Invalid admission operation", {}, OperationId{}}));
+    const auto submitted =
+        runtime.submit_task(session.value().id, {"Review the archive", {}, dispatch.operation});
+    MIRA_CHECK(submitted);
+    const auto outcome = submitted.value().command.outcome(5s);
+    MIRA_CHECK(outcome && outcome.value().status == SettlementStatus::Applied &&
+               outcome.value().task &&
+               outcome.value().task->admission_operation == dispatch.operation);
+    const auto context = make_control_context();
+    const auto vacant =
+        coordinator.lookup_task_admission(fixture.principal, dispatch.operation, context);
+    MIRA_CHECK(vacant && !vacant.value());
+    const auto unrelated = coordinator.record_task_admission(
+        fixture.principal, OperationId::generate(), submitted.value(), context);
+    MIRA_CHECK(!unrelated && unrelated.error().code == ErrorCode::InvalidState);
+    auto wrong_task = submitted.value();
+    wrong_task.id = TaskId::generate();
+    const auto mismatched = coordinator.record_task_admission(fixture.principal, dispatch.operation,
+                                                              wrong_task, context);
+    MIRA_CHECK(!mismatched && mismatched.error().code == ErrorCode::InvalidState);
+    auto foreign = fixture.principal;
+    foreign.user_id = UserId::generate();
+    const auto unowned =
+        coordinator.record_task_admission(foreign, dispatch.operation, submitted.value(), context);
+    MIRA_CHECK(!unowned && unowned.error().code == ErrorCode::PermissionDenied);
+
+    // The buffered adapter may expose an event without confirming process-crash durability.
+    {
+        const auto buffered = std::make_shared<MemoryEventStore>();
+        InteractionCoordinator transient(CoordinatorConfig{}, runtime, fixture.host.executor_);
+        transient.set_event_store(buffered, RuntimeId::generate());
+        MIRA_CHECK(transient.initialize());
+        MIRA_CHECK(!transient.record_task_admission(fixture.principal, dispatch.operation,
+                                                    submitted.value(), context));
+        const auto unsafe =
+            transient.lookup_task_admission(fixture.principal, dispatch.operation, context);
+        MIRA_CHECK(!unsafe && unsafe.error().code == ErrorCode::UnsupportedCapability);
+        MIRA_CHECK(transient.close());
+    }
+
+    MIRA_CHECK(fixture.complete(submitted.value().id));
+    const auto recorded = coordinator.record_task_admission(fixture.principal, dispatch.operation,
+                                                            submitted.value(), context);
+    MIRA_CHECK(recorded && recorded.value().session == session.value().id &&
+               recorded.value().task == submitted.value().id &&
+               recorded.value().admitted_at == outcome.value().task->updated_at.wall);
+    const auto replay = coordinator.record_task_admission(fixture.principal, dispatch.operation,
+                                                          submitted.value(), context);
+    MIRA_CHECK(replay && replay.value() == recorded.value());
+    const auto private_events = fixture.events->read({session.value().id, {}, 2});
+    MIRA_CHECK(private_events && private_events.value().events.empty());
+    const auto duplicate = runtime.submit_task(
+        session.value().id, {"Different task under the same operation", {}, dispatch.operation});
+    MIRA_CHECK(duplicate && duplicate.value().command.outcome(5s));
+    const auto conflict = coordinator.record_task_admission(fixture.principal, dispatch.operation,
+                                                            duplicate.value(), context);
+    MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::AlreadyExists);
+    const auto isolated = coordinator.lookup_task_admission(foreign, dispatch.operation, context);
+    MIRA_CHECK(isolated && !isolated.value());
+    auto revoked = fixture.principal;
+    revoked.grants.clear();
+    const auto denied = coordinator.lookup_task_admission(revoked, dispatch.operation, context);
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(!fixture.goals->read_dispatch(goal).value()->submission);
+
+    // Simulate losing the successful host result before the goal store can record it.
+    MIRA_CHECK(coordinator.close());
+    fixture.host.coordinator_.reset();
+    const auto shutdown = runtime.request_shutdown();
+    MIRA_CHECK(shutdown && shutdown.value().outcome(5s));
+    MIRA_CHECK(runtime.finish_shutdown().clean);
+    fixture.host.runtime_ = std::make_unique<MiraRuntime>();
+    MIRA_CHECK(fixture.host.runtime_->initialize());
+    MIRA_CHECK(!fixture.host.runtime_->task_snapshot(recorded.value().task));
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    fixture.host.coordinator_ = std::make_unique<InteractionCoordinator>(
+        CoordinatorConfig{}, *fixture.host.runtime_, fixture.host.executor_);
+    fixture.host.coordinator_->set_event_store(fixture.events, RuntimeId::generate());
+    MIRA_CHECK(fixture.host.coordinator_->initialize() && fixture.reopen_goals());
+    const auto recovered = fixture.host.coordinator_->lookup_task_admission(
+        fixture.principal, dispatch.operation, context);
+    MIRA_CHECK(recovered && recovered.value() == recorded.value());
+
+    GoalDispatchPollerOptions options{10ms, 2s, 1};
+    options.reconcile_submission =
+        [&](const GoalDispatchKey &key,
+            const OperationContext &attempt) -> Result<std::optional<GoalDispatchSubmission>> {
+        const auto known = fixture.host.coordinator_->lookup_task_admission(fixture.principal,
+                                                                            key.operation, attempt);
+        if (!known)
+            return known.error();
+        if (!known.value())
+            return std::optional<GoalDispatchSubmission>{};
+        const auto &value = *known.value();
+        return std::optional{GoalDispatchSubmission{
+            value.session, value.task,
+            std::chrono::floor<std::chrono::milliseconds>(value.admitted_at)}};
+    };
+    std::atomic<bool> attempted_new_task{false};
+    auto started = GoalDispatchPoller::start(
+        fixture.host.executor_, fixture.goals, fixture.owner,
+        [&](const GoalRecord &, const GoalDispatchKey &,
+            const OperationContext &) -> Result<GoalDispatchSubmission> {
+            attempted_new_task.store(true);
+            return interaction_error(ErrorCode::InvalidState, InteractionDomainCode::RouteRejected,
+                                     "reconciliation attempted a new task");
+        },
+        options);
+    MIRA_CHECK(started);
+    auto poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 1; }));
+    MIRA_CHECK(poller->close() && !attempted_new_task.load());
+    const auto result = fixture.goals->read_dispatch(goal);
+    MIRA_CHECK(result && result.value()->key == dispatch && result.value()->submission &&
+               result.value()->submission->task == recorded.value().task &&
+               result.value()->submission->session == recorded.value().session);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -541,5 +678,7 @@ int main() {
             poller_publishes_live_completion_and_settles_under_current_authorization();
         result != 0)
         return result;
-    return publication_yields_when_the_coordinator_is_busy();
+    if (const int result = publication_yields_when_the_coordinator_is_busy(); result != 0)
+        return result;
+    return durable_task_admission_survives_runtime_restart();
 }

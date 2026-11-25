@@ -485,6 +485,11 @@ auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_go
 未配置查询回调的通道由提交回调按原操作 ID 去重。见
 [DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md)。
 
+宿主可用[协调层任务准入回执](interaction-coordinator.md#持久任务准入回执)实现查询回调。
+提交任务时把 `key.operation` 带入 `TaskSpec::admission_operation`，命令生效后保存原
+准入回执。对账取得回执后，将 `session`、`task` 和以 UTC 毫秒表示的 `admitted_at`
+映射为 `GoalDispatchSubmission`。
+
 #### 自动核对完成证据
 
 在 `GoalDispatchPollerOptions::completion_events` 绑定受信的任务事件库即可周期核对已派发

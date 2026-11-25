@@ -29,6 +29,8 @@ struct TaskSpec final {
     // constraint added later is delivered through the loop input seam rather
     // than by rewriting the goal.
     std::vector<std::string> user_constraints;
+    // Stable host operation associated with this admission, when available.
+    std::optional<OperationId> admission_operation = {};
 };
 
 struct ShutdownReport final {

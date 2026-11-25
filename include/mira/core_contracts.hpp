@@ -511,6 +511,7 @@ struct TaskSnapshot final {
     // A constraint added later reaches the task through the loop input seam,
     // not by rewriting this list.
     std::vector<std::string> user_constraints;
+    std::optional<OperationId> admission_operation = {};
 };
 
 struct CommandOutcome final {
