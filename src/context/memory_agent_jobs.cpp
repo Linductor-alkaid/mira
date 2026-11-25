@@ -61,6 +61,14 @@ bool group_uses_embedding(const MemoryRecallGroup &group) {
         return std::find(legs.begin(), legs.end(), MemoryRetrievalLeg::Semantic) != legs.end();
     });
 }
+bool record_page_needs_retry(const ConsolidationReport &report) {
+    return report.candidates_truncated != 0 || !report.pending_approval.empty() ||
+           std::ranges::any_of(report.entries, [](const ConsolidationEntry &entry) {
+               return entry.reason_code == "conflict-retrieval-unavailable" ||
+                      entry.reason_code == "store-rejected-mutation";
+           });
+}
+
 class ProposedMemories final : public IConsolidationModel {
   public:
     std::vector<MemoryCandidate> candidates;
@@ -166,8 +174,15 @@ Result<MemoryAgentHandle> MemoryAgentService::State::submit(MemoryAgentRequest r
     job->request = std::move(request);
     job->binding = found->second.binding;
     job->revision = found->second.revision;
-    job->after_sequence = found->second.recorded_through;
-    job->record_snapshot = found->second.record_snapshot;
+    if (job->request.mode == MemoryAgentMode::Record) {
+        const auto &cursors = found->second.record_cursors;
+        const auto cursor =
+            cursors.find(memory_agent_support::scope_key(*job->request.write_scope));
+        if (cursor != cursors.end()) {
+            job->after_sequence = cursor->second.through;
+            job->record_snapshot = cursor->second.snapshot;
+        }
+    }
     job->context = std::move(context);
     const auto deadline = std::chrono::steady_clock::now() + config.timeout;
     if (!job->context.deadline || deadline < *job->context.deadline)
@@ -208,9 +223,14 @@ void MemoryAgentService::State::run(const std::shared_ptr<Job> &job, kairo::Stop
     };
     Result<MemoryAgentResult> outcome = error(ErrorCode::Internal, "memory job failed");
     try {
-        outcome = execute(job, context);
-        for (std::size_t pages = 1; pages < job->request.record_page_limit && outcome &&
-                                    outcome.value().more_pending && job->record_snapshot;
+        Result<void> restored;
+        if (config.durable_record_pages && job->request.mode == MemoryAgentMode::Record &&
+            !context.cancelled_or_expired(Timestamp::now()))
+            restored = restore_record_cursor(*job);
+        outcome = restored ? execute(job, context) : Result<MemoryAgentResult>{restored.error()};
+        for (std::size_t pages = 1;
+             pages < job->request.record_page_limit && outcome && outcome.value().more_pending &&
+             job->record_snapshot && !job->record_blocked;
              ++pages) {
             auto next = execute(job, context);
             if (!next) {
@@ -393,7 +413,8 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 pending_record_snapshot = page.snapshot_through;
             input.events = std::move(page.events);
         } else {
-            if (slice.error().code != ErrorCode::UnsupportedCapability || query.through_sequence)
+            if (slice.error().code != ErrorCode::UnsupportedCapability || query.through_sequence ||
+                config.durable_record_pages)
                 return slice.error();
             auto page =
                 events->read({input.work.session_id, job->after_sequence, config.max_events});
@@ -516,24 +537,40 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         result.consolidation = std::move(report).value();
         // A successful write changes shared knowledge even when this caller
         // is a terminal task. Invalidate all dependent request snapshots.
-        const std::lock_guard lock(mutex);
-        for (auto &[id, dependent] : works) {
-            (void)id;
-            if (std::find(dependent.binding.scopes.begin(), dependent.binding.scopes.end(),
-                          *job->request.write_scope) == dependent.binding.scopes.end())
-                continue;
-            ++dependent.revision;
-            dependent.candidates.clear();
-            dependent.prefix.clear();
-            dependent.compacted.clear();
-            dependent.captured.clear();
-            for (const auto &[other_id, other] : jobs)
-                if (other_id != job->id && !other->done &&
-                    other->request.task == dependent.binding.work.task_id)
-                    other->cancelled.store(true);
+        {
+            const std::lock_guard lock(mutex);
+            for (auto &[id, dependent] : works) {
+                (void)id;
+                if (std::find(dependent.binding.scopes.begin(), dependent.binding.scopes.end(),
+                              *job->request.write_scope) == dependent.binding.scopes.end())
+                    continue;
+                ++dependent.revision;
+                dependent.candidates.clear();
+                dependent.prefix.clear();
+                dependent.compacted.clear();
+                dependent.captured.clear();
+                for (const auto &[other_id, other] : jobs)
+                    if (other_id != job->id && !other->done &&
+                        other->request.task == dependent.binding.work.task_id)
+                        other->cancelled.store(true);
+            }
+            job->revision = works.at(job->request.task).revision;
+            result.revision = job->revision;
         }
-        job->revision = works.at(job->request.task).revision;
-        result.revision = job->revision;
+        if (config.durable_record_pages) {
+            if (record_page_needs_retry(result.consolidation)) {
+                job->record_blocked = true;
+                result.through_event_sequence = job->after_sequence;
+                result.more_pending = true;
+                return result;
+            }
+            if (result.through_event_sequence > job->after_sequence) {
+                const Work::RecordCursor cursor{result.through_event_sequence,
+                                                pending_record_snapshot};
+                if (auto saved = save_record_cursor(*job, cursor, result.consolidation); !saved)
+                    return saved.error();
+            }
+        }
     }
     {
         const std::lock_guard lock(mutex);
@@ -542,10 +579,10 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
             work.candidates = result.candidates;
             work.cache_until = cache_until;
         } else if (input.mode == MemoryAgentMode::Record) {
-            work.recorded_through = std::max(work.recorded_through, result.through_event_sequence);
-            work.record_snapshot = pending_record_snapshot;
-            job->after_sequence = work.recorded_through;
-            job->record_snapshot = work.record_snapshot;
+            job->after_sequence = std::max(job->after_sequence, result.through_event_sequence);
+            job->record_snapshot = pending_record_snapshot;
+            work.record_cursors[memory_agent_support::scope_key(*job->request.write_scope)] =
+                Work::RecordCursor{job->after_sequence, job->record_snapshot};
         } else {
             std::string text = "[Memory agent checkpoint: untrusted historical data]\n";
             for (const auto &note : proposal.summary) {

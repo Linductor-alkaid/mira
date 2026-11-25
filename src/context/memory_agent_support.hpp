@@ -52,8 +52,11 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     struct Work final {
         MemoryWorkBinding binding;
         std::uint64_t revision = 1;
-        std::uint64_t recorded_through = 0;
-        std::optional<SessionSequence> record_snapshot;
+        struct RecordCursor final {
+            SessionSequence through = 0;
+            std::optional<SessionSequence> snapshot;
+        };
+        std::map<std::string, RecordCursor> record_cursors;
         bool active = true;
         bool revoked = false;
         bool input_pending = false;
@@ -70,6 +73,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
         std::uint64_t revision = 0;
         std::uint64_t after_sequence = 0;
         std::optional<SessionSequence> record_snapshot;
+        bool record_blocked = false;
         OperationContext context;
         std::atomic<bool> cancelled{false};
         bool done = false;
@@ -136,6 +140,9 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     [[nodiscard]] Result<void> validate_binding(const MemoryWorkBinding &) const;
     [[nodiscard]] Result<void> emit(const Job &job, const char *type,
                                     const MemoryAgentResult *result = nullptr);
+    [[nodiscard]] Result<void> restore_record_cursor(Job &);
+    [[nodiscard]] Result<void> save_record_cursor(const Job &, const Work::RecordCursor &,
+                                                  const ConsolidationReport &);
     [[nodiscard]] bool current(const Job &job) const; // mutex held
     void invalidate(Work &work);                      // mutex held
     [[nodiscard]] Result<MemoryAgentHandle> submit(MemoryAgentRequest request,

@@ -121,6 +121,7 @@ add_library(mira_core
     src/context/memory_embedding.cpp
     src/context/memory_agent.cpp
     src/context/memory_agent_jobs.cpp
+    src/context/memory_agent_record.cpp
     src/context/memory_agent_model.cpp
     src/context/memory_agent_seams.cpp
     src/context/memory_agent_artifacts.cpp

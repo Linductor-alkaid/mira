@@ -185,6 +185,9 @@ struct MemoryAgentConfig final {
     std::vector<MemoryRecallGroup> recall_groups;
     // Optional durable participant in session-scope erasure and startup replay.
     std::shared_ptr<IConversationContextIndex> conversation_index;
+    // Recover Record page progress per work and exact write scope. Requires
+    // an indexed, ProcessCrash-capable event store and one owner per work.
+    bool durable_record_pages = false;
 };
 
 // DEC-101: host owner, not a perpetual child of the frontend run. Stores and

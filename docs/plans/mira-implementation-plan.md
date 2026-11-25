@@ -1,5 +1,9 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-156](../decisions/DEC-156-m30-implementation-freeze.md) 补齐 M30 实施细则，
+[DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md) 接通范围独立的 Record 页回执。
+见 [M30-01 与 M30-03](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md) 接通发布成功
 终态前的持久完成证据，见 [M30-52](m30-long-term-memory-integration.md#5-工作项)。
 

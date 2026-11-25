@@ -83,6 +83,8 @@
 - [DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)：以操作 ID 持久记录和回查 Runtime 准入结果。
 - [DEC-154](../decisions/DEC-154-durable-before-live-task-admission.md)：在 Runtime 发布任务前持久化准入回执。
 - [DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md)：在 Runtime 发布成功终态前持久化验证事实。
+- [DEC-156](../decisions/DEC-156-m30-implementation-freeze.md)：冻结 M30 剩余实施细则。
+- [DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md)：按写入范围保存 Record 页回执。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -130,25 +132,31 @@
 承诺实体（§4）、纠正与删除（§5）、排序增量的延后（§6）。
 门禁矩阵 `M30-G1`–`M30-G8` 同步定义于 DEC-070「验证方式」。
 
-本里程碑立项时**仍须**回答并冻结的实现细则：
+实施细则见 [DEC-156](../decisions/DEC-156-m30-implementation-freeze.md)。现有承诺存储和
+主体摘要有独立的落地证据。候选、意图、价值信号和新世代按以下工作项验收。
 
-1. 承诺实体的**具体存储形态**（DEC-070 §4/P3 要求：可查询、可纠正、可删除、
-   计入 DEC-069 预算、属保护集合；具体类型与表结构由本里程碑冻结）。
-2. 主体 → `MemoryScope` 映射的**稳定内部表示**的具体生成方式
-   （DEC-070 §3 已冻结语义：稳定、不可逆、不含外部账号信息）。
-3. 候选提出的**具体触发点**（哪些既有管线节点提出候选、提出什么 kind/scope）。
-4. 与 DEC-069 §3 四层遗忘的**接口实现**：本阶段只产出**价值信号**，
-   淘汰裁决归 M31；**不得**在本阶段实现物理删除。
-5. 召回排序增量的**分步方案**：使用信号与查询相关性**分离**，
-   可验证回忆反馈的可选增量——按 DEC-070 §6/O4，在 §4 闭环交付**之后**另行评审，
-   **不并入**本里程碑验收。
+### 4.1 实施细则验收
+
+| 工作项 | 所有者、契约与复用路径 | 实施验收 |
+| --- | --- | --- |
+| M30-02 / M30-15 / M30-37 | 当前主体及版本化 scope 摘要约束 `SqliteGoalStore` 的归属与版本，StoreChannel 和既有派发 Executor 分别负责存取及唤起 | M30-G3/G4。`mira_m30_lifecycle_test`、`mira_m30_goal_store_test` 与 `mira_m30_goal_fulfillment_test` 增量已覆盖，生产自主准入与写入前恢复见 M30-37 |
+| M30-03 / M30-38 | Memory Agent 在结算和输入对账后用 Executor worker 提取，经 `MemoryConsolidator` 或类型化 owner 提交。页区间、版本、取消及 deadline 共同约束水位推进 | M30-G1/G2。`mira_m30_recording_test` 覆盖同范围续跑、范围隔离和重开。六类候选路由与统一收集继续验收 |
+| M30-05 | Interaction 解析受控意图，既有提案和擦除 owner 负责归属、版本、幂等与回执 | M30-G5/G6/G7。在 `mira_m30_preference_recovery_test` 与 `mira_m30_lifecycle_test` 的既有覆盖上补多义目标、逐记录忘掉与四类删除解释 |
+| M30-06 | Gateway 准入结果提供实际使用证据，记录所有者保存独立的值与使用投影 | M30-G2/G7。实现验收需补实际装入、未入选、失败准入、重放去重与擦除 |
+| M30-09 | Memory Agent 擦除 owner 保留屏障并约束同 scope 世代，执行句柄由原 owner 回收 | M30-G5/G6。扩展 `mira_m36_memory_agent_test` 验收新输入、旧来源换序到达及迟到派生结果 |
+| M30-07 / M30-08 | 本计划与现有架构策略登记依赖及验证。具体新增契约独立决策并同步设计与 API | M30-G8。完整矩阵及跨平台验收仍在第 6 节追踪 |
+
+| 决策点 | 选择 | 备选与理由 | 依据 |
+| --- | --- | --- | --- |
+| 状态所有者与命令路径 | 复用 Memory Agent、记忆管线、目标与擦除 owner | 影子记忆库会产生互相冲突的状态与删除回执 | DEC-070 / DEC-156 |
+| 派生视图与时序 | 页回执、准入使用信号和世代屏障分别绑定其来源及精确范围 | 仅使用搜索命中或到达时间无法证明实际使用与新来源 | DEC-069 / DEC-156 |
+| Executor 与依赖 | 复用现有 worker、StoreChannel 和宿主派发生命周期 | 私有队列无法与现有取消、背压和关闭语义统一 | DEC-107 / DEC-141 / DEC-146 |
 
 ## 5. 工作项
 
-- [ ] `M30-01` 立项与跑前冻结（DEC-107/109 增量及 DEC-119 六类契约已冻结；承诺存储、
-      完整记忆意图、价值信号与删除世代的实施细则待冻结）。
+- [x] `M30-01` 立项与实施细则冻结。DEC-107/109 和 DEC-119 的已落地契约由 DEC-156 补齐，验收归属见 §4.1。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
-- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径（终态 Session Record 及显式 User 偏好提案/持久审批已接通；其他候选报告的统一持久收集与触发仍待完成）。
+- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径。终态 Session Record、显式 User 偏好提案及持久审批已接通。Record 按写入范围记录进度，宿主可保存持久页回执。其他类型候选报告的统一收集与触发继续验收。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
 - [ ] `M30-05` 「记住 / 忘掉 / 纠正」的路由、范围判定与可解释输出（偏好提案、版本冻结的纠正、确认/拒绝/过期/未知结果已交付；完整意图与遗忘交互仍待完成）。
 - [ ] `M30-06` 价值信号（importance / 使用信号）产出（供 M31 使用）。
@@ -1755,3 +1763,42 @@ Linux Debug 全量 **214/214**，Runtime 生命周期与目标兑现测试各连
 ASan 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。
 日志见 `/tmp/mira-m30-completion-debug-*.log`、`/tmp/mira-m30-completion-asan-*.log`、
 `/tmp/mira-m30-completion-tidy-final.log` 和 `/tmp/mira-m30-completion-quality.log`。
+
+### 2026-11-25 按工作项顺序补齐实施细则和 Record 页进度
+
+基线 `cd8f8b0`，分支 `feat/m30-memory-systems`。M30-01 冻结承诺存储、候选触发、
+记忆意图、价值信号和删除后同 scope 新世代的实现边界。验收任务、所有者和依赖见
+[§4.1](#41-实施细则验收)。执行契约由 DEC-156 承载。
+
+M30-03 的本轮增量修复同一任务向不同获准 scope 写入时共用水位而漏提取的问题。
+DEC-157 增加可选的持久页回执。`mira_m30_recording_test` 在真实 FileEventStore
+和 SQLite 中验证范围隔离、固定快照续跑、存储重开、擦除屏障以及待审批页保留。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 9
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_recording_test$' \
+  --repeat until-fail:25
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_recording_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m30_recording_test$'
+printf '%s\n' src/context/memory_agent_jobs.cpp src/context/memory_agent_record.cpp \
+  | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 其他类型候选的统一收集和触发 | Mira Maintainers 在 M30-03 补齐其他写入入口的证据回执和候选触发。M30-38 验收默认自动恢复及六类路由 |
+| 真实模型、Windows、Android 与远端 CI | Mira Maintainers 提供模型验收环境并提交 PR 后执行目标平台矩阵 |
+
+Linux Debug 全量 **214/214**，`mira_m30_recording_test` 连续复跑 **25/25**，
+ASan 定向 **1/1**。严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。
+日志见 `/tmp/mira-m30-early-debug-*.log`、`/tmp/mira-m30-early-record-repeat.log`、
+`/tmp/mira-m30-early-asan-*.log`、`/tmp/mira-m30-early-tidy.log` 和
+`/tmp/mira-m30-early-quality-final.log`。

@@ -71,11 +71,17 @@ Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型�
 汇总各页处置。`more_pending` 为真时可以继续提交 Record。后续页失败时，已成功页仍提交，
 重试从其水位续跑。只提供旧分页接口的事件适配器每次仍处理一页。见
 [DEC-141](../decisions/DEC-141-automatic-record-pages.md)。
-支持事件切片时按绑定 Session/Task 读取，在进程内工作绑定保留同轮分页的扫描水位与
-上界，跳过记忆服务自身的审计事件。旧 EventStore 后端通过 UnsupportedCapability
-回退到会话分页。
-存储错误、超限和不一致的水位作为失败返回，已擦除 scope 的屏障继续封闭记录。
-见[事件切片](events-recovery.md#有界事件切片)。
+支持事件切片时按绑定 Session/Task 读取，每个精确写入 scope 独立保存同轮扫描水位
+和上界，跳过记忆服务自身的审计事件。默认在进程内维持水位，旧 EventStore 后端可
+通过 `UnsupportedCapability` 回退到会话分页。见[事件切片](events-recovery.md#有界事件切片)。
+
+以 `MemoryAgentConfig::durable_record_pages = true` 启用持久页回执。宿主须提供支持
+索引读取和 `ProcessCrash` 确认的事件库，并对同一工作维持唯一写入 owner。Record 在
+完成整页处置后确认回执，再推进水位。重开后在相同的主体、Session、Task 及 scope
+绑定下可继续先前的固定快照。待审批、候选截断或管线存取失败的页仍待处理，结果保留
+处置报告并设置 `more_pending`，`through_event_sequence` 指向最近已确认的水位。回执
+存储错误和不一致的水位通过失败结果返回。已擦除 scope 的屏障继续拒绝 Record。
+见 [DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md)。
 结果 consolidation 给出 Applied、PendingApproval、Rejected 等状态；待审批 mutation
 只有经过宿主当前权限/删除屏障复核后，才可通过既有 apply_pending 提交。
 

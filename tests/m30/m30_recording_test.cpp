@@ -149,6 +149,114 @@ int record_page_cap_and_failed_page_resume() {
     return 0;
 }
 
+int durable_record_resumes_each_scope_at_its_own_snapshot() {
+    MemoryAgentFixture fixture;
+    auto binding = fixture.binding();
+    const auto session_scope = binding.scopes.front();
+    const auto user_scope = memory_user_scope(binding.principal);
+    binding.scopes.push_back(user_scope);
+    MIRA_CHECK(fixture.fact(binding, "first", "a"));
+    MIRA_CHECK(fixture.fact(binding, "second", "b"));
+    MemoryAgentConfig config;
+    config.max_events = 1;
+    config.durable_record_pages = true;
+    const auto bind = [&] {
+        return fixture.service->bind(binding) && fixture.service->retire(binding.work.task_id);
+    };
+    const auto record = [&](const MemoryScope &scope,
+                            std::size_t pages = 1) -> Result<MemoryAgentResult> {
+        MemoryAgentRequest request;
+        request.task = binding.work.task_id;
+        request.mode = MemoryAgentMode::Record;
+        request.write_scope = scope;
+        request.record_page_limit = pages;
+        auto job = fixture.service->submit(std::move(request), memory_context(binding.work));
+        if (!job)
+            return job.error();
+        return job.value().result.get();
+    };
+    const auto count = [&](const MemoryScope &scope) {
+        MemoryQuery query;
+        query.scopes = {scope};
+        return fixture.memory->query(query).value().records.size();
+    };
+
+    fixture.start({}, config);
+    MIRA_CHECK(bind());
+    const auto first = record(session_scope);
+    MIRA_CHECK(first && first.value().more_pending && first.value().through_event_sequence == 1);
+    MIRA_CHECK(count(session_scope) == 1 && count(user_scope) == 0);
+    MIRA_CHECK(fixture.fact(binding, "late", "c"));
+    const auto user = record(user_scope, 8);
+    MIRA_CHECK(user && !user.value().more_pending &&
+               user.value().consolidation.count_of(CandidateDisposition::Applied) == 3);
+    MIRA_CHECK(count(session_scope) == 1 && count(user_scope) == 3);
+    MIRA_CHECK(fixture.service->close());
+    fixture.service.reset();
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    MIRA_CHECK(fixture.memory->close());
+    SqliteMemoryStoreOptions options;
+    options.path = fixture.root / "memory.db";
+    auto reopened = SqliteMemoryStore::open(fixture.executor, options);
+    MIRA_CHECK(reopened);
+    fixture.memory = std::shared_ptr<SqliteMemoryStore>{std::move(reopened).value()};
+    fixture.runtime = RuntimeId::generate();
+    fixture.start({}, config);
+    MIRA_CHECK(bind());
+
+    const auto resumed = record(session_scope, 8);
+    MIRA_CHECK(resumed && !resumed.value().more_pending &&
+               resumed.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(count(session_scope) == 2);
+    const auto later = record(session_scope, 8);
+    MIRA_CHECK(later && !later.value().more_pending &&
+               later.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
+    const auto replay = record(user_scope, 8);
+    MIRA_CHECK(replay && replay.value().consolidation.candidates_examined == 0);
+    MIRA_CHECK(count(session_scope) == 3 && count(user_scope) == 3);
+    MIRA_CHECK(fixture.service->erase_scope(session_scope));
+    MIRA_CHECK(fixture.service->close());
+    fixture.service.reset();
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    fixture.start({}, config);
+    const auto erased = fixture.service->bind(binding);
+    MIRA_CHECK(!erased && erased.error().code == ErrorCode::PermissionDenied);
+    return 0;
+}
+
+int durable_record_preserves_an_unapproved_page() {
+    MemoryAgentFixture fixture;
+    auto binding = fixture.binding();
+    binding.scopes = {memory_user_scope(binding.principal)};
+    MIRA_CHECK(fixture.fact(binding, "first", "a"));
+    MIRA_CHECK(fixture.fact(binding, "second", "b"));
+    MemoryAgentConfig config;
+    config.max_events = 1;
+    config.durable_record_pages = true;
+    config.consolidation.approval_required_kinds = {MemoryKind::Preference};
+    fixture.start({}, config);
+    MIRA_CHECK(fixture.service->bind(binding));
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.mode = MemoryAgentMode::Record;
+    request.write_scope = binding.scopes.front();
+    request.record_page_limit = 8;
+    const auto first = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(first);
+    const auto &held = first.value().result.get();
+    MIRA_CHECK(held && held.value().more_pending && held.value().through_event_sequence == 0 &&
+               held.value().consolidation.pending_approval.size() == 1);
+    MIRA_CHECK(MemoryConsolidator::apply_pending(
+        *fixture.memory, held.value().consolidation.pending_approval.front()));
+    const auto retry = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(retry);
+    const auto &advanced = retry.value().result.get();
+    MIRA_CHECK(advanced && advanced.value().more_pending &&
+               advanced.value().through_event_sequence == 1 &&
+               advanced.value().consolidation.pending_approval.size() == 1);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -156,5 +264,9 @@ int main() {
         return result;
     if (const auto result = settlement_drains_the_fixed_event_snapshot(); result != 0)
         return result;
-    return record_page_cap_and_failed_page_resume();
+    if (const auto result = record_page_cap_and_failed_page_resume(); result != 0)
+        return result;
+    if (const auto result = durable_record_resumes_each_scope_at_its_own_snapshot(); result != 0)
+        return result;
+    return durable_record_preserves_an_unapproved_page();
 }
