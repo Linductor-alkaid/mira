@@ -19,6 +19,24 @@ Error invalid_completion_event() {
     return interaction_error(ErrorCode::DataLoss, InteractionDomainCode::RuntimeCommandFailed,
                              "verified task completion evidence is invalid");
 }
+
+bool successful_completion(const TaskSnapshot &state) {
+    return state.state == TaskState::Completed && state.terminal_outcome &&
+           state.terminal_outcome->terminal_state == TaskState::Completed &&
+           !state.terminal_outcome->error && state.control_sequence != 0 &&
+           state.updated_at.wall.time_since_epoch().count() > 0;
+}
+
+Result<void> check_publication_context(const OperationContext &context) {
+    if (context.cancelled())
+        return interaction_error(ErrorCode::Cancelled, InteractionDomainCode::RuntimeCommandFailed,
+                                 "task completion publication was cancelled");
+    if (context.expired(Timestamp::now()))
+        return interaction_error(ErrorCode::DeadlineExceeded,
+                                 InteractionDomainCode::RuntimeCommandTimeout,
+                                 "task completion publication expired", true);
+    return {};
+}
 } // namespace
 
 Result<VerifiedTaskCompletion> parse_verified_task_completion(const EventEnvelope &event) {
@@ -47,22 +65,24 @@ Result<VerifiedTaskCompletion> parse_verified_task_completion(const EventEnvelop
                                   WallTimePoint{std::chrono::nanoseconds{completion_ns}}};
 }
 
-Result<AppendReceipt>
-InteractionCoordinator::record_verified_task_completion(const PrincipalContext &principal,
-                                                        TaskId task) {
-    const std::lock_guard lock(impl_->submit_mutex);
-    if (!impl_->initialized || impl_->stopping.load(std::memory_order_acquire) || !impl_->events ||
-        impl_->runtime_id.is_nil())
+Result<TaskSnapshot>
+InteractionCoordinator::Impl::owned_completion_task(const PrincipalContext &principal, TaskId task,
+                                                    std::optional<SessionId> expected) const {
+    if (!initialized || stopping.load(std::memory_order_acquire) || !events || runtime_id.is_nil())
         return interaction_error(ErrorCode::Unavailable, InteractionDomainCode::LedgerUnavailable,
                                  "the task completion event store is unavailable");
-    if (!interaction_support::permitted(principal, impl_->config))
+    if (!interaction_support::permitted(principal, config))
         return interaction_error(ErrorCode::PermissionDenied,
                                  InteractionDomainCode::PermissionDenied,
                                  "the principal cannot record task completion");
-    const auto snapshot = impl_->runtime.task_snapshot(task);
+    auto snapshot = runtime.task_snapshot(task);
     if (!snapshot)
         return snapshot.error();
-    const auto session = impl_->runtime.session_snapshot(snapshot.value().session_id);
+    if (expected && snapshot.value().session_id != *expected)
+        return interaction_error(ErrorCode::PermissionDenied,
+                                 InteractionDomainCode::PermissionDenied,
+                                 "the task does not belong to the dispatched session");
+    const auto session = runtime.session_snapshot(snapshot.value().session_id);
     if (!session)
         return session.error();
     if (session.value().principal.tenant_id != principal.tenant_id ||
@@ -70,29 +90,26 @@ InteractionCoordinator::record_verified_task_completion(const PrincipalContext &
         return interaction_error(ErrorCode::PermissionDenied,
                                  InteractionDomainCode::PermissionDenied,
                                  "the task is outside the principal's session ownership");
-    const auto &state = snapshot.value();
-    if (state.state != TaskState::Completed || !state.terminal_outcome ||
-        state.terminal_outcome->terminal_state != TaskState::Completed ||
-        state.terminal_outcome->error || state.control_sequence == 0 ||
-        state.updated_at.wall.time_since_epoch().count() <= 0)
-        return interaction_error(ErrorCode::InvalidState,
-                                 InteractionDomainCode::RuntimeCommandFailed,
-                                 "the task has no successful Runtime completion");
+    return snapshot;
+}
 
+Result<AppendReceipt>
+InteractionCoordinator::Impl::append_verified_completion(const PrincipalContext &principal,
+                                                         const TaskSnapshot &state) {
     const auto payload = to_json_string(JsonValue::Object{
         {"tenant", principal.tenant_id.to_string()},
         {"user", principal.user_id.to_string()},
         {"completed_at_ns", state.updated_at.wall.time_since_epoch().count()},
     });
     const AppendRequest request{
-        completion_event_id(impl_->runtime_id, state.session_id, task),
-        impl_->runtime_id,
+        completion_event_id(runtime_id, state.session_id, state.id),
+        runtime_id,
         state.session_id,
-        task,
+        state.id,
         {std::string(kVerifiedTaskCompletionEvent), payload, EventClass::Critical},
         state.control_sequence,
         Durability::ProcessCrash};
-    auto result = impl_->events->append(request);
+    auto result = events->append(request);
     if (!result)
         return result.error();
     if (result.value().achieved < Durability::ProcessCrash ||
@@ -101,5 +118,50 @@ InteractionCoordinator::record_verified_task_completion(const PrincipalContext &
         return interaction_error(ErrorCode::DataLoss, InteractionDomainCode::LedgerUnavailable,
                                  "task completion evidence was not durably acknowledged");
     return result;
+}
+
+Result<AppendReceipt>
+InteractionCoordinator::record_verified_task_completion(const PrincipalContext &principal,
+                                                        TaskId task) {
+    const std::lock_guard lock(impl_->submit_mutex);
+    const auto state = impl_->owned_completion_task(principal, task, {});
+    if (!state)
+        return state.error();
+    if (!successful_completion(state.value()))
+        return interaction_error(ErrorCode::InvalidState,
+                                 InteractionDomainCode::RuntimeCommandFailed,
+                                 "the task has no successful Runtime completion");
+    return impl_->append_verified_completion(principal, state.value());
+}
+
+Result<bool>
+InteractionCoordinator::publish_verified_task_completion_if_ready(const PrincipalContext &principal,
+                                                                  SessionId session, TaskId task,
+                                                                  const OperationContext &context) {
+    if (session.is_nil() || task.is_nil())
+        return interaction_error(ErrorCode::InvalidArgument, InteractionDomainCode::InputInvalid,
+                                 "completion publication requires a concrete task and session");
+    if (const auto ready = check_publication_context(context); !ready)
+        return ready.error();
+    // An input submission may hold this lock while awaiting work on this Executor.
+    const std::unique_lock lock(impl_->submit_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return interaction_error(
+            ErrorCode::ResourceExhausted, InteractionDomainCode::ExecutorRejected,
+            "the coordinator is busy during task completion publication", true);
+    const auto state = impl_->owned_completion_task(principal, task, session);
+    if (!state) {
+        if (state.error().code == ErrorCode::NotFound)
+            return false;
+        return state.error();
+    }
+    if (!successful_completion(state.value()))
+        return false;
+    if (const auto ready = check_publication_context(context); !ready)
+        return ready.error();
+    if (const auto published = impl_->append_verified_completion(principal, state.value());
+        !published)
+        return published.error();
+    return true;
 }
 } // namespace mira

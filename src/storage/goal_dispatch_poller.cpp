@@ -184,6 +184,45 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
             });
     }
 
+    Result<bool> reconcile_completion(const GoalDispatchKey &key, const OperationContext &context) {
+        const auto result =
+            store->reconcile_dispatch_completion(key, *options.completion_events, context);
+        if (!result)
+            return result.error();
+        if (result.value() || !options.publish_completion)
+            return result.value().has_value();
+
+        const auto dispatch = store->read_dispatch(key.goal);
+        if (!dispatch)
+            return dispatch.error();
+        if (!dispatch.value() || dispatch.value()->key != key || !dispatch.value()->submission)
+            return false;
+        if (context.cancelled())
+            return poll_error(ErrorCode::Cancelled, "goal completion publication was cancelled");
+        if (context.expired(Timestamp::now()))
+            return poll_error(ErrorCode::DeadlineExceeded, "goal completion publication expired");
+
+        const auto &submission = *dispatch.value()->submission;
+        auto publication_context = context;
+        publication_context.operation = key.operation;
+        publication_context.session = submission.session;
+        publication_context.task = submission.task;
+        const auto published = options.publish_completion(key, submission, publication_context);
+        if (!published)
+            return published.error();
+        if (!published.value())
+            return false;
+
+        const auto fulfilled =
+            store->reconcile_dispatch_completion(key, *options.completion_events, context);
+        if (!fulfilled)
+            return fulfilled.error();
+        if (fulfilled.value())
+            return true;
+        return poll_error(ErrorCode::Unavailable,
+                          "published completion is unavailable for the dispatched goal");
+    }
+
     void poll_fulfillments(const OperationContext &context, GoalDispatchPollerStatus &report) {
         if (!options.completion_events)
             return;
@@ -194,15 +233,18 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
             },
             [](const GoalDispatchKey &key) { return key.goal.id; },
             [&](const GoalDispatchKey &key) {
-                const auto result =
-                    store->reconcile_dispatch_completion(key, *options.completion_events, context);
-                if (!result) {
-                    if (!context.cancelled() || result.error().code != ErrorCode::Cancelled)
-                        report_failure(report, result.error());
-                    return;
+                try {
+                    const auto result = reconcile_completion(key, context);
+                    if (!result) {
+                        if (!context.cancelled() || result.error().code != ErrorCode::Cancelled)
+                            report_failure(report, result.error());
+                    } else if (result.value()) {
+                        ++report.fulfilled;
+                    }
+                } catch (...) {
+                    report_failure(report, poll_error(ErrorCode::Internal,
+                                                      "goal completion reconciliation failed"));
                 }
-                if (result.value())
-                    ++report.fulfilled;
             });
     }
 
@@ -307,6 +349,9 @@ GoalDispatchPoller::start(kairo::Executor &executor, std::shared_ptr<SqliteGoalS
         options.interval > std::chrono::hours{1} || options.scan_timeout.count() <= 0 ||
         options.scan_timeout > std::chrono::minutes{1})
         return poll_error(ErrorCode::InvalidArgument, "invalid goal dispatch poller configuration");
+    if (options.publish_completion && !options.completion_events)
+        return poll_error(ErrorCode::InvalidArgument,
+                          "goal completion publication needs an event store");
     auto state = std::make_shared<State>(executor, std::move(store), owner, std::move(submit),
                                          std::move(options), std::move(submit_recurring));
     auto poller = std::unique_ptr<GoalDispatchPoller>(new GoalDispatchPoller(state));

@@ -11,12 +11,18 @@ namespace mira {
 
 struct OperationContext;
 
+// Publishes the live task's verified completion into completion_events under
+// current host authorization. Returns false if the task has no new evidence.
+using GoalCompletionPublisher = std::function<Result<bool>(
+    const GoalDispatchKey &, const GoalDispatchSubmission &, const OperationContext &)>;
+
 struct GoalDispatchPollerOptions final {
     std::chrono::milliseconds interval{1000};
     std::chrono::milliseconds scan_timeout{5000};
     std::size_t page_size = 32;
     // Opt in to fulfillment from the host's trusted task event store.
     std::shared_ptr<IEventStore> completion_events = {};
+    GoalCompletionPublisher publish_completion = {};
 };
 
 struct GoalDispatchPollerStatus final {

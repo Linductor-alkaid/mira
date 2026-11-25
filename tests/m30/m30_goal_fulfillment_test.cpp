@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#include <future>
 
 namespace {
 using namespace mira;
@@ -328,6 +329,13 @@ int poller_reconciles_existing_receipts_after_restart() {
     }));
     MIRA_CHECK(fixture.wait_for([&] { return now_ms() >= expires; }));
     GoalDispatchPollerOptions options{10ms, 2s, 1, fixture.events};
+    std::atomic<std::size_t> unnecessary_publications{0};
+    options.publish_completion = [&](const GoalDispatchKey &key, const GoalDispatchSubmission &,
+                                     const OperationContext &) -> Result<bool> {
+        if (key.goal == completed)
+            ++unnecessary_publications;
+        return false;
+    };
     auto started = GoalDispatchPoller::start(
         fixture.host.executor_, fixture.goals, fixture.owner,
         [&](const GoalRecord &goal, const GoalDispatchKey &,
@@ -369,6 +377,154 @@ int poller_reconciles_existing_receipts_after_restart() {
     const auto refreshed = poller->status();
     MIRA_CHECK(!refreshed.running && refreshed.fulfilled == 0 && refreshed.submitted == 0 &&
                refreshed.failures == 0);
+    MIRA_CHECK(unnecessary_publications.load() == 0);
+    return 0;
+}
+
+int poller_publishes_live_completion_and_settles_under_current_authorization() {
+    FulfillmentFixture fixture;
+    const auto live = fixture.submit("publish-when-complete");
+    const auto failed = fixture.submit("leave-failed-pending");
+    MIRA_CHECK(live && live.value().task_id && live.value().session_id && failed &&
+               failed.value().task_id && failed.value().session_id);
+    const auto now = now_ms();
+    const GoalKey completed = ordered_goal(fixture.owner, 2);
+    const GoalKey failed_goal = ordered_goal(fixture.owner, 1);
+    MIRA_CHECK(
+        fixture.record_dispatch(completed, {*live.value().session_id, *live.value().task_id, now}));
+    MIRA_CHECK(fixture.record_dispatch(failed_goal,
+                                       {*failed.value().session_id, *failed.value().task_id, now}));
+    MIRA_CHECK(fixture.complete(*failed.value().task_id, TaskState::Failed));
+
+    auto &coordinator = *fixture.host.coordinator_;
+    auto context = make_control_context();
+    const auto mismatched_session = coordinator.publish_verified_task_completion_if_ready(
+        fixture.principal, SessionId::generate(), *live.value().task_id, context);
+    MIRA_CHECK(!mismatched_session &&
+               mismatched_session.error().code == ErrorCode::PermissionDenied);
+    const auto missing = coordinator.publish_verified_task_completion_if_ready(
+        fixture.principal, *live.value().session_id, TaskId::generate(), context);
+    MIRA_CHECK(missing && !missing.value());
+    context.cancellation_requested = [] { return true; };
+    const auto cancelled = coordinator.publish_verified_task_completion_if_ready(
+        fixture.principal, *live.value().session_id, *live.value().task_id, context);
+    MIRA_CHECK(!cancelled && cancelled.error().code == ErrorCode::Cancelled);
+
+    {
+        GoalDispatchPollerOptions false_ack{10ms, 2s, 1};
+        false_ack.publish_completion = [](const GoalDispatchKey &, const GoalDispatchSubmission &,
+                                          const OperationContext &) -> Result<bool> {
+            return true;
+        };
+        MIRA_CHECK(!GoalDispatchPoller::start(fixture.host.executor_, fixture.goals, fixture.owner,
+                                              {}, false_ack));
+        false_ack.completion_events = fixture.events;
+        auto started = GoalDispatchPoller::start(fixture.host.executor_, fixture.goals,
+                                                 fixture.owner, {}, false_ack);
+        MIRA_CHECK(started);
+        auto poller = std::move(started).value();
+        MIRA_CHECK(fixture.wait_for([&] { return poller->status().failures > 0; }));
+        MIRA_CHECK(poller->close());
+        const auto status = poller->status();
+        MIRA_CHECK(status.fulfilled == 0 && status.last_error &&
+                   status.last_error->code == ErrorCode::Unavailable);
+    }
+
+    std::atomic<bool> allow_publication{false};
+    std::atomic<std::size_t> checked_live{0};
+    GoalDispatchPollerOptions options{10ms, 2s, 1, fixture.events};
+    options.publish_completion = [&](const GoalDispatchKey &key,
+                                     const GoalDispatchSubmission &receipt,
+                                     const OperationContext &attempt) -> Result<bool> {
+        if (attempt.operation != key.operation || attempt.session != receipt.session ||
+            attempt.task != receipt.task)
+            return interaction_error(ErrorCode::InvalidState,
+                                     InteractionDomainCode::RuntimeCommandFailed,
+                                     "unexpected publication context");
+        auto principal = fixture.principal;
+        if (!allow_publication.load())
+            principal.grants.clear();
+        auto result = coordinator.publish_verified_task_completion_if_ready(
+            principal, receipt.session, receipt.task, attempt);
+        if (result && key.goal == completed)
+            ++checked_live;
+        return result;
+    };
+    auto started = GoalDispatchPoller::start(fixture.host.executor_, fixture.goals, fixture.owner,
+                                             {}, options);
+    MIRA_CHECK(started);
+    auto poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().failures > 0; }));
+    const auto denied = poller->status();
+    MIRA_CHECK(denied.last_error && denied.last_error->code == ErrorCode::PermissionDenied);
+    allow_publication.store(true);
+    MIRA_CHECK(fixture.wait_for([&] { return checked_live.load() >= 1; }));
+    MIRA_CHECK(fixture.goals->read(completed).value()->state == GoalState::Pending);
+    MIRA_CHECK(fixture.complete(*live.value().task_id));
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().fulfilled == 1; }));
+    MIRA_CHECK(poller->close());
+    const auto completed_record = fixture.goals->read(completed);
+    MIRA_CHECK(completed_record && completed_record.value()->state == GoalState::Fulfilled &&
+               completed_record.value()->resolution);
+    MIRA_CHECK(fixture.goals->read(failed_goal).value()->state == GoalState::Pending);
+
+    EventSliceQuery query;
+    query.session_id = *live.value().session_id;
+    query.task_id = *live.value().task_id;
+    query.event_type = kVerifiedTaskCompletionEvent;
+    const auto events = fixture.events->read_slice(query);
+    MIRA_CHECK(events && events.value().events.size() == 1 &&
+               events.value().events.front().event_id ==
+                   completed_record.value()->resolution->evidence);
+    const auto replay = coordinator.publish_verified_task_completion_if_ready(
+        fixture.principal, *live.value().session_id, *live.value().task_id, make_control_context());
+    MIRA_CHECK(replay && replay.value());
+    MIRA_CHECK(fixture.events->read_slice(query).value().events.size() == 1);
+    return 0;
+}
+
+int publication_yields_when_the_coordinator_is_busy() {
+    FulfillmentFixture fixture;
+    const auto work = fixture.submit("completed-while-coordinator-busy");
+    MIRA_CHECK(work && work.value().task_id && work.value().session_id);
+    MIRA_CHECK(fixture.complete(*work.value().task_id));
+
+    std::promise<void> entered;
+    auto waiting_for_entry = entered.get_future();
+    std::promise<void> release;
+    auto waiting_for_release = release.get_future();
+    auto &coordinator = *fixture.host.coordinator_;
+    coordinator.set_route_resolver(
+        [&](const InputEnvelope &, const PrincipalState &) -> std::optional<RouteSuggestion> {
+            entered.set_value();
+            (void)waiting_for_release.wait_for(3s);
+            return std::nullopt;
+        });
+    auto submit = fixture.host.executor_.submit_auto([&] {
+        return fixture.host.submit(
+            fixture.host.envelope("contending-input", "Review another file", fixture.principal));
+    });
+    const auto entered_status = waiting_for_entry.wait_for(2s);
+    if (entered_status != std::future_status::ready) {
+        release.set_value();
+        (void)submit.get();
+        MIRA_CHECK(entered_status == std::future_status::ready);
+    }
+    auto publish = fixture.host.executor_.submit_auto([&] {
+        return coordinator.publish_verified_task_completion_if_ready(
+            fixture.principal, *work.value().session_id, *work.value().task_id,
+            make_control_context());
+    });
+    const auto publish_status = publish.wait_for(500ms);
+    release.set_value();
+    const auto observed = publish.get();
+    const auto input = submit.get();
+    MIRA_CHECK(input && publish_status == std::future_status::ready);
+    MIRA_CHECK(!observed && observed.error().code == ErrorCode::ResourceExhausted &&
+               observed.error().retryable);
+    const auto published = coordinator.publish_verified_task_completion_if_ready(
+        fixture.principal, *work.value().session_id, *work.value().task_id, make_control_context());
+    MIRA_CHECK(published && published.value());
     return 0;
 }
 } // namespace
@@ -379,5 +535,11 @@ int main() {
     if (const int result = fulfillment_respects_dispatch_owner_version_and_current_access();
         result != 0)
         return result;
-    return poller_reconciles_existing_receipts_after_restart();
+    if (const int result = poller_reconciles_existing_receipts_after_restart(); result != 0)
+        return result;
+    if (const int result =
+            poller_publishes_live_completion_and_settles_under_current_authorization();
+        result != 0)
+        return result;
+    return publication_yields_when_the_coordinator_is_busy();
 }

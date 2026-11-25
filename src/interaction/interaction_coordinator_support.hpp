@@ -194,6 +194,11 @@ class InteractionCoordinator::Impl final {
     recovery_environment(const PrincipalContext &, TaskId);
     [[nodiscard]] Result<SessionSequence> append_task_event(TaskId, SessionId, std::string,
                                                             JsonValue);
+    // Called under submit_mutex.
+    [[nodiscard]] Result<TaskSnapshot> owned_completion_task(const PrincipalContext &, TaskId,
+                                                             std::optional<SessionId>) const;
+    [[nodiscard]] Result<AppendReceipt> append_verified_completion(const PrincipalContext &,
+                                                                   const TaskSnapshot &);
     [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
                                                            const LedgerEntry &);
     void stage_memory(const InputEnvelope &, const PrincipalTaskEntry &);

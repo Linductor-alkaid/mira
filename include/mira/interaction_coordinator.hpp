@@ -631,6 +631,11 @@ class InteractionCoordinator final {
     // Appends one durable event for an owned task whose Runtime completed it.
     [[nodiscard]] Result<AppendReceipt> record_verified_task_completion(const PrincipalContext &,
                                                                         TaskId);
+    // For polling a task from a dispatch receipt. Returns false when no live
+    // successful completion is available. Contended coordinator admission is retryable.
+    [[nodiscard]] Result<bool> publish_verified_task_completion_if_ready(const PrincipalContext &,
+                                                                         SessionId, TaskId,
+                                                                         const OperationContext &);
     // Records an explicit rejection of an accepted input.
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);

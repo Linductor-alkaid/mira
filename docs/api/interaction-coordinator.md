@@ -282,6 +282,11 @@ Runtime 快照，校验会话的租户与用户归属及无错误的 `Completed`
 已确认进程崩溃后可恢复。`record_settlement` 仍报告输入台账阶段，二者各有调用入口。
 见[目标兑现](durable-memory-host.md#按任务完成证据兑现一次性目标)。
 
+周期派发器调用 `publish_verified_task_completion_if_ready` 时，协调层额外校验派发会话，
+检查本轮取消与截止时间。任务没有合格的 live 完成终态时返回 `false`，持久写入确认后
+返回 `true`。与输入准入竞争时，发布返回可重试的 `ResourceExhausted`。
+见[周期核对](durable-memory-host.md#自动核对完成证据)。
+
 ## 错误域
 
 `Error::domain == "mira.interaction"`，`domain_code` 是稳定枚举

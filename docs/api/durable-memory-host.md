@@ -480,6 +480,27 @@ auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, {}, optio
 尚无提交回执或完成证据。事件读取和持久化的其他失败返回原错误。宿主从外部关闭派发器
 后再关闭事件库、目标库和 Executor。见 [DEC-150](../decisions/DEC-150-goal-fulfillment-polling.md)。
 
+任务还在当前 Runtime 时，宿主可用 `GoalDispatchPollerOptions::publish_completion` 自动
+补齐证据。派发器先查持久证据，再在需要时调用宿主。回调使用回执的任务、会话和操作 ID，
+从当前宿主认证上下文取得归属主体，与协调层共用 `completion_events`。回调须遵守截止
+时间和取消，并在同一 Executor 的工作线程内有界返回。
+
+```cpp
+options.publish_completion = [&] (const GoalDispatchKey &key,
+                                  const GoalDispatchSubmission &submission,
+                                  const OperationContext &context) -> Result<bool> {
+    auto principal = current_principal(key.goal.owner);
+    if (!principal)
+        return principal.error();
+    return coordinator.publish_verified_task_completion_if_ready(
+        principal.value(), submission.session, submission.task, context);
+};
+```
+
+回调返回 `true` 后，派发器再从事件库验证证据并结算。协调层忙时返回可重试的背压，
+后续分页继续核对。已经失去 live 快照的任务只能依靠先前持久化的完成证据补结算。
+见 [DEC-151](../decisions/DEC-151-live-goal-completion-publication.md)。
+
 ## 重复计划与触发回执
 
 `SqliteGoalStore` schema 1.1 为固定 UTC 间隔的重复计划保存独立命名空间。计划的
