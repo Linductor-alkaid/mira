@@ -543,6 +543,17 @@ struct MemoryLifecycleStatus final {
     std::optional<Error> error;
 };
 
+inline constexpr std::string_view kVerifiedTaskCompletionEvent = "mira.task.verified-completion.v1";
+
+struct VerifiedTaskCompletion final {
+    TenantId tenant;
+    UserId user;
+    WallTimePoint completed_at;
+};
+
+// Validates the envelope and payload from the host's trusted task event store.
+[[nodiscard]] Result<VerifiedTaskCompletion> parse_verified_task_completion(const EventEnvelope &);
+
 class InteractionCoordinator final {
   public:
     // The executor is injected explicitly: MiraRuntime does not expose its
@@ -617,6 +628,9 @@ class InteractionCoordinator final {
     // Records the terminal state of the task behind an accepted input.
     [[nodiscard]] Result<InputDisposition> record_settlement(std::string_view input_id,
                                                              TaskState terminal);
+    // Appends one durable event for an owned task whose Runtime completed it.
+    [[nodiscard]] Result<AppendReceipt> record_verified_task_completion(const PrincipalContext &,
+                                                                        TaskId);
     // Records an explicit rejection of an accepted input.
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);

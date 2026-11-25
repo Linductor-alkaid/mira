@@ -16,6 +16,8 @@ class Executor;
 
 namespace mira {
 
+class IEventStore;
+
 struct GoalOwner final {
     TenantId tenant;
     UserId user;
@@ -272,6 +274,8 @@ class SqliteGoalStore final {
     read_dispatch(const GoalKey &key) const;
     [[nodiscard]] Result<GoalDispatchReceipt>
     record_dispatch_submission(const GoalDispatchKey &key, GoalDispatchSubmission submission);
+    // Reads completion evidence from the trusted task event store for this dispatch.
+    [[nodiscard]] Result<GoalRecord> fulfill_dispatch(const GoalDispatchKey &, IEventStore &);
     [[nodiscard]] Result<GoalListPage> list(const GoalListQuery &query) const;
     [[nodiscard]] Result<void> erase(const GoalKey &key);
     [[nodiscard]] Result<GoalRecord> correct(const GoalKey &key, std::uint64_t expected_revision,

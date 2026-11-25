@@ -274,6 +274,14 @@ schema repair 完成及下一次 action/tool/答案准入前检查队列。旧�
 放外部账号信息或凭据。事件写在**主体级专用分区**，不混入 Session/Task 流，因此
 会话对话投影与 checkpoint 投影不受影响。
 
+### Runtime 任务完成证据
+
+宿主调用 `record_verified_task_completion(principal, task_id)` 后，协调层在当前授权下读取
+Runtime 快照，校验会话的租户与用户归属及无错误的 `Completed` 终态，再向任务会话写入
+`mira.task.verified-completion.v1`。相同任务重复调用返回原事件序号，返回成功代表事件库
+已确认进程崩溃后可恢复。`record_settlement` 仍报告输入台账阶段，二者各有调用入口。
+见[目标兑现](durable-memory-host.md#按任务完成证据兑现一次性目标)。
+
 ## 错误域
 
 `Error::domain == "mira.interaction"`，`domain_code` 是稳定枚举

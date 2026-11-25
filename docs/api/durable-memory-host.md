@@ -424,6 +424,22 @@ auto submitted = goals->record_dispatch_submission(prepared.value().key,
 `RecordDispatchSubmission` 核对授权。集合查询依归属授权，其他操作带目标 ID。
 实际任务提交由协调层接线负责。见 [DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
+### 按任务完成证据兑现一次性目标
+
+任务实际进入无错误的 `Completed` 终态后，宿主通过协调层保存完成证据。该事件和目标
+派发回执共同确定哪一个任务完成了原版本的目标。
+
+```cpp
+auto evidence = coordinator.record_verified_task_completion(principal, task_id);
+// 确认 evidence 成功，或在重启后从同一持久事件库补跑结算。
+auto fulfilled = goals->fulfill_dispatch(dispatch_key, task_events);
+```
+
+`fulfill_dispatch` 按回执中的会话和任务读取唯一完成证据，并检查证据归属、持久化及完成
+时间。已授权的重试返回原结算。目标被纠正、取消、擦除，或完成发生在过期时间之后时，
+原派发无法覆盖当前状态。授权型目标库分别核对 `ReadDispatch` 和 `Settle`。
+见 [DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)。
+
 ### 周期检查到期目标和计划
 
 `GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的待派发列表。每轮

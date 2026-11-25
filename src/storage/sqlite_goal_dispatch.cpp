@@ -1,5 +1,7 @@
 #include "sqlite_goal_store_internal.hpp"
 
+#include <mira/interaction_coordinator.hpp>
+
 #include <limits>
 
 namespace mira {
@@ -156,6 +158,50 @@ SqliteGoalStore::record_dispatch_submission(const GoalDispatchKey &key,
         {key.goal.owner, GoalStoreResource::Goal, GoalStoreOperation::RecordDispatchSubmission,
          key.goal.id},
         [key, submission](sqlite3 *db) { return record_dispatch_row(db, key, submission); });
+}
+
+Result<GoalRecord> SqliteGoalStore::fulfill_dispatch(const GoalDispatchKey &key,
+                                                     IEventStore &events) {
+    if (!valid_key(key.goal) || !valid_dispatch_revision(key.revision) || key.operation.is_nil())
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal dispatch identity");
+    const auto dispatch = read_dispatch(key.goal);
+    if (!dispatch)
+        return dispatch.error();
+    if (!dispatch.value() || dispatch.value()->key != key || !dispatch.value()->submission)
+        return goal_error(ErrorCode::NotFound, "the dispatched task is unavailable");
+    const auto &submission = *dispatch.value()->submission;
+    EventSliceQuery query;
+    query.session_id = submission.session;
+    query.task_id = submission.task;
+    query.event_type = kVerifiedTaskCompletionEvent;
+    query.limit = 2;
+    query.scan_limit = 4096;
+    query.byte_limit = 1024;
+    const auto page = events.read_slice(query);
+    if (!page)
+        return page.error();
+    if (page.value().events.size() > 1)
+        return goal_error(ErrorCode::DataLoss, "the dispatched task has conflicting completions");
+    if (page.value().has_more)
+        return goal_error(ErrorCode::ResourceExhausted, "completion search exceeds its bound");
+    if (page.value().events.empty())
+        return goal_error(ErrorCode::NotFound, "the dispatched task has no durable completion");
+    const auto &event = page.value().events.front();
+    if (event.session_id != submission.session || event.task_id != submission.task ||
+        event.session_sequence > page.value().scanned_through ||
+        event.session_sequence > page.value().snapshot_through)
+        return goal_error(ErrorCode::DataLoss, "completion is outside the dispatched task");
+    const auto completion = parse_verified_task_completion(event);
+    if (!completion)
+        return completion.error();
+    const auto at = std::chrono::floor<std::chrono::milliseconds>(completion.value().completed_at);
+    if (completion.value().tenant != key.goal.owner.tenant ||
+        completion.value().user != key.goal.owner.user || at < submission.submitted_at)
+        return goal_error(ErrorCode::InvalidState,
+                          "completion does not match the dispatch owner or time");
+    if (const auto durable = events.flush(Durability::ProcessCrash); !durable)
+        return durable.error();
+    return settle(key.goal, key.revision, {GoalState::Fulfilled, event.event_id, at});
 }
 
 } // namespace mira

@@ -378,6 +378,10 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 一次性目标的稳定派发操作 ID、目标版本和准备时点，以及提交后保存的任务、会话与
 提交时点。重试按原操作 ID 对账，目标兑现单独结算。见[DEC-145](../decisions/DEC-145-durable-goal-dispatch-receipts.md)。
 
+**Verified Task Completion（任务完成证据）**：
+协调层核对当前主体归属后，依据 Runtime 无错误完成终态写入的持久任务事件。一次性目标
+可按派发回执引用此事件兑现。见[DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)。
+
 **Goal Calendar Rule（目标日历规则）**：
 计划的本地时分、星期选择及带版本的时区偏移快照，用于计算确定的 UTC 触发时间。
 见[DEC-132](../decisions/DEC-132-calendar-goal-plans.md)。
