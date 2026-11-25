@@ -5,6 +5,7 @@
 #include <mira/security.hpp>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -88,6 +89,11 @@ struct TaskSubmission final {
     CommandHandle command;
 };
 
+// Bounded local persistence before the task becomes visible. Invoked on the
+// Runtime control lane without the records mutex. Must not reenter Runtime or
+// wait for another task on its Executor.
+using TaskAdmissionRecorder = std::function<Result<void>(const TaskSnapshot &, TenantId, UserId)>;
+
 struct SessionSnapshot final {
     SessionId id;
     SessionState state = SessionState::Opening;
@@ -106,6 +112,8 @@ class MiraRuntime final {
     Result<SessionSubmission> open_session(std::shared_ptr<IEnvironment> environment,
                                            SessionConfig config = {});
     Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task);
+    Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task,
+                                       TaskAdmissionRecorder recorder);
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
     Result<CommandHandle> cancel_task(TaskId task_id);
@@ -140,6 +148,7 @@ class MiraRuntime final {
     ShutdownReport finish_shutdown();
 
   private:
+    Result<TaskSubmission> submit_task_impl(SessionId, TaskSpec, TaskAdmissionRecorder);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

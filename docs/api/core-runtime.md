@@ -97,6 +97,9 @@ auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pendi
 - `open_session` 注入 `std::shared_ptr<IEnvironment>`；Runtime 不拥有平台资源。
 - `TaskSpec::admission_operation` 可携带宿主的稳定准入操作 ID。提交命令结果和
   `TaskSnapshot` 保留该标识，供[协调层持久对账](interaction-coordinator.md#持久任务准入回执)。
+- 三参数 `submit_task` 可接收 `TaskAdmissionRecorder`。Runtime 在任务对外可见前等待本次
+  有界记录完成。记录器在串行控制命令中运行，期间释放 Runtime 记录锁。记录失败时，
+  命令返回 `Rejected` 和 `Failed`。参见[持久准入记录器](interaction-coordinator.md#发布前持久化准入)。
 - `begin_operation` / `admit_operation_completion` 是协调者接入点：外部驱动循环（如
   `AgentLoop`）用它声明操作边界并提交完成。`Paused` 与 `SuspendedForTakeover` 状态的
   任务不接受新操作（`InvalidState`，[DEC-018](../decisions/DEC-018-takeover-input-release-and-operation-admission.md)）；

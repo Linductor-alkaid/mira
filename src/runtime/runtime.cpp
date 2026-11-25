@@ -575,40 +575,80 @@ Result<SessionSubmission> MiraRuntime::open_session(std::shared_ptr<IEnvironment
 }
 
 Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task) {
+    return submit_task_impl(session_id, std::move(task), {});
+}
+
+Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task,
+                                                TaskAdmissionRecorder recorder) {
+    if (!recorder || !task.admission_operation)
+        return make_error(ErrorCode::InvalidArgument,
+                          "durable admission requires a recorder and a stable operation");
+    return submit_task_impl(session_id, std::move(task), std::move(recorder));
+}
+
+Result<TaskSubmission> MiraRuntime::submit_task_impl(SessionId session_id, TaskSpec task,
+                                                     TaskAdmissionRecorder recorder) {
     if (task.goal.empty())
         return make_error(ErrorCode::InvalidArgument, "task goal must not be empty");
     if (task.admission_operation && task.admission_operation->is_nil())
         return make_error(ErrorCode::InvalidArgument, "task admission operation must not be nil");
     const auto task_id = TaskId::generate();
-    auto command = impl_->enqueue(CommandKind::SubmitTask, [this, session_id, task_id,
-                                                            task = std::move(task)](
-                                                               std::uint64_t sequence,
-                                                               CommandHandle::State &state) {
-        std::lock_guard lock(impl_->records_mutex);
-        const auto session = impl_->sessions.find(session_id);
-        const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
-        if (session == impl_->sessions.end() || session->second.state != SessionState::Autonomous) {
-            const auto reason = make_error(ErrorCode::InvalidState, "session is not autonomous");
-            Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected, sequence,
-                              reason);
-            Impl::set_outcome(handle, SettlementStatus::Failed, reason);
-            return;
-        }
-        TaskSnapshot snapshot;
-        snapshot.id = task_id;
-        snapshot.session_id = session_id;
-        snapshot.state = TaskState::Idle;
-        snapshot.updated_at = Timestamp::now();
-        snapshot.control_sequence = sequence;
-        // The user constraints of the task are the ones it was created with
-        // (M28/DEC-068 §4.5); later constraints travel through the loop input
-        // seam.
-        snapshot.user_constraints = task.user_constraints;
-        snapshot.admission_operation = task.admission_operation;
-        impl_->tasks.emplace(task_id, Impl::TaskRecord{snapshot, task.goal, session_id});
-        Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
-        Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
-    });
+    auto command = impl_->enqueue(
+        CommandKind::SubmitTask,
+        [this, session_id, task_id, task = std::move(task),
+         recorder = std::move(recorder)](std::uint64_t sequence, CommandHandle::State &state) {
+            std::unique_lock lock(impl_->records_mutex);
+            const auto session = impl_->sessions.find(session_id);
+            const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
+            if (session == impl_->sessions.end() ||
+                session->second.state != SessionState::Autonomous) {
+                const auto reason =
+                    make_error(ErrorCode::InvalidState, "session is not autonomous");
+                Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected,
+                                  sequence, reason);
+                Impl::set_outcome(handle, SettlementStatus::Failed, reason);
+                return;
+            }
+            if (impl_->tasks.contains(task_id)) {
+                const auto reason = make_error(ErrorCode::AlreadyExists, "task ID collision");
+                Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected,
+                                  sequence, reason);
+                Impl::set_outcome(handle, SettlementStatus::Failed, reason);
+                return;
+            }
+            TaskSnapshot snapshot;
+            snapshot.id = task_id;
+            snapshot.session_id = session_id;
+            snapshot.state = TaskState::Idle;
+            snapshot.updated_at = Timestamp::now();
+            snapshot.control_sequence = sequence;
+            // The user constraints of the task are the ones it was created with
+            // (M28/DEC-068 §4.5); later constraints travel through the loop input
+            // seam.
+            snapshot.user_constraints = task.user_constraints;
+            snapshot.admission_operation = task.admission_operation;
+            if (recorder) {
+                const auto tenant = session->second.principal.tenant_id;
+                const auto user = session->second.principal.user_id;
+                lock.unlock();
+                Result<void> recorded;
+                try {
+                    recorded = recorder(snapshot, tenant, user);
+                } catch (...) {
+                    recorded = make_error(ErrorCode::Internal, "task admission recorder failed");
+                }
+                if (!recorded) {
+                    Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Rejected,
+                                      sequence, recorded.error());
+                    Impl::set_outcome(handle, SettlementStatus::Failed, recorded.error());
+                    return;
+                }
+                lock.lock();
+            }
+            impl_->tasks.emplace(task_id, Impl::TaskRecord{snapshot, task.goal, session_id});
+            Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
+            Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
+        });
     if (!command)
         return command.error();
     return TaskSubmission{task_id, std::move(command).value()};

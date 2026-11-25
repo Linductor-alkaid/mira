@@ -583,6 +583,17 @@ int durable_task_admission_survives_runtime_restart() {
         const auto unsafe =
             transient.lookup_task_admission(fixture.principal, dispatch.operation, context);
         MIRA_CHECK(!unsafe && unsafe.error().code == ErrorCode::UnsupportedCapability);
+        const auto guarded_operation = OperationId::generate();
+        const auto recorder = transient.make_task_admission_recorder(
+            fixture.principal, session.value().id, guarded_operation, context);
+        MIRA_CHECK(recorder);
+        const auto rejected = runtime.submit_task(
+            session.value().id, {"Require durable admission", {}, guarded_operation},
+            recorder.value());
+        MIRA_CHECK(rejected);
+        const auto terminal = rejected.value().command.outcome(5s);
+        MIRA_CHECK(terminal && terminal.value().status == SettlementStatus::Failed &&
+                   !runtime.task_snapshot(rejected.value().id));
         MIRA_CHECK(transient.close());
     }
 
@@ -611,6 +622,99 @@ int durable_task_admission_survives_runtime_restart() {
     MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
     MIRA_CHECK(!fixture.goals->read_dispatch(goal).value()->submission);
 
+    const GoalKey guarded_goal{fixture.owner, Id128::generate()};
+    MIRA_CHECK(fixture.goals->create(guarded_goal, {GoalKind::Commitment,
+                                                    "Review with durable admission",
+                                                    EventId::generate(),
+                                                    now - 2h,
+                                                    now - 2min,
+                                                    {}}));
+    const auto guarded_preparation = fixture.goals->prepare_dispatch_attempt(guarded_goal, 1, now);
+    MIRA_CHECK(guarded_preparation && guarded_preparation.value().newly_prepared);
+    const auto guarded_key = guarded_preparation.value().receipt.key;
+    const auto recorder = coordinator.make_task_admission_recorder(
+        fixture.principal, session.value().id, guarded_key.operation, context);
+    MIRA_CHECK(recorder);
+    const auto other_session = runtime.open_session(fixture.host.environment_, {foreign});
+    MIRA_CHECK(other_session && other_session.value().command.outcome(5s));
+    const auto wrong_session = runtime.submit_task(
+        other_session.value().id, {"Wrong session", {}, guarded_key.operation}, recorder.value());
+    MIRA_CHECK(wrong_session);
+    const auto rejected = wrong_session.value().command.outcome(5s);
+    MIRA_CHECK(rejected && rejected.value().status == SettlementStatus::Failed &&
+               rejected.value().error &&
+               rejected.value().error->code == ErrorCode::PermissionDenied &&
+               !runtime.task_snapshot(wrong_session.value().id));
+    const auto untouched =
+        coordinator.lookup_task_admission(fixture.principal, guarded_key.operation, context);
+    MIRA_CHECK(untouched && !untouched.value());
+
+    auto short_context = context;
+    short_context.deadline = std::chrono::steady_clock::now() + 100ms;
+    const auto expired_operation = OperationId::generate();
+    const auto expiring_recorder = coordinator.make_task_admission_recorder(
+        fixture.principal, session.value().id, expired_operation, short_context);
+    MIRA_CHECK(expiring_recorder);
+    MIRA_CHECK(fixture.wait_for([&] { return short_context.expired(Timestamp::now()); }));
+    const auto late_task = runtime.submit_task(session.value().id,
+                                               {"Expired durable admission", {}, expired_operation},
+                                               expiring_recorder.value());
+    MIRA_CHECK(late_task);
+    const auto late_result = late_task.value().command.outcome(5s);
+    MIRA_CHECK(late_result && late_result.value().status == SettlementStatus::Failed &&
+               late_result.value().error &&
+               late_result.value().error->code == ErrorCode::DeadlineExceeded &&
+               !runtime.task_snapshot(late_task.value().id));
+    const auto expired_record =
+        coordinator.lookup_task_admission(fixture.principal, expired_operation, context);
+    MIRA_CHECK(expired_record && !expired_record.value());
+
+    std::promise<void> persisted;
+    auto durable = persisted.get_future();
+    std::promise<void> publish;
+    auto publish_ready = publish.get_future();
+    const auto guarded = runtime.submit_task(
+        session.value().id, {"Review with durable admission", {}, guarded_key.operation},
+        [&](const TaskSnapshot &snapshot, TenantId tenant, UserId user) -> Result<void> {
+            const auto written = recorder.value()(snapshot, tenant, user);
+            if (!written)
+                return written.error();
+            persisted.set_value();
+            if (publish_ready.wait_for(3s) != std::future_status::ready)
+                return interaction_error(ErrorCode::DeadlineExceeded,
+                                         InteractionDomainCode::RuntimeCommandTimeout,
+                                         "fixture publication timed out");
+            return {};
+        });
+    MIRA_CHECK(guarded);
+    const auto durable_status = durable.wait_for(2s);
+    if (durable_status != std::future_status::ready) {
+        publish.set_value();
+        (void)guarded.value().command.outcome(5s);
+        MIRA_CHECK(durable_status == std::future_status::ready);
+    }
+    const auto invisible = runtime.task_snapshot(guarded.value().id);
+    const auto before_publication =
+        coordinator.lookup_task_admission(fixture.principal, guarded_key.operation, context);
+    publish.set_value();
+    const auto guarded_outcome = guarded.value().command.outcome(5s);
+    MIRA_CHECK(!invisible && invisible.error().code == ErrorCode::NotFound);
+    MIRA_CHECK(before_publication && before_publication.value() &&
+               before_publication.value()->task == guarded.value().id);
+    MIRA_CHECK(guarded_outcome && guarded_outcome.value().status == SettlementStatus::Applied &&
+               guarded_outcome.value().task);
+    const auto duplicate_guarded = runtime.submit_task(
+        session.value().id, {"Review with durable admission", {}, guarded_key.operation},
+        recorder.value());
+    MIRA_CHECK(duplicate_guarded);
+    const auto conflict_guarded = duplicate_guarded.value().command.outcome(5s);
+    MIRA_CHECK(conflict_guarded && conflict_guarded.value().status == SettlementStatus::Failed &&
+               conflict_guarded.value().error &&
+               conflict_guarded.value().error->code == ErrorCode::AlreadyExists &&
+               !runtime.task_snapshot(duplicate_guarded.value().id));
+    // No post-submission call to record_task_admission is made for this task.
+    MIRA_CHECK(!fixture.goals->read_dispatch(guarded_goal).value()->submission);
+
     // Simulate losing the successful host result before the goal store can record it.
     MIRA_CHECK(coordinator.close());
     fixture.host.coordinator_.reset();
@@ -628,6 +732,13 @@ int durable_task_admission_survives_runtime_restart() {
     const auto recovered = fixture.host.coordinator_->lookup_task_admission(
         fixture.principal, dispatch.operation, context);
     MIRA_CHECK(recovered && recovered.value() == recorded.value());
+    const auto guarded_recovered = fixture.host.coordinator_->lookup_task_admission(
+        fixture.principal, guarded_key.operation, context);
+    MIRA_CHECK(guarded_recovered && guarded_recovered.value() &&
+               guarded_recovered.value()->task == guarded.value().id &&
+               guarded_recovered.value()->session == session.value().id &&
+               guarded_recovered.value()->admitted_at ==
+                   guarded_outcome.value().task->updated_at.wall);
 
     GoalDispatchPollerOptions options{10ms, 2s, 1};
     options.reconcile_submission =
@@ -656,12 +767,16 @@ int durable_task_admission_survives_runtime_restart() {
         options);
     MIRA_CHECK(started);
     auto poller = std::move(started).value();
-    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 1; }));
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 2; }));
     MIRA_CHECK(poller->close() && !attempted_new_task.load());
     const auto result = fixture.goals->read_dispatch(goal);
     MIRA_CHECK(result && result.value()->key == dispatch && result.value()->submission &&
                result.value()->submission->task == recorded.value().task &&
                result.value()->submission->session == recorded.value().session);
+    const auto guarded_result = fixture.goals->read_dispatch(guarded_goal);
+    MIRA_CHECK(guarded_result && guarded_result.value() &&
+               guarded_result.value()->key == guarded_key && guarded_result.value()->submission &&
+               guarded_result.value()->submission->task == guarded.value().id);
     return 0;
 }
 } // namespace

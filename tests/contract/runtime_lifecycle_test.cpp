@@ -249,6 +249,60 @@ int control_callback_cannot_finalize_itself() {
     return 0;
 }
 
+int durable_task_is_published_only_after_recording() {
+    MiraRuntime runtime({1, 16, 32});
+    MIRA_CHECK(runtime.initialize());
+    const auto session = runtime.open_session(std::make_shared<ProbeEnvironment>());
+    MIRA_CHECK(session && session.value().command.outcome(2s));
+    const auto operation = OperationId::generate();
+    std::promise<TaskSnapshot> entered;
+    auto recording = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    const auto task = runtime.submit_task(
+        session.value().id, {"Persist before publishing", {}, operation},
+        [&](const TaskSnapshot &candidate, TenantId, UserId) -> Result<void> {
+            entered.set_value(candidate);
+            if (released.wait_for(3s) != std::future_status::ready)
+                return probe_error(ErrorCode::DeadlineExceeded, "recording fixture timed out");
+            return {};
+        });
+    MIRA_CHECK(task);
+    const auto started = recording.wait_for(2s);
+    if (started != std::future_status::ready) {
+        release.set_value();
+        (void)task.value().command.outcome(5s);
+        MIRA_CHECK(started == std::future_status::ready);
+    }
+    const auto candidate = recording.get();
+    const auto during_recording = runtime.task_snapshot(task.value().id);
+    const auto early_outcome = task.value().command.outcome(0ms);
+    release.set_value();
+    const auto confirmed = task.value().command.outcome(2s);
+    MIRA_CHECK(candidate.id == task.value().id && candidate.admission_operation == operation);
+    MIRA_CHECK(!during_recording && during_recording.error().code == ErrorCode::NotFound);
+    MIRA_CHECK(!early_outcome && early_outcome.error().code == ErrorCode::DeadlineExceeded);
+    MIRA_CHECK(confirmed && confirmed.value().status == SettlementStatus::Applied);
+    MIRA_CHECK(runtime.task_snapshot(task.value().id).value().admission_operation == operation);
+
+    const auto failure = runtime.submit_task(
+        session.value().id, {"Reject when the recorder fails", {}, OperationId::generate()},
+        [](const TaskSnapshot &, TenantId, UserId) -> Result<void> {
+            return probe_error(ErrorCode::Unavailable, "recording unavailable");
+        });
+    MIRA_CHECK(failure);
+    const auto rejected = failure.value().command.receipt(2s);
+    const auto failed = failure.value().command.outcome(2s);
+    MIRA_CHECK(rejected && rejected.value().status == ReceiptStatus::Rejected);
+    MIRA_CHECK(failed && failed.value().status == SettlementStatus::Failed &&
+               failed.value().error && failed.value().error->code == ErrorCode::Unavailable &&
+               !failed.value().task);
+    MIRA_CHECK(!runtime.task_snapshot(failure.value().id));
+    MIRA_CHECK(!runtime.submit_task(session.value().id, {"Require a recorder", {}, operation}, {}));
+    MIRA_CHECK(runtime.request_shutdown() && runtime.finish_shutdown().clean);
+    return 0;
+}
+
 int initialization_and_stop_cannot_revive_finalized_runtime() {
     kairo::Executor callers;
     kairo::ExecutorConfig config;
@@ -297,6 +351,7 @@ int main() {
     MIRA_CHECK(rejected_shutdown_still_settles_tasks() == 0);
     MIRA_CHECK(failed_release_is_not_reported_as_clean() == 0);
     MIRA_CHECK(control_callback_cannot_finalize_itself() == 0);
+    MIRA_CHECK(durable_task_is_published_only_after_recording() == 0);
     MIRA_CHECK(initialization_and_stop_cannot_revive_finalized_runtime() == 0);
     return 0;
 }

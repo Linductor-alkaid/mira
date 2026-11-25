@@ -304,6 +304,25 @@ auto admitted = coordinator.lookup_task_admission(principal, operation_id, conte
 查询可在原 Runtime 丢失后继续使用，尚无证据时返回空值。见
 [DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)。
 
+#### 发布前持久化准入
+
+宿主完成现有准入判定后，可为本次任务生成一个持久记录器，交给 Runtime 的三参数提交
+入口。Runtime 在发布候选任务和返回生效结果前确认回执。记录器绑定当前主体、会话、
+操作 ID 和绝对截止时间，执行时复核归属及授权时效。
+
+```cpp
+auto recorder = coordinator.make_task_admission_recorder(principal, session_id, operation_id, context);
+if (!recorder)
+    return recorder.error();
+spec.admission_operation = operation_id;
+return runtime.submit_task(session_id, std::move(spec), std::move(recorder).value());
+```
+
+记录器持有事件库引用，由 Runtime 命令生命周期回收，适用于有界本地持久存储。宿主在
+生成和提交前复核取消，并消费命令结果。已经持久确认的任务在发布前丢失进程时仍可用
+`lookup_task_admission` 对账。回执描述已接纳任务，执行与兑现仍由各自流程负责。
+见 [DEC-154](../decisions/DEC-154-durable-before-live-task-admission.md)。
+
 ## 错误域
 
 `Error::domain == "mira.interaction"`，`domain_code` 是稳定枚举

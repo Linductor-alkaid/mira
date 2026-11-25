@@ -652,6 +652,10 @@ class InteractionCoordinator final {
                                                                      const OperationContext &);
     [[nodiscard]] Result<std::optional<TaskAdmissionReceipt>>
     lookup_task_admission(const PrincipalContext &, OperationId, const OperationContext &) const;
+    // Binds the authorized owner, session, operation and deadline for a Runtime command.
+    [[nodiscard]] Result<TaskAdmissionRecorder>
+    make_task_admission_recorder(const PrincipalContext &, SessionId, OperationId,
+                                 const OperationContext &) const;
     // Records an explicit rejection of an accepted input.
     [[nodiscard]] Result<InputDisposition> record_rejection(std::string_view input_id,
                                                             std::string reason);

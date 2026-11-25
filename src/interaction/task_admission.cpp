@@ -98,6 +98,47 @@ read_admission(IEventStore &events, const PrincipalContext &principal, Operation
         WallTimePoint{std::chrono::nanoseconds{admitted->as_integer().value()}}, location.event}};
 }
 
+Result<TaskAdmissionReceipt> persist_admission(IEventStore &events, RuntimeId runtime,
+                                               const PrincipalContext &principal,
+                                               OperationId operation, const TaskSnapshot &snapshot,
+                                               const OperationContext &context) {
+    const auto location = admission_location(principal, operation);
+    const TaskAdmissionReceipt admission{operation, snapshot.session_id, snapshot.id,
+                                         snapshot.updated_at.wall, location.event};
+    const auto stored = read_admission(events, principal, operation, location, context);
+    if (!stored)
+        return stored.error();
+    if (stored.value()) {
+        if (*stored.value() != admission)
+            return interaction_error(ErrorCode::AlreadyExists, InteractionDomainCode::InputConflict,
+                                     "the operation is bound to another task admission");
+        return admission;
+    }
+    const AppendRequest request{
+        location.event,
+        runtime,
+        location.partition,
+        {},
+        {std::string(kTaskAdmissionEvent),
+         to_json_string(JsonValue::Object{
+             {"tenant", principal.tenant_id.to_string()},
+             {"user", principal.user_id.to_string()},
+             {"operation", operation.to_string()},
+             {"session", admission.session.to_string()},
+             {"task", admission.task.to_string()},
+             {"admitted_at_ns", admission.admitted_at.time_since_epoch().count()}}),
+         EventClass::Critical},
+        snapshot.control_sequence,
+        Durability::ProcessCrash};
+    const auto recorded = events.append(request);
+    if (!recorded)
+        return recorded.error();
+    if (recorded.value().event_id != location.event || recorded.value().session_sequence != 1 ||
+        recorded.value().task_sequence || recorded.value().achieved < Durability::ProcessCrash)
+        return bad_admission_evidence();
+    return admission;
+}
+
 Error admission_busy() {
     return interaction_error(ErrorCode::ResourceExhausted, InteractionDomainCode::ExecutorRejected,
                              "the coordinator is busy during task admission reconciliation", true);
@@ -165,41 +206,8 @@ Result<TaskAdmissionReceipt> InteractionCoordinator::record_task_admission(
                                  InteractionDomainCode::PermissionDenied,
                                  "the admitted task is outside the principal's session ownership");
 
-    const auto location = admission_location(principal, operation);
-    const TaskAdmissionReceipt admission{operation, live.value().session_id, submission.id,
-                                         applied.task->updated_at.wall, location.event};
-    const auto stored = read_admission(*impl_->events, principal, operation, location, context);
-    if (!stored)
-        return stored.error();
-    if (stored.value()) {
-        if (*stored.value() != admission)
-            return interaction_error(ErrorCode::AlreadyExists, InteractionDomainCode::InputConflict,
-                                     "the operation is bound to another task admission");
-        return admission;
-    }
-    const AppendRequest request{
-        location.event,
-        impl_->runtime_id,
-        location.partition,
-        {},
-        {std::string(kTaskAdmissionEvent),
-         to_json_string(JsonValue::Object{
-             {"tenant", principal.tenant_id.to_string()},
-             {"user", principal.user_id.to_string()},
-             {"operation", operation.to_string()},
-             {"session", admission.session.to_string()},
-             {"task", admission.task.to_string()},
-             {"admitted_at_ns", admission.admitted_at.time_since_epoch().count()}}),
-         EventClass::Critical},
-        receipt.value().control_sequence,
-        Durability::ProcessCrash};
-    const auto recorded = impl_->events->append(request);
-    if (!recorded)
-        return recorded.error();
-    if (recorded.value().event_id != location.event || recorded.value().session_sequence != 1 ||
-        recorded.value().task_sequence || recorded.value().achieved < Durability::ProcessCrash)
-        return bad_admission_evidence();
-    return admission;
+    return persist_admission(*impl_->events, impl_->runtime_id, principal, operation, *applied.task,
+                             context);
 }
 
 Result<std::optional<TaskAdmissionReceipt>>
@@ -215,5 +223,45 @@ InteractionCoordinator::lookup_task_admission(const PrincipalContext &principal,
         return access.error();
     return read_admission(*impl_->events, principal, operation,
                           admission_location(principal, operation), context);
+}
+
+Result<TaskAdmissionRecorder>
+InteractionCoordinator::make_task_admission_recorder(const PrincipalContext &principal,
+                                                     SessionId session, OperationId operation,
+                                                     const OperationContext &context) const {
+    if (const auto ready = check_admission_context(context); !ready)
+        return ready.error();
+    const std::unique_lock lock(impl_->submit_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return admission_busy();
+    if (const auto access = impl_->check_task_admission_access(principal, operation); !access)
+        return access.error();
+    if (session.is_nil())
+        return interaction_error(ErrorCode::InvalidArgument, InteractionDomainCode::InputInvalid,
+                                 "durable task admission needs a concrete session");
+    OperationContext write_context;
+    write_context.deadline = context.deadline;
+    return TaskAdmissionRecorder{[events = impl_->events, runtime = impl_->runtime_id,
+                                  config = impl_->config, principal, session, operation,
+                                  write_context](const TaskSnapshot &snapshot,
+                                                 TenantId owner_tenant,
+                                                 UserId owner_user) -> Result<void> {
+        if (const auto ready = check_admission_context(write_context); !ready)
+            return ready.error();
+        if (!interaction_support::permitted(principal, config) || snapshot.session_id != session ||
+            principal.tenant_id != owner_tenant || principal.user_id != owner_user)
+            return interaction_error(ErrorCode::PermissionDenied,
+                                     InteractionDomainCode::PermissionDenied,
+                                     "durable task admission is outside the authorized session");
+        if (snapshot.admission_operation != operation)
+            return interaction_error(ErrorCode::InvalidArgument,
+                                     InteractionDomainCode::InputConflict,
+                                     "durable task admission uses a different operation");
+        const auto persisted =
+            persist_admission(*events, runtime, principal, operation, snapshot, write_context);
+        if (!persisted)
+            return persisted.error();
+        return {};
+    }};
 }
 } // namespace mira
