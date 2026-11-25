@@ -31,6 +31,7 @@ struct SocialObjectIdentity final {
 struct SocialAliasMatch final {
     SocialObjectKey key;
     std::uint64_t revision = 0;
+    friend bool operator==(const SocialAliasMatch &, const SocialAliasMatch &) = default;
 };
 
 enum class SocialAliasResolution : std::uint8_t { Missing, Unique, Ambiguous };
@@ -39,6 +40,7 @@ struct SocialAliasResult final {
     SocialAliasResolution resolution = SocialAliasResolution::Missing;
     std::vector<SocialAliasMatch> matches;
     bool truncated = false;
+    friend bool operator==(const SocialAliasResult &, const SocialAliasResult &) = default;
 };
 
 struct SocialAccountBinding final {
@@ -93,6 +95,21 @@ struct SocialMessageParticipants final {
     SocialMessageEvidence speaker;
     // One result per reference, in the supplied order. Alias candidates retain their source.
     std::vector<SocialMentionResult> mentions;
+    friend bool operator==(const SocialMessageParticipants &,
+                           const SocialMessageParticipants &) = default;
+};
+
+struct SocialMessageRelationshipCandidate final {
+    std::string predicate;
+    std::string alias;
+    std::string quote;
+    bool speaker_is_subject = true;
+};
+
+struct SocialMessageRelationshipReport final {
+    SocialMessageParticipants participants;
+    std::vector<std::size_t> unresolved; // Positions in the input candidate list.
+    ConsolidationReport consolidation;   // Remaining positions, in order.
 };
 
 struct SqliteSocialDirectoryOptions final {
@@ -154,6 +171,9 @@ class SqliteSocialDirectory final {
     [[nodiscard]] Result<SocialMessageAttributeReport> record_inferred_message_attributes(
         const SocialEnvironmentKey &, const SocialMessageLocator &, const IEventStore &,
         std::span<const SocialMessageAttributeCandidate>, const OperationContext &);
+    [[nodiscard]] Result<SocialMessageRelationshipReport> record_inferred_message_relationships(
+        const SocialEnvironmentKey &, const SocialMessageLocator &, const IEventStore &,
+        std::span<const SocialMessageRelationshipCandidate>, const OperationContext &);
     [[nodiscard]] Result<void> erase_object(const SocialObjectKey &);
     [[nodiscard]] Result<void> erase_environment(const SocialEnvironmentKey &);
     [[nodiscard]] Result<void> close() noexcept;
@@ -161,6 +181,11 @@ class SqliteSocialDirectory final {
   private:
     class Impl;
     explicit SqliteSocialDirectory(std::unique_ptr<Impl> impl);
+    [[nodiscard]] Result<ConsolidationReport>
+    commit_inferred_message_candidates(const SocialEnvironmentKey &,
+                                       const SocialMessageParticipants &,
+                                       std::span<const SocialMentionReference>,
+                                       std::vector<MemoryCandidate>, const OperationContext &);
     std::unique_ptr<Impl> impl_;
 };
 

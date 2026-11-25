@@ -1,5 +1,6 @@
 #include <mira/social_attribute_inference.hpp>
 #include <mira/social_mention_inference.hpp>
+#include <mira/social_relationship_inference.hpp>
 
 #include "social_message_source.hpp"
 
@@ -220,6 +221,113 @@ Result<SocialMessageAttributeReport> infer_and_record_social_message_attributes(
         return proposed.error();
     return directory.record_inferred_message_attributes(environment, message, events,
                                                         proposed.value(), context);
+}
+
+Result<SocialMessageRelationshipReport>
+SqliteSocialDirectory::record_inferred_message_relationships(
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    const IEventStore &events, std::span<const SocialMessageRelationshipCandidate> relationships,
+    const OperationContext &context) {
+    if (context.session.is_nil() || context.session != message.session)
+        return source_error(ErrorCode::PermissionDenied,
+                            "social relationship recording needs its authorized session");
+    if (relationships.size() > 8)
+        return source_error(ErrorCode::ResourceExhausted,
+                            "too many social relationships for one message");
+    if (auto active = check_operation(context); !active)
+        return active.error();
+    std::vector<SocialMentionReference> references;
+    for (const auto &relationship : relationships) {
+        if (!is_social_attribute_field(relationship.predicate) || relationship.alias.empty() ||
+            relationship.quote.empty() || relationship.quote.size() > 256 ||
+            relationship.quote.find(relationship.alias) == std::string::npos)
+            return source_error(ErrorCode::InvalidArgument,
+                                "social relationship requires a predicate and quoted alias");
+        references.emplace_back(relationship.alias);
+    }
+    auto indexed = resolve_message_participants(environment, message, references);
+    if (!indexed)
+        return indexed.error();
+    SocialMessageRelationshipReport report{std::move(indexed).value(), {}, {}};
+    if (report.participants.mentions.size() != relationships.size())
+        return source_error(ErrorCode::DataLoss,
+                            "social relationship aliases do not match candidates");
+    const auto &speaker = report.participants.speaker;
+    const auto event = storage::read_social_message_source(events, speaker);
+    if (!event)
+        return event.error();
+    if (event.value().timestamp_origin == EventTimestampOrigin::UnavailableLegacy ||
+        event.value().timestamp.wall.time_since_epoch().count() <= 0)
+        return source_error(ErrorCode::DataLoss, "social message source time is unavailable");
+    const auto recorded = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        event.value().timestamp.wall);
+    std::vector<MemoryCandidate> prepared;
+    for (std::size_t index = 0; index < relationships.size(); ++index) {
+        const auto &relationship = relationships[index];
+        if (event.value().payload.data.find(relationship.quote) == std::string::npos)
+            return source_error(ErrorCode::InvalidArgument,
+                                "social relationship excerpt is absent from the message");
+        const auto *alias = std::get_if<SocialAliasResult>(&report.participants.mentions[index]);
+        if (!alias)
+            return source_error(ErrorCode::DataLoss,
+                                "social relationship received invalid alias evidence");
+        if (alias->resolution != SocialAliasResolution::Unique || alias->truncated ||
+            alias->matches.size() != 1 || alias->matches.front().key == speaker.speaker) {
+            report.unresolved.push_back(index);
+            continue;
+        }
+        const auto target = alias->matches.front().key;
+        const SocialRelationshipKey endpoints =
+            relationship.speaker_is_subject ? SocialRelationshipKey{speaker.speaker, target}
+                                            : SocialRelationshipKey{target, speaker.speaker};
+        auto record = make_social_relationship(
+            endpoints, {relationship.predicate, SocialAttributeSource::Inferred},
+            relationship.quote, message.event, {recorded, {}}, recorded);
+        if (!record)
+            return record.error();
+        if (std::ranges::any_of(prepared, [&](const MemoryCandidate &candidate) {
+                return candidate.proposed.id == record.value().id;
+            }))
+            return source_error(ErrorCode::InvalidArgument,
+                                "social message contains a duplicate relationship candidate");
+        MemoryCandidate candidate;
+        candidate.proposed = std::move(record).value();
+        candidate.evidence = {message.event};
+        candidate.reason = MutationReasonCode::Consolidation;
+        prepared.push_back(std::move(candidate));
+    }
+    auto consolidated = commit_inferred_message_candidates(
+        environment, report.participants, references, std::move(prepared), context);
+    if (!consolidated)
+        return consolidated.error();
+    report.consolidation = std::move(consolidated).value();
+    return report;
+}
+
+Result<SocialMessageRelationshipReport> infer_and_record_social_message_relationships(
+    SqliteSocialDirectory &directory, const IEventStore &events, IModelProvider &provider,
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    std::span<const std::string> predicates, const OperationContext &operation) {
+    if (operation.session != message.session || operation.session.is_nil())
+        return source_error(ErrorCode::PermissionDenied,
+                            "social relationship inference needs its authorized session");
+    auto context = operation;
+    const auto limit = Timestamp::now().monotonic + std::chrono::seconds{15};
+    context.deadline = std::min(context.deadline.value_or(limit), limit);
+    if (auto active = check_operation(context); !active)
+        return active.error();
+    const auto indexed = directory.resolve_message_participants(environment, message, {});
+    if (!indexed)
+        return indexed.error();
+    const auto event = storage::read_social_message_source(events, indexed.value().speaker);
+    if (!event)
+        return event.error();
+    auto proposed = extract_social_message_relationships(provider, event.value().payload.data,
+                                                         predicates, context);
+    if (!proposed)
+        return proposed.error();
+    return directory.record_inferred_message_relationships(environment, message, events,
+                                                           proposed.value(), context);
 }
 
 } // namespace mira

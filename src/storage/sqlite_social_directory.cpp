@@ -55,6 +55,21 @@ Error directory_error(ErrorCode code, std::string message) {
     return storage::store_error(code, "mira.social_directory", 0, std::move(message));
 }
 
+Error profile_write_busy() {
+    auto error =
+        directory_error(ErrorCode::ResourceExhausted, "social profile write boundary is busy");
+    error.retryable = true;
+    return error;
+}
+
+Result<void> check_profile_recording(const OperationContext &context) {
+    if (context.cancelled())
+        return directory_error(ErrorCode::Cancelled, "social profile recording was cancelled");
+    if (context.expired(Timestamp::now()))
+        return directory_error(ErrorCode::DeadlineExceeded, "social profile recording expired");
+    return {};
+}
+
 bool valid_environment(const SocialEnvironmentKey &environment) {
     return !environment.tenant.is_nil() && !environment.environment.is_nil();
 }
@@ -837,6 +852,9 @@ Result<void> SqliteSocialDirectory::activate(const SocialObjectKey &key,
             return directory_error(ErrorCode::InvalidArgument,
                                    "social object has duplicate aliases");
     }
+    const std::unique_lock serialize(impl_->erasure_mutex, std::try_to_lock);
+    if (!serialize.owns_lock())
+        return profile_write_busy();
     return impl_->run<void>([state = impl_.get(), scope = scope_key(key.environment),
                              object = key.object.to_string(),
                              version = static_cast<std::int64_t>(value.revision),
@@ -1102,16 +1120,7 @@ Result<SocialMessageAttributeReport> SqliteSocialDirectory::record_inferred_mess
     if (!impl_->memory)
         return directory_error(ErrorCode::InvalidState,
                                "social attribute recording needs a paired store");
-    const auto check_operation = [&]() -> Result<void> {
-        if (context.cancelled())
-            return directory_error(ErrorCode::Cancelled,
-                                   "social attribute recording was cancelled");
-        if (context.expired(Timestamp::now()))
-            return directory_error(ErrorCode::DeadlineExceeded,
-                                   "social attribute recording expired");
-        return {};
-    };
-    if (auto active = check_operation(); !active)
+    if (auto active = check_profile_recording(context); !active)
         return active.error();
     const auto indexed = resolve_message_participants(environment, message, {});
     if (!indexed)
@@ -1123,33 +1132,41 @@ Result<SocialMessageAttributeReport> SqliteSocialDirectory::record_inferred_mess
     auto prepared = storage::prepare_social_message_attributes(speaker, event.value(), attributes);
     if (!prepared)
         return prepared.error();
+    auto report = commit_inferred_message_candidates(environment, indexed.value(), {},
+                                                     std::move(prepared).value(), context);
+    if (!report)
+        return report.error();
+    return SocialMessageAttributeReport{speaker, std::move(report).value()};
+}
 
+Result<ConsolidationReport> SqliteSocialDirectory::commit_inferred_message_candidates(
+    const SocialEnvironmentKey &environment, const SocialMessageParticipants &indexed,
+    std::span<const SocialMentionReference> references, std::vector<MemoryCandidate> prepared,
+    const OperationContext &context) {
+    if (!impl_->memory)
+        return directory_error(ErrorCode::InvalidState,
+                               "social profile recording needs a paired store");
     const std::unique_lock serialize(impl_->erasure_mutex, std::try_to_lock);
-    if (!serialize.owns_lock()) {
-        auto error =
-            directory_error(ErrorCode::ResourceExhausted, "social profile write boundary is busy");
-        error.retryable = true;
-        return error;
-    }
-    const auto current = resolve_message_participants(environment, message, {});
+    if (!serialize.owns_lock())
+        return profile_write_busy();
+    const auto current =
+        resolve_message_participants(environment, indexed.speaker.message, references);
     if (!current)
         return current.error();
-    if (current.value().speaker != speaker)
-        return directory_error(ErrorCode::InvalidState, "social attribute source was invalidated");
-    if (auto active = check_operation(); !active)
+    if (current.value() != indexed)
+        return directory_error(ErrorCode::InvalidState, "social profile source was invalidated");
+    if (auto active = check_profile_recording(context); !active)
         return active.error();
-    const auto scope = social_object_scope(speaker.speaker);
-    if (!scope)
-        return scope.error();
     ConsolidationReport report;
     const MemoryConsolidator consolidator;
-    for (auto &candidate : prepared.value()) {
-        if (auto active = check_operation(); !active)
+    for (auto &candidate : prepared) {
+        if (auto active = check_profile_recording(context); !active)
             return active.error();
+        const auto scope = candidate.proposed.scope;
         std::vector<MemoryCandidate> batch;
         batch.push_back(std::move(candidate));
         auto consolidated = consolidator.consolidate_candidates(*impl_->memory, std::move(batch),
-                                                                scope.value(), Timestamp::now());
+                                                                scope, Timestamp::now());
         if (!consolidated)
             return consolidated.error();
         auto &completed = consolidated.value();
@@ -1158,7 +1175,7 @@ Result<SocialMessageAttributeReport> SqliteSocialDirectory::record_inferred_mess
         std::ranges::move(completed.entries, std::back_inserter(report.entries));
         std::ranges::move(completed.pending_approval, std::back_inserter(report.pending_approval));
     }
-    return SocialMessageAttributeReport{speaker, std::move(report)};
+    return report;
 }
 
 Result<void> SqliteSocialDirectory::erase_object(const SocialObjectKey &key) {

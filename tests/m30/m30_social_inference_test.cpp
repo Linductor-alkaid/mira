@@ -5,6 +5,8 @@
 #include <mira/model_provider.hpp>
 #include <mira/social_attribute_inference.hpp>
 #include <mira/social_mention_inference.hpp>
+#include <mira/social_profile.hpp>
+#include <mira/social_relationship_inference.hpp>
 
 namespace {
 using namespace mira;
@@ -31,6 +33,32 @@ class MentionProvider final : public IModelProvider {
     std::string answer;
     std::optional<ModelRequest> captured;
     std::function<void()> on_infer;
+};
+
+class SourceReadHook final : public IEventStore {
+  public:
+    explicit SourceReadHook(IEventStore &store) : store_(store) {}
+    Result<AppendReceipt> append(const AppendRequest &request) override {
+        return store_.append(request);
+    }
+    Result<std::vector<AppendReceipt>>
+    append_batch(std::span<const AppendRequest> requests) override {
+        return store_.append_batch(requests);
+    }
+    Result<EventPage> read(const EventQuery &query) const override { return store_.read(query); }
+    Result<EventSlicePage> read_slice(const EventSliceQuery &query) const override {
+        on_read();
+        return store_.read_slice(query);
+    }
+    Result<StoreRecoveryReport> recover(const RecoveryOptions &options) override {
+        return store_.recover(options);
+    }
+    Result<void> flush(Durability required) override { return store_.flush(required); }
+
+    std::function<void()> on_read;
+
+  private:
+    IEventStore &store_;
 };
 
 class SocialFixture final {
@@ -304,6 +332,93 @@ int records_grounded_attributes_for_the_indexed_speaker() {
     MIRA_CHECK(closed && !after_close);
     return 0;
 }
+
+int records_only_resolved_directed_relationships() {
+    SocialFixture fixture(true);
+    const auto first = fixture.record(fixture.qq, "我指导陈工，李工指导我，我也指导赵工和吴工。");
+    const auto chen = fixture.record(fixture.bilibili, "已收到。");
+    MIRA_CHECK(first && chen);
+    const SocialObjectKey li{fixture.environment, Id128::generate()};
+    const SocialObjectKey zhao_a{fixture.environment, Id128::generate()};
+    const SocialObjectKey zhao_b{fixture.environment, Id128::generate()};
+    const SocialObjectKey external{{fixture.environment.tenant, Id128::generate()},
+                                   Id128::generate()};
+    MIRA_CHECK(fixture.directory->activate(chen.value().speaker, {2, {"陈工"}}));
+    MIRA_CHECK(fixture.directory->activate(li, {1, {"李工"}}));
+    MIRA_CHECK(fixture.directory->activate(zhao_a, {1, {"赵工"}}));
+    MIRA_CHECK(fixture.directory->activate(zhao_b, {1, {"赵工"}}));
+    MIRA_CHECK(fixture.directory->activate(external, {1, {"吴工"}}));
+    const auto read = [&](const SocialRelationshipKey &key) -> Result<MemoryQueryResult> {
+        const auto scope = social_relationship_scope(key);
+        if (!scope)
+            return scope.error();
+        MemoryQuery query;
+        query.scopes = {scope.value()};
+        query.social_relationship_predicate = "mentors";
+        return fixture.storage.memory->query(query);
+    };
+    const SocialRelationshipKey forward{first.value().speaker, chen.value().speaker};
+    const SocialRelationshipKey reverse{li, first.value().speaker};
+    MentionProvider provider;
+    const std::vector<std::string> predicates{"mentors"};
+    const auto infer = [&](const SocialMessageLocator &message) {
+        return fixture.storage.executor
+            .submit_auto([&] {
+                return infer_and_record_social_message_relationships(
+                    *fixture.directory, *fixture.storage.events, provider, fixture.environment,
+                    message, predicates, fixture.operation());
+            })
+            .get();
+    };
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"陈工","quote":"我指导赵工","speaker_is_subject":true}]})";
+    const auto fabricated = infer(first.value().message);
+    MIRA_CHECK(!fabricated && fabricated.error().code == ErrorCode::InvalidModelOutput);
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"陈工","quote":"我指导陈工","speaker_is_subject":true},{"predicate":"mentors","alias":"李工","quote":"李工指导我","speaker_is_subject":false},{"predicate":"mentors","alias":"赵工","quote":"我也指导赵工和吴工","speaker_is_subject":true},{"predicate":"mentors","alias":"吴工","quote":"我也指导赵工和吴工","speaker_is_subject":true}]})";
+    const auto report = infer(first.value().message);
+    MIRA_CHECK(report && report.value().participants.speaker == first.value());
+    MIRA_CHECK((report.value().unresolved == std::vector<std::size_t>{2, 3}));
+    MIRA_CHECK(std::get<SocialAliasResult>(report.value().participants.mentions[2]).resolution ==
+               SocialAliasResolution::Ambiguous);
+    MIRA_CHECK(std::get<SocialAliasResult>(report.value().participants.mentions[3]).resolution ==
+               SocialAliasResolution::Missing);
+    MIRA_CHECK(report.value().consolidation.count_of(CandidateDisposition::Applied) == 2 &&
+               report.value().consolidation.entries.front().kind == MemoryKind::SocialRelationship);
+    const auto out = read(forward);
+    const auto in = read(reverse);
+    MIRA_CHECK(out && in && out.value().records.size() == 1 && in.value().records.size() == 1);
+    MIRA_CHECK(out.value().records.front().statement == "我指导陈工" &&
+               out.value().records.front().provenance == std::vector{first.value().message.event} &&
+               in.value().records.front().statement == "李工指导我" &&
+               in.value().records.front().verification == MemoryVerification::Unverified);
+    MIRA_CHECK(read({chen.value().speaker, first.value().speaker}).value().records.empty());
+    const auto replay = infer(first.value().message);
+    MIRA_CHECK(replay && replay.value().consolidation.entries.front().idempotent_replay &&
+               replay.value().consolidation.entries.back().idempotent_replay);
+
+    const auto later = fixture.record(fixture.qq, "我又指导了陈工。");
+    MIRA_CHECK(later);
+    SourceReadHook hook(*fixture.storage.events);
+    bool updated = false;
+    hook.on_read = [&] {
+        updated = fixture.directory->activate(chen.value().speaker, {3, {"老陈"}}).has_value();
+    };
+    const std::vector<SocialMessageRelationshipCandidate> candidate{
+        {"mentors", "陈工", "我又指导了陈工", true}};
+    const auto stale = fixture.storage.executor
+                           .submit_auto([&] {
+                               return fixture.directory->record_inferred_message_relationships(
+                                   fixture.environment, later.value().message, hook, candidate,
+                                   fixture.operation());
+                           })
+                           .get();
+    MIRA_CHECK(updated && !stale && stale.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(read(forward).value().records.size() == 1);
+    MIRA_CHECK(fixture.directory->erase_object(li));
+    MIRA_CHECK(read(reverse).value().records.empty() && read(forward).value().records.size() == 1);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -313,5 +428,7 @@ int main() {
         return result;
     if (const auto result = invalidates_erased_or_cancelled_evidence(); result != 0)
         return result;
-    return records_grounded_attributes_for_the_indexed_speaker();
+    if (const auto result = records_grounded_attributes_for_the_indexed_speaker(); result != 0)
+        return result;
+    return records_only_resolved_directed_relationships();
 }

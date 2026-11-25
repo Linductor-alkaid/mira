@@ -290,6 +290,26 @@ auto matching = memory.query(query);
 宿主排空在途操作，查询返回后再次确认两个端点可发布。
 见 [DEC-125](../decisions/DEC-125-social-relationship-assertions.md)。
 
+### 从已索引消息推断有向关系
+
+入站宿主可在配对目录中索引消息后，从 `mira/social_relationship_inference.hpp` 调用
+`infer_and_record_social_message_relationships`。谓词词表由宿主给出，模型提取另一端
+在原文中的别名、证据摘录和关系方向。宿主已有结构化候选时，也可直接调用目录的
+`record_inferred_message_relationships`。
+
+```cpp
+const std::vector<std::string> predicates{"mentors"};
+auto report = executor.submit_auto([&] {
+    return infer_and_record_social_message_relationships(
+        *directory, *events, *provider, environment, message, predicates, operation);
+}).get();
+```
+
+当前发言者和唯一别名解析结果共同确定有序端点。`participants` 依候选顺序保留结果，
+`unresolved` 标出缺失、歧义及自环，其他位置对应 `consolidation` 中的处置。已写入的
+断言保持 `Inferred`、`Unverified`，以原消息查证。同一证据可幂等重试。目录变化或
+擦除使提交前的旧结果失效。见 [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md)。
+
 ## 社交记忆擦除恢复
 
 先打开可写的 `SqliteMemoryStore`，再将同一实例传给社交目录。只有配对目录成功打开后，

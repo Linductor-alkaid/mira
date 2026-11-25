@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md) 接通已
+归因消息的有向社交关系提取与写入。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md) 接通已
 索引消息的发言者画像属性提取和候选报告。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
 
