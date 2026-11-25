@@ -323,6 +323,30 @@ return runtime.submit_task(session_id, std::move(spec), std::move(recorder).valu
 `lookup_task_admission` 对账。回执描述已接纳任务，执行与兑现仍由各自流程负责。
 见 [DEC-154](../decisions/DEC-154-durable-before-live-task-admission.md)。
 
+### 持久任务完成证据
+
+对需要跨进程兑现的任务，宿主可同时绑定完成记录器，并随同原准入记录器提交。
+
+```cpp
+auto admission = coordinator.make_task_admission_recorder(principal, session_id, operation_id,
+                                                          context);
+if (!admission)
+    return admission.error();
+auto completion = coordinator.make_task_completion_recorder(principal, session_id, operation_id);
+if (!completion)
+    return completion.error();
+spec.admission_operation = operation_id;
+return runtime.submit_task(session_id, std::move(spec), std::move(admission).value(),
+                           std::move(completion).value());
+```
+
+已有执行者通过 `complete_task(id, {TaskState::Completed, {}})` 提交已验证结果。Runtime
+先等待本地事件库确认 `ProcessCrash`，再发布成功终态。遇到写入失败或回执不明，宿主
+可重试同一任务的完成命令，Runtime 保留原验证时间和因果序号。该记录权限在绑定时检查，
+执行时校验原主体、会话、操作和完成结果，派发扫描的截止时间只约束原准入。目标兑现仍
+检查当时的结算权限。已确认的证据由派发器读取，即使原 Runtime 未发布终态就退出。
+见 [DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md)。
+
 ## 错误域
 
 `Error::domain == "mira.interaction"`，`domain_code` 是稳定枚举

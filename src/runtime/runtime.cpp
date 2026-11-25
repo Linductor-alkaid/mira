@@ -140,6 +140,8 @@ class MiraRuntime::Impl final {
         TaskSnapshot snapshot;
         std::string goal;
         SessionId session_id;
+        TaskCompletionRecorder completion_recorder;
+        std::optional<TaskCompletionEvidence> pending_completion;
     };
 
     struct OperationRecord final {
@@ -285,6 +287,8 @@ class MiraRuntime::Impl final {
                             TaskOutcome{TaskState::Cancelled, std::nullopt};
                         task.snapshot.control_sequence = sequence;
                         task.snapshot.updated_at = Timestamp::now();
+                        task.pending_completion.reset();
+                        task.completion_recorder = {};
                     }
                 }
                 std::optional<Error> failure;
@@ -383,6 +387,14 @@ class MiraRuntime::Impl final {
                 return;
             }
             auto &snapshot = found->second.snapshot;
+            if (found->second.pending_completion && !is_terminal(snapshot.state) &&
+                target != TaskState::Cancelled) {
+                const auto reason = make_error(ErrorCode::ExecutionUncertain,
+                                               "task completion is awaiting durable confirmation");
+                set_receipt(handle, kind, ReceiptStatus::Rejected, sequence, reason);
+                set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
+                return;
+            }
             if (is_terminal(snapshot.state) && snapshot.state == target) {
                 set_receipt(handle, kind, ReceiptStatus::Accepted, sequence);
                 set_outcome(handle, SettlementStatus::NoOp, std::nullopt, snapshot);
@@ -425,6 +437,8 @@ class MiraRuntime::Impl final {
             }
             if (target == TaskState::Cancelled) {
                 snapshot.terminal_outcome = TaskOutcome{TaskState::Cancelled, std::nullopt};
+                found->second.pending_completion.reset();
+                found->second.completion_recorder = {};
             }
             snapshot.control_sequence = sequence;
             snapshot.updated_at = Timestamp::now();
@@ -437,7 +451,7 @@ class MiraRuntime::Impl final {
         return enqueue(CommandKind::CompleteTask, [this, task_id,
                                                    outcome](std::uint64_t sequence,
                                                             CommandHandle::State &state) {
-            std::lock_guard lock(records_mutex);
+            std::unique_lock lock(records_mutex);
             const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
             const auto found = tasks.find(task_id);
             if (found == tasks.end()) {
@@ -486,14 +500,61 @@ class MiraRuntime::Impl final {
                 set_outcome(handle, SettlementStatus::Failed, reason, snapshot);
                 return;
             }
-            snapshot.state = outcome.terminal_state;
-            ++snapshot.epoch;
-            snapshot.terminal_outcome = outcome;
-            snapshot.control_sequence = sequence;
-            snapshot.updated_at = Timestamp::now();
+            auto &task = found->second;
+            auto candidate = snapshot;
+            candidate.state = outcome.terminal_state;
+            ++candidate.epoch;
+            candidate.terminal_outcome = outcome;
+            candidate.control_sequence = sequence;
+            candidate.updated_at = Timestamp::now();
+            Result<void> recorded;
+            if (task.completion_recorder)
+                recorded = record_task_completion(task, candidate, lock);
+            if (!recorded) {
+                set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Rejected, sequence,
+                            recorded.error());
+                set_outcome(handle, SettlementStatus::Failed, recorded.error(), snapshot);
+                return;
+            }
+            snapshot = std::move(candidate);
+            task.pending_completion.reset();
+            task.completion_recorder = {};
             set_receipt(handle, CommandKind::CompleteTask, ReceiptStatus::Accepted, sequence);
             set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
         });
+    }
+
+    Result<void> record_task_completion(TaskRecord &task, TaskSnapshot &candidate,
+                                        std::unique_lock<std::mutex> &lock) {
+        if (candidate.state == TaskState::Failed) {
+            if (task.pending_completion)
+                return make_error(ErrorCode::ExecutionUncertain,
+                                  "task completion is awaiting durable confirmation");
+            return {};
+        }
+        if (candidate.terminal_outcome->error)
+            return make_error(ErrorCode::InvalidArgument,
+                              "verified task completion cannot include an error");
+        const auto session = sessions.find(task.session_id);
+        if (session == sessions.end() || session->second.state != SessionState::Autonomous)
+            return make_error(ErrorCode::InvalidState, "session is not autonomous");
+        if (!task.pending_completion)
+            task.pending_completion =
+                TaskCompletionEvidence{candidate.updated_at.wall, candidate.control_sequence};
+        candidate.completion_evidence = task.pending_completion;
+        const auto tenant = session->second.principal.tenant_id;
+        const auto user = session->second.principal.user_id;
+        // Only this serial lane can mutate the record. Synchronous operation
+        // admission is fenced by pending_completion while readers remain live.
+        lock.unlock();
+        Result<void> recorded;
+        try {
+            recorded = task.completion_recorder(candidate, tenant, user);
+        } catch (...) {
+            recorded = make_error(ErrorCode::Internal, "task completion recorder failed");
+        }
+        lock.lock();
+        return recorded;
     }
 };
 
@@ -575,7 +636,7 @@ Result<SessionSubmission> MiraRuntime::open_session(std::shared_ptr<IEnvironment
 }
 
 Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task) {
-    return submit_task_impl(session_id, std::move(task), {});
+    return submit_task_impl(session_id, std::move(task), {}, {});
 }
 
 Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task,
@@ -583,11 +644,22 @@ Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec t
     if (!recorder || !task.admission_operation)
         return make_error(ErrorCode::InvalidArgument,
                           "durable admission requires a recorder and a stable operation");
-    return submit_task_impl(session_id, std::move(task), std::move(recorder));
+    return submit_task_impl(session_id, std::move(task), std::move(recorder), {});
+}
+
+Result<TaskSubmission> MiraRuntime::submit_task(SessionId session_id, TaskSpec task,
+                                                TaskAdmissionRecorder admission,
+                                                TaskCompletionRecorder completion) {
+    if (!admission || !completion || !task.admission_operation)
+        return make_error(ErrorCode::InvalidArgument,
+                          "durable task submission requires both recorders and a stable operation");
+    return submit_task_impl(session_id, std::move(task), std::move(admission),
+                            std::move(completion));
 }
 
 Result<TaskSubmission> MiraRuntime::submit_task_impl(SessionId session_id, TaskSpec task,
-                                                     TaskAdmissionRecorder recorder) {
+                                                     TaskAdmissionRecorder recorder,
+                                                     TaskCompletionRecorder completion) {
     if (task.goal.empty())
         return make_error(ErrorCode::InvalidArgument, "task goal must not be empty");
     if (task.admission_operation && task.admission_operation->is_nil())
@@ -595,8 +667,8 @@ Result<TaskSubmission> MiraRuntime::submit_task_impl(SessionId session_id, TaskS
     const auto task_id = TaskId::generate();
     auto command = impl_->enqueue(
         CommandKind::SubmitTask,
-        [this, session_id, task_id, task = std::move(task),
-         recorder = std::move(recorder)](std::uint64_t sequence, CommandHandle::State &state) {
+        [this, session_id, task_id, task = std::move(task), recorder = std::move(recorder),
+         completion = std::move(completion)](std::uint64_t sequence, CommandHandle::State &state) {
             std::unique_lock lock(impl_->records_mutex);
             const auto session = impl_->sessions.find(session_id);
             const auto handle = std::shared_ptr<CommandHandle::State>(&state, [](auto *) {});
@@ -645,7 +717,8 @@ Result<TaskSubmission> MiraRuntime::submit_task_impl(SessionId session_id, TaskS
                 }
                 lock.lock();
             }
-            impl_->tasks.emplace(task_id, Impl::TaskRecord{snapshot, task.goal, session_id});
+            impl_->tasks.emplace(task_id,
+                                 Impl::TaskRecord{snapshot, task.goal, session_id, completion, {}});
             Impl::set_receipt(handle, CommandKind::SubmitTask, ReceiptStatus::Accepted, sequence);
             Impl::set_outcome(handle, SettlementStatus::Applied, std::nullopt, snapshot);
         });
@@ -813,6 +886,8 @@ Result<CommandHandle> MiraRuntime::close_session(SessionId session_id) {
             task.snapshot.terminal_outcome = TaskOutcome{TaskState::Cancelled, std::nullopt};
             task.snapshot.control_sequence = sequence;
             task.snapshot.updated_at = Timestamp::now();
+            task.pending_completion.reset();
+            task.completion_recorder = {};
         }
         // Interrupt is best effort at close; an already stopped environment
         // is expected and must not fail the close command.
@@ -839,6 +914,9 @@ Result<OperationKey> MiraRuntime::begin_operation(TaskId task_id, StepId step_id
         return make_error(ErrorCode::NotFound, "task was not found");
     if (is_terminal(found->second.snapshot.state))
         return make_error(ErrorCode::InvalidState, "task is terminal");
+    if (found->second.pending_completion)
+        return make_error(ErrorCode::ExecutionUncertain,
+                          "task completion is awaiting durable confirmation");
     const auto state = found->second.snapshot.state;
     if (state == TaskState::Paused || state == TaskState::SuspendedForTakeover) {
         // Paused and taken-over tasks admit no new autonomous work: the user
@@ -876,7 +954,7 @@ Result<CommandHandle> MiraRuntime::admit_operation_completion(const OperationKey
             Impl::set_outcome(handle, SettlementStatus::NoOp, reason, task->second.snapshot);
             return;
         }
-        if (task->second.snapshot.epoch != key.task_epoch ||
+        if (task->second.pending_completion || task->second.snapshot.epoch != key.task_epoch ||
             task->second.snapshot.state == TaskState::Cancelled ||
             task->second.snapshot.state == TaskState::Completed ||
             task->second.snapshot.state == TaskState::Failed) {

@@ -645,6 +645,9 @@ class InteractionCoordinator final {
     [[nodiscard]] Result<bool> publish_verified_task_completion_if_ready(const PrincipalContext &,
                                                                          SessionId, TaskId,
                                                                          const OperationContext &);
+    // Binds a task's durable verified-result writer independently of the scan deadline.
+    [[nodiscard]] Result<TaskCompletionRecorder>
+    make_task_completion_recorder(const PrincipalContext &, SessionId, OperationId) const;
     // Records a completed Runtime submission command in the durable task ledger.
     [[nodiscard]] Result<TaskAdmissionReceipt> record_task_admission(const PrincipalContext &,
                                                                      OperationId,

@@ -495,6 +495,11 @@ struct TaskOutcome final {
     std::optional<Error> error;
 };
 
+struct TaskCompletionEvidence final {
+    WallTimePoint completed_at;
+    std::uint64_t control_sequence = 0;
+};
+
 struct TaskSnapshot final {
     TaskId id;
     SessionId session_id;
@@ -512,6 +517,8 @@ struct TaskSnapshot final {
     // not by rewriting this list.
     std::vector<std::string> user_constraints;
     std::optional<OperationId> admission_operation = {};
+    // Fact recorded before publication, whose original time and cause survive retries.
+    std::optional<TaskCompletionEvidence> completion_evidence = {};
 };
 
 struct CommandOutcome final {

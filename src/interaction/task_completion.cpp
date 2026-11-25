@@ -93,23 +93,25 @@ InteractionCoordinator::Impl::owned_completion_task(const PrincipalContext &prin
     return snapshot;
 }
 
-Result<AppendReceipt>
-InteractionCoordinator::Impl::append_verified_completion(const PrincipalContext &principal,
-                                                         const TaskSnapshot &state) {
+namespace {
+Result<AppendReceipt> append_completion(IEventStore &events, RuntimeId runtime, TenantId tenant,
+                                        UserId user, const TaskSnapshot &state) {
+    const auto evidence = state.completion_evidence.value_or(
+        TaskCompletionEvidence{state.updated_at.wall, state.control_sequence});
     const auto payload = to_json_string(JsonValue::Object{
-        {"tenant", principal.tenant_id.to_string()},
-        {"user", principal.user_id.to_string()},
-        {"completed_at_ns", state.updated_at.wall.time_since_epoch().count()},
+        {"tenant", tenant.to_string()},
+        {"user", user.to_string()},
+        {"completed_at_ns", evidence.completed_at.time_since_epoch().count()},
     });
     const AppendRequest request{
-        completion_event_id(runtime_id, state.session_id, state.id),
-        runtime_id,
+        completion_event_id(runtime, state.session_id, state.id),
+        runtime,
         state.session_id,
         state.id,
         {std::string(kVerifiedTaskCompletionEvent), payload, EventClass::Critical},
-        state.control_sequence,
+        evidence.control_sequence,
         Durability::ProcessCrash};
-    auto result = events->append(request);
+    auto result = events.append(request);
     if (!result)
         return result.error();
     if (result.value().achieved < Durability::ProcessCrash ||
@@ -118,6 +120,52 @@ InteractionCoordinator::Impl::append_verified_completion(const PrincipalContext 
         return interaction_error(ErrorCode::DataLoss, InteractionDomainCode::LedgerUnavailable,
                                  "task completion evidence was not durably acknowledged");
     return result;
+}
+} // namespace
+
+Result<AppendReceipt>
+InteractionCoordinator::Impl::append_verified_completion(const PrincipalContext &principal,
+                                                         const TaskSnapshot &state) {
+    return append_completion(*events, runtime_id, principal.tenant_id, principal.user_id, state);
+}
+
+Result<TaskCompletionRecorder> InteractionCoordinator::make_task_completion_recorder(
+    const PrincipalContext &principal, SessionId session, OperationId operation) const {
+    if (session.is_nil() || operation.is_nil())
+        return interaction_error(ErrorCode::InvalidArgument, InteractionDomainCode::InputInvalid,
+                                 "completion recording requires a concrete session and operation");
+    const std::unique_lock lock(impl_->submit_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return interaction_error(ErrorCode::ResourceExhausted,
+                                 InteractionDomainCode::ExecutorRejected,
+                                 "the coordinator is busy during task completion binding", true);
+    if (!impl_->initialized || impl_->stopping.load(std::memory_order_acquire) || !impl_->events ||
+        impl_->runtime_id.is_nil())
+        return interaction_error(ErrorCode::Unavailable, InteractionDomainCode::LedgerUnavailable,
+                                 "the task completion event store is unavailable");
+    if (!interaction_support::permitted(principal, impl_->config))
+        return interaction_error(ErrorCode::PermissionDenied,
+                                 InteractionDomainCode::PermissionDenied,
+                                 "the principal cannot bind task completion recording");
+    return TaskCompletionRecorder{[events = impl_->events, runtime = impl_->runtime_id,
+                                   tenant = principal.tenant_id, user = principal.user_id, session,
+                                   operation](const TaskSnapshot &state, TenantId owner_tenant,
+                                              UserId owner_user) -> Result<void> {
+        if (tenant != owner_tenant || user != owner_user || state.session_id != session)
+            return interaction_error(ErrorCode::PermissionDenied,
+                                     InteractionDomainCode::PermissionDenied,
+                                     "task completion is outside the authorized session");
+        if (state.admission_operation != operation || !successful_completion(state) ||
+            !state.completion_evidence || state.completion_evidence->control_sequence == 0 ||
+            state.completion_evidence->completed_at.time_since_epoch().count() <= 0)
+            return interaction_error(ErrorCode::InvalidArgument,
+                                     InteractionDomainCode::InputInvalid,
+                                     "task completion does not match its binding or evidence");
+        const auto result = append_completion(*events, runtime, tenant, user, state);
+        if (!result)
+            return result.error();
+        return {};
+    }};
 }
 
 Result<AppendReceipt>

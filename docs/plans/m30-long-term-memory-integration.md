@@ -82,6 +82,7 @@
 - [DEC-152](../decisions/DEC-152-goal-submission-reconciliation.md)：通过持久派发身份区分首次提交和只读对账。
 - [DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)：以操作 ID 持久记录和回查 Runtime 准入结果。
 - [DEC-154](../decisions/DEC-154-durable-before-live-task-admission.md)：在 Runtime 发布任务前持久化准入回执。
+- [DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md)：在 Runtime 发布成功终态前持久化验证事实。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -191,7 +192,7 @@
 - [x] `M30-34` 交付按工作或社交环境隔离的技能记忆范围，验收换绑、事件与技能隔离及擦除。
 - [x] `M30-35` 交付消息来源账号的持久身份解析与首次接纳，验收跨来源绑定、同名、重放、迁移和擦除（Linux 离线）。
 - [ ] `M30-36` 接通社交消息的自动事件记录、发言人及提及消歧、跨来源同人判断、关系与属性候选、证据关联和画像召回。验收 QQ/B 站合成双来源、多人群聊、反证拆分和跨环境隔离。
-- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。宿主派发、兑现、live 证据发布、只读对账和发布前持久准入见 M30-43 至 M30-51。生产协调层仍需接入自主准入及任务完成证据写入前丢失 Runtime 的恢复。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
+- [ ] `M30-37` 从持久承诺和计划自动发现到期目标，通过现有协调层提交任务，进度和回执跨重启可恢复。部署使用常驻授权，Agent 发起既有承诺无需逐次确认。宿主派发、兑现、live 证据发布、只读对账、发布前持久准入与完成证据见 M30-43 至 M30-52。生产协调层仍需接入自主准入及任务完成证据写入前丢失 Runtime 的恢复。该工作项由 M33 复用。验收漏触发、重复、取消、纠正、兑现和重启。
 - [ ] `M30-38` 将通用提取与持久事件水位及六类专用写入入口接通。验收无显式记忆指令的正常交互、分类型写入、回放去重和擦除后禁止回灌。
 - [x] `M30-39` 接通结算后同一 Record 作业内的有界多页提取，验收固定快照、页上限、部分失败和续跑（Linux 离线）。
 - [x] `M30-40` 交付已持久消息的发言归因索引，验收同会话多来源、证据冲突、有界召回、重开和擦除后重放（Linux 离线）。
@@ -206,6 +207,7 @@
 - [x] `M30-49` 在一次性目标和重复计划的派发器中区分首次提交与按原操作 ID 的只读对账，验收并发、重开与后续项继续推进（Linux 离线）。
 - [x] `M30-50` 持久记录 Runtime 已确认的任务准入并按原操作 ID 对账，验收实际命令、归属、重启与回填（Linux 离线）。
 - [x] `M30-51` 在任务发布到 Runtime 注册表前确认持久准入回执，验收可见性、失败拒绝、归属和重启对账（Linux 离线）。
+- [x] `M30-52` 在 Runtime 发布成功终态前确认持久验证事实，验收可见性、失败重试、接管、取消和重启兑现（Linux 离线）。
 
 ## 6. 测试与退出条件
 
@@ -1713,3 +1715,43 @@ Linux Debug 全量 **214/214**，Runtime 生命周期和目标兑现测试各连
 ASan 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。
 日志见 `/tmp/mira-m30-admission-before-recheck-*.log`、`/tmp/mira-m30-admission-before-tidy.log`
 和 `/tmp/mira-m30-admission-before-quality-final.log`。
+
+### 2026-11-25 发布成功终态前确认持久完成证据
+
+基线 `c176ef5`，分支 `feat/m30-memory-systems`。DEC-155 为现有 Runtime `CompleteTask`
+命令接入任务绑定的记录器。第一次验证请求固定证据时间和因果序号。持久确认成功后才
+发布 Runtime 终态。重试使用同一份证据，最终快照保留生效命令的序号。
+
+`mira_runtime_lifecycle_test` 检查记录期间的快照可见性、新增操作拒绝、迟到结果、
+确认不明、接管、取消、异常和稳定重试。`mira_m30_goal_fulfillment_test` 使用实际的
+Runtime、FileEventStore 和 SQLite 验证写入成功而回执丢失。原 Runtime 退出后，派发器
+从持久事件恢复准入并兑现目标。验收流程省略了手动完成证据发布。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 9
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug -j 2 --output-on-failure \
+  -R '^mira_(m30_goal_fulfillment|runtime_lifecycle)_test$' --repeat until-fail:25
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_goal_fulfillment_test mira_runtime_lifecycle_test
+ctest --test-dir build/asan -j 2 --output-on-failure \
+  -R '^mira_(m30_goal_fulfillment|runtime_lifecycle)_test$'
+printf '%s\n' src/runtime/runtime.cpp src/interaction/task_completion.cpp \
+  | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 生产自主准入和写入前丢失 Runtime 的恢复 | Mira Maintainers 与宿主集成者接入 M30-37 的自主准入和可恢复执行后，验收提交、执行、重新验证、兑现和重启闭环 |
+| Windows、Android、远端 CI | Mira Maintainers 提交 PR 后执行目标平台矩阵 |
+
+Linux Debug 全量 **214/214**，Runtime 生命周期与目标兑现测试各连续通过 **25/25**，
+ASan 定向 **2/2**。严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。
+日志见 `/tmp/mira-m30-completion-debug-*.log`、`/tmp/mira-m30-completion-asan-*.log`、
+`/tmp/mira-m30-completion-tidy-final.log` 和 `/tmp/mira-m30-completion-quality.log`。

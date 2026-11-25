@@ -100,6 +100,11 @@ auto report = runtime.finish_shutdown();   // ShutdownReport{clean, state, pendi
 - 三参数 `submit_task` 可接收 `TaskAdmissionRecorder`。Runtime 在任务对外可见前等待本次
   有界记录完成。记录器在串行控制命令中运行，期间释放 Runtime 记录锁。记录失败时，
   命令返回 `Rejected` 和 `Failed`。参见[持久准入记录器](interaction-coordinator.md#发布前持久化准入)。
+- 四参数 `submit_task` 同时接收 `TaskCompletionRecorder`。`complete_task` 在成功终态可见
+  前等待本地持久确认。出现失败时可重试同一任务的完成命令。最终快照中的
+  `completion_evidence` 保留第一次验证的时间与因果序号，`control_sequence` 仍对应生效
+  命令。等待确认期间，新增操作返回 `ExecutionUncertain`，迟到结果按 stale 处理。
+  取消、接管和关闭沿用原控制命令。见[持久完成记录器](interaction-coordinator.md#持久任务完成证据)。
 - `begin_operation` / `admit_operation_completion` 是协调者接入点：外部驱动循环（如
   `AgentLoop`）用它声明操作边界并提交完成。`Paused` 与 `SuspendedForTakeover` 状态的
   任务不接受新操作（`InvalidState`，[DEC-018](../decisions/DEC-018-takeover-input-release-and-operation-admission.md)）；

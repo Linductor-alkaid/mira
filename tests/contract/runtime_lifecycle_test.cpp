@@ -342,6 +342,109 @@ int initialization_and_stop_cannot_revive_finalized_runtime() {
     MIRA_CHECK(callers.shutdown(true) == kairo::ShutdownResult::Completed);
     return 0;
 }
+
+int durable_completion_freezes_evidence_until_acknowledged() {
+    MiraRuntime runtime({1, 16, 32});
+    MIRA_CHECK(runtime.initialize());
+    const auto session = runtime.open_session(std::make_shared<ProbeEnvironment>());
+    MIRA_CHECK(session && session.value().command.outcome(2s));
+    const auto admit = [](const TaskSnapshot &, TenantId, UserId) -> Result<void> { return {}; };
+    std::promise<TaskSnapshot> entered;
+    auto recording = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    unsigned calls = 0;
+    std::optional<TaskCompletionEvidence> first;
+    const auto task = runtime.submit_task(
+        session.value().id, {"Persist completion", {}, OperationId::generate()}, admit,
+        [&](const TaskSnapshot &candidate, TenantId, UserId) -> Result<void> {
+            if (++calls == 1) {
+                first = candidate.completion_evidence;
+                entered.set_value(candidate);
+                if (released.wait_for(3s) != std::future_status::ready)
+                    return probe_error(ErrorCode::DeadlineExceeded, "recording fixture timed out");
+                return probe_error(ErrorCode::ExecutionUncertain,
+                                   "completion acknowledgement lost");
+            }
+            if (!first || !candidate.completion_evidence ||
+                candidate.completion_evidence->completed_at != first->completed_at ||
+                candidate.completion_evidence->control_sequence != first->control_sequence)
+                return probe_error(ErrorCode::DataLoss, "completion evidence changed");
+            return {};
+        });
+    MIRA_CHECK(task && task.value().command.outcome(2s));
+    const auto id = task.value().id;
+    const auto operation = runtime.begin_operation(id, StepId::generate());
+    MIRA_CHECK(operation);
+    const auto completion = runtime.complete_task(id, {TaskState::Completed, {}});
+    MIRA_CHECK(completion);
+    const auto started = recording.wait_for(2s);
+    if (started != std::future_status::ready) {
+        release.set_value();
+        (void)completion.value().outcome(5s);
+        MIRA_CHECK(started == std::future_status::ready);
+    }
+    const auto candidate = recording.get();
+    const auto during = runtime.task_snapshot(id);
+    const auto blocked = runtime.begin_operation(id, StepId::generate());
+    const auto early = completion.value().outcome(0ms);
+    release.set_value();
+    const auto failed = completion.value().outcome(2s);
+    MIRA_CHECK(candidate.state == TaskState::Completed && candidate.completion_evidence);
+    MIRA_CHECK(during && during.value().state == TaskState::Idle &&
+               !during.value().completion_evidence);
+    MIRA_CHECK(!blocked && blocked.error().code == ErrorCode::ExecutionUncertain);
+    MIRA_CHECK(!early && early.error().code == ErrorCode::DeadlineExceeded);
+    MIRA_CHECK(failed && failed.value().status == SettlementStatus::Failed &&
+               failed.value().error && failed.value().error->code == ErrorCode::ExecutionUncertain);
+    const auto late = runtime.admit_operation_completion(operation.value());
+    MIRA_CHECK(late && late.value().outcome(2s).value().status == SettlementStatus::NoOp);
+    const auto conflicting = runtime.complete_task(id, {TaskState::Failed, {}});
+    MIRA_CHECK(conflicting &&
+               conflicting.value().outcome(2s).value().status == SettlementStatus::Failed);
+    const auto takeover = runtime.request_human_takeover(session.value().id);
+    MIRA_CHECK(takeover &&
+               takeover.value().outcome(2s).value().status == SettlementStatus::Applied);
+    const auto deferred = runtime.complete_task(id, {TaskState::Completed, {}});
+    MIRA_CHECK(deferred && deferred.value().outcome(2s).value().status == SettlementStatus::Failed);
+    const auto resume = runtime.release_human_takeover(session.value().id);
+    MIRA_CHECK(resume && resume.value().outcome(2s).value().status == SettlementStatus::Applied);
+    const auto retry = runtime.complete_task(id, {TaskState::Completed, {}});
+    MIRA_CHECK(retry && retry.value().outcome(2s).value().status == SettlementStatus::Applied);
+    const auto settled = runtime.task_snapshot(id);
+    MIRA_CHECK(
+        settled && settled.value().state == TaskState::Completed &&
+        settled.value().completion_evidence &&
+        settled.value().completion_evidence->control_sequence == candidate.control_sequence &&
+        settled.value().control_sequence == retry.value().receipt(2s).value().control_sequence &&
+        settled.value().control_sequence > candidate.control_sequence &&
+        settled.value().environment_epoch == 1);
+    const auto duplicate = runtime.complete_task(id, {TaskState::Completed, {}});
+    MIRA_CHECK(duplicate && duplicate.value().outcome(2s).value().status == SettlementStatus::NoOp);
+    MIRA_CHECK(calls == 2);
+
+    const auto cancellable = runtime.submit_task(
+        session.value().id, {"Cancel with pending persistence", {}, OperationId::generate()}, admit,
+        [](const TaskSnapshot &, TenantId, UserId) -> Result<void> {
+            throw std::runtime_error("private fixture detail");
+        });
+    MIRA_CHECK(cancellable && cancellable.value().command.outcome(2s));
+    const auto uncertain =
+        runtime.complete_task(cancellable.value().id, {TaskState::Completed, {}});
+    MIRA_CHECK(uncertain);
+    const auto rejected = uncertain.value().outcome(2s);
+    MIRA_CHECK(rejected && rejected.value().status == SettlementStatus::Failed &&
+               rejected.value().error && rejected.value().error->code == ErrorCode::Internal &&
+               rejected.value().error->safe_message == "task completion recorder failed");
+    const auto cancelled = runtime.cancel_task(cancellable.value().id);
+    MIRA_CHECK(cancelled &&
+               cancelled.value().outcome(2s).value().status == SettlementStatus::Applied);
+    const auto too_late = runtime.complete_task(cancellable.value().id, {TaskState::Completed, {}});
+    MIRA_CHECK(too_late && too_late.value().outcome(2s).value().status == SettlementStatus::Failed);
+    MIRA_CHECK(runtime.task_snapshot(cancellable.value().id).value().state == TaskState::Cancelled);
+    MIRA_CHECK(runtime.request_shutdown() && runtime.finish_shutdown().clean);
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -352,6 +455,7 @@ int main() {
     MIRA_CHECK(failed_release_is_not_reported_as_clean() == 0);
     MIRA_CHECK(control_callback_cannot_finalize_itself() == 0);
     MIRA_CHECK(durable_task_is_published_only_after_recording() == 0);
+    MIRA_CHECK(durable_completion_freezes_evidence_until_acknowledged() == 0);
     MIRA_CHECK(initialization_and_stop_cannot_revive_finalized_runtime() == 0);
     return 0;
 }

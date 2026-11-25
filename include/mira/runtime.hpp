@@ -93,6 +93,9 @@ struct TaskSubmission final {
 // Runtime control lane without the records mutex. Must not reenter Runtime or
 // wait for another task on its Executor.
 using TaskAdmissionRecorder = std::function<Result<void>(const TaskSnapshot &, TenantId, UserId)>;
+// Same bounded, non-reentrant contract as admission. Retries carry the same
+// completion_evidence. A successful result confirms durable persistence.
+using TaskCompletionRecorder = std::function<Result<void>(const TaskSnapshot &, TenantId, UserId)>;
 
 struct SessionSnapshot final {
     SessionId id;
@@ -114,6 +117,9 @@ class MiraRuntime final {
     Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task);
     Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task,
                                        TaskAdmissionRecorder recorder);
+    Result<TaskSubmission> submit_task(SessionId session_id, TaskSpec task,
+                                       TaskAdmissionRecorder admission,
+                                       TaskCompletionRecorder completion);
     Result<CommandHandle> pause_task(TaskId task_id);
     Result<CommandHandle> resume_task(TaskId task_id);
     Result<CommandHandle> cancel_task(TaskId task_id);
@@ -148,7 +154,8 @@ class MiraRuntime final {
     ShutdownReport finish_shutdown();
 
   private:
-    Result<TaskSubmission> submit_task_impl(SessionId, TaskSpec, TaskAdmissionRecorder);
+    Result<TaskSubmission> submit_task_impl(SessionId, TaskSpec, TaskAdmissionRecorder,
+                                            TaskCompletionRecorder);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

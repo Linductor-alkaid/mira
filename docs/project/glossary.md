@@ -383,8 +383,9 @@ _Avoid_: 永不结束的主会话、第二记忆库、全权路由器
 与接纳时间。见[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md)。
 
 **Verified Task Completion（任务完成证据）**：
-协调层核对当前主体归属后，依据 Runtime 无错误完成终态写入的持久任务事件。一次性目标
-可按派发回执引用此事件兑现。见[DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)。
+基于 Runtime 的无错误验证结果、与任务归属绑定的持久事件。一次性目标可按派发回执引用
+此事件兑现。持久派发入口可在发布 Runtime 成功终态前确认该证据。
+见 [DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md) 和 [DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md)。
 
 **Goal Calendar Rule（目标日历规则）**：
 计划的本地时分、星期选择及带版本的时区偏移快照，用于计算确定的 UTC 触发时间。

@@ -1,7 +1,7 @@
 # Mira 实施总计划
 
-2026-11-25：[DEC-154](../decisions/DEC-154-durable-before-live-task-admission.md) 接通发布前
-的持久准入回执，见 [M30-51](m30-long-term-memory-integration.md#5-工作项)。
+2026-11-25：[DEC-155](../decisions/DEC-155-durable-before-live-task-completion.md) 接通发布成功
+终态前的持久完成证据，见 [M30-52](m30-long-term-memory-integration.md#5-工作项)。
 
 2026-11-25：[DEC-153](../decisions/DEC-153-durable-task-admission-receipts.md) 接通按操作 ID
 持久记录与回查任务准入，见 [M30-50](m30-long-term-memory-integration.md#5-工作项)。

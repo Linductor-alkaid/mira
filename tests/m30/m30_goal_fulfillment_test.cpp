@@ -635,6 +635,12 @@ int durable_task_admission_survives_runtime_restart() {
     const auto recorder = coordinator.make_task_admission_recorder(
         fixture.principal, session.value().id, guarded_key.operation, context);
     MIRA_CHECK(recorder);
+    const auto completion = coordinator.make_task_completion_recorder(
+        fixture.principal, session.value().id, guarded_key.operation);
+    MIRA_CHECK(completion);
+    const auto denied_completion = coordinator.make_task_completion_recorder(
+        revoked, session.value().id, guarded_key.operation);
+    MIRA_CHECK(!denied_completion && denied_completion.error().code == ErrorCode::PermissionDenied);
     const auto other_session = runtime.open_session(fixture.host.environment_, {foreign});
     MIRA_CHECK(other_session && other_session.value().command.outcome(5s));
     const auto wrong_session = runtime.submit_task(
@@ -685,6 +691,15 @@ int durable_task_admission_survives_runtime_restart() {
                                          InteractionDomainCode::RuntimeCommandTimeout,
                                          "fixture publication timed out");
             return {};
+        },
+        [write = completion.value()](const TaskSnapshot &candidate, TenantId tenant,
+                                     UserId user) -> Result<void> {
+            const auto written = write(candidate, tenant, user);
+            if (!written)
+                return written.error();
+            return interaction_error(ErrorCode::ExecutionUncertain,
+                                     InteractionDomainCode::RuntimeCommandFailed,
+                                     "fixture lost the completion acknowledgement");
         });
     MIRA_CHECK(guarded);
     const auto durable_status = durable.wait_for(2s);
@@ -714,8 +729,22 @@ int durable_task_admission_survives_runtime_restart() {
                !runtime.task_snapshot(duplicate_guarded.value().id));
     // No post-submission call to record_task_admission is made for this task.
     MIRA_CHECK(!fixture.goals->read_dispatch(guarded_goal).value()->submission);
+    const auto complete = runtime.complete_task(guarded.value().id, {TaskState::Completed, {}});
+    MIRA_CHECK(complete);
+    const auto ambiguous = complete.value().outcome(5s);
+    MIRA_CHECK(ambiguous && ambiguous.value().status == SettlementStatus::Failed &&
+               ambiguous.value().error &&
+               ambiguous.value().error->code == ErrorCode::ExecutionUncertain);
+    MIRA_CHECK(runtime.task_snapshot(guarded.value().id).value().state == TaskState::Idle);
+    EventSliceQuery query;
+    query.session_id = session.value().id;
+    query.task_id = guarded.value().id;
+    query.event_type = kVerifiedTaskCompletionEvent;
+    const auto evidence = fixture.events->read_slice(query);
+    MIRA_CHECK(evidence && evidence.value().events.size() == 1);
+    const auto completion_event = evidence.value().events.front().event_id;
 
-    // Simulate losing the successful host result before the goal store can record it.
+    // Lose both live records before the goal store can record dispatch or completion.
     MIRA_CHECK(coordinator.close());
     fixture.host.coordinator_.reset();
     const auto shutdown = runtime.request_shutdown();
@@ -740,7 +769,7 @@ int durable_task_admission_survives_runtime_restart() {
                guarded_recovered.value()->admitted_at ==
                    guarded_outcome.value().task->updated_at.wall);
 
-    GoalDispatchPollerOptions options{10ms, 2s, 1};
+    GoalDispatchPollerOptions options{10ms, 2s, 1, fixture.events};
     options.reconcile_submission =
         [&](const GoalDispatchKey &key,
             const OperationContext &attempt) -> Result<std::optional<GoalDispatchSubmission>> {
@@ -767,7 +796,10 @@ int durable_task_admission_survives_runtime_restart() {
         options);
     MIRA_CHECK(started);
     auto poller = std::move(started).value();
-    MIRA_CHECK(fixture.wait_for([&] { return poller->status().submitted == 2; }));
+    MIRA_CHECK(fixture.wait_for([&] {
+        const auto status = poller->status();
+        return status.submitted == 2 && status.fulfilled == 1;
+    }));
     MIRA_CHECK(poller->close() && !attempted_new_task.load());
     const auto result = fixture.goals->read_dispatch(goal);
     MIRA_CHECK(result && result.value()->key == dispatch && result.value()->submission &&
@@ -777,6 +809,11 @@ int durable_task_admission_survives_runtime_restart() {
     MIRA_CHECK(guarded_result && guarded_result.value() &&
                guarded_result.value()->key == guarded_key && guarded_result.value()->submission &&
                guarded_result.value()->submission->task == guarded.value().id);
+    const auto fulfilled = fixture.goals->read(guarded_goal);
+    MIRA_CHECK(fulfilled && fulfilled.value()->state == GoalState::Fulfilled &&
+               fulfilled.value()->resolution &&
+               fulfilled.value()->resolution->evidence == completion_event);
+    MIRA_CHECK(fixture.goals->read(goal).value()->state == GoalState::Pending);
     return 0;
 }
 } // namespace
