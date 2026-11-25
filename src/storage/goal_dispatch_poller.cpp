@@ -4,6 +4,7 @@
 
 #include <kairo/executor.hpp>
 
+#include <array>
 #include <atomic>
 #include <mutex>
 
@@ -45,7 +46,7 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
           GoalDispatchPollerOptions limits, RecurringGoalDispatchSubmitter recurring_submitter)
         : executor(owner_executor), store(std::move(goal_store)), owner(goal_owner),
           submit(std::move(task_submitter)), submit_recurring(std::move(recurring_submitter)),
-          options(limits) {}
+          options(std::move(limits)) {}
 
     Result<kairo::TimerSubmission<void>> arm(std::chrono::milliseconds delay) {
         try {
@@ -183,15 +184,40 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
             });
     }
 
+    void poll_fulfillments(const OperationContext &context, GoalDispatchPollerStatus &report) {
+        if (!options.completion_events)
+            return;
+        scan_page(
+            fulfillment_cursor, context, report,
+            [&] {
+                return store->pending_fulfillments({owner, options.page_size, fulfillment_cursor});
+            },
+            [](const GoalDispatchKey &key) { return key.goal.id; },
+            [&](const GoalDispatchKey &key) {
+                const auto result =
+                    store->reconcile_dispatch_completion(key, *options.completion_events, context);
+                if (!result) {
+                    if (!context.cancelled() || result.error().code != ErrorCode::Cancelled)
+                        report_failure(report, result.error());
+                    return;
+                }
+                if (result.value())
+                    ++report.fulfilled;
+            });
+    }
+
     void poll(const OperationContext &context, GoalDispatchPollerStatus &report) {
-        if (recurring_first) {
-            poll_recurring(context, report);
-            poll_goals(context, report);
-        } else {
-            poll_goals(context, report);
-            poll_recurring(context, report);
+        constexpr std::array scanners{&State::poll_goals, &State::poll_recurring,
+                                      &State::poll_fulfillments};
+        const auto count = options.completion_events ? scanners.size() : scanners.size() - 1;
+        const auto first = next_scan;
+        next_scan = (next_scan + 1) % count;
+        for (std::size_t offset = 0; offset < count; ++offset) {
+            const auto scan = scanners[(first + offset) % count];
+            (this->*scan)(context, report);
+            if (context.cancelled_or_expired(Timestamp::now()))
+                break;
         }
-        recurring_first = !recurring_first;
     }
 
     void tick(kairo::StopToken stop) {
@@ -228,6 +254,7 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
         const std::lock_guard lock(mutex);
         ++diagnostics.scans;
         diagnostics.submitted += report.submitted;
+        diagnostics.fulfilled += report.fulfilled;
         diagnostics.failures += report.failures;
         if (report.last_error)
             diagnostics.last_error = std::move(report.last_error);
@@ -261,7 +288,8 @@ struct GoalDispatchPoller::State final : std::enable_shared_from_this<State> {
     GoalDispatchPollerStatus diagnostics;
     std::optional<GoalDueCursor> cursor;
     std::optional<RecurringDueCursor> recurring_cursor;
-    bool recurring_first = false;
+    std::optional<Id128> fulfillment_cursor;
+    std::size_t next_scan = 0;
 };
 
 GoalDispatchPoller::GoalDispatchPoller(std::shared_ptr<State> state) : state_(std::move(state)) {}
@@ -273,13 +301,14 @@ GoalDispatchPoller::start(kairo::Executor &executor, std::shared_ptr<SqliteGoalS
                           GoalOwner owner, GoalDispatchSubmitter submit,
                           GoalDispatchPollerOptions options,
                           RecurringGoalDispatchSubmitter submit_recurring) {
-    if (!store || (!submit && !submit_recurring) || owner.tenant.is_nil() || owner.user.is_nil() ||
-        options.page_size == 0 || options.page_size > 128 || options.interval.count() <= 0 ||
+    if (!store || (!submit && !submit_recurring && !options.completion_events) ||
+        owner.tenant.is_nil() || owner.user.is_nil() || options.page_size == 0 ||
+        options.page_size > 128 || options.interval.count() <= 0 ||
         options.interval > std::chrono::hours{1} || options.scan_timeout.count() <= 0 ||
         options.scan_timeout > std::chrono::minutes{1})
         return poll_error(ErrorCode::InvalidArgument, "invalid goal dispatch poller configuration");
     auto state = std::make_shared<State>(executor, std::move(store), owner, std::move(submit),
-                                         options, std::move(submit_recurring));
+                                         std::move(options), std::move(submit_recurring));
     auto poller = std::unique_ptr<GoalDispatchPoller>(new GoalDispatchPoller(state));
     const std::lock_guard lock(state->mutex);
     auto first = state->arm(std::chrono::milliseconds{1});

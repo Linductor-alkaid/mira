@@ -1,7 +1,9 @@
 #include "m28/m28_support.hpp"
 
+#include <mira/goal_dispatch_poller.hpp>
 #include <mira/sqlite_goal_store.hpp>
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 
@@ -80,6 +82,15 @@ struct FulfillmentFixture final {
         return result && result.value().status == SettlementStatus::Applied;
     }
 
+    template <typename Predicate> bool wait_for(Predicate ready) {
+        const auto until = std::chrono::steady_clock::now() + 4s;
+        while (!ready() && std::chrono::steady_clock::now() < until) {
+            auto pause = host.executor_.submit_delayed(5, [] {});
+            pause.future.get();
+        }
+        return ready();
+    }
+
     const std::filesystem::path root = std::filesystem::temp_directory_path() /
                                        ("mira-fulfillment-" + Id128::generate().to_string());
     const RuntimeId runtime_id = RuntimeId::generate();
@@ -87,7 +98,7 @@ struct FulfillmentFixture final {
     const GoalOwner owner{principal.tenant_id, principal.user_id};
     m28::CoordinatorFixture host;
     std::shared_ptr<FileEventStore> events;
-    std::unique_ptr<SqliteGoalStore> goals;
+    std::shared_ptr<SqliteGoalStore> goals;
 };
 
 int only_runtime_completion_can_fulfill_after_restart() {
@@ -179,9 +190,31 @@ int fulfillment_respects_dispatch_owner_version_and_current_access() {
     version.source_event = EventId::generate();
     version.title = "Review the revised archive";
     MIRA_CHECK(fixture.goals->correct(corrected, 1, version));
+    const auto page = fixture.goals->pending_fulfillments({fixture.owner, 1, {}});
+    MIRA_CHECK(page && page.value().records.size() == 1 && page.value().next);
+    const auto following =
+        fixture.goals->pending_fulfillments({fixture.owner, 1, page.value().next});
+    MIRA_CHECK(following && following.value().records.size() == 1 && !following.value().next);
+    const bool goal_first = goal.id < late.id;
+    MIRA_CHECK(page.value().records.front() == (goal_first ? dispatch.value() : expired.value()));
+    MIRA_CHECK(following.value().records.front() ==
+               (goal_first ? expired.value() : dispatch.value()));
+    const auto other_page = fixture.goals->pending_fulfillments({foreign.owner});
+    MIRA_CHECK(other_page && other_page.value().records == std::vector{other.value()});
+    MIRA_CHECK(!fixture.goals->pending_fulfillments({fixture.owner, 0, {}}));
     MIRA_CHECK(fixture.complete(admission.task));
     MIRA_CHECK(fixture.host.coordinator_->record_verified_task_completion(fixture.principal,
                                                                           admission.task));
+    auto context = make_control_context();
+    context.cancellation_requested = [] { return true; };
+    const auto cancelled =
+        fixture.goals->reconcile_dispatch_completion(dispatch.value(), *fixture.events, context);
+    MIRA_CHECK(!cancelled && cancelled.error().code == ErrorCode::Cancelled);
+    context.cancellation_requested = {};
+    context.deadline = std::chrono::steady_clock::now() - 1ms;
+    const auto deadline =
+        fixture.goals->reconcile_dispatch_completion(dispatch.value(), *fixture.events, context);
+    MIRA_CHECK(!deadline && deadline.error().code == ErrorCode::DeadlineExceeded);
     MIRA_CHECK(!fixture.goals->fulfill_dispatch(stale.value(), *fixture.events));
     const auto wrong_owner = fixture.goals->fulfill_dispatch(other.value(), *fixture.events);
     MIRA_CHECK(!wrong_owner && wrong_owner.error().code == ErrorCode::InvalidState);
@@ -190,10 +223,22 @@ int fulfillment_respects_dispatch_owner_version_and_current_access() {
     auto wrong_operation = dispatch.value();
     wrong_operation.operation = OperationId::generate();
     MIRA_CHECK(!fixture.goals->fulfill_dispatch(wrong_operation, *fixture.events));
+    std::atomic<bool> read_authorized{false};
     MIRA_CHECK(fixture.reopen_goals([&](const GoalStoreAccess &access) {
-        return access.owner == fixture.owner && access.id == goal.id &&
-               access.operation == GoalStoreOperation::ReadDispatch;
+        if (access.owner != fixture.owner || access.id != goal.id ||
+            access.operation != GoalStoreOperation::ReadDispatch)
+            return false;
+        read_authorized.store(true);
+        return true;
     }));
+    const auto list_denied = fixture.goals->pending_fulfillments({fixture.owner});
+    MIRA_CHECK(!list_denied && list_denied.error().code == ErrorCode::PermissionDenied);
+    context.deadline.reset();
+    context.cancellation_requested = [&] { return read_authorized.load(); };
+    const auto interrupted =
+        fixture.goals->reconcile_dispatch_completion(dispatch.value(), *fixture.events, context);
+    MIRA_CHECK(!interrupted && interrupted.error().code == ErrorCode::Cancelled &&
+               read_authorized.load());
     const auto denied = fixture.goals->fulfill_dispatch(dispatch.value(), *fixture.events);
     MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
     MIRA_CHECK(fixture.reopen_goals());
@@ -223,10 +268,116 @@ int fulfillment_respects_dispatch_owner_version_and_current_access() {
     MIRA_CHECK(fixture.goals->read(goal).value()->state == GoalState::Pending);
     return 0;
 }
+
+GoalKey ordered_goal(const GoalOwner &owner, std::uint8_t value) {
+    Id128::Bytes bytes{};
+    bytes.back() = value;
+    return {owner, Id128{bytes}};
+}
+
+int poller_reconciles_existing_receipts_after_restart() {
+    FulfillmentFixture fixture;
+    const GoalKey waiting_for_evidence = ordered_goal(fixture.owner, 1);
+    const GoalKey completed = ordered_goal(fixture.owner, 2);
+    const GoalKey due_for_dispatch = ordered_goal(fixture.owner, 3);
+    const GoalKey prepared_only = ordered_goal(fixture.owner, 4);
+    const auto live = fixture.submit("persistent-completion");
+    MIRA_CHECK(live && live.value().session_id && live.value().task_id);
+    const GoalDispatchSubmission submission{*live.value().session_id, *live.value().task_id,
+                                            now_ms()};
+    MIRA_CHECK(fixture.complete(submission.task));
+    const auto snapshot = fixture.host.runtime_->task_snapshot(submission.task);
+    MIRA_CHECK(snapshot);
+    const auto evidence = fixture.host.coordinator_->record_verified_task_completion(
+        fixture.principal, submission.task);
+    MIRA_CHECK(evidence);
+    const auto completed_at =
+        std::chrono::floor<std::chrono::milliseconds>(snapshot.value().updated_at.wall);
+    const auto expires = completed_at + 1ms;
+    MIRA_CHECK(fixture.record_dispatch(completed, submission, expires));
+    MIRA_CHECK(fixture.record_dispatch(waiting_for_evidence,
+                                       {SessionId::generate(), TaskId::generate(), now_ms()}));
+    const auto now = now_ms();
+    MIRA_CHECK(fixture.goals->create(
+        due_for_dispatch,
+        {GoalKind::Commitment, "Review once due", EventId::generate(), now - 1h, now - 1min, {}}));
+    MIRA_CHECK(fixture.goals->create(prepared_only,
+                                     {GoalKind::Commitment, "An unconfirmed dispatch",
+                                      EventId::generate(), now - 1h, now - 1min, expires + 1h}));
+    MIRA_CHECK(fixture.goals->prepare_dispatch(prepared_only, 1, now));
+    const auto pending = fixture.goals->pending_fulfillments({fixture.owner});
+    MIRA_CHECK(pending && pending.value().records.size() == 2);
+    MIRA_CHECK(pending.value().records.front().goal == waiting_for_evidence &&
+               pending.value().records.back().goal == completed);
+    // Close this prepared goal before the next scan, so the automatic callback only handles the new
+    // goal.
+    MIRA_CHECK(
+        fixture.goals->settle(prepared_only, 1, {GoalState::Cancelled, EventId::generate(), now}));
+
+    MIRA_CHECK(fixture.host.coordinator_->close());
+    fixture.host.coordinator_.reset();
+    fixture.events.reset();
+    const auto shutdown = fixture.host.runtime_->request_shutdown();
+    MIRA_CHECK(shutdown && shutdown.value().outcome(5s));
+    MIRA_CHECK(fixture.host.runtime_->finish_shutdown().clean);
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    std::atomic<bool> allow_settle{false};
+    MIRA_CHECK(fixture.reopen_goals([&](const GoalStoreAccess &access) {
+        return access.owner == fixture.owner &&
+               (access.operation != GoalStoreOperation::Settle || allow_settle.load());
+    }));
+    MIRA_CHECK(fixture.wait_for([&] { return now_ms() >= expires; }));
+    GoalDispatchPollerOptions options{10ms, 2s, 1, fixture.events};
+    auto started = GoalDispatchPoller::start(
+        fixture.host.executor_, fixture.goals, fixture.owner,
+        [&](const GoalRecord &goal, const GoalDispatchKey &,
+            const OperationContext &) -> Result<GoalDispatchSubmission> {
+            if (goal.key == due_for_dispatch)
+                return GoalDispatchSubmission{SessionId::generate(), TaskId::generate(), now_ms()};
+            return interaction_error(ErrorCode::InvalidState, InteractionDomainCode::RouteRejected,
+                                     "unexpected goal dispatch");
+        },
+        options);
+    MIRA_CHECK(started);
+    auto poller = std::move(started).value();
+    MIRA_CHECK(fixture.wait_for([&] {
+        const auto status = poller->status();
+        return status.submitted == 1 && status.failures > 0;
+    }));
+    const auto denied = poller->status();
+    MIRA_CHECK(denied.fulfilled == 0 && denied.last_error &&
+               denied.last_error->code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(fixture.goals->read(completed).value()->state == GoalState::Pending);
+    allow_settle.store(true);
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().fulfilled == 1; }));
+    MIRA_CHECK(poller->close());
+    const auto fulfilled = fixture.goals->read(completed);
+    MIRA_CHECK(fulfilled && fulfilled.value() && fulfilled.value()->resolution &&
+               fulfilled.value()->resolution->evidence == evidence.value().event_id &&
+               fulfilled.value()->resolution->at == completed_at);
+    MIRA_CHECK(fixture.goals->read(waiting_for_evidence).value()->state == GoalState::Pending);
+    MIRA_CHECK(fixture.goals->read_dispatch(due_for_dispatch).value()->submission);
+    poller.reset();
+    MIRA_CHECK(fixture.reopen_goals());
+
+    auto fulfillment_only = GoalDispatchPoller::start(fixture.host.executor_, fixture.goals,
+                                                      fixture.owner, {}, options);
+    MIRA_CHECK(fulfillment_only);
+    poller = std::move(fulfillment_only).value();
+    MIRA_CHECK(fixture.wait_for([&] { return poller->status().scans >= 3; }));
+    MIRA_CHECK(poller->close());
+    const auto refreshed = poller->status();
+    MIRA_CHECK(!refreshed.running && refreshed.fulfilled == 0 && refreshed.submitted == 0 &&
+               refreshed.failures == 0);
+    return 0;
+}
 } // namespace
 
 int main() {
     if (const int result = only_runtime_completion_can_fulfill_after_restart(); result != 0)
         return result;
-    return fulfillment_respects_dispatch_owner_version_and_current_access();
+    if (const int result = fulfillment_respects_dispatch_owner_version_and_current_access();
+        result != 0)
+        return result;
+    return poller_reconciles_existing_receipts_after_restart();
 }

@@ -17,6 +17,7 @@ class Executor;
 namespace mira {
 
 class IEventStore;
+struct OperationContext;
 
 struct GoalOwner final {
     TenantId tenant;
@@ -113,6 +114,17 @@ struct GoalDispatchReceipt final {
     GoalTime prepared_at{};
     std::optional<GoalDispatchSubmission> submission;
     friend bool operator==(const GoalDispatchReceipt &, const GoalDispatchReceipt &) = default;
+};
+
+struct GoalPendingFulfillmentQuery final {
+    GoalOwner owner;
+    std::size_t limit = 32;
+    std::optional<Id128> after = {};
+};
+
+struct GoalPendingFulfillmentPage final {
+    std::vector<GoalDispatchKey> records;
+    std::optional<Id128> next; // Reuse the same owner on the next page.
 };
 
 struct GoalListQuery final {
@@ -219,7 +231,8 @@ enum class GoalStoreOperation : std::uint8_t {
     ReadDispatchDue,
     PrepareDispatch,
     ReadDispatch,
-    RecordDispatchSubmission
+    RecordDispatchSubmission,
+    ReadPendingFulfillments
 };
 
 struct GoalStoreAccess final {
@@ -276,6 +289,11 @@ class SqliteGoalStore final {
     record_dispatch_submission(const GoalDispatchKey &key, GoalDispatchSubmission submission);
     // Reads completion evidence from the trusted task event store for this dispatch.
     [[nodiscard]] Result<GoalRecord> fulfill_dispatch(const GoalDispatchKey &, IEventStore &);
+    [[nodiscard]] Result<GoalPendingFulfillmentPage>
+    pending_fulfillments(const GoalPendingFulfillmentQuery &) const;
+    // An empty result means the dispatch or its completion evidence is absent.
+    [[nodiscard]] Result<std::optional<GoalRecord>>
+    reconcile_dispatch_completion(const GoalDispatchKey &, IEventStore &, const OperationContext &);
     [[nodiscard]] Result<GoalListPage> list(const GoalListQuery &query) const;
     [[nodiscard]] Result<void> erase(const GoalKey &key);
     [[nodiscard]] Result<GoalRecord> correct(const GoalKey &key, std::uint64_t expected_revision,

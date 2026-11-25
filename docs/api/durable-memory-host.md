@@ -442,9 +442,9 @@ auto fulfilled = goals->fulfill_dispatch(dispatch_key, task_events);
 
 ### 周期检查到期目标和计划
 
-`GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的待派发列表。每轮
-最多读取一页一次性目标和一页重复计划，两类各自沿到期索引继续，轮换处理顺序。上一轮
-结束后才登记下一轮。`status()` 提供检查、提交和失败总计及最近错误。
+`GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的目标。每轮最多读取
+一页待派发目标、一页重复计划和一页待结算目标，各自沿索引继续，轮换处理顺序。
+上一轮结束后才登记下一轮。`status()` 提供检查、提交、兑现和失败总计及最近错误。
 
 ```cpp
 auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, submit_goal_task,
@@ -461,6 +461,24 @@ auto drained = poller.value()->close();
 当前授权规约。宿主可只绑定其中一个提交入口。未知结果保留稳定身份供后续检查，未就绪的
 触发仍占用原到期位置。生产协调层的持久对账适配由 M30-37 跟踪。见
 [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 与 [DEC-148](../decisions/DEC-148-recurring-goal-dispatch.md)。
+
+#### 自动核对完成证据
+
+在 `GoalDispatchPollerOptions::completion_events` 绑定受信的任务事件库即可周期核对已派发
+目标。仅启用结算时，两个提交回调均可为空。待结算查询 `pending_fulfillments` 按目标 ID
+分页，只返回仍为 Pending 且当前版本有提交回执的身份。没有完成事件时该目标留待后续
+检查。即使停机期间过了目标的过期时间，之前实际完成的任务也可以补结算。
+
+```cpp
+GoalDispatchPollerOptions options;
+options.completion_events = shared_task_events;
+auto poller = GoalDispatchPoller::start(executor, shared_goals, owner, {}, options);
+```
+
+授权型目标库以 `ReadPendingFulfillments` 控制归属内的分页发现，以 `ReadDispatch` 和
+`Settle` 控制每条结算。使用 `reconcile_dispatch_completion` 手动核对时，空值表示
+尚无提交回执或完成证据。事件读取和持久化的其他失败返回原错误。宿主从外部关闭派发器
+后再关闭事件库、目标库和 Executor。见 [DEC-150](../decisions/DEC-150-goal-fulfillment-polling.md)。
 
 ## 重复计划与触发回执
 

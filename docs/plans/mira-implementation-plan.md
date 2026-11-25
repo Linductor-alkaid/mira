@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-150](../decisions/DEC-150-goal-fulfillment-polling.md) 接通已派发一次性目标的
+周期核对与补结算，见 [M30-47](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md) 接通一次性目标的任务
 证据核验与兑现，见 [M30-46](m30-long-term-memory-integration.md#5-工作项)。
 
