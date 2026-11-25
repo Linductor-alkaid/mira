@@ -1,10 +1,15 @@
 #include "sqlite_support.hpp"
 
+#include <mira/text_segmentation.hpp>
+
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <chrono>
+#include <set>
 #include <stdexcept>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace mira::storage {
 
@@ -12,39 +17,85 @@ namespace mira::storage {
 // Database helpers
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] std::string fts_match_expression(const std::string &text) {
-    // Neutralize FTS5 syntax: every whitespace token becomes a quoted
-    // phrase and terms combine with AND, so user text can never inject
-    // operators while multi-word queries still match like a keyword AND.
-    std::string expression;
-    std::string token;
-    const auto flush = [&expression, &token]() {
-        if (token.empty()) {
-            return;
+namespace {
+
+[[nodiscard]] std::string quote_fts_term(std::string_view term) {
+    std::string result = "\"";
+    for (const char character : term) {
+        if (character == '"') {
+            result += "\"\"";
         }
-        std::string escaped;
-        for (const char character : token) {
-            if (character == '"') {
-                escaped += "\"\"";
-            } else {
-                escaped += character;
-            }
+        result += character;
+    }
+    result += '"';
+    return result;
+}
+
+// A unit as an FTS5 operand. A bigram is the phrase of its two characters,
+// which a character index matches by position.
+[[nodiscard]] std::string quoted_unit(std::string_view unit, LexicalUnitKind kind) {
+    if (kind != LexicalUnitKind::Bigram) {
+        return quote_fts_term(unit);
+    }
+    const auto lead = static_cast<unsigned char>(unit.front());
+    const std::size_t first = (lead & 0xF0U) == 0xE0U   ? 3
+                              : (lead & 0xF8U) == 0xF0U ? 4
+                              : (lead & 0xE0U) == 0xC0U ? 2
+                                                        : 1;
+    std::string phrase(unit);
+    phrase.insert(first, 1, ' ');
+    return quote_fts_term(phrase);
+}
+
+} // namespace
+
+FtsMatch fts_match_expression(const std::string &text) {
+    const auto units = segment_lexically(text, LexicalUnits::MatchUnits);
+    // Unique units per kind in text order. A full-text index gives a
+    // character that many rows share no weight, so a query too long to match
+    // completely gives characters up first and words last.
+    std::vector<std::string_view> words;
+    std::vector<std::string_view> characters;
+    std::vector<std::string_view> bigrams;
+    std::set<std::string_view> seen;
+    for (const auto &unit : units) {
+        if (!seen.insert(unit.text).second) {
+            continue;
         }
-        if (!expression.empty()) {
-            expression += " AND ";
-        }
-        expression += "\"" + escaped + "\"";
-        token.clear();
-    };
-    for (const char character : text) {
-        if (std::isspace(static_cast<unsigned char>(character)) != 0) {
-            flush();
-        } else {
-            token += character;
+        switch (unit.kind) {
+        case LexicalUnitKind::Word:
+            words.push_back(unit.text);
+            break;
+        case LexicalUnitKind::Character:
+            characters.push_back(unit.text);
+            break;
+        case LexicalUnitKind::Bigram:
+            bigrams.push_back(unit.text);
+            break;
         }
     }
-    flush();
-    return expression;
+    FtsMatch match;
+    std::size_t budget = kMaxFtsMatchUnits;
+    const std::pair<const std::vector<std::string_view> *, LexicalUnitKind> groups[] = {
+        {&words, LexicalUnitKind::Word},
+        {&bigrams, LexicalUnitKind::Bigram},
+        {&characters, LexicalUnitKind::Character},
+    };
+    for (const auto &[group, kind] : groups) {
+        const std::size_t taken = std::min(budget, group->size());
+        match.truncated = match.truncated || taken < group->size();
+        // Units that do not all fit are spread over the whole text instead of
+        // being taken from its beginning.
+        const std::size_t stride = taken == 0 ? 1 : (group->size() + taken - 1) / taken;
+        for (std::size_t index = 0; index < group->size() && taken != 0; index += stride) {
+            if (!match.expression.empty()) {
+                match.expression += " OR ";
+            }
+            match.expression += quoted_unit((*group)[index], kind);
+        }
+        budget -= taken;
+    }
+    return match;
 }
 
 std::string sqlite_error_message(int code, sqlite3 *database) {

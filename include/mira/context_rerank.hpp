@@ -80,10 +80,11 @@ struct TokenOverlapRerankerOptions final {
 };
 
 // Deterministic reference reranker (no model): query/candidate texts are
-// tokenized exactly like the Layer 1 lexical leg (lowercase [a-z0-9_] runs),
-// the rerank score is the query-token F1 coverage of the candidate plus one
-// `exact_bonus` per verbatim (case-insensitive) `exact_terms` hit. With the
-// token-hash embedding supplier this is a hash-noise-free cross score — the
+// segmented exactly like the Layer 1 lexical leg, into words and adjacent
+// character pairs (`CoarseUnits`, DEC-147); the rerank score is the
+// query-unit F1 coverage of the candidate plus one `exact_bonus` per
+// verbatim (case-insensitive) `exact_terms` hit. With the token-hash
+// embedding supplier this is a hash-noise-free cross score — the
 // deterministic counterpart of a cross-encoder for pipeline experiments.
 // Internally stateless; safe to share across Executor-supervised calls.
 class TokenOverlapContextReranker final : public IContextReranker {

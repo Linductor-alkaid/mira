@@ -35,6 +35,8 @@ if(TARGET mira_png_adapter)
     target_link_libraries(mira_png_adapter_test PRIVATE Mira::png_adapter PNG::PNG)
 endif()
 mira_add_test(mira_contract_test contract/environment_contract_test.cpp contract)
+mira_add_test(mira_text_segmentation_contract_test contract/text_segmentation_contract_test.cpp
+    contract)
 mira_add_test(mira_executor_integration_test integration/executor_lifecycle_test.cpp integration)
 mira_add_test(mira_replay_test replay/deterministic_replay_test.cpp replay)
 mira_add_test(mira_stress_test stress/runtime_ordering_stress_test.cpp stress)
@@ -226,6 +228,10 @@ mira_add_m4_store_test(mira_m4_fusion_eval_test m4/m4_fusion_eval.cpp)
 mira_add_m4_store_test(mira_m4_memory_embedding_test m4/m4_memory_embedding_test.cpp)
 mira_add_m4_store_test(mira_m4_hybrid_wiring_test m4/m4_hybrid_wiring_test.cpp)
 mira_add_m4_store_test(mira_m4_claim_key_test m4/m4_claim_key_test.cpp)
+mira_add_m4_store_test(mira_m4_memory_lexical_test m4/m4_memory_lexical_test.cpp)
+mira_add_m4_store_test(mira_m4_lexical_eval_test m4/m4_lexical_eval.cpp)
+target_compile_definitions(mira_m4_lexical_eval_test PRIVATE
+    "MIRA_LEXICAL_EVAL_DATASET=\"${PROJECT_SOURCE_DIR}/tests/benchmark/hybrid-retrieval/eval_dataset.json\"")
 mira_add_m4_store_test(mira_m4_retention_sweep_test m4/m4_retention_sweep_test.cpp)
 mira_add_m4_test(mira_m4_continuation_test m4/m4_continuation_test.cpp)
 mira_add_m4_test(mira_m4_supervisor_test m4/m4_supervisor_test.cpp)
@@ -560,6 +566,7 @@ endfunction()
 
 mira_add_m17_test(mira_m17_context_retrieval_test m17/m17_context_retrieval_test.cpp)
 mira_add_m17_test(mira_m17_retrieval_eval m17/m17_retrieval_eval.cpp)
+mira_add_m17_test(mira_m17_lexical_cjk_test m17/m17_lexical_cjk_test.cpp)
 
 # M18 (DEC-032 Stage C): Layer 2 rerank contract and the deterministic
 # reference reranker; the contract suite also exercises the supervisor routing
@@ -582,6 +589,7 @@ endfunction()
 
 mira_add_m18_test(mira_m18_context_rerank_test m18/m18_context_rerank_test.cpp)
 mira_add_m18_test(mira_m18_rerank_eval m18/m18_rerank_eval.cpp)
+mira_add_m18_test(mira_m18_rerank_cjk_test m18/m18_rerank_cjk_test.cpp)
 
 
 # M19 (DEC-032 Stage D): Layer 3 semantic consolidation — checkpoint
@@ -890,12 +898,13 @@ mira_add_m29_test(mira_m29_recovery_faults_test m29/m29_recovery_faults_test.cpp
 mira_add_m29_test(mira_m29_recovery_lifecycle_test m29/m29_recovery_lifecycle_test.cpp)
 
 # M30 / DEC-107: principal scopes and automatic interaction memory work.
-foreach(mira_m30_case scope_binding lifecycle recording lifecycle_faults recall_groups event_slices conversation_index social_directory social_profile social_relationship social_erasure_recovery social_inference
+foreach(mira_m30_case scope_binding lifecycle recording lifecycle_faults recall_groups event_slices conversation_index conversation_index_lexical social_directory social_profile social_relationship social_erasure_recovery social_inference
                      preference_approval preference_security preference_recovery preference_lifecycle world_fact goal_store goal_dispatch_poller)
     mira_add_test(mira_m30_${mira_m30_case}_test m30/m30_${mira_m30_case}_test.cpp "contract;m30")
     target_link_libraries(mira_m30_${mira_m30_case}_test PRIVATE Mira::state_store)
 endforeach()
 target_link_libraries(mira_m30_social_relationship_test PRIVATE Mira::sqlite3)
+target_link_libraries(mira_m30_conversation_index_lexical_test PRIVATE Mira::sqlite3)
 target_link_libraries(mira_m30_social_erasure_recovery_test PRIVATE Mira::sqlite3)
 target_link_libraries(mira_m30_goal_store_test PRIVATE Mira::sqlite3)
 mira_add_test(mira_m30_navigation_world_test m30/m30_navigation_world_test.cpp "contract;m30")

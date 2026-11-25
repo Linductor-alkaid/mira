@@ -103,7 +103,9 @@ struct SqliteMemoryCapacitySnapshot final {
 
 // IMemory over SQLite/WAL. One Executor blocking-I/O worker owns the single
 // connection (single writer, bounded admission); FTS5 carries the lexical
-// leg and a bounded linear cosine scan carries the semantic leg. The vector
+// leg — words and single characters are indexed, a query matches them with
+// OR and is ranked by bm25 (DEC-147) — and a bounded linear cosine scan
+// carries the semantic leg. The vector
 // index is a rebuildable projection: corruption or dimension mismatch only
 // degrades retrieval quality and never blocks the control plane.
 //

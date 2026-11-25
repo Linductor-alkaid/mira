@@ -1,5 +1,10 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md) 修复词法腿的
+中文分词与查询组合，交付 store 的纯词法 R@10 从 0.100 到 0.95；会话索引改为按相关度
+排序。范围、验证与待重测的基准见
+[词法分词维护记录](maintenance-2026-11-lexical-segmentation.md)。
+
 [DEC-146](../decisions/DEC-146-goal-dispatch-polling.md) 接通一次性目标的周期发现与宿主派发，
 见 [M30-44](m30-long-term-memory-integration.md#5-工作项)。
 
@@ -89,6 +94,14 @@ Agent ID 加载人格的目录与模型准入，详见 [M30-11](m30-long-term-me
 提供显式 Workflow 恢复输出协议与生成预算；嵌入式架构扫描按 Mira 根目录计算排除路径。
 主线验收见 [M31-13](m31-capacity-admission-and-archival-recovery.md) 与
 [M14-08](m14-recovery-orchestration.md)。
+2026-11-25：[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)
+修复词法检索——无词典的确定性分词契约（`text_segmentation.hpp`）供进程内词法腿与两个
+耐久 FTS5 索引共用，查询以 OR 匹配并按 bm25 排序，`exact_terms` 在所有后端都是强制的；
+同时修复按字节截断、词法腿倒序和 `exact_terms` 失效三处缺陷。基准数据集上交付 store 的
+纯词法 R@10 从 0.100 到 0.95；DEC-112/113 的混合检索基准数字需要真实供应商凭据才能
+重测，重测前不得继续引用。范围与验证见
+[词法分词维护记录](maintenance-2026-11-lexical-segmentation.md)。
+
 2026-11-18（三）：[DEC-115](../decisions/DEC-115-write-path-decoupling.md)
 落地 Memory Core 写入面分层解耦——变异模型扩展（`AppendEvidence`/
 `PreserveAlternative`）、冲突分类处置（纪元接续 Supersede vs 有界并存）、

@@ -4,6 +4,7 @@
 #include <mira/environment.hpp>
 #include <mira/model_contracts.hpp>
 #include <mira/model_tool.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -20,13 +21,13 @@ struct OperationIdHash final {
 };
 
 // Bounded summary text shared by the tool surfaces (BuiltIn executor records,
-// MCP tool module records, reference projections): truncates to `limit` bytes
-// and marks the cut with an ellipsis. Tool records are model-facing, so they
-// never grow unbounded even when a tool result or error detail does.
+// MCP tool module records, reference projections): truncates to at most
+// `limit` bytes without splitting a character, and marks the cut with an
+// ellipsis. Tool records are model-facing, so they never grow unbounded even
+// when a tool result or error detail does.
 [[nodiscard]] inline std::string truncate_text(std::string text, std::size_t limit) {
     if (text.size() > limit) {
-        text.resize(limit);
-        text += "...";
+        text = std::string(truncate_utf8(text, limit)) + "...";
     }
     return text;
 }

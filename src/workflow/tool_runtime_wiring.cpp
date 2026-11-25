@@ -8,6 +8,7 @@
 
 #include <mira/workflow_runtime.hpp>
 
+#include <mira/text_segmentation.hpp>
 #include <mira/tool_module.hpp>
 #include <mira/tool_skill.hpp>
 #include <mira/workflow_learning.hpp>
@@ -30,8 +31,10 @@ namespace {
 }
 
 [[nodiscard]] std::string bounded_text(std::string text, std::size_t limit) {
+    // Never splits a character: a cut multi-byte one would make the record
+    // invalid UTF-8 on its way to the model.
     if (text.size() > limit) {
-        text.resize(limit);
+        text = std::string(truncate_utf8(text, limit));
     }
     return text;
 }

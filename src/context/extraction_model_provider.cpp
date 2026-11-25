@@ -10,6 +10,7 @@
 
 #include <mira/json.hpp>
 #include <mira/model_dialect.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include <cmath>
 #include <set>
@@ -128,7 +129,8 @@ constexpr std::string_view kSchemaId = "mira-extract-v1";
             }
         }
         if (payload.size() > options.max_payload_chars) {
-            payload.resize(options.max_payload_chars);
+            // The bound counts bytes; the cut still backs off to a character.
+            payload = std::string(truncate_utf8(payload, options.max_payload_chars));
         }
         transcript << "\n[" << index << "|seq=" << events[index].session_sequence << "] "
                    << events[index].payload.type << ": " << payload;

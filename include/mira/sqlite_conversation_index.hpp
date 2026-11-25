@@ -27,7 +27,8 @@ struct SqliteConversationIndexOptions final {
 
 // A rebuildable SQLite/FTS5 projection for authenticated session history.
 // The host owns source authorization, calls rebuild on managed I/O work,
-// and closes the index before shutting down its Executor.
+// and closes the index before shutting down its Executor. A query with text
+// comes back most relevant first; without one, newest first (DEC-147).
 class SqliteConversationIndex final : public IConversationContextIndex {
   public:
     [[nodiscard]] static Result<std::unique_ptr<SqliteConversationIndex>>

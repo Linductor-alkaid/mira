@@ -2,7 +2,7 @@
 
 > 状态：Active  
 > 版本：0.9
-> 更新日期：2026-11-06
+> 更新日期：2026-11-25
 > 上位设计：[Mira Runtime 设计](mira_runtime_design.md)  
 > 上下文智能扩展：长会话语义压缩方向（Retrieve/Rerank/Consolidate/Compress 与
 > Hot/Warm/Cold 生命周期）由 [Context Intelligence 设计](context_intelligence_design.md)
@@ -65,7 +65,9 @@ M30 的六类事实源、读写和索引边界见 [六类记忆设计](m30-memor
   （`MemorySweepOptions`），到上限停下并报告 `more_pending`；保留期清除失败整体回滚并
   计数，不把 scope 挡在 Context 之外；被 hold 的 scope 不参与清扫。见
   [DEC-062](../decisions/DEC-062-memory-retention-sweep.md)。
-- §14.1 检索：FTS 腿把查询文本按空白切分为带引号短语并以 AND 组合（操作符不可注入）；
+- §14.1 检索：FTS 腿的查询单元逐个加引号并以 OR 组合（操作符不可注入），按 bm25
+  排序；此前按空白切分并以 AND 组合，对中文和自然语言问句失效，见
+  [DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)。
   当排序腿（text/exact/embedding）发起但全部无命中时返回空结果而非全量兜底。
   §14.2 排名权重为 M4 参考默认值（`RetrievalWeights`），非冻结契约。
 - §16.2 SQLite 参考后端：单 writer、有界请求通道、WAL、FTS5、有界线性 cosine；
@@ -808,7 +810,8 @@ VerifiedEvent/HumanCorrection/审批背书）或 PreserveAlternative 并存
 2. 过滤 status、TTL、validity、schema version 和 sensitivity。
 3. 查询声明 `claim_key` 时按归一化主语硬过滤：只有讲同一件事的记录参与（§13.5）。
 4. 对 ID、应用包名、TaskSkill 等字段做 exact match。
-5. 使用 BM25/FTS 召回关键词候选。
+5. 用 BM25/FTS 召回词法候选。查询文本先经确定性分词得到词、汉字单字和相邻两字
+   （§14.1c）：索引只存词和单字，查询以 OR 匹配它们并按相关度排序。
 6. 可用时使用 embedding 召回语义候选。查询声明 kind 时，第 4–6 步只运行这些 kind 都
    声明可用的检索腿（§6.3）：结构化 kind 不参与嵌入相似度召回，被扣下的嵌入不构成
    排序请求。
@@ -825,8 +828,7 @@ SQLite 参考后端的 FTS/vector 单腿额度必须在前述硬过滤后的候�
 
 三腿的融合公式是 store 选项（`SqliteMemoryStoreOptions::fusion`），默认
 `ReciprocalRank`（DEC-113 在 HR-11 质量基准交付后执行 DEC-112 预授权的
-"对照评估后切默认"路径；无查询向量时 RRF 退化为与词法序完全一致，行为零
-变化）。`ReciprocalRank` 模式：FTS 与余弦两腿各自按排名投票
+"对照评估后切默认"路径；无查询向量时 RRF 保持词法腿的相关度顺序）。`ReciprocalRank` 模式：FTS 与余弦两腿各自按排名投票
 `1/(60 + rank + 1)`（weighted-RRF，k=60 文档化常量），在候选集内 min-max
 归一化后叠加先验项（verification / confidence / recency / importance）——
 先验永远只是次级信号，候选集内的腿差距不会被先验淹没。RRF 存在的理由：
@@ -854,6 +856,33 @@ embedder、挂接投影 indexer）。校验完全前置——`set_recall_embedde
 supervisor 既有路径（repair = Deferrable、rerank = Interactive），不新增任何
 并发或协议路径。Layer 2 生产链整合（谁在什么时机调 retrieve→rerank）另立
 维护轮；250ms recall 路径不挂 rerank 的纪律不变。
+
+### 14.1c 词法分词与查询组合（DEC-147）
+
+词法腿的单元由一个确定性、无词典的分词契约给出
+（`include/mira/text_segmentation.hpp`）。以空格分词的文字每个字母数字连续段是一个
+词；汉字和假名每个字是一个单元，相邻两个字是另一个单元。分词前做归一化：全角
+ASCII 转半角，零宽字符删除，ASCII 字母折叠为小写，非法 UTF-8 字节按分隔符处理。
+进程内词法腿和两个耐久 FTS5 索引使用同一份实现，所以口径一致。
+
+- **索引侧**只存词和单字，`unicode61` 仍是 FTS5 的 tokenizer，不引入词典或
+  自定义 tokenizer。索引文本是原文的派生副本：`memory_fts` 行内保存它，
+  `conversation_segments` 以单独一列保存并由触发器同步。
+- **查询侧**用 OR 连接去重后的单元，逐个加引号，用户文本不能注入 FTS5 运算符。
+  相邻两字写成两字短语，FTS5 按词元位置匹配，在单字索引上等价于 bigram 匹配。
+- **规模有界**：一个查询最多匹配 128 个单元，超出时按"词、两字、单字"的次序放弃，
+  每组内等步长保留；store 置 `degraded` 并在 `note` 中说明。
+- **排序**：bm25，负值越小越相关；词法贡献取 `m / (1 + m)`（`m` 为 bm25 的绝对值），
+  索引不给权重的匹配贡献为 0。
+- **强制条件**只走 `exact_terms`：声明它的查询只返回逐字包含全部词的记录，三个后端
+  一致。多词查询因此返回共享任一单元的记录，而不是必须包含全部词。
+
+`InMemoryContextIndex` 的词法腿与 `TokenOverlapContextReranker` 不经 FTS5，也没有
+逆文档频率，所以它们用词和两字（`CoarseUnits`）做集合或多重集合重叠；单字太常见，
+会把几乎每个文本都变成部分匹配。
+
+选择依据与被否决的方案见
+[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)。
 
 ### 14.2 排名模型
 

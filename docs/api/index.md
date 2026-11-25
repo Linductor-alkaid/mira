@@ -2,7 +2,7 @@
 
 > 状态：Active
 > 版本：0.1.0（对应 `Mira 0.1` 安装包）
-> 更新日期：2026-11-06（文件日志 v2 时间来源、Checkpoint 2.0 与离线宿主）
+> 更新日期：2026-11-25（确定性文本原语 `text_segmentation.hpp`；文件日志 v2 时间来源、Checkpoint 2.0 与离线宿主）
 > 适用范围：`include/mira/` 全部公共头文件与随包安装的 CMake 目标
 
 本手册按模块描述 Mira 的公共 API。实现细节、设计动机和状态机推导见
@@ -37,6 +37,7 @@
 | [按版本读取恢复经验](workflow-contracts.md#按版本读取恢复经验) | `workflow_runtime.hpp`、`memory_contracts.hpp` | 按当前归属、工作流版本和失败签名查 `RecoveryLesson` |
 | [记录和读取技能提示](workflow-contracts.md#记录和读取技能提示) | `workflow_runtime.hpp`、`memory_consolidation.hpp` | 按已结算技能调用记录 `SkillHint`，按当前发布版本读取 |
 | [按环境隔离技能记忆](workflow-contracts.md#按环境隔离技能记忆) | `skill_environment.hpp`、`workflow_runtime.hpp` | 工作或社交环境内的技能经验范围，事件与技能独立读写 |
+| [确定性文本原语](context-memory.md#text_segmentationhpp确定性文本原语) | `text_segmentation.hpp` | 止于码点边界的 UTF-8 截断、无词典的确定性分词（词、汉字单字、相邻两字），供进程内词法腿与耐久 FTS5 索引共用（DEC-147） |
 | [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`embedding_math.hpp`、`content_markers.hpp`、`verified_fact.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`memory_embedding.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、共享向量数值边界、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |
 | [安全与权限](security.md) | `security.hpp` | Principal、能力授权、风险分级、PolicyEngine、Human Confirmation、脱敏 |
 | [交互协调层](interaction-coordinator.md) | `interaction_coordinator.hpp` | 主体级统一输入入口：输入信封与阶段、幂等台账、确定性路由裁决、Loop 输入汇、上下文归属、`mira.interaction.*.v1` 事件族（M28 / M29 / M30，DEC-068/102/106/107；含澄清回收、只读回补、恢复许可、P3 候选与记忆生命周期） |

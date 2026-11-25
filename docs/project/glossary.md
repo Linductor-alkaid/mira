@@ -1,8 +1,8 @@
 # Mira 公共术语表
 
 > 状态：Active
-> 版本：1.36
-> 更新日期：2026-11-24
+> 版本：1.37
+> 更新日期：2026-11-25
 > 适用范围：Mira 全部文档、代码命名、事件与日志、评审和协作沟通
 
 ## 1. 目的与效力
@@ -190,6 +190,15 @@ _Avoid_: 向量版本号（不是版本）、模型名（身份是派生 id，
 候选集内归一化后叠加先验项；两腿分数分布不可比时的确定性融合
 （DEC-112）。
 _Avoid_: 加权分数融合（分布不可比）、把 exact 当排名腿
+
+**词法单元（Lexical Unit）**:
+确定性、无词典的分词产出的带类型单元：`Word`（以空格分词的文字的字母数字连续段）、
+`Character`（一个汉字或假名）、`Bigram`（相邻两个汉字或假名）。消费方按用途选
+`IndexUnits`（索引侧：词 + 字）、`MatchUnits`（查询侧：加相邻两字）或 `CoarseUnits`
+（集合重叠：词 + 相邻两字）。词法腿的索引与查询共用这一份实现。权威来源：[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)、
+[Context 与 Memory API](../api/context-memory.md#text_segmentationhpp确定性文本原语)。
+_Avoid_: 分词（专指词典分词，本契约不依赖词典）、关键词（这里不做关键词提取）、
+token（留给 LLM token 计数）。
 
 **近重去重（Near-duplicate Suppression）**:
 排序后有界区间内按查询身份嵌入余弦抑制过阈候选的召回面补充；

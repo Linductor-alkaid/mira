@@ -166,6 +166,22 @@ fusion defaults to ReciprocalRank (identical to the lexical ordering when no
 query vector is present), and `wire_hybrid_retrieval` installs the embedding
 producer, the remote reranker and near-dup suppression in one validated call.
 
+The lexical leg under both of them was rebuilt afterwards
+([DEC-147](docs/decisions/DEC-147-lexical-segmentation-and-query-composition.md)).
+Its FTS5 tokenizer treated an unspaced Chinese sentence as one term, and its
+query required every word to appear, so the shipped store answered 2 of the
+benchmark's 20 queries from the lexical leg alone. A dictionary-free
+segmentation contract (`mira/text_segmentation.hpp`) now feeds the in-process
+leg and both durable FTS5 indexes: words and single characters are indexed,
+a query matches them with OR and is ranked by bm25, and a multi-word question
+returns what shares any of its words while `exact_terms` stays the mandatory
+filter. With the diversity cap lifted, pure-lexical Recall@10 on the benchmark
+dataset went from 0.100 to 0.95, and a ctest gate keeps it above 0.90. Two
+defects the old AND semantics had masked are fixed with it: the lexical leg
+ordered multi-hit results weakest-first, and `exact_terms` stopped filtering
+when no record matched. The hybrid benchmark figures in the paragraph above
+predate this fix and are due for a re-measurement.
+
 Still open — and honestly reported rather than claimed: on-device Android
 runtime evidence, real-provider evaluation rounds (DEC-032 Stage E), and the
 first stage of the unified behavior trace (DEC-038). Mira ships the runtime and

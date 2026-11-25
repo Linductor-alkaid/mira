@@ -273,9 +273,11 @@ int preference_writes_automatically_and_policy_keeps_approval() {
     MIRA_CHECK(gated.value().pending_approval.size() == 1);
 
     // Nothing was written before approval.
+    // "mode" alone would match the stored preference, since a lexical query
+    // now returns records sharing any of its words (DEC-147).
     MemoryQuery pending_check;
     pending_check.scopes = {scope};
-    pending_check.text = "light mode";
+    pending_check.text = "light";
     auto empty = fixture.store->query(pending_check);
     MIRA_CHECK(empty.has_value() && empty.value().records.empty());
 

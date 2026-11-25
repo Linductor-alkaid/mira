@@ -5,6 +5,7 @@
 #include <mira/hybrid_retrieval_wiring.hpp>
 #include <mira/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -382,9 +383,13 @@ int invalid_config_leaves_agent_untouched() {
     return 0;
 }
 
-// DEC-113 equivalence anchor: with no query vector, the new default fusion
-// orders exactly like the historical WeightedSum mode.
-int no_vector_queries_order_identically() {
+// DEC-113 anchor, restated for DEC-147: with no query vector the default
+// fusion keeps the lexical leg's order. A multi-word query now matches every
+// record sharing a word, so several records come back and the one the index
+// ranks strongest comes first regardless of the priors. WeightedSum blends
+// the priors in linearly and may reorder them, but membership is the lexical
+// leg's, so both modes answer with the same records.
+int no_vector_queries_follow_the_lexical_order() {
     const std::vector<std::pair<std::string, float>> corpus = {
         {"calibration file lives in the shared drive", 0.9F},
         {"calibration device is serviced twice a year", 0.7F},
@@ -420,11 +425,23 @@ int no_vector_queries_order_identically() {
     query.scopes = {scope_b};
     auto weighted_result = weighted_store.memory->query(query);
     MIRA_CHECK(rrf_result.has_value() && weighted_result.has_value());
-    MIRA_CHECK(!rrf_result.value().records.empty());
-    MIRA_CHECK(rrf_result.value().records.size() == weighted_result.value().records.size());
-    for (std::size_t index = 0; index < rrf_result.value().records.size(); ++index) {
-        MIRA_CHECK(rrf_result.value().records[index].statement ==
-                   weighted_result.value().records[index].statement);
+    // Both words, then the shorter single-word match, then the longer one.
+    const std::vector<std::string> relevance = {
+        "calibration file lives in the shared drive",
+        "file format must be npy",
+        "calibration device is serviced twice a year",
+    };
+    const auto &ranked = rrf_result.value().records;
+    const auto &blended = weighted_result.value().records;
+    MIRA_CHECK(ranked.size() == relevance.size());
+    for (std::size_t index = 0; index < std::min(ranked.size(), relevance.size()); ++index) {
+        MIRA_CHECK(ranked[index].statement == relevance[index]);
+    }
+    MIRA_CHECK(blended.size() == relevance.size());
+    for (const auto &record : ranked) {
+        MIRA_CHECK(std::any_of(blended.begin(), blended.end(), [&](const MemoryRecord &other) {
+            return other.statement == record.statement;
+        }));
     }
     return 0;
 }
@@ -437,7 +454,7 @@ int main() {
     failures += full_wire_writes_recall_and_repairs();
     failures += single_leg_configs_fail_closed();
     failures += invalid_config_leaves_agent_untouched();
-    failures += no_vector_queries_order_identically();
+    failures += no_vector_queries_follow_the_lexical_order();
     std::filesystem::remove_all(temp_dir());
     return failures == 0 ? 0 : 1;
 }

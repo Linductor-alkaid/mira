@@ -40,7 +40,9 @@ def redundancy(order, k=5):
 def gold_set_of(qid, expand):
     members = set(gold[qid][0])
     if expand:
-        for member in members:
+        # Walk a copy: adding a twin to `members` while iterating it raises
+        # "Set changed size during iteration" for every gold set with a twin.
+        for member in list(members):
             members |= twins.get(member, set())
     return members
 

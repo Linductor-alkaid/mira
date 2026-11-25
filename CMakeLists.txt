@@ -141,6 +141,7 @@ add_library(mira_core
     src/support/content_markers.cpp
     src/support/embedding_math.cpp
     src/support/task_state.cpp
+    src/support/text_segmentation.cpp
     src/temporal/temporal_policy.cpp
     src/worldstate/world_state.cpp
     src/worldstate/world_state_wire.cpp

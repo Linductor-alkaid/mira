@@ -138,3 +138,14 @@ retrieve→rerank）**另立维护轮**——当前 `schedule_context_rerank` �
 - 相关：[DEC-112](DEC-112-hybrid-retrieval-fusion.md)（被本记录修订默认条款）、
   [DEC-111](DEC-111-memory-embedding-producer-and-vector-identity.md)
   （provider 分工与身份守卫）
+
+## 修订说明（2026-11-25）
+
+[DEC-147](DEC-147-lexical-segmentation-and-query-composition.md) 修复了词法腿的分词与
+查询组合，本记录的以下表述随之调整，其余决议不变：
+
+- "无向量查询在新默认下与旧默认结果序一致"只在词法差距大于先验差距时成立。此前
+  两者同序，是因为 AND 组合下词法腿几乎没有多命中；多命中时 `WeightedSum` 线性叠加
+  先验，可以盖过词法差距。锚点测试改为断言默认融合保持词法腿的相关度顺序。
+- 作为默认翻转量化依据的基准数字（纯词法 R@*=0.100 及各配置差值）产生于词法腿对
+  中文失效的代码，重测前不得继续引用。

@@ -645,7 +645,7 @@ int migration_adds_ledger_scope() {
             sqlite3 *db = nullptr;
             MIRA_CHECK(sqlite3_open(path.string().c_str(), &db) == SQLITE_OK);
             MIRA_CHECK(sqlite3_exec(db,
-                                    "UPDATE store_meta SET value = '1.9'"
+                                    "UPDATE store_meta SET value = '1.10'"
                                     " WHERE key = 'schema_version';",
                                     nullptr, nullptr, nullptr) == SQLITE_OK);
             sqlite3_close(db);

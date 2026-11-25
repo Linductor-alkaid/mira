@@ -2,6 +2,7 @@
 
 // DEC-056: synchronous retained-state helpers; no executor/lifecycle owner.
 #include <mira/conversation_loop.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -20,10 +21,7 @@ inline void add_counter(std::uint64_t &value, std::uint64_t amount = 1) {
 
 inline std::string bounded_text(std::string text, std::size_t limit) {
     if (text.size() > limit) {
-        while (limit > 0 && (static_cast<unsigned char>(text[limit]) & 0xc0U) == 0x80U)
-            --limit;
-        text.resize(limit);
-        text += "...";
+        text = std::string(truncate_utf8(text, limit)) + "...";
     }
     return text;
 }

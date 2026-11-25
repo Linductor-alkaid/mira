@@ -9,7 +9,8 @@
 > `mira/provider_continuation.hpp`、`mira/context_memory_supervisor.hpp`、
 > `mira/stateful_replay.hpp`、`mira/context_curator.hpp`、
 > `mira/context_working_context_promotion.hpp`、
-> `mira/context_working_context_fork.hpp`
+> `mira/context_working_context_fork.hpp`、
+> `mira/text_segmentation.hpp`
 
 M4 交付的有状态 Agent 基础：每次模型调用前构建有预算、可审计、不裁剪安全约束的
 Context；以带 scope、来源与有效期的长期 Memory 作为可选增强。
@@ -141,13 +142,18 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 
 `IMemory` 的 SQLite/WAL 参考后端（`SqliteMemoryStoreOptions`，含 `RetrievalWeights`）：
 
-- 混合检索三腿：exact（`exact_terms`，强制过滤）、FTS5（`text`，短语引用，操作符
-  注入被拒绝）、有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并
-  去重、多样性与 token packing。
+- 混合检索三腿：exact（`exact_terms`，强制过滤：声明的查询只返回逐字包含全部词
+  的记录，无论是否有记录满足）、FTS5（`text`，单元逐个加引号、以 OR 匹配并按 bm25
+  排序，操作符注入被拒绝；见[确定性文本原语](#text_segmentationhpp确定性文本原语)）、
+  有界 cosine 向量腿（`index_embedding()` 维护，投影可重建）；合并去重、多样性与
+  token packing。多词查询因此返回共享任一词或词组的记录，需要全词命中的调用方
+  使用 `exact_terms`。查询超过 128 个单元时只匹配一个子集，结果置 `degraded` 并在
+  `note` 中说明（[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)）。
 - **融合模式**（DEC-112，默认经 DEC-113 修订）：`SqliteMemoryStoreOptions::fusion`
   默认 `ReciprocalRank` = weighted-RRF（FTS+cosine 排名投票，k=60，候选集内
   min-max 归一化）叠加先验项——词面序不被向量腿翻转，先验只做次级信号；无查询
-  向量时与词法序完全一致。`WeightedSum` 保留为显式 opt-in（历史加权混合形态）。
+  向量时保持词法腿的相关度顺序。`WeightedSum` 保留为显式 opt-in（历史加权混合
+  形态）：它把先验线性叠加，与 RRF 同序只在词法差距大于先验差距时成立。
   `RetrievalWeights`（含 `importance`，默认 0.0）经 options 配置。
 - **结构化元数据**（schema 1.3，纯加法迁移）：`MemoryRecord.labels`（≤16×64 字节，
   any-of 硬预过滤 `MemoryQuery::labels`）与 `importance`（[0,1] 中性默认 0.5）。
@@ -164,6 +170,9 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - **结构化世界事实**（SQLite schema 1.7）：`lookup_world_fact` 按精确环境或应用 scope、
   实体 ID 和属性定位观察，独立处理有效时间与记录时间。观察缺失、过期或歧义时返回
   重新观察信号。见[宿主 API](durable-memory-host.md#世界事实的新鲜度)。
+- **词法索引文本**（SQLite schema 1.9）：`memory_fts` 行保存语句的索引文本，即
+  [确定性分词](#text_segmentationhpp确定性文本原语)产出的词与汉字单字。旧库打开时
+  按已索引的记录重建全部 FTS 行，记录本身不变。
 - **近重去重**（`near_dup_threshold`，store 默认关、接线器默认 0.85）：排序后
   top-64 内按查询身份嵌入余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed`
   计数；无向量候选豁免，阈值按 embedder 实测标定。
@@ -229,6 +238,43 @@ endpoint 与 model 成对出现时生效，双腿皆缺被 `validate()` 拒绝�
   整合另立维护轮。
 - 示例：`examples/hybrid_retrieval_host_consumer.cpp`（离线 scripted 全链：接线 →
   repair → 语义 recall → Layer 2 rerank → 降级轮）。
+
+## text_segmentation.hpp：确定性文本原语
+
+纯函数：无 locale、平台、词典或全局状态，同样的字节在每个平台上给出同样的结果。
+进程内词法腿与两个耐久 FTS5 索引共用这一份实现，所以口径一致（[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)）。
+
+- `truncate_utf8(text, limit)`：不超过 `limit` 字节且止于码点边界的最长前缀。
+  有界副本不会把多字节字符切开；`limit` 不小于文本长度时原样返回。
+- `segment_lexically(text, units)`：把文本切成带类型的单元——`Word`（以空格分词的
+  文字的字母数字连续段，ASCII 字母折叠为小写）、`Character`（一个汉字或假名）、
+  `Bigram`（相邻两个汉字或假名）。分词前全角 ASCII 转半角，零宽字符与变体选择符
+  删除，非法 UTF-8 字节按分隔符处理。
+- `lexical_index_text(text)`：`IndexUnits` 以单个空格拼接，是耐久 FTS5 索引保存的
+  文本。
+
+| 单元集合 | 内容 | 用途 |
+| --- | --- | --- |
+| `IndexUnits` | 词 + 字 | 耐久 FTS5 索引保存的文本 |
+| `MatchUnits` | 词 + 字 + 相邻两字 | 组成查询的匹配表达式 |
+| `CoarseUnits` | 词 + 相邻两字；单字自成一段时取该字 | 集合与多重集合重叠：进程内词法腿、`TokenOverlapContextReranker` |
+
+```cpp
+const auto units = mira::segment_lexically("重启 docker 服务", mira::LexicalUnits::CoarseUnits);
+// units: "重启"、"docker"、"服务"
+const std::string indexed = mira::lexical_index_text("我想知道北京的天气怎么样");
+// indexed: "我 想 知 道 北 京 的 天 气 怎 么 样"
+const auto bounded = mira::truncate_utf8("北京x", 5); // "北"：切点落在"京"内部，回退到它的起点
+```
+
+不变量：
+
+- 单元按文本顺序产出；同一个起点先出字，后出以它开头的两字。
+- 没有单元是空的，或含空白、双引号：单元放进加引号的 FTS5 词项总是安全的。
+- 非 ASCII 字母的大小写与变音符号不在此归一化，`unicode61` 在 FTS5 一侧按自己的
+  规则处理。进程内腿与 FTS5 腿对带变音符的西文因此口径不同。
+- 不用空格分词的非 CJK 文字（如泰语）整段是一个词。
+- 函数不失败，也没有 Executor 路由：纯 CPU，每条记录微秒级。
 
 ## extraction_model_provider.hpp：记忆抽取的模型供给面（DEC-114）
 
@@ -439,7 +485,8 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
   `index_embedding` 语义——embedder 是供给方不是存储权威；供给失败只降级向量腿。
 - `IContextRetriever::retrieve(ContextQuery, RetrievalBudget)`：
   `InMemoryContextIndex` 参考实现为进程内三腿混合——exact（逐字子串、强制过滤）、
-  词法（token 覆盖率，FTS5 的进程内替身；耐久部署仍走 `IMemory` 三腿）、向量
+  词法（`CoarseUnits` 覆盖率，即词与相邻两字；FTS5 的进程内替身，与耐久索引
+  同一份分词实现；耐久部署仍走 `IMemory` 三腿）、向量
   （有界线性 cosine 扫描）。`MemoryQueryQuality` 复用：逐腿运行/降级、
   `index_lag`、`deadline_exceeded` 部分结果；查询与预算带 `top_k`/`token_budget`/
   `deadline`/`max_vector_scan` 上界（RULE-08）。
@@ -465,7 +512,8 @@ token/safety 准入归 Layer 0 `StandardContextManager`（语义组件无准入�
   截断到 `ContextRerankConfig::max_output`（默认 20）；空输入闭合空结果；错误
   表示「重排不可用」，调用方按设计降级为检索序 Top-K，无部分输出。
 - `TokenOverlapContextReranker` 确定性参考实现（无模型）：查询/候选文本按
-  Layer 1 同款 `[a-z0-9_]` 分词，重排分为查询 token 覆盖 F1 加 `exact_terms`
+  Layer 1 同款分词取 `CoarseUnits`（词与相邻两字，[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)），重排分为
+  查询单元覆盖 F1 加 `exact_terms`
   逐条 verbatim 加成；`ContextRerankWeights`（默认 0.60/0.40）做集合内 min-max
   融合（全等集合取 0.5），同分保持检索序——融合不整替 Layer 1 排名语义。
   真实 cross-encoder 模型经供应链复核后作为宿主注入实现接入，Core 不携带。

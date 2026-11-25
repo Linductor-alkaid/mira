@@ -40,7 +40,25 @@ struct DbOpenOptions final {
 };
 
 [[nodiscard]] std::string sqlite_error_message(int code, sqlite3 *database);
-[[nodiscard]] std::string fts_match_expression(const std::string &text);
+
+// One lexical query as an FTS5 MATCH expression (DEC-147).
+struct FtsMatch final {
+    // The query's units joined by OR, each quoted: a word or a character is
+    // one term, a bigram is the phrase of its two characters, which matches
+    // it on a character index. Empty when the text carries no lexical unit.
+    std::string expression;
+    // The text had more units than one query may match. Words were kept,
+    // then bigrams, then characters, each group spread over the text; the
+    // caller reports a degraded lexical leg.
+    bool truncated = false;
+};
+
+// Units one query may match. Each costs one index lookup over the whole
+// table, and hosts assemble long texts into queries: the largest accepted
+// query would otherwise take about a second on a 40,000-row index.
+constexpr std::size_t kMaxFtsMatchUnits = 128;
+
+[[nodiscard]] FtsMatch fts_match_expression(const std::string &text);
 
 // SQLITE_TRANSIENT expands to an old-style cast; wrap the constant once so
 // Mira warning policy stays clean at every bind site.

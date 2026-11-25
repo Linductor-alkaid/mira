@@ -386,9 +386,13 @@ struct MemoryQuery final {
     // exact scopes, regardless of similarity (design Context/Memory §6.1/§14.1).
     std::vector<MemoryScope> scopes;
     std::optional<std::vector<MemoryKind>> kinds;
-    // Free text feeding the FTS5 leg (phrase-quoted) and ranking.
+    // Free text feeding the FTS5 leg and ranking. It is segmented into
+    // words, single Han/kana characters and adjacent pairs (DEC-147); a
+    // record matching any of them takes part, ranked by relevance.
     std::string text;
-    // Substrings that must appear verbatim in the statement (exact leg).
+    // Substrings that must appear verbatim in the statement (exact leg). A
+    // query that declares them returns only records carrying every one,
+    // whether or not any record does.
     std::vector<std::string> exact_terms;
     // Only records whose claim key equals this subject participate. A hard
     // filter, like the scope allowlist: it narrows the candidate set before

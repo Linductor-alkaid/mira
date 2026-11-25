@@ -1,5 +1,6 @@
 #include <mira/context_retrieval.hpp>
 #include <mira/embedding_math.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include "context_support.hpp"
 
@@ -700,12 +701,13 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
         std::string line = entry_line(entry);
         if (line.size() > options.max_segment_bytes) {
             // A single oversized entry becomes a truncated singleton window;
-            // boundedness wins over completeness (RULE-08).
+            // boundedness wins over completeness (RULE-08). The cut backs off
+            // to a character boundary so the window stays valid UTF-8.
             if (consumed > 0) {
                 close_window();
             }
             const std::string truncated_line =
-                line.substr(0, options.max_segment_bytes) + "\n[truncated]";
+                std::string(truncate_utf8(line, options.max_segment_bytes)) + "\n[truncated]";
             ConversationSegment segment;
             segment.session = session;
             segment.first_entry = first_entry;

@@ -29,6 +29,7 @@ foreach(HEADER IN ITEMS
         mira/action_dispatcher.hpp
         mira/artifact_store.hpp
         mira/security.hpp
+        mira/text_segmentation.hpp
         mira/replay.hpp
         mira/runtime.hpp
         mira/adapters/simulator/simulator_environment.hpp

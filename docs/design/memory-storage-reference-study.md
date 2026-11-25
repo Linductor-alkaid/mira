@@ -7,6 +7,7 @@
 > 后续增量：DEC-121 已为 FileEventStore 增加可重建的 Session/Task/type 事件索引及有界
 > 分页。持久会话资产索引和事件后端迁移仍按各自计划验收。
 > DEC-122 接入 SQLite 持久会话片段与 FTS5，并把片段纳入 Session scope 擦除重放。
+> DEC-147 修复词法腿的中文分词与查询组合（纯词法 R@10 0.100 → 0.95）。
 > 其他资产类型和大规模增量修复按维护计划推进。
 
 ## 1. 结论
@@ -26,7 +27,7 @@ SQLite 内保存部分 JSON 快照是合理做法：关键是 ACL、身份、水
 | --- | --- | --- |
 | Cold 事件事实源 | [FileEventStore](../../src/storage/event_store.cpp)，`events.log`；有序、幂等、摘要、恢复 | 恢复载入 MemoryEventStore，默认 10万条；没有 SqliteEventStore；分段/索引与容量归 M31 |
 | 长期知识 | [SqliteMemoryStore](../../src/storage/sqlite_memory_store.cpp)，WAL、records/versions/provenance/mutations/holds/erasure | 宿主必须实例化并注入；文件存在不代表有调用 consolidation |
-| 关键词与向量 | 同库 FTS5、embedding BLOB、`OpenAiCompatibleEmbeddingProvider`（DEC-111）与 repair；RRF 融合模式 + `OpenAiCompatibleReranker`（DEC-112，/v1/rerank） | 余弦仍是有界扫描、无 ANN；RRF/去重阈值默认关或宿主 opt-in；中文分词质量未验证 |
+| 关键词与向量 | 同库 FTS5、embedding BLOB、`OpenAiCompatibleEmbeddingProvider`（DEC-111）与 repair；RRF 融合模式 + `OpenAiCompatibleReranker`（DEC-112，/v1/rerank） | 余弦仍是有界扫描、无 ANN；RRF/去重阈值默认关或宿主 opt-in；中文分词与查询组合已由 DEC-147 修复 |
 | 任务恢复 | [SqliteCheckpointStore](../../src/storage/sqlite_checkpoint_store.cpp)，水位与投影摘要 | 任务 checkpoint 不等于 Conversation checkpoint 或 Working Context 的持久后端 |
 | 会话段/流程回合/恢复教训资产 | [InMemoryContextIndex](../../src/context/context_retrieval.cpp)，来源事件与确定性 ID | 仅进程内；重启要重建，没有对应 SQLite 资产索引 |
 | 会话 checkpoint / Working Context | [consolidation](../../include/mira/context_consolidation.hpp)、[snapshot](../../include/mira/context_working_context.hpp) 契约及内存参考 store | 不可因为有任务 SQLite checkpoint 就声称所有 Warm 状态已持久 |
@@ -134,7 +135,9 @@ Context 和召回候选；Cold 是事实与工件。长期知识是跨会话投�
 4. 导入旧 JSON 前需要旧 schema 和稳定身份：提供 dry-run、版本标识、确定性 event ID、
    分批事务、水位、计数/摘要对账、重跑幂等和回退。先只读保留原件，不能因文件名相同
    猜测字段，更不能把历史机器人回答自动标记 Verified。
-5. 基准后再选择中文 tokenizer、候选生成 SQL 优化和 ANN。测试 corpus 必须包含旧但
+5. 候选生成 SQL 优化和 ANN 仍待基准；中文 tokenizer 已由
+   [DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md) 选定
+   （无词典分词，`mira_m4_lexical_eval_test` 为质量门）。测试 corpus 必须包含旧但
    相关的事实、其他租户大流量、无命中、相反向量、过期/删除、纠正与 as-of 查询。
    备份、WAL checkpoint、可重用空间与实际磁盘回收分开衡量。
 

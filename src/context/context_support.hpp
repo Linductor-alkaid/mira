@@ -14,6 +14,7 @@
 #include <mira/json.hpp>
 #include <mira/model_contracts.hpp>
 #include <mira/model_schema.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -31,22 +32,15 @@ namespace mira::context_support {
 using context_text::carries_marker;
 using context_text::to_lower_ascii;
 
-// Lexical tokenizer for the in-process lexical legs: lowercase [a-z0-9_] runs.
+// Lexical tokens for the in-process lexical legs: the coarse units of the
+// shared segmentation (DEC-147), which are words and adjacent-character
+// pairs with ASCII case folded. A lone character is its own token. Single
+// characters of a longer run are left out: with no inverse-document frequency
+// to discount them, they match almost every text.
 [[nodiscard]] inline std::vector<std::string> tokenize(std::string_view text) {
     std::vector<std::string> tokens;
-    std::string current;
-    for (const char character : to_lower_ascii(text)) {
-        const bool word = (character >= 'a' && character <= 'z') ||
-                          (character >= '0' && character <= '9') || character == '_';
-        if (word) {
-            current += character;
-        } else if (!current.empty()) {
-            tokens.push_back(std::move(current));
-            current.clear();
-        }
-    }
-    if (!current.empty()) {
-        tokens.push_back(std::move(current));
+    for (auto &unit : segment_lexically(text, LexicalUnits::CoarseUnits)) {
+        tokens.push_back(std::move(unit.text));
     }
     return tokens;
 }

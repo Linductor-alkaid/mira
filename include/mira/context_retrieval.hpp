@@ -167,7 +167,9 @@ struct ContextQuery final {
     std::vector<MemoryScope> scopes;
     std::optional<std::vector<ContextAssetKind>> kinds;
     // Lexical and embedding query surface; hosts assemble goal, task frame
-    // and recent user messages into this text.
+    // and recent user messages into this text. The lexical leg recalls every
+    // asset sharing a word or an adjacent character pair, ranked by overlap
+    // (DEC-147); `exact_terms` is the mandatory channel.
     std::string text;
     // Mandatory verbatim substring filters (exact leg).
     std::vector<std::string> exact_terms;
@@ -297,7 +299,8 @@ struct ConversationSegmentationOptions final {
     std::size_t window_entries = 12;
     // Upper bound for one segment's joined text; a window closes early when
     // the next entry would exceed it, and a single oversized entry is emitted
-    // truncated with a "[truncated]" marker.
+    // truncated with a "[truncated]" marker. A cut never splits a character,
+    // so the text can be a few bytes shorter than the bound.
     std::size_t max_segment_bytes = 4'096;
 
     [[nodiscard]] Result<void> validate() const;

@@ -1,5 +1,6 @@
 #include <mira/model_digest.hpp>
 #include <mira/model_schema.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -468,7 +469,9 @@ Result<ModelRequest> build_schema_repair_request(const ModelRequest &original,
     summary.emplace_back("violations", std::move(violations));
     auto summary_text = to_json_string(JsonValue(std::move(summary)));
     if (summary_text.size() > policy.max_error_summary_bytes) {
-        summary_text.resize(policy.max_error_summary_bytes);
+        // A byte-boundary cut could split a character and make the repair
+        // request invalid UTF-8.
+        summary_text = std::string(truncate_utf8(summary_text, policy.max_error_summary_bytes));
     }
 
     ModelInputItem repair_item;

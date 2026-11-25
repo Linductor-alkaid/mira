@@ -3,6 +3,7 @@
 #include <mira/embedding_math.hpp>
 #include <mira/social_profile.hpp>
 #include <mira/sqlite_memory_store.hpp>
+#include <mira/text_segmentation.hpp>
 
 #include "sqlite_support.hpp"
 
@@ -36,7 +37,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 8};
+constexpr SchemaVersion kMemoryStoreSchema{1, 9};
 constexpr const char *kStoreKind = "memory";
 constexpr const char *kSocialFieldIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
@@ -337,6 +338,61 @@ enum class LegacyAddState { Missing, Recorded, Owned };
     return storage::exec_sql(db, sql.c_str());
 }
 
+// Schema 1.8 -> 1.9: the lexical index stores the segmentation of a
+// statement instead of the statement itself (DEC-147), so a query can match
+// a word inside a sentence written without spaces. Every indexed record is
+// rewritten from its authoritative statement. The index is a derived
+// projection, so nothing else moves and the exact leg is unaffected.
+[[nodiscard]] Result<void> migrate_memory_schema_1_8_to_1_9(sqlite3 *db) {
+    std::vector<std::string> indexed;
+    {
+        Statement rows(db, "SELECT record_id FROM memory_fts");
+        if (!rows.valid()) {
+            return store_error(ErrorCode::Internal, "fts migration could not list records");
+        }
+        int step = SQLITE_OK;
+        while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
+            const auto *id = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 0));
+            if (id == nullptr) {
+                return store_error(ErrorCode::DataLoss, "fts migration found a row without an id");
+            }
+            indexed.emplace_back(id);
+        }
+        if (step != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "fts migration could not list records");
+        }
+    }
+    if (auto cleared = storage::exec_sql(db, "DELETE FROM memory_fts"); !cleared) {
+        return cleared.error();
+    }
+    Statement statement(db, "SELECT statement FROM memory_records WHERE id = ?1");
+    Statement insert(db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
+    if (!statement.valid() || !insert.valid()) {
+        return store_error(ErrorCode::Internal, "fts migration could not be prepared");
+    }
+    for (const auto &id : indexed) {
+        sqlite3_bind_text(statement.get(), 1, id.c_str(), -1, storage::transient_copy());
+        const int step = sqlite3_step(statement.get());
+        const auto *text = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
+        const int bytes = sqlite3_column_bytes(statement.get(), 0);
+        // A record removed since it was indexed takes no new index row.
+        if (step == SQLITE_ROW && text != nullptr && bytes > 0) {
+            const std::string lexical =
+                lexical_index_text(std::string_view(text, static_cast<std::size_t>(bytes)));
+            sqlite3_bind_text(insert.get(), 1, id.c_str(), -1, storage::transient_copy());
+            sqlite3_bind_text(insert.get(), 2, lexical.c_str(), -1, storage::transient_copy());
+            if (sqlite3_step(insert.get()) != SQLITE_DONE) {
+                return store_error(ErrorCode::Internal, "fts migration failed to index a record");
+            }
+        } else if (step != SQLITE_ROW && step != SQLITE_DONE) {
+            return store_error(ErrorCode::Internal, "fts migration could not read a record");
+        }
+        statement.reset();
+        insert.reset();
+    }
+    return {};
+}
+
 [[nodiscard]] int sensitivity_rank(Sensitivity sensitivity) {
     switch (sensitivity) {
     case Sensitivity::Public:
@@ -591,13 +647,16 @@ class SqliteMemoryStore::Impl final {
         }
         if (record.status == MemoryStatus::Active && !is_social_assertion(record.kind) &&
             !record.world_property) {
+            // The index stores the statement's lexical units, not the
+            // statement, so a query can match a word inside a sentence
+            // written without spaces (DEC-147).
+            const std::string lexical = lexical_index_text(record.statement);
             Statement insert_fts(db, "INSERT INTO memory_fts(record_id, statement) VALUES(?1, ?2)");
             if (!insert_fts.valid()) {
                 return store_error(ErrorCode::Internal, "fts insert failed to prepare");
             }
             sqlite3_bind_text(insert_fts.get(), 1, id.c_str(), -1, storage::transient_copy());
-            sqlite3_bind_text(insert_fts.get(), 2, record.statement.c_str(), -1,
-                              storage::transient_copy());
+            sqlite3_bind_text(insert_fts.get(), 2, lexical.c_str(), -1, storage::transient_copy());
             if (sqlite3_step(insert_fts.get()) != SQLITE_DONE) {
                 return store_error(ErrorCode::Internal, "fts insert failed");
             }
@@ -1532,31 +1591,37 @@ class SqliteMemoryStore::Impl final {
             }
         }
 
-        // FTS leg: phrase match restricted to the scope universe.
+        // FTS leg: ranked match restricted to the scope universe (DEC-147).
         std::map<std::string, double> fts_rank;
-        if (!request.text.empty() && std::chrono::steady_clock::now() < deadline_point) {
+        const auto match = storage::fts_match_expression(request.text);
+        if (!match.expression.empty() && std::chrono::steady_clock::now() < deadline_point) {
             Statement fts(db, "SELECT record_id, rank FROM memory_fts WHERE memory_fts MATCH ?1"
                               " AND record_id IN (SELECT value FROM json_each(?2))"
                               " ORDER BY rank LIMIT 512");
             if (fts.valid()) {
                 result.quality.fts_leg_ran = true;
-                const std::string expression = storage::fts_match_expression(request.text);
-                sqlite3_bind_text(fts.get(), 1, expression.c_str(), -1, storage::transient_copy());
+                if (match.truncated) {
+                    result.quality.degraded = true;
+                    result.quality.note =
+                        "lexical query exceeded the unit bound; a subset of its units was matched";
+                }
+                sqlite3_bind_text(fts.get(), 1, match.expression.c_str(), -1,
+                                  storage::transient_copy());
                 sqlite3_bind_text(fts.get(), 2, eligible_json.c_str(), -1,
                                   storage::transient_copy());
                 int fstep = sqlite3_step(fts.get());
-                std::size_t position = 0;
                 while (fstep == SQLITE_ROW) {
                     const auto *id_text =
                         reinterpret_cast<const char *>(sqlite3_column_text(fts.get(), 0));
                     if (id_text != nullptr) {
-                        // FTS5 bm25 ranks are negative-better; normalize the
-                        // magnitude into a (0,1] contribution.
-                        const double rank = sqlite3_column_double(fts.get(), 1);
-                        fts_rank[id_text] = 1.0 / (1.0 + std::max(0.0, -rank) +
-                                                   static_cast<double>(position) * 0.01);
+                        // FTS5 bm25 ranks are negative-better. The magnitude
+                        // maps to a contribution from 0 (a match the index gives
+                        // no weight) to 1 (the strongest), so the better the
+                        // match, the larger its contribution.
+                        const double magnitude =
+                            std::max(0.0, -sqlite3_column_double(fts.get(), 1));
+                        fts_rank[id_text] = magnitude / (1.0 + magnitude);
                     }
-                    ++position;
                     fstep = sqlite3_step(fts.get());
                 }
                 if (fstep != SQLITE_DONE) {
@@ -1739,7 +1804,11 @@ class SqliteMemoryStore::Impl final {
             if (any_leg && !touched) {
                 continue; // ranking legs ran; only matches participate
             }
-            if (!exact_hits.empty() && !exact_hit) {
+            // Declared exact terms are mandatory whether or not any record
+            // carries them: a failure signature for a workflow without history
+            // must not return other workflows' records that merely share a
+            // word with its query text.
+            if (!request.exact_terms.empty() && !exact_hit) {
                 continue; // explicit exact terms are mandatory filters
             }
             if (!social && !seen_statements.insert(row.statement).second) {
@@ -2684,6 +2753,12 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                              if (auto migrated = storage::exec_sql(db, kWorldPropertyIndex);
                                  !migrated)
                                  return migrated.error();
+                         }
+                         if (previous.minor < 9) {
+                             auto migrated = migrate_memory_schema_1_8_to_1_9(db);
+                             if (!migrated) {
+                                 return migrated.error();
+                             }
                          }
                          const auto sql = recovery_lesson_index_sql();
                          return storage::exec_sql(db, sql.c_str());
