@@ -91,6 +91,18 @@ int directed_scope_evidence_and_time() {
                round_trip.value().verification == MemoryVerification::HumanConfirmed &&
                round_trip.value().social_relationship->source == Source::UserConfirmed &&
                round_trip.value().provenance == std::vector<EventId>{event});
+    auto legacy = *memory_record_to_json(confirmed.value()).as_object();
+    for (auto &[name, value] : legacy)
+        if (name == "schema_version")
+            value = JsonValue::Object{{"major", 1}, {"minor", 6}};
+    const auto old_record = memory_record_from_json(JsonValue{std::move(legacy)});
+    MIRA_CHECK(old_record && old_record.value().schema_version.minor == 6 &&
+               old_record.value().provenance == std::vector<EventId>{event});
+    MIRA_CHECK(!make_social_relationship(forward, {"mentors", Source::UserConfirmed},
+                                         "Invalid second source", event, active, recorded,
+                                         EventId::generate()));
+    MIRA_CHECK(!make_social_relationship(forward, {"mentors", Source::Inferred},
+                                         "Duplicated source", event, active, recorded, event));
     auto spoofed = asserted.value();
     spoofed.scope = reversed.value().scope;
     MIRA_CHECK(!spoofed.validate());

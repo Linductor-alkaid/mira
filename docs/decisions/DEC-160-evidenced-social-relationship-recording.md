@@ -5,6 +5,7 @@
 > 负责人：Mira Maintainers
 > 冻结里程碑：M30
 > 依据：[DEC-125](DEC-125-social-relationship-assertions.md)、[DEC-143](DEC-143-social-message-references.md)、[DEC-159](DEC-159-evidenced-social-attribute-recording.md)
+> 前序发言与双证据扩展：[DEC-161](DEC-161-social-relationship-reference-evidence.md)
 
 在已授权发言索引完成后，宿主可提交关系候选，或使用允许的谓词词表运行一次提取并
 提交。模型只接收当前消息文本和谓词词表，输出谓词、另一端的原文别名、证据摘录和

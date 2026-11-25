@@ -90,6 +90,8 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   字段时匹配记录中相应的空值。见 [DEC-136](../decisions/DEC-136-exact-recovery-lesson-recall.md)。
 - `SkillEnvironment` 是供宿主使用的技能范围，允许 `Procedure`、`SkillHint` 和
   `RecoveryLesson`。Memory 记录 schema 1.6 支持该范围，SQLite 沿用范围前导索引。
+  Memory 记录 schema 1.7 支持为推断关系保留前序发言作为补充证据。见
+  [DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md)。
   宿主按 `skill_environment_scope` 生成的范围擦除，见
   [DEC-139](../decisions/DEC-139-environment-scoped-skill-memory.md)。
 - 保留期清扫（设计 §16.4）：`IMemoryRetentionSweep::sweep(MemorySweepOptions)` 是存储

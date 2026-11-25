@@ -21,6 +21,7 @@ class Executor;
 namespace mira {
 
 class SqliteMemoryStore;
+class IModelProvider;
 struct OperationContext;
 
 struct SocialObjectIdentity final {
@@ -101,9 +102,10 @@ struct SocialMessageParticipants final {
 
 struct SocialMessageRelationshipCandidate final {
     std::string predicate;
-    std::string alias;
+    std::string alias; // Literal name or reference appearing in quote.
     std::string quote;
     bool speaker_is_subject = true;
+    std::optional<SocialMessageLocator> prior_message = std::nullopt;
 };
 
 struct SocialMessageRelationshipReport final {
@@ -179,6 +181,15 @@ class SqliteSocialDirectory final {
     [[nodiscard]] Result<void> close() noexcept;
 
   private:
+    friend Result<SocialMessageRelationshipReport> infer_and_record_social_message_relationships(
+        SqliteSocialDirectory &, const IEventStore &, IModelProvider &,
+        const SocialEnvironmentKey &, const SocialMessageLocator &, std::span<const std::string>,
+        const OperationContext &);
+    [[nodiscard]] Result<SocialMessageRelationshipReport> record_message_relationship_candidates(
+        const SocialEnvironmentKey &, const SocialMessageLocator &, const IEventStore &,
+        std::span<const SocialMessageRelationshipCandidate>, const OperationContext &,
+        const SocialMessageEvidence *expected_speaker,
+        std::span<const SocialMessageEvidence> history);
     class Impl;
     explicit SqliteSocialDirectory(std::unique_ptr<Impl> impl);
     [[nodiscard]] Result<ConsolidationReport>

@@ -8,6 +8,7 @@
 #include <mira/social_profile.hpp>
 
 #include <algorithm>
+#include <cstddef>
 
 namespace mira {
 namespace {
@@ -108,6 +109,68 @@ Result<void> check_sources(const SocialMessageParticipants &participants,
     }
     return {};
 }
+
+struct SocialTranscript final {
+    SocialMessageEvidence speaker;
+    std::vector<SocialMessageEvidence> history;
+    std::vector<SocialMentionUtterance> rows;
+};
+
+Result<SocialTranscript>
+load_social_transcript(const SqliteSocialDirectory &directory, const IEventStore &events,
+                       const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+                       const OperationContext &context, bool skip_non_text_history) {
+    const auto participants = directory.resolve_message_participants(environment, message, {});
+    if (!participants)
+        return participants.error();
+    const auto &current = participants.value().speaker;
+    std::vector<SocialMessageEvidence> earlier;
+    if (message.sequence > 1) {
+        const auto through = message.sequence - 1;
+        const auto after =
+            through > kSocialMentionHistoryLimit ? through - kSocialMentionHistoryLimit : 0;
+        auto page = directory.read_message_evidence(environment, message.session, after, through,
+                                                    kSocialMentionHistoryLimit);
+        if (!page)
+            return page.error();
+        earlier = std::move(page).value().evidence;
+    }
+
+    SocialTranscript transcript{current, {}, {}};
+    std::vector<SocialMentionReference> references;
+    std::vector<SocialObjectKey> speakers;
+    const auto add_row = [&](const SocialMessageEvidence &source) -> Result<void> {
+        if (auto active = check_operation(context); !active)
+            return active.error();
+        auto evidence = storage::read_social_message_source(events, source);
+        if (!evidence)
+            return evidence.error();
+        const auto existing = std::ranges::find(speakers, source.speaker);
+        const auto slot = static_cast<std::size_t>(existing - speakers.begin());
+        if (existing == speakers.end())
+            speakers.push_back(source.speaker);
+        transcript.rows.push_back({slot, std::move(evidence).value().payload.data});
+        return {};
+    };
+    for (const auto &previous : earlier) {
+        if (auto added = add_row(previous); !added) {
+            if (skip_non_text_history && added.error().code == ErrorCode::UnsupportedCapability)
+                continue;
+            return added.error();
+        }
+        transcript.history.push_back(previous);
+        references.emplace_back(previous.message);
+    }
+    if (auto added = add_row(current); !added)
+        return added.error();
+    const auto admitted = directory.resolve_message_participants(environment, message, references);
+    if (!admitted)
+        return admitted.error();
+    if (auto current_sources = check_sources(admitted.value(), current, transcript.history);
+        !current_sources)
+        return current_sources.error();
+    return transcript;
+}
 } // namespace
 
 Result<SocialInferredMentions>
@@ -123,52 +186,18 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
     context.deadline = std::min(context.deadline.value_or(limit), limit);
     if (auto active = check_operation(context); !active)
         return active.error();
-    const auto participants = directory.resolve_message_participants(environment, message, {});
-    if (!participants)
-        return participants.error();
-    const auto &current = participants.value().speaker;
-    std::vector<SocialMessageEvidence> history;
-    if (message.sequence > 1) {
-        const auto through = message.sequence - 1;
-        const auto after =
-            through > kSocialMentionHistoryLimit ? through - kSocialMentionHistoryLimit : 0;
-        auto page = directory.read_message_evidence(environment, message.session, after, through,
-                                                    kSocialMentionHistoryLimit);
-        if (!page)
-            return page.error();
-        history = std::move(page).value().evidence;
-    }
-
-    std::vector<SocialMentionUtterance> transcript;
+    const auto transcript =
+        load_social_transcript(directory, events, environment, message, context, false);
+    if (!transcript)
+        return transcript.error();
+    const auto &current = transcript.value().speaker;
+    const auto &history = transcript.value().history;
     std::vector<SocialMentionReference> references;
-    std::vector<SocialObjectKey> speakers;
-    const auto add_row = [&](const SocialMessageEvidence &source) -> Result<void> {
-        if (auto active = check_operation(context); !active)
-            return active.error();
-        auto evidence = storage::read_social_message_source(events, source);
-        if (!evidence)
-            return evidence.error();
-        const auto existing = std::ranges::find(speakers, source.speaker);
-        const auto slot = static_cast<std::size_t>(existing - speakers.begin());
-        if (existing == speakers.end())
-            speakers.push_back(source.speaker);
-        transcript.push_back({slot, std::move(evidence).value().payload.data});
-        return {};
-    };
-    for (const auto &previous : history) {
-        if (auto added = add_row(previous); !added)
-            return added.error();
+    references.reserve(history.size());
+    for (const auto &previous : history)
         references.emplace_back(previous.message);
-    }
-    if (auto added = add_row(current); !added)
-        return added.error();
-    const auto admitted = directory.resolve_message_participants(environment, message, references);
-    if (!admitted)
-        return admitted.error();
-    if (auto current_sources = check_sources(admitted.value(), current, history); !current_sources)
-        return current_sources.error();
 
-    auto proposed = extract_social_mentions(provider, transcript, context);
+    auto proposed = extract_social_mentions(provider, transcript.value().rows, context);
     if (!proposed)
         return proposed.error();
     for (const auto &mention : proposed.value()) {
@@ -228,6 +257,16 @@ SqliteSocialDirectory::record_inferred_message_relationships(
     const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
     const IEventStore &events, std::span<const SocialMessageRelationshipCandidate> relationships,
     const OperationContext &context) {
+    return record_message_relationship_candidates(environment, message, events, relationships,
+                                                  context, nullptr, {});
+}
+
+Result<SocialMessageRelationshipReport>
+SqliteSocialDirectory::record_message_relationship_candidates(
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    const IEventStore &events, std::span<const SocialMessageRelationshipCandidate> relationships,
+    const OperationContext &context, const SocialMessageEvidence *expected_speaker,
+    std::span<const SocialMessageEvidence> history) {
     if (context.session.is_nil() || context.session != message.session)
         return source_error(ErrorCode::PermissionDenied,
                             "social relationship recording needs its authorized session");
@@ -237,21 +276,31 @@ SqliteSocialDirectory::record_inferred_message_relationships(
     if (auto active = check_operation(context); !active)
         return active.error();
     std::vector<SocialMentionReference> references;
+    references.reserve(history.size() + relationships.size());
+    for (const auto &previous : history)
+        references.emplace_back(previous.message);
     for (const auto &relationship : relationships) {
         if (!is_social_attribute_field(relationship.predicate) || relationship.alias.empty() ||
             relationship.quote.empty() || relationship.quote.size() > 256 ||
             relationship.quote.find(relationship.alias) == std::string::npos)
             return source_error(ErrorCode::InvalidArgument,
                                 "social relationship requires a predicate and quoted alias");
-        references.emplace_back(relationship.alias);
+        if (relationship.prior_message)
+            references.emplace_back(*relationship.prior_message);
+        else
+            references.emplace_back(relationship.alias);
     }
     auto indexed = resolve_message_participants(environment, message, references);
     if (!indexed)
         return indexed.error();
     SocialMessageRelationshipReport report{std::move(indexed).value(), {}, {}};
-    if (report.participants.mentions.size() != relationships.size())
+    if (report.participants.mentions.size() != references.size())
         return source_error(ErrorCode::DataLoss,
-                            "social relationship aliases do not match candidates");
+                            "social relationship references do not match candidates");
+    if (expected_speaker) {
+        if (auto current = check_sources(report.participants, *expected_speaker, history); !current)
+            return current.error();
+    }
     const auto &speaker = report.participants.speaker;
     const auto event = storage::read_social_message_source(events, speaker);
     if (!event)
@@ -262,27 +311,38 @@ SqliteSocialDirectory::record_inferred_message_relationships(
     const auto recorded = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         event.value().timestamp.wall);
     std::vector<MemoryCandidate> prepared;
+    prepared.reserve(relationships.size());
     for (std::size_t index = 0; index < relationships.size(); ++index) {
+        if (auto active = check_operation(context); !active)
+            return active.error();
         const auto &relationship = relationships[index];
         if (event.value().payload.data.find(relationship.quote) == std::string::npos)
             return source_error(ErrorCode::InvalidArgument,
                                 "social relationship excerpt is absent from the message");
-        const auto *alias = std::get_if<SocialAliasResult>(&report.participants.mentions[index]);
-        if (!alias)
-            return source_error(ErrorCode::DataLoss,
-                                "social relationship received invalid alias evidence");
-        if (alias->resolution != SocialAliasResolution::Unique || alias->truncated ||
-            alias->matches.size() != 1 || alias->matches.front().key == speaker.speaker) {
+        const auto &reference = report.participants.mentions[history.size() + index];
+        std::optional<SocialObjectKey> target;
+        std::optional<EventId> referent_event;
+        if (const auto *prior = std::get_if<SocialMessageEvidence>(&reference)) {
+            const auto proof = storage::read_social_message_source(events, *prior);
+            if (!proof)
+                return proof.error();
+            target = prior->speaker;
+            referent_event = prior->message.event;
+        } else if (const auto *alias = std::get_if<SocialAliasResult>(&reference);
+                   alias && alias->resolution == SocialAliasResolution::Unique &&
+                   !alias->truncated && alias->matches.size() == 1) {
+            target = alias->matches.front().key;
+        }
+        if (!target || *target == speaker.speaker) {
             report.unresolved.push_back(index);
             continue;
         }
-        const auto target = alias->matches.front().key;
         const SocialRelationshipKey endpoints =
-            relationship.speaker_is_subject ? SocialRelationshipKey{speaker.speaker, target}
-                                            : SocialRelationshipKey{target, speaker.speaker};
+            relationship.speaker_is_subject ? SocialRelationshipKey{speaker.speaker, *target}
+                                            : SocialRelationshipKey{*target, speaker.speaker};
         auto record = make_social_relationship(
             endpoints, {relationship.predicate, SocialAttributeSource::Inferred},
-            relationship.quote, message.event, {recorded, {}}, recorded);
+            relationship.quote, message.event, {recorded, {}}, recorded, referent_event);
         if (!record)
             return record.error();
         if (std::ranges::any_of(prepared, [&](const MemoryCandidate &candidate) {
@@ -292,7 +352,7 @@ SqliteSocialDirectory::record_inferred_message_relationships(
                                 "social message contains a duplicate relationship candidate");
         MemoryCandidate candidate;
         candidate.proposed = std::move(record).value();
-        candidate.evidence = {message.event};
+        candidate.evidence = candidate.proposed.provenance;
         candidate.reason = MutationReasonCode::Consolidation;
         prepared.push_back(std::move(candidate));
     }
@@ -300,6 +360,9 @@ SqliteSocialDirectory::record_inferred_message_relationships(
         environment, report.participants, references, std::move(prepared), context);
     if (!consolidated)
         return consolidated.error();
+    auto &mentions = report.participants.mentions;
+    mentions.erase(mentions.begin(),
+                   mentions.begin() + static_cast<std::ptrdiff_t>(history.size()));
     report.consolidation = std::move(consolidated).value();
     return report;
 }
@@ -316,18 +379,32 @@ Result<SocialMessageRelationshipReport> infer_and_record_social_message_relation
     context.deadline = std::min(context.deadline.value_or(limit), limit);
     if (auto active = check_operation(context); !active)
         return active.error();
-    const auto indexed = directory.resolve_message_participants(environment, message, {});
-    if (!indexed)
-        return indexed.error();
-    const auto event = storage::read_social_message_source(events, indexed.value().speaker);
-    if (!event)
-        return event.error();
-    auto proposed = extract_social_message_relationships(provider, event.value().payload.data,
-                                                         predicates, context);
+    const auto transcript =
+        load_social_transcript(directory, events, environment, message, context, true);
+    if (!transcript)
+        return transcript.error();
+    const auto &source = transcript.value();
+    if (source.history.empty()) {
+        const auto proposed = extract_social_message_relationships(
+            provider, source.rows.back().text, predicates, context);
+        if (!proposed)
+            return proposed.error();
+        return directory.record_message_relationship_candidates(
+            environment, message, events, proposed.value(), context, &source.speaker, {});
+    }
+    auto proposed =
+        extract_social_message_relationships(provider, source.rows, predicates, context);
     if (!proposed)
         return proposed.error();
-    return directory.record_inferred_message_relationships(environment, message, events,
-                                                           proposed.value(), context);
+    std::vector<SocialMessageRelationshipCandidate> candidates;
+    candidates.reserve(proposed.value().size());
+    for (auto &relationship : proposed.value()) {
+        if (relationship.prior_row)
+            relationship.candidate.prior_message = source.history[*relationship.prior_row].message;
+        candidates.push_back(std::move(relationship.candidate));
+    }
+    return directory.record_message_relationship_candidates(
+        environment, message, events, candidates, context, &source.speaker, source.history);
 }
 
 } // namespace mira

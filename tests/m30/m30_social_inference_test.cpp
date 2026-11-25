@@ -419,6 +419,95 @@ int records_only_resolved_directed_relationships() {
     MIRA_CHECK(read(reverse).value().records.empty() && read(forward).value().records.size() == 1);
     return 0;
 }
+
+int grounds_pronoun_relationships_in_prior_speakers() {
+    SocialFixture fixture(true);
+    const auto prior = fixture.record(fixture.qq, "这次重构由我负责。");
+    const auto second_anchor = fixture.record(fixture.qq, "我把接口图带来了。");
+    const auto bystander =
+        fixture.record(SocialAccountKey{"qq", Id128::generate()}, "我来做笔记。");
+    const auto current = fixture.record(fixture.bilibili, "他指导我重构接口。");
+    MIRA_CHECK(prior && second_anchor && bystander && current);
+    MIRA_CHECK(fixture.directory->activate(bystander.value().speaker, {2, {"他"}}));
+    const SocialRelationshipKey expected{prior.value().speaker, current.value().speaker};
+    const auto read = [&] {
+        MemoryQuery query;
+        query.scopes = {social_relationship_scope(expected).value()};
+        query.social_relationship_predicate = "mentors";
+        return fixture.storage.memory->query(query);
+    };
+    MentionProvider provider;
+    const std::vector<std::string> predicates{"mentors"};
+    const auto infer = [&](const SocialMessageLocator &message) {
+        return fixture.storage.executor
+            .submit_auto([&] {
+                return infer_and_record_social_message_relationships(
+                    *fixture.directory, *fixture.storage.events, provider, fixture.environment,
+                    message, predicates, fixture.operation());
+            })
+            .get();
+    };
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他指导我重构接口","speaker_is_subject":false,"prior_row":3}]})";
+    const auto invalid = infer(current.value().message);
+    MIRA_CHECK(!invalid && invalid.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(read().value().records.empty());
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他指导我重构接口","speaker_is_subject":false,"prior_row":0}]})";
+    const auto recorded = infer(current.value().message);
+    MIRA_CHECK(recorded && recorded.value().unresolved.empty() &&
+               recorded.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(recorded.value().participants.mentions.size() == 1 &&
+               std::get<SocialMessageEvidence>(recorded.value().participants.mentions.front()) ==
+                   prior.value());
+    MIRA_CHECK(provider.captured);
+    const auto payload =
+        parse_json(std::get<TextPart>(provider.captured->input.at(1).content.front()).text);
+    MIRA_CHECK(payload);
+    const auto *transcript = payload.value().find("transcript");
+    MIRA_CHECK(transcript && transcript->is_array() && transcript->as_array()->size() == 4);
+    const auto saved = read();
+    const std::vector<EventId> evidence{current.value().message.event, prior.value().message.event};
+    MIRA_CHECK(saved && saved.value().records.size() == 1 &&
+               saved.value().records.front().provenance == evidence &&
+               saved.value().records.front().verification == MemoryVerification::Unverified);
+    const auto replay = infer(current.value().message);
+    MIRA_CHECK(replay && replay.value().consolidation.entries.front().idempotent_replay);
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他指导我重构接口","speaker_is_subject":false,"prior_row":1}]})";
+    const auto conflict = infer(current.value().message);
+    MIRA_CHECK(conflict && conflict.value().consolidation.count_of(
+                               CandidateDisposition::RejectedConflict) == 1);
+
+    auto foreign = prior.value().message;
+    foreign.session = SessionId::generate();
+    const std::vector<SocialMessageRelationshipCandidate> direct{
+        {"mentors", "他", "他指导我重构接口", false, foreign}};
+    const auto cross_session =
+        fixture.storage.executor
+            .submit_auto([&] {
+                return fixture.directory->record_inferred_message_relationships(
+                    fixture.environment, current.value().message, *fixture.storage.events, direct,
+                    fixture.operation());
+            })
+            .get();
+    MIRA_CHECK(!cross_session && cross_session.error().code == ErrorCode::InvalidArgument);
+
+    const auto later = fixture.record(fixture.bilibili, "他又指导我整理文档。");
+    MIRA_CHECK(later);
+    bool erased = false;
+    provider.on_infer = [&] {
+        erased = fixture.directory->erase_object(bystander.value().speaker).has_value();
+    };
+    provider.answer =
+        R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他又指导我整理文档","speaker_is_subject":false,"prior_row":0}]})";
+    const auto stale = infer(later.value().message);
+    MIRA_CHECK(erased && !stale && stale.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(read().value().records.size() == 1);
+    MIRA_CHECK(fixture.directory->erase_object(prior.value().speaker));
+    MIRA_CHECK(read().value().records.empty());
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -430,5 +519,7 @@ int main() {
         return result;
     if (const auto result = records_grounded_attributes_for_the_indexed_speaker(); result != 0)
         return result;
-    return records_only_resolved_directed_relationships();
+    if (const auto result = records_only_resolved_directed_relationships(); result != 0)
+        return result;
+    return grounds_pronoun_relationships_in_prior_speakers();
 }

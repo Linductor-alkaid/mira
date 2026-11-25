@@ -22,8 +22,9 @@ namespace mira {
 // optional `alternative_of` coexistence link (DEC-115). {1,3} adds social
 // attribute assertions (DEC-124), {1,4} adds relationship assertions
 // (DEC-125), {1,5} adds structured world facts (DEC-127), and {1,6} adds
-// the skill environment scope (DEC-139).
-[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 6}; }
+// the skill environment scope (DEC-139). {1,7} permits an earlier message as
+// supplementary provenance on an inferred social relationship (DEC-161).
+[[nodiscard]] constexpr SchemaVersion memory_schema_current() noexcept { return {1, 7}; }
 
 enum class MemoryScopeKind : std::uint8_t {
     Task,
@@ -231,8 +232,8 @@ struct MemoryRecord final {
     // Store-side optimistic-concurrency version; backends set it on read and
     // check it on Update/Supersede/Tombstone mutations.
     std::uint64_t version = 1;
-    // DEC-124. The assertion value is the statement; provenance holds its
-    // single source event. Each source event makes an independent assertion.
+    // DEC-124/161. The first provenance event identifies the assertion. An
+    // inferred relationship can also retain a second event for its referent.
     std::optional<SocialAttribute> social_attribute;
     std::optional<SocialRelationship> social_relationship;
     std::optional<WorldProperty> world_property;

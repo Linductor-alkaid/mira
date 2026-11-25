@@ -24,6 +24,12 @@ make_social_relationship(const SocialRelationshipKey &key, SocialRelationship re
                          std::string statement, EventId source_event, ValidityInterval validity,
                          std::chrono::system_clock::time_point recorded_at);
 
+[[nodiscard]] Result<MemoryRecord>
+make_social_relationship(const SocialRelationshipKey &key, SocialRelationship relationship,
+                         std::string statement, EventId source_event, ValidityInterval validity,
+                         std::chrono::system_clock::time_point recorded_at,
+                         std::optional<EventId> referent_event);
+
 [[nodiscard]] bool is_social_attribute_field(std::string_view field) noexcept;
 [[nodiscard]] bool is_social_object_scope(const MemoryScope &scope);
 [[nodiscard]] std::string_view social_attribute_source_name(SocialAttributeSource source) noexcept;

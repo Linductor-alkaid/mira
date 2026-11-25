@@ -88,6 +88,7 @@
 - [DEC-158](../decisions/DEC-158-loop-settlement-memory.md)：从设备和会话循环的结算事件提取事件记忆。
 - [DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md)：从已归因消息接纳社交画像候选。
 - [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md)：从已归因消息提取有向社交关系。
+- [DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md)：保留社交关系的前序发言证据。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -159,7 +160,7 @@
 
 - [x] `M30-01` 立项与实施细则冻结。DEC-107/109 和 DEC-119 的已落地契约由 DEC-156 补齐，验收归属见 §4.1。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
-- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径。终态 Session Record、实际循环结算 Episode、显式 User 偏好提案及持久审批已接通。Record 按写入范围记录进度，持久页回执可按类型核对处置计数。已归因消息可经专用宿主入口提取并提交社交属性和有向关系，返回统一管线报告。其他专用入口和生产统一触发继续验收。
+- [ ] `M30-03` 记忆候选提出与经既有管线的写入路径。终态 Session Record、实际循环结算 Episode、显式 User 偏好提案及持久审批已接通。Record 按写入范围记录进度，持久页回执可按类型核对处置计数。已归因消息可提取社交属性和有向关系。关系支持前序发言证据，两条路径返回统一管线报告。其他专用入口和生产统一触发继续验收。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
 - [ ] `M30-05` 「记住 / 忘掉 / 纠正」的路由、范围判定与可解释输出（偏好提案、版本冻结的纠正、确认/拒绝/过期/未知结果已交付；完整意图与遗忘交互仍待完成）。
 - [ ] `M30-06` 价值信号（importance / 使用信号）产出（供 M31 使用）。
@@ -1928,3 +1929,46 @@ Linux Debug 全量 **214/214**，四项社交测试各连续通过 **25/25**，A
 `/tmp/mira-m30-relations-final-debug-*.log`、`/tmp/mira-m30-relations-final-repeat.log`、
 `/tmp/mira-m30-relations-final-asan-*.log`、`/tmp/mira-m30-relations-final-tidy.log` 和
 `/tmp/mira-m30-relations-final-quality.log`。
+
+### 2026-11-25 前序发言与关系双证据
+
+基线 `f1228b3`，分支 `feat/m30-memory-systems`。DEC-161 为 M30-03 的关系候选入口
+增加同会话前序发言归因，供 M30-36 复用。自动提取使用原 `Executor` 作业与有界语境，
+目录复核原发言、前序来源和锁内证据快照。记忆文档 1.7 保存主张和归因事件，SQLite
+复用已有 provenance 索引。
+
+`mira_m30_social_inference_test` 使用离线模型、FileEventStore 和配对 SQLite 验证代词归因、
+当前行和跨会话引用拒绝、两条来源证据、证据变更冲突、在途擦除、幂等重试和双端擦除。
+`mira_m30_social_relationship_test` 复验旧文档读取、证据形态及原有有向关系契约。
+
+Linux x86_64，GCC 13.3.0，CMake 3.28.3，捆绑 SQLite 3.53.4。复现命令如下。
+
+```bash
+cmake --preset debug
+cmake --build build/debug -j 9
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug -j 4 --output-on-failure \
+  -R '^mira_m30_social_(inference|directory|relationship|erasure_recovery)_test$' --repeat until-fail:25
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 4 --target mira_m30_social_inference_test mira_m30_social_relationship_test \
+  mira_m30_social_erasure_recovery_test
+ctest --test-dir build/asan -j 3 --output-on-failure \
+  -R '^mira_m30_social_(inference|relationship|erasure_recovery)_test$'
+printf '%s\n' src/context/social_profile.cpp src/context/social_mention_extraction.cpp \
+  src/storage/social_message_inference.cpp \
+  | xargs -P 3 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check \
+  platform-boundary-check architecture-check
+git diff --check
+```
+
+| 未执行或待完成 | 负责人及补跑条件 |
+| --- | --- |
+| 生产消息触发、其他候选入口、跨来源同人推断 | Mira Maintainers 与宿主集成者在 M30-03 / M30-36 接好生产接线后，以合成多来源和线上授权场景验收 |
+| 真实模型、Windows、Android 和远端 CI | Mira Maintainers 提供模型验收环境并提交 PR 后执行目标平台矩阵 |
+
+Linux Debug 全量 **214/214**，四项社交测试各连续通过 **25/25**，ASan 定向 **3/3**。
+严格 clang-tidy、格式、文档、SBOM、平台边界与架构检查通过。日志见
+`/tmp/mira-m30-reference-final-debug-*.log`、`/tmp/mira-m30-reference-final-repeat.log`、
+`/tmp/mira-m30-reference-asan-*.log`、`/tmp/mira-m30-reference-final-tidy.log` 和
+`/tmp/mira-m30-reference-final-quality.log`。

@@ -158,8 +158,13 @@ Result<void> MemoryRecord::validate_social_assertion() const {
         field = social_relationship->predicate;
         policy = source_policy(social_relationship->source);
     }
+    const bool has_referent = kind == MemoryKind::SocialRelationship && social_relationship &&
+                              social_relationship->source == Source::Inferred &&
+                              schema_version.minor >= 7 && provenance.size() == 2 &&
+                              !provenance.back().is_nil() &&
+                              provenance.back() != provenance.front();
     if (policy == nullptr || !is_social_attribute_field(field) ||
-        verification != policy->verification || provenance.size() != 1 ||
+        verification != policy->verification || (provenance.size() != 1 && !has_referent) ||
         provenance.front().is_nil() ||
         id != assertion_id(kind, scope, field, *policy, provenance.front()) || source_namespace ||
         supersedes || alternative_of || status == MemoryStatus::Superseded ||
@@ -200,6 +205,16 @@ Result<MemoryRecord> make_social_relationship(const SocialRelationshipKey &key,
                                               std::string statement, EventId source_event,
                                               ValidityInterval validity,
                                               std::chrono::system_clock::time_point recorded_at) {
+    return make_social_relationship(key, std::move(relationship), std::move(statement),
+                                    source_event, validity, recorded_at, std::nullopt);
+}
+
+Result<MemoryRecord> make_social_relationship(const SocialRelationshipKey &key,
+                                              SocialRelationship relationship,
+                                              std::string statement, EventId source_event,
+                                              ValidityInterval validity,
+                                              std::chrono::system_clock::time_point recorded_at,
+                                              std::optional<EventId> referent_event) {
     auto scope = social_relationship_scope(key);
     if (!scope)
         return scope.error();
@@ -213,6 +228,8 @@ Result<MemoryRecord> make_social_relationship(const SocialRelationshipKey &key,
                                  policy->verification, std::move(statement), source_event, validity,
                                  recorded_at);
     result.social_relationship = std::move(relationship);
+    if (referent_event)
+        result.provenance.push_back(*referent_event);
     if (const auto valid = result.validate(); !valid)
         return valid.error();
     return result;

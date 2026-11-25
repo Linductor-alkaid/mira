@@ -294,7 +294,7 @@ auto matching = memory.query(query);
 
 入站宿主可在配对目录中索引消息后，从 `mira/social_relationship_inference.hpp` 调用
 `infer_and_record_social_message_relationships`。谓词词表由宿主给出，模型提取另一端
-在原文中的别名、证据摘录和关系方向。宿主已有结构化候选时，也可直接调用目录的
+在原文中的指称、证据摘录和关系方向。宿主已有结构化候选时，也可直接调用目录的
 `record_inferred_message_relationships`。
 
 ```cpp
@@ -305,10 +305,15 @@ auto report = executor.submit_auto([&] {
 }).get();
 ```
 
-当前发言者和唯一别名解析结果共同确定有序端点。`participants` 依候选顺序保留结果，
-`unresolved` 标出缺失、歧义及自环，其他位置对应 `consolidation` 中的处置。已写入的
-断言保持 `Inferred`、`Unverified`，以原消息查证。同一证据可幂等重试。目录变化或
-擦除使提交前的旧结果失效。见 [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md)。
+当前发言者与目录核准的另一端共同确定有序端点。另一端可以是唯一别名，也可以是同一
+授权会话中更早的一条已索引消息的发言者。自动提取读取当前消息及前六个事件位置中已索引的
+文本。宿主直接提交前序引用时，在候选的 `prior_message` 中给出消息定位。
+
+`participants` 依候选顺序保留结果，`unresolved` 标出缺失、歧义及自环，其他位置
+对应 `consolidation` 中的处置。已写入断言保持 `Inferred`、`Unverified`。使用前序
+发言时，`provenance` 依次保留当前主张事件和前序发言事件。旧单证据断言仍可读取。
+同一证据可幂等重试，目录变化或擦除使提交前的旧结果失效。
+见 [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md) 和 [DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md)。
 
 ## 社交记忆擦除恢复
 

@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-25：[DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md) 交付
+可引用前序发言的社交关系及双证据存储。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
+
 2026-11-25：[DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md) 接通已
 归因消息的有向社交关系提取与写入。见 [M30-03](m30-long-term-memory-integration.md#5-工作项)。
 
