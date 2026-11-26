@@ -120,7 +120,7 @@ int resolves_candidate_names_and_preceding_speakers() {
 
     MentionProvider provider;
     provider.answer =
-        R"({"mentions":[{"surface":"他","prior_row":0},{"surface":"陈工","prior_row":-1},{"surface":"小许","prior_row":-1}]})";
+        R"({"mentions":[{"surface":"他","prior_row":0},{"surface":"陈工","prior_row":0},{"surface":"小许","prior_row":-1}]})";
     const auto result = fixture.infer(provider, current.value().message, fixture.operation());
     MIRA_CHECK(result && result.value().speaker == current.value());
     MIRA_CHECK(result.value().mentions.size() == 3 && provider.captured);
@@ -142,9 +142,53 @@ int resolves_candidate_names_and_preceding_speakers() {
     const auto &text = std::get<TextPart>(request.input.at(1).content.front());
     const auto transcript = parse_json(text.text);
     MIRA_CHECK(text.sensitivity == Sensitivity::Sensitive && transcript &&
-               transcript.value().as_array()->size() == 2);
+               transcript.value().find("current") && transcript.value().find("prior") &&
+               transcript.value().find("prior")->as_array()->size() == 1);
     MIRA_CHECK(text.text.find(fixture.qq.account.to_string()) == std::string::npos &&
                text.text.find(first.value().speaker.object.to_string()) == std::string::npos);
+    return 0;
+}
+
+int literal_mentions_resolve_without_a_working_model() {
+    SocialFixture fixture;
+    const auto first = fixture.record(fixture.qq, "上午好");
+    const auto current =
+        fixture.record(fixture.bilibili, "小许给 CHEN   LI 发消息，问 Joanne 和吴工。小许");
+    MIRA_CHECK(first && current);
+    MIRA_CHECK(fixture.directory->activate(first.value().speaker,
+                                           {2, {"小许", "许", "Chen Li", "Ann", "吴工"}}));
+    MIRA_CHECK(fixture.directory->activate(current.value().speaker, {2, {"吴工"}}));
+    const SocialObjectKey foreign{{fixture.environment.tenant, Id128::generate()},
+                                  Id128::generate()};
+    MIRA_CHECK(fixture.directory->activate(foreign, {1, {"小许"}}));
+    const auto literal =
+        fixture.storage.executor
+            .submit_auto([&] {
+                return infer_social_message_mentions(*fixture.directory, *fixture.storage.events,
+                                                     nullptr, fixture.environment,
+                                                     current.value().message, fixture.operation());
+            })
+            .get();
+    MIRA_CHECK(literal && literal.value().mentions.size() == 3 && !literal.value().model_error);
+    const auto &names = literal.value().mentions;
+    MIRA_CHECK(names[0].surface == "小许" && names[1].surface == "CHEN   LI" &&
+               names[2].surface == "吴工");
+    const auto &unique = std::get<SocialAliasResult>(names[0].candidate);
+    MIRA_CHECK(unique.resolution == SocialAliasResolution::Unique &&
+               unique.matches.front().key == first.value().speaker);
+    const auto &ambiguous = std::get<SocialAliasResult>(names[2].candidate);
+    MIRA_CHECK(ambiguous.resolution == SocialAliasResolution::Ambiguous &&
+               ambiguous.matches.size() == 2);
+    MentionProvider provider;
+    provider.answer = "not JSON";
+    const auto fallback = fixture.infer(provider, current.value().message, fixture.operation());
+    MIRA_CHECK(fallback && fallback.value().mentions.size() == 3 && fallback.value().model_error &&
+               fallback.value().model_error->code == ErrorCode::InvalidModelOutput);
+    auto expired = fixture.operation();
+    expired.deadline = Timestamp::now().monotonic - std::chrono::milliseconds{1};
+    const auto timed =
+        fixture.directory->scan_message_aliases(fixture.environment, "小许", expired);
+    MIRA_CHECK(!timed && timed.error().code == ErrorCode::DeadlineExceeded);
     return 0;
 }
 
@@ -161,12 +205,24 @@ int rejects_fabricated_mentions_and_out_of_scope_sources() {
                !provider.captured);
 
     context = fixture.operation();
-    provider.answer = R"({"mentions":[{"surface":"未提及","prior_row":0}]})";
+    provider.answer =
+        R"({"mentions":[{"surface":"未提及","prior_row":0},{"surface":"他","prior_row":0}]})";
     const auto invented = fixture.infer(provider, current.value().message, context);
-    MIRA_CHECK(!invented && invented.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(invented && invented.value().mentions.size() == 1 &&
+               invented.value().mentions.front().surface == "他" &&
+               invented.value().rejected.size() == 1 &&
+               invented.value().rejected.front().row == 0 &&
+               invented.value().rejected.front().reason == "missing-source");
     provider.answer = R"({"mentions":[{"surface":"他","prior_row":1}]})";
     const auto fabricated_row = fixture.infer(provider, current.value().message, context);
-    MIRA_CHECK(!fabricated_row && fabricated_row.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(fabricated_row && fabricated_row.value().mentions.empty() &&
+               fabricated_row.value().rejected.size() == 1 &&
+               fabricated_row.value().rejected.front().reason == "invalid-prior-row");
+    JsonValue::Array excess(9, JsonValue::Object{{"surface", "他"}, {"prior_row", 0}});
+    provider.answer = to_json_string(JsonValue::Object{{"mentions", std::move(excess)}});
+    const auto truncated = fixture.infer(provider, current.value().message, context);
+    MIRA_CHECK(truncated && truncated.value().truncated && truncated.value().mentions.size() == 1 &&
+               truncated.value().rejected.size() == 7);
 
     provider.captured.reset();
     MemoryEventStore alternate;
@@ -512,6 +568,8 @@ int grounds_pronoun_relationships_in_prior_speakers() {
 
 int main() {
     if (const auto result = resolves_candidate_names_and_preceding_speakers(); result != 0)
+        return result;
+    if (const auto result = literal_mentions_resolve_without_a_working_model(); result != 0)
         return result;
     if (const auto result = rejects_fabricated_mentions_and_out_of_scope_sources(); result != 0)
         return result;

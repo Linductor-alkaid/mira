@@ -44,6 +44,17 @@ struct SocialAliasResult final {
     friend bool operator==(const SocialAliasResult &, const SocialAliasResult &) = default;
 };
 
+struct SocialLiteralAlias final {
+    std::string surface;
+    std::string key;
+    std::size_t offset = 0;
+};
+
+struct SocialLiteralAliases final {
+    std::vector<SocialLiteralAlias> matches;
+    bool truncated = false;
+};
+
 struct SocialAccountBinding final {
     SocialObjectKey object;
     std::uint64_t object_revision = 0;
@@ -168,6 +179,10 @@ class SqliteSocialDirectory final {
     resolve_message_participants(const SocialEnvironmentKey &, const SocialMessageLocator &,
                                  std::span<const SocialMentionReference> mentions,
                                  std::size_t alias_limit = 8) const;
+    [[nodiscard]] Result<SocialLiteralAliases> scan_message_aliases(const SocialEnvironmentKey &,
+                                                                    std::string message,
+                                                                    const OperationContext &,
+                                                                    std::size_t limit = 8) const;
     // For a currently authorized, managed host operation with a paired store.
     // The indexed speaker and original message supply the scope and evidence.
     [[nodiscard]] Result<SocialMessageAttributeReport> record_inferred_message_attributes(

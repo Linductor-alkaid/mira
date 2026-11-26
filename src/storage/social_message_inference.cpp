@@ -3,6 +3,7 @@
 #include <mira/social_relationship_inference.hpp>
 
 #include "social_message_source.hpp"
+#include "sqlite_social_aliases.hpp"
 
 #include <mira/environment.hpp>
 #include <mira/social_profile.hpp>
@@ -119,13 +120,14 @@ struct SocialTranscript final {
 Result<SocialTranscript>
 load_social_transcript(const SqliteSocialDirectory &directory, const IEventStore &events,
                        const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
-                       const OperationContext &context, bool skip_non_text_history) {
+                       const OperationContext &context, bool skip_non_text_history,
+                       bool include_history = true) {
     const auto participants = directory.resolve_message_participants(environment, message, {});
     if (!participants)
         return participants.error();
     const auto &current = participants.value().speaker;
     std::vector<SocialMessageEvidence> earlier;
-    if (message.sequence > 1) {
+    if (include_history && message.sequence > 1) {
         const auto through = message.sequence - 1;
         const auto after =
             through > kSocialMentionHistoryLimit ? through - kSocialMentionHistoryLimit : 0;
@@ -178,6 +180,15 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
                               IModelProvider &provider, const SocialEnvironmentKey &environment,
                               const SocialMessageLocator &message,
                               const OperationContext &operation) {
+    return infer_social_message_mentions(directory, events, &provider, environment, message,
+                                         operation);
+}
+
+Result<SocialInferredMentions>
+infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEventStore &events,
+                              IModelProvider *provider, const SocialEnvironmentKey &environment,
+                              const SocialMessageLocator &message,
+                              const OperationContext &operation) {
     if (operation.session != message.session || operation.session.is_nil())
         return source_error(ErrorCode::PermissionDenied,
                             "social inference needs its authorized session");
@@ -186,26 +197,70 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
     context.deadline = std::min(context.deadline.value_or(limit), limit);
     if (auto active = check_operation(context); !active)
         return active.error();
-    const auto transcript =
-        load_social_transcript(directory, events, environment, message, context, false);
+    const auto transcript = load_social_transcript(directory, events, environment, message, context,
+                                                   false, provider != nullptr);
     if (!transcript)
         return transcript.error();
     const auto &current = transcript.value().speaker;
     const auto &history = transcript.value().history;
+    const auto &text = transcript.value().rows.back().text;
+    const auto found = directory.scan_message_aliases(environment, text, context);
+    if (!found)
+        return found.error();
+    struct Mention final {
+        std::string surface;
+        SocialMentionReference reference;
+        std::optional<SocialMessageLocator> prior{};
+        std::size_t offset = 0;
+        bool literal = false;
+    };
+    constexpr std::size_t kMaxMentions = 8;
+    std::vector<Mention> mentions;
+    for (const auto &alias : found.value().matches)
+        mentions.push_back({alias.surface, alias.key, {}, alias.offset, true});
+    SocialInferredMentions result{current, {}};
+    result.truncated = found.value().truncated;
+
+    if (provider) {
+        auto proposed =
+            extract_social_mentions_with_report(*provider, transcript.value().rows, context);
+        if (!proposed) {
+            const auto code = proposed.error().code;
+            if (mentions.empty() ||
+                (code != ErrorCode::InvalidModelOutput &&
+                 code != ErrorCode::UnsupportedCapability && code != ErrorCode::Unavailable))
+                return proposed.error();
+            result.model_error = proposed.error();
+        } else {
+            result.rejected = std::move(proposed.value().rejected);
+            result.truncated = result.truncated || proposed.value().truncated_rows != 0;
+            for (const auto &mention : proposed.value().mentions) {
+                const auto key = storage::social_aliases::normalize_alias(mention.surface);
+                if (std::ranges::any_of(found.value().matches,
+                                        [&](const auto &alias) { return alias.key == key; }))
+                    continue;
+                if (mentions.size() == kMaxMentions) {
+                    result.truncated = true;
+                    break;
+                }
+                const auto offset = text.find(mention.surface);
+                if (mention.prior_row) {
+                    const auto &prior = history.at(*mention.prior_row).message;
+                    mentions.push_back({mention.surface, prior, prior, offset, false});
+                } else {
+                    mentions.push_back({mention.surface, key, {}, offset, false});
+                }
+            }
+        }
+    }
+    std::ranges::stable_sort(mentions, {}, &Mention::offset);
     std::vector<SocialMentionReference> references;
-    references.reserve(history.size());
+    references.reserve(history.size() + mentions.size());
     for (const auto &previous : history)
         references.emplace_back(previous.message);
 
-    auto proposed = extract_social_mentions(provider, transcript.value().rows, context);
-    if (!proposed)
-        return proposed.error();
-    for (const auto &mention : proposed.value()) {
-        if (mention.prior_row)
-            references.emplace_back(history.at(*mention.prior_row).message);
-        else
-            references.emplace_back(mention.surface);
-    }
+    for (const auto &mention : mentions)
+        references.push_back(mention.reference);
     auto resolved = directory.resolve_message_participants(environment, message, references);
     if (!resolved)
         return resolved.error();
@@ -213,15 +268,16 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
         return current_sources.error();
     if (auto active = check_operation(context); !active)
         return active.error();
-    SocialInferredMentions result{current, {}};
-    for (std::size_t index = 0; index < proposed.value().size(); ++index) {
-        auto &mention = proposed.value()[index];
-        std::optional<SocialMessageLocator> prior;
-        if (mention.prior_row)
-            prior = history.at(*mention.prior_row).message;
+    for (std::size_t index = 0; index < mentions.size(); ++index) {
+        auto &mention = mentions[index];
+        auto &candidate = resolved.value().mentions.at(history.size() + index);
+        if (const auto *alias = std::get_if<SocialAliasResult>(&candidate)) {
+            const bool resolved_name = alias->resolution != SocialAliasResolution::Missing;
+            if (resolved_name != mention.literal)
+                continue;
+        }
         result.mentions.push_back(
-            {std::move(mention.surface), prior,
-             std::move(resolved.value().mentions.at(history.size() + index))});
+            {std::move(mention.surface), mention.prior, std::move(candidate)});
     }
     return result;
 }

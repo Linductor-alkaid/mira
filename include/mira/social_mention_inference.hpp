@@ -27,10 +27,25 @@ struct SocialTextMention final {
     std::optional<std::size_t> prior_row;
 };
 
+struct SocialInferenceRejection final {
+    std::size_t row = 0;
+    std::string reason;
+};
+
+struct SocialMentionExtraction final {
+    std::vector<SocialTextMention> mentions;
+    std::vector<SocialInferenceRejection> rejected;
+    std::size_t truncated_rows = 0;
+};
+
 // Last utterance is current. Speaker slots are local to the request.
 [[nodiscard]] Result<std::vector<SocialTextMention>>
 extract_social_mentions(IModelProvider &, std::span<const SocialMentionUtterance>,
                         const OperationContext &);
+
+[[nodiscard]] Result<SocialMentionExtraction>
+extract_social_mentions_with_report(IModelProvider &, std::span<const SocialMentionUtterance>,
+                                    const OperationContext &);
 
 struct SocialInferredMention final {
     std::string surface;
@@ -41,12 +56,21 @@ struct SocialInferredMention final {
 struct SocialInferredMentions final {
     SocialMessageEvidence speaker;
     std::vector<SocialInferredMention> mentions;
+    std::vector<SocialInferenceRejection> rejected{};
+    bool truncated = false;
+    std::optional<Error> model_error{};
 };
 
 // Host entry point in Mira::state_store. Invoke in the existing managed task
 // for a session and provider authorized to process this conversation.
 [[nodiscard]] Result<SocialInferredMentions>
 infer_social_message_mentions(const SqliteSocialDirectory &, const IEventStore &, IModelProvider &,
+                              const SocialEnvironmentKey &, const SocialMessageLocator &,
+                              const OperationContext &);
+
+// With a null provider, returns literal aliases without reading prior messages.
+[[nodiscard]] Result<SocialInferredMentions>
+infer_social_message_mentions(const SqliteSocialDirectory &, const IEventStore &, IModelProvider *,
                               const SocialEnvironmentKey &, const SocialMessageLocator &,
                               const OperationContext &);
 

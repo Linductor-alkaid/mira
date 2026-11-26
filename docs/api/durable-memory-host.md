@@ -207,9 +207,10 @@ auto participants = directory->resolve_message_participants(environment, message
 ### 自动提取正文中的对象引用
 
 入站适配器可在完成 `index_message` 后调用 `infer_social_message_mentions`。
-`kSocialMessageTextEvent` 标识正文为纯文本的事件。宿主选择获准处理该会话的模型，
-并传入本次消息的 `OperationContext`。入口从同一会话取得当前消息和前六个事件位置
-中已有索引的消息，每条正文最多 4096 字节。推断复用同一取消请求和截止时间。
+`kSocialMessageTextEvent` 标识正文为纯文本的事件。传入本次消息的 `OperationContext`
+和授权环境后，入口先从当前正文匹配环境内的已知别名。传入 `nullptr` 可直接只查正文。
+配置获准的模型时，模型可结合前六个事件位置中已索引的同会话消息补充引用。每条正文
+最多 4096 字节，推断复用同一取消请求和截止时间。
 
 ```cpp
 auto inferred = executor.submit_auto([&] {
@@ -218,11 +219,11 @@ auto inferred = executor.submit_auto([&] {
 }).get();
 ```
 
-每个候选保留当前正文原文、可选的前序发言位置和由目录返回的解析结果。同名仍返回
-歧义，前序行号表示模型推断，并附对应消息证据。调用失败、未获准的会话、无效行号、
-伪造原文、取消及来源被擦除均返回错误。模型请求没有工具，关闭存储和上传。
-`extract_social_mentions` 也可独立用于宿主已准备好的文本和本地发言者代号。
-见 [DEC-144](../decisions/DEC-144-social-mention-extraction.md)。
+每个候选保留原文、可选的前序发言位置和目录解析结果。同名返回歧义及候选。模型坏行
+在 `rejected` 中带原始行号与原因，超过数量时标记 `truncated`。模型响应格式错误、服务
+不可用或缺所需能力时，有效别名可随 `model_error` 一起返回。未获准的会话、取消和
+来源失效仍返回错误。模型请求关闭工具、存储和上传。宿主也可对准备好的文本调用
+`extract_social_mentions_with_report`。[DEC-175](../decisions/DEC-175-literal-social-mentions.md)
 
 ## 社交画像字段
 

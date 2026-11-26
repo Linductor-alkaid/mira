@@ -1,6 +1,7 @@
 #include <mira/sqlite_social_directory.hpp>
 
 #include "social_message_source.hpp"
+#include "sqlite_social_aliases.hpp"
 #include "sqlite_store_open.hpp"
 
 #include <mira/content_markers.hpp>
@@ -18,6 +19,10 @@ namespace mira {
 namespace {
 using storage::Statement;
 using storage::Transaction;
+using storage::social_aliases::alias_key;
+using storage::social_aliases::bind_text;
+using storage::social_aliases::column;
+using storage::social_aliases::directory_error;
 using Aliases = std::map<std::string, std::string>;
 
 constexpr std::size_t kMaxAliases = 16;
@@ -50,10 +55,6 @@ constexpr const char *kSchema =
     "CREATE TABLE social_aliases(scope TEXT NOT NULL,name_key TEXT NOT NULL,"
     " object TEXT NOT NULL,display TEXT NOT NULL,PRIMARY KEY(scope,name_key,object));"
     "CREATE INDEX social_aliases_by_object ON social_aliases(scope,object,name_key);";
-
-Error directory_error(ErrorCode code, std::string message) {
-    return storage::store_error(code, "mira.social_directory", 0, std::move(message));
-}
 
 Error profile_write_busy() {
     auto error =
@@ -100,48 +101,6 @@ struct ErasureTarget final {
     SocialEnvironmentKey environment;
     std::optional<Id128> object;
 };
-
-Result<std::string> alias_key(const std::string &alias, const std::vector<std::string> &forbidden) {
-    if (alias.size() > 256 || !parse_json(canonical_json_string(JsonValue{alias})))
-        return directory_error(ErrorCode::InvalidArgument, "social alias is invalid");
-    if (matches_content_marker(alias, forbidden))
-        return directory_error(ErrorCode::SafetyRejected, "social alias is not indexable");
-    std::string key;
-    key.reserve(alias.size());
-    bool space = false;
-    for (char byte : alias) {
-        if (std::string_view(" \t\r\n\f\v").find(byte) != std::string_view::npos) {
-            space = !key.empty();
-            continue;
-        }
-        const auto value = static_cast<unsigned char>(byte);
-        if (value < 32 || value == 127)
-            return directory_error(ErrorCode::InvalidArgument, "social alias has control bytes");
-        if (space) {
-            key.push_back(' ');
-            space = false;
-        }
-        if (byte >= 'A' && byte <= 'Z')
-            byte = static_cast<char>(byte - 'A' + 'a');
-        key.push_back(byte);
-    }
-    if (key.empty() || matches_content_marker(key, forbidden))
-        return directory_error(ErrorCode::InvalidArgument,
-                               "social alias is invalid after normalization");
-    return key;
-}
-
-bool bind_text(Statement &statement, int index, const std::string &value) {
-    return sqlite3_bind_text(statement.get(), index, value.data(), static_cast<int>(value.size()),
-                             storage::transient_copy()) == SQLITE_OK;
-}
-
-std::string column(Statement &statement, int index) {
-    const auto *text = sqlite3_column_text(statement.get(), index);
-    const auto size = sqlite3_column_bytes(statement.get(), index);
-    return text ? std::string(reinterpret_cast<const char *>(text), static_cast<std::size_t>(size))
-                : std::string{};
-}
 
 Result<std::optional<ErasureTarget>> pending_erasure(sqlite3 *db);
 
@@ -901,6 +860,29 @@ Result<SocialAliasResult> SqliteSocialDirectory::resolve(const SocialEnvironment
     return impl_->run<SocialAliasResult>(
         [environment, scope = scope_key(environment), name = std::move(normalized).value(),
          limit](sqlite3 *db) { return find_alias(db, environment, scope, name, limit); });
+}
+
+Result<SocialLiteralAliases>
+SqliteSocialDirectory::scan_message_aliases(const SocialEnvironmentKey &environment,
+                                            std::string message, const OperationContext &context,
+                                            std::size_t limit) const {
+    if (!valid_environment(environment) || message.empty() || message.size() > 4096 || limit == 0 ||
+        limit > 8 || message.find('\0') != std::string::npos ||
+        !parse_json(canonical_json_string(JsonValue{message})))
+        return directory_error(ErrorCode::InvalidArgument, "invalid social alias scan input");
+    if (matches_content_marker(message, default_forbidden_content_markers()))
+        return directory_error(ErrorCode::SafetyRejected, "social message is not indexable");
+    if (context.cancelled())
+        return directory_error(ErrorCode::Cancelled, "social alias scan was cancelled");
+    const auto budget = std::chrono::steady_clock::now() + impl_->options.operation_timeout;
+    const auto deadline = std::min(budget, context.deadline.value_or(budget));
+    auto scanned = impl_->run<SocialLiteralAliases>(
+        [scope = scope_key(environment), text = std::move(message), limit, deadline](sqlite3 *db) {
+            return storage::social_aliases::scan_aliases(db, scope, text, limit, deadline);
+        });
+    if (context.cancelled())
+        return directory_error(ErrorCode::Cancelled, "social alias scan was cancelled");
+    return scanned;
 }
 
 Result<std::optional<SocialAccountBinding>>
