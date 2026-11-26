@@ -104,6 +104,9 @@ Result<void> MemoryAgentService::State::emit(const Job &job, const char *type,
             detail.emplace_back("deterministic_record_only", result->deterministic_record_only);
             detail.emplace_back("rejected_model_rows",
                                 static_cast<std::int64_t>(result->rejected_record_rows));
+            detail.emplace_back(
+                "truncated_candidates",
+                static_cast<std::int64_t>(result->consolidation.candidates_truncated));
         }
         if (result->projection_artifact) {
             detail.emplace_back("projection_artifact", result->projection_artifact->id.to_string());
@@ -257,6 +260,7 @@ void MemoryAgentService::State::run(const std::shared_ptr<Job> &job, kairo::Stop
             combined.more_pending = page.more_pending;
             combined.degraded = combined.degraded || page.degraded;
             combined.rejected_record_rows += page.rejected_record_rows;
+            std::ranges::move(page.record_pages, std::back_inserter(combined.record_pages));
             auto &report = combined.consolidation;
             report.candidates_examined += page.consolidation.candidates_examined;
             report.candidates_truncated += page.consolidation.candidates_truncated;
@@ -531,8 +535,24 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
     if (input.mode == MemoryAgentMode::Record) {
         result.deterministic_record_only = !processor;
         result.rejected_record_rows = proposal.rejected_record_rows;
+        MemoryAgentRecordPageReport page{job->after_sequence, result.through_event_sequence,
+                                         proposal.record_rejections};
+        auto extracted_rejection = proposal.record_rejections.begin();
+        std::size_t row = 0;
         ProposedMemories model;
         for (const auto &memory_proposal : proposal.memories) {
+            while (extracted_rejection != proposal.record_rejections.end() &&
+                   extracted_rejection->row == row) {
+                ++extracted_rejection;
+                ++row;
+            }
+            const auto source_row = row++;
+            if (const auto rejection = memory_agent_support::record_candidate_rejection(
+                    memory_proposal, input.events.size())) {
+                ++result.rejected_record_rows;
+                page.rejected.push_back({source_row, *rejection});
+                continue;
+            }
             MemoryCandidate candidate;
             candidate.proposed.id = MemoryId::generate();
             candidate.proposed.kind = memory_proposal.kind;
@@ -545,6 +565,10 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 candidate.evidence.push_back(input.events[citation].event_id);
             candidate.proposed.provenance = candidate.evidence;
             model.candidates.push_back(std::move(candidate));
+        }
+        if (page.through != page.after || !page.rejected.empty()) {
+            std::ranges::sort(page.rejected, {}, &MemoryAgentRecordRejection::row);
+            result.record_pages.push_back(std::move(page));
         }
         auto policy = config.consolidation;
         policy.allow_model_import_exemption = false;
@@ -585,7 +609,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
             if (result.through_event_sequence > job->after_sequence) {
                 const Work::RecordCursor cursor{result.through_event_sequence,
                                                 pending_record_snapshot};
-                if (auto saved = save_record_cursor(*job, cursor, result.consolidation); !saved)
+                if (auto saved = save_record_cursor(*job, cursor, result); !saved)
                     return saved.error();
             }
         }

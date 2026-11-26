@@ -15,7 +15,7 @@
 
 | 门禁 | 当前证据 | 未完成的验收及归属 |
 | --- | --- | --- |
-| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量。待审人格建议交由宿主，其他类型采用各自的合并或存储入口。见[写入验收索引](#evidence-recording) | `M30-03` 补共用收集与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
+| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量。通用 Record 已校验原行证据及拒绝绕过社交来源的提议。见[写入验收索引](#evidence-recording) | `M30-03` 补六类共用的候选收集、汇总处置和其余类型的写入边界。`M30-38` 验收统一自动触发及六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
@@ -45,7 +45,7 @@
 | 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34，M30-03 接通技能提示候选报告 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills)、[技能提示候选报告](#history-skill-hint-candidate-report) |
 | 社交来源账号与消息归因、自动提及、候选写入 | M30-35 / M30-40～42，M30-03 与 M30-36 的已交付部分 | [来源账号、消息证据和正文提及](#history-social-recording)、[属性](#history-social-attributes)、[有向关系](#history-social-relations)、[前序指代双证据](#history-social-references) |
 | 到期派发与已确认事实恢复 | M30-43～52，M30-37 的已交付部分 | [待派发、重复计划、兑现、只读对账、准入和完成证据](#history-goal-dispatch) |
-| Record 候选与持续处理 | M30-39，M30-03 与 M30-38 的已交付部分 | [多页提取](#history-social-recording)、[进度持久化](#history-record-cursors)、[Episode 与分类处置](#history-loop-episodes) |
+| Record 候选与持续处理 | M30-39，M30-03 与 M30-38 的已交付部分 | [多页提取](#history-social-recording)、[进度持久化](#history-record-cursors)、[Episode 与分类处置](#history-loop-episodes)、[逐行校验证据](#history-record-candidate-evidence) |
 
 <a id="evidence-recording"></a>
 
@@ -94,6 +94,30 @@ M30-13～16 的实现范围，按门禁条件核对 G2 和 G3 的现有离线覆
 进程重开后的派发归属发现与权限过滤测试登记在 013。
 已知社交别名的正文识别、歧义及模型提及逐行处置测试登记在 014。
 社交候选的逐行处置、容量、画像字段说明及自报姓名的证据校验登记在 015、016。
+
+<a id="history-record-candidate-evidence"></a>
+
+### 2026-11-26 通用 Record 的逐行证据处置
+
+以 `96c943c` 加本增量验证 M30-03 的通用 Record，依据
+[DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)。
+`mira_m30_recording_test` 覆盖宿主处理器的越界引用、同页有效记录、跨页行号、工具状态、
+持久拒绝计数及从已提交水位重开。通用提议绕过社交来源和技能验证等级的路径均被拒绝。
+`mira_m36_memory_agent_model_test` 覆盖模型未知类型、越界引用与可用行混合，以及整份
+响应损坏。`mira_m36_memory_agent_test` 复跑通用作业契约。
+
+Linux Debug 全量 **215/215**，`mira_m30_recording_test` 连续复跑 **10/10**，上述三项
+ASan 测试 **3/3**。改动实现的 clang-tidy 严格检查和格式、文档、SBOM、平台边界及架构
+门禁通过。复现命令如下。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_recording_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure -R '^mira_(m30_recording|m36_memory_agent(_model)?)_test$'
+```
+
+Mira Maintainers 继续统一六类候选收集与报告。真实模型、生产宿主及目标平台按第 3 节的
+环境条件补证。
 
 ## 4. 历史验收记录
 

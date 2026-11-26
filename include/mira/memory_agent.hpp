@@ -87,6 +87,16 @@ struct MemoryAgentMemory final {
     MemoryAgentNote note;
     std::optional<MemoryClaim> claim{};
 };
+enum class MemoryAgentRecordRejectReason : std::uint8_t {
+    UnknownKind,
+    InvalidNote,
+    InvalidClaim,
+    InvalidCitation,
+};
+struct MemoryAgentRecordRejection final {
+    std::size_t row = 0; // Zero-based within the original proposal page.
+    MemoryAgentRecordRejectReason reason = MemoryAgentRecordRejectReason::InvalidNote;
+};
 struct MemoryAgentProposal final {
     // Recall: optional subset of the supplied records; empty retains all.
     std::vector<MemoryId> selected_memories;
@@ -95,6 +105,9 @@ struct MemoryAgentProposal final {
     std::vector<MemoryAgentMemory> memories;
     std::vector<MemoryAgentNote> summary;
     std::size_t rejected_record_rows = 0;
+    // Optional detail for the rows already counted above. The other raw rows
+    // correspond to memories in order.
+    std::vector<MemoryAgentRecordRejection> record_rejections{};
 };
 
 struct MemoryAgentInput final {
@@ -139,6 +152,12 @@ struct MemoryAgentRequest final {
     std::size_t record_page_limit = 1;
 };
 
+struct MemoryAgentRecordPageReport final {
+    SessionSequence after = 0;
+    SessionSequence through = 0;
+    std::vector<MemoryAgentRecordRejection> rejected;
+};
+
 struct MemoryAgentResult final {
     OperationId operation;
     MemoryAgentMode mode = MemoryAgentMode::Recall;
@@ -152,6 +171,7 @@ struct MemoryAgentResult final {
     std::optional<ArtifactDescriptor> projection_artifact;
     bool deterministic_record_only = false;
     std::size_t rejected_record_rows = 0;
+    std::vector<MemoryAgentRecordPageReport> record_pages{};
 };
 struct MemoryAgentHandle final {
     OperationId operation;

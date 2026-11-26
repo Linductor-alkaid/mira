@@ -97,8 +97,9 @@ Result<void> MemoryAgentService::State::restore_record_cursor(Job &job) {
 
 Result<void> MemoryAgentService::State::save_record_cursor(const Job &job,
                                                            const Work::RecordCursor &cursor,
-                                                           const ConsolidationReport &report) {
+                                                           const MemoryAgentResult &result) {
     const auto partition = receipt_partition(job.binding, *job.request.write_scope);
+    const auto &report = result.consolidation;
     std::map<std::string, std::array<std::int64_t, 2>> counts;
     std::size_t applied = 0;
     for (const auto &entry : report.entries) {
@@ -117,6 +118,7 @@ Result<void> MemoryAgentService::State::save_record_cursor(const Job &job,
         {"examined", static_cast<std::int64_t>(report.candidates_examined)},
         {"applied", static_cast<std::int64_t>(applied)},
         {"rejected", static_cast<std::int64_t>(report.entries.size() - applied)},
+        {"rejected_model_rows", static_cast<std::int64_t>(result.rejected_record_rows)},
         {"by_kind", std::move(by_kind)},
     });
     const AppendRequest request{receipt_id(partition, cursor.through),
@@ -126,11 +128,11 @@ Result<void> MemoryAgentService::State::save_record_cursor(const Job &job,
                                 {std::string(kRecordPage), payload, EventClass::Critical},
                                 0,
                                 Durability::ProcessCrash};
-    const auto result = events->append(request);
-    if (!result)
-        return result.error();
-    if (result.value().event_id != request.event_id || result.value().session_sequence == 0 ||
-        result.value().task_sequence || result.value().achieved < Durability::ProcessCrash)
+    const auto saved = events->append(request);
+    if (!saved)
+        return saved.error();
+    if (saved.value().event_id != request.event_id || saved.value().session_sequence == 0 ||
+        saved.value().task_sequence || saved.value().achieved < Durability::ProcessCrash)
         return invalid_receipt();
     return {};
 }

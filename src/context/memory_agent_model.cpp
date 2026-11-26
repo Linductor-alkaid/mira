@@ -51,10 +51,18 @@ Result<void> memory_agent_support::validate_proposal(const MemoryAgentProposal &
     if ((input.mode != MemoryAgentMode::Recall &&
          (!proposal.queries.empty() || !proposal.selected_memories.empty())) ||
         (input.mode != MemoryAgentMode::Record &&
-         (!proposal.memories.empty() || proposal.rejected_record_rows != 0)) ||
+         (!proposal.memories.empty() || proposal.rejected_record_rows != 0 ||
+          !proposal.record_rejections.empty())) ||
         (input.mode != MemoryAgentMode::Compress && !proposal.summary.empty()) ||
         (input.mode == MemoryAgentMode::Compress && proposal.summary.empty()))
         return error(ErrorCode::InvalidArgument, "memory proposal does not match its job mode");
+    const auto &rejected = proposal.record_rejections;
+    if (rejected.size() > proposal.rejected_record_rows ||
+        !std::ranges::is_sorted(rejected, {}, &MemoryAgentRecordRejection::row) ||
+        std::ranges::adjacent_find(rejected, {}, &MemoryAgentRecordRejection::row) !=
+            rejected.end() ||
+        (!rejected.empty() && rejected.back().row >= proposal.memories.size() + rejected.size()))
+        return error(ErrorCode::InvalidArgument, "memory proposal rejection rows are invalid");
     std::size_t bytes = 0;
     for (const auto &query : proposal.queries) {
         if (query.empty() || query.size() > 1024)
@@ -77,13 +85,9 @@ Result<void> memory_agent_support::validate_proposal(const MemoryAgentProposal &
         return {};
     };
     for (const auto &memory : proposal.memories) {
-        if (auto valid = check_note(memory.note, input.events.size()); !valid)
-            return valid;
-        if (memory.claim) {
-            if (!memory.claim->valid())
-                return error(ErrorCode::InvalidArgument, "memory proposal claim is invalid");
+        bytes += memory.note.text.size();
+        if (memory.claim)
             bytes += memory.claim->subject.size() + memory.claim->value.size();
-        }
     }
     for (const auto &note : proposal.summary)
         if (auto valid = check_note(note, input.history.size()); !valid)
@@ -99,6 +103,23 @@ Result<void> memory_agent_support::validate_proposal(const MemoryAgentProposal &
             return error(ErrorCode::InvalidArgument, "compression omitted its prior checkpoint");
     if (bytes > max_bytes)
         return error(ErrorCode::ResourceExhausted, "memory proposal exceeds byte capacity");
+    return {};
+}
+
+std::optional<MemoryAgentRecordRejectReason>
+memory_agent_support::record_candidate_rejection(const MemoryAgentMemory &proposal,
+                                                 std::size_t event_count) {
+    using Reason = MemoryAgentRecordRejectReason;
+    if (!memory_kind_from(memory_kind_name(proposal.kind)))
+        return Reason::UnknownKind;
+    if (proposal.note.text.empty())
+        return Reason::InvalidNote;
+    if (proposal.claim && !proposal.claim->valid())
+        return Reason::InvalidClaim;
+    const auto &citations = proposal.note.citations;
+    if (citations.empty() || citations.size() > 128 ||
+        std::ranges::any_of(citations, [event_count](auto index) { return index >= event_count; }))
+        return Reason::InvalidCitation;
     return {};
 }
 
@@ -127,7 +148,9 @@ Result<MemoryAgentProposal> parse_proposal(const JsonValue &json, std::size_t ev
             continue;
         if (!values->is_array() || values->as_array()->size() > 64)
             return error(ErrorCode::InvalidArgument, "memory model array is invalid");
-        for (const auto &value : *values->as_array()) {
+        const auto &rows = *values->as_array();
+        for (std::size_t row = 0; row < rows.size(); ++row) {
+            const auto &value = rows[row];
             if (std::string_view{field} == "memory_ids") {
                 const auto id =
                     value.is_string() ? MemoryId::parse(*value.as_string()) : std::nullopt;
@@ -156,17 +179,24 @@ Result<MemoryAgentProposal> parse_proposal(const JsonValue &json, std::size_t ev
                         claim_value->is_string() &&
                         (!subject->as_string()->empty() || !claim_value->as_string()->empty()))
                         claim = MemoryClaim{*subject->as_string(), *claim_value->as_string()};
-                    if (!parsed || !note || note.value().text.empty() ||
-                        (claim && !claim->valid()) || note.value().citations.empty() ||
-                        note.value().citations.size() > 128 ||
-                        std::ranges::any_of(note.value().citations, [event_count](auto index) {
-                            return index >= event_count;
-                        })) {
-                        ++proposal.rejected_record_rows;
-                        continue;
+                    using Reason = MemoryAgentRecordRejectReason;
+                    std::optional<Reason> rejection;
+                    if (!parsed)
+                        rejection = Reason::UnknownKind;
+                    else if (!note)
+                        rejection = Reason::InvalidNote;
+                    else {
+                        MemoryAgentMemory memory{*parsed, std::move(note).value(),
+                                                 std::move(claim)};
+                        rejection =
+                            memory_agent_support::record_candidate_rejection(memory, event_count);
+                        if (!rejection)
+                            proposal.memories.push_back(std::move(memory));
                     }
-                    proposal.memories.push_back(
-                        {*parsed, std::move(note).value(), std::move(claim)});
+                    if (rejection) {
+                        ++proposal.rejected_record_rows;
+                        proposal.record_rejections.push_back({row, *rejection});
+                    }
                 }
             }
         }

@@ -6,6 +6,20 @@
 namespace mira {
 using memory_agent_support::error;
 namespace {
+std::string_view record_rejection_name(MemoryAgentRecordRejectReason reason) {
+    switch (reason) {
+    case MemoryAgentRecordRejectReason::UnknownKind:
+        return "unknown-kind";
+    case MemoryAgentRecordRejectReason::InvalidNote:
+        return "invalid-note";
+    case MemoryAgentRecordRejectReason::InvalidClaim:
+        return "invalid-claim";
+    case MemoryAgentRecordRejectReason::InvalidCitation:
+        return "invalid-citation";
+    }
+    return "invalid-rejection";
+}
+
 JsonValue report_json(const MemoryAgentResult &result) {
     JsonValue::Array entries;
     for (const auto &entry : result.consolidation.entries)
@@ -13,7 +27,7 @@ JsonValue report_json(const MemoryAgentResult &result) {
             JsonValue::Object{{"disposition", candidate_disposition_name(entry.disposition)},
                               {"kind", memory_kind_name(entry.kind)},
                               {"reason", entry.reason_code}});
-    return JsonValue::Object{
+    JsonValue::Object report{
         {"operation", result.operation.to_string()},
         {"state", "completed"},
         {"candidate_count", static_cast<std::int64_t>(result.candidates.size())},
@@ -23,6 +37,27 @@ JsonValue report_json(const MemoryAgentResult &result) {
          static_cast<std::int64_t>(result.consolidation.pending_approval.size())},
         {"writes", std::move(entries)},
         {"compressed_items", static_cast<std::int64_t>(result.compressed_items)}};
+    if (result.mode == MemoryAgentMode::Record) {
+        JsonValue::Array pages;
+        for (const auto &page : result.record_pages) {
+            if (page.rejected.empty())
+                continue;
+            JsonValue::Array rows;
+            for (const auto &rejected : page.rejected)
+                rows.emplace_back(JsonValue::Object{
+                    {"row", static_cast<std::int64_t>(rejected.row)},
+                    {"reason", std::string(record_rejection_name(rejected.reason))}});
+            pages.emplace_back(JsonValue::Object{{"after", std::to_string(page.after)},
+                                                 {"through", std::to_string(page.through)},
+                                                 {"rejected", std::move(rows)}});
+        }
+        report.emplace_back("rejected_model_rows",
+                            static_cast<std::int64_t>(result.rejected_record_rows));
+        report.emplace_back("truncated_candidates",
+                            static_cast<std::int64_t>(result.consolidation.candidates_truncated));
+        report.emplace_back("record_rejections", std::move(pages));
+    }
+    return report;
 }
 } // namespace
 

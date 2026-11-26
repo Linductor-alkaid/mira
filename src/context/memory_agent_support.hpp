@@ -38,6 +38,8 @@ inline bool request_current(const MemoryWorkBinding &binding) noexcept {
 [[nodiscard]] SessionId control_partition();
 [[nodiscard]] Result<void> validate_proposal(const MemoryAgentProposal &proposal,
                                              const MemoryAgentInput &input, std::size_t bytes);
+[[nodiscard]] std::optional<MemoryAgentRecordRejectReason>
+record_candidate_rejection(const MemoryAgentMemory &proposal, std::size_t event_count);
 class Worker final : public kairo::IBlockingIoWorker {
   public:
     explicit Worker(std::function<void(kairo::StopToken)> run) : run_(std::move(run)) {}
@@ -142,7 +144,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
                                     const MemoryAgentResult *result = nullptr);
     [[nodiscard]] Result<void> restore_record_cursor(Job &);
     [[nodiscard]] Result<void> save_record_cursor(const Job &, const Work::RecordCursor &,
-                                                  const ConsolidationReport &);
+                                                  const MemoryAgentResult &);
     [[nodiscard]] bool current(const Job &job) const; // mutex held
     void invalidate(Work &work);                      // mutex held
     [[nodiscard]] Result<MemoryAgentHandle> submit(MemoryAgentRequest request,

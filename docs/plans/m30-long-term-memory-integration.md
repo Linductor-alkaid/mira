@@ -97,6 +97,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 - [DEC-165](../decisions/DEC-165-batched-conversation-commitments.md)：批量接纳同一终答中的一次性承诺。
 - [DEC-166](../decisions/DEC-166-evidenced-recurring-plan-recording.md)：从已结算终答接纳固定间隔及日历重复计划。
 - [DEC-167](../decisions/DEC-167-evidenced-agent-persona-suggestions.md)：从已记录用户消息提交待审人格建议。
+- [DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)：通用 Record 的候选证据校验与分页处置。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -169,7 +170,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 
 后续工作按原编号推进。已交付的基础机制和增量证据见第 5.2 节及[验收文档](m30-memory-acceptance.md#2-按交付能力查证)。
 
-- [ ] `M30-03` 补齐共用的候选收集、处置报告及写入边界验收。六类已有专用增量，分别覆盖待审人格建议、Session Record 与 Episode、社交属性与关系、结构化世界观察、一次性承诺与重复计划、技能提示。显式偏好继续沿既有审批入口。生产统一触发由 M30-38 验收。
+- [ ] `M30-03` 补齐六类候选的共用收集、处置汇总及写入边界验收。通用 Record 已按页和行报告证据拒因。六类已有专用增量，分别覆盖待审人格建议、Session Record 与 Episode、社交属性与关系、结构化世界观察、一次性承诺与重复计划、技能提示。显式偏好继续沿既有审批入口。生产统一触发由 M30-38 验收。
 - [ ] `M30-05` 补齐「记住、纠正、忘掉」的结构化路由、精确范围与歧义处理、逐记录遗忘及可解释回执。显式偏好批准、版本化纠正与范围擦除已有独立证据。
 - [ ] `M30-06` 从有证据的已确认重要性和 Gateway 实际准入产出价值信号，区分未入选、失败准入、幂等重放与擦除，供 M31 消费。
 - [ ] `M30-09` 按 DEC-156 接通同 scope 删除后的新世代。旧来源、摘要、审批和在途结果继续受已有擦除屏障阻断，新明确输入可重新接纳。与 M31 联验屏障保留与回收。

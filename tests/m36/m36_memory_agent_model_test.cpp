@@ -18,7 +18,8 @@ int real_memory_loop_runs_with_isolated_identity_and_validates_citations() {
                 R"({"summary":[{"text":"volume must remain below 30","citations":[0]}]})"),
             text_response(R"({"memories":[{"kind":"preference","text":"Prefer a brief reply",
                              "subject":"tone","value":"brief","citations":[0]},
-                             {"kind":"invented_kind","text":"bad","subject":"","value":"","citations":[0]}]})"),
+                             {"kind":"invented_kind","text":"bad","subject":"","value":"","citations":[0]},
+                             {"kind":"preference","text":"bad","subject":"","value":"","citations":[1]}]})"),
             text_response("```json\nThis is a reflected prompt, not a proposal.\n```")});
     MemoryAgentModelConfig config;
     config.model = *profile;
@@ -75,8 +76,14 @@ int real_memory_loop_runs_with_isolated_identity_and_validates_citations() {
     MIRA_CHECK(recording && recording.value().result.wait_for(3s) == std::future_status::ready);
     const auto report = recording.value().result.get();
     MIRA_CHECK(report && !report.value().deterministic_record_only &&
-               report.value().rejected_record_rows == 1 &&
+               report.value().rejected_record_rows == 2 &&
                report.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
+    MIRA_CHECK(report.value().record_pages.size() == 1);
+    const auto &rejected = report.value().record_pages.front().rejected;
+    MIRA_CHECK(rejected.size() == 2 && rejected[0].row == 1 &&
+               rejected[0].reason == MemoryAgentRecordRejectReason::UnknownKind &&
+               rejected[1].row == 2 &&
+               rejected[1].reason == MemoryAgentRecordRejectReason::InvalidCitation);
     MemoryQuery claim_query;
     claim_query.scopes = binding.scopes;
     claim_query.claim_key = "tone";

@@ -8,13 +8,25 @@ using namespace mira::testing;
 
 namespace {
 
+SessionId record_receipt_partition(const MemoryWorkBinding &binding) {
+    const auto hash = digest_string(
+        "mira.memory-agent.record-partition.v1:" + binding.principal.tenant_id.to_string() + ':' +
+        binding.principal.user_id.to_string() + ':' + binding.work.session_id.to_string() + ':' +
+        binding.work.task_id.to_string() + ':' +
+        memory_erasure_scope_digest(binding.scopes.front()).to_string());
+    Id128::Bytes bytes{};
+    std::copy_n(hash.bytes.begin(), bytes.size(), bytes.begin());
+    return SessionId{Id128{bytes}};
+}
+
 int settlement_records_memory() {
     InteractionMemoryFixture host(
         [](const MemoryAgentInput &input, const OperationContext &) -> Result<MemoryAgentProposal> {
             MemoryAgentProposal proposal;
             if (input.mode == MemoryAgentMode::Record && !input.events.empty()) {
                 proposal.memories = {{MemoryKind::Preference, {"tone=brief", {0}}},
-                                     {MemoryKind::RecoveryLesson, {"model guessed lesson", {0}}}};
+                                     {MemoryKind::RecoveryLesson, {"model guessed lesson", {0}}},
+                                     {MemoryKind::SocialAttribute, {"model guessed name", {0}}}};
             }
             return proposal;
         });
@@ -32,7 +44,9 @@ int settlement_records_memory() {
     // source trust level beside the deterministic fact.
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
     MIRA_CHECK(result.value().consolidation.pending_approval.empty());
-    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::RejectedInvalid) == 1);
+    MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::RejectedInvalid) == 2);
+    MIRA_CHECK(result.value().consolidation.entries.back().reason_code ==
+               "social-assertion-requires-host-source");
     MemoryQuery query;
     query.scopes = host.binding(input.value()).scopes;
     const auto recorded = host.storage.memory->query(query);
@@ -128,13 +142,7 @@ int ordinary_conversation_settlement_records_an_episode() {
                record.verification == MemoryVerification::Observed &&
                record.recorded_at == event.timestamp.wall);
 
-    const auto receipt_hash = digest_string(
-        "mira.memory-agent.record-partition.v1:" + binding.principal.tenant_id.to_string() + ':' +
-        binding.principal.user_id.to_string() + ':' + binding.work.session_id.to_string() + ':' +
-        task.to_string() + ':' + memory_erasure_scope_digest(binding.scopes.front()).to_string());
-    Id128::Bytes partition_bytes{};
-    std::copy_n(receipt_hash.bytes.begin(), partition_bytes.size(), partition_bytes.begin());
-    const auto receipts = host.storage.events->read({SessionId{Id128{partition_bytes}}, {}, 2});
+    const auto receipts = host.storage.events->read({record_receipt_partition(binding), {}, 2});
     MIRA_CHECK(receipts && receipts.value().events.size() == 1);
     const auto payload = parse_json(receipts.value().events.front().payload.data);
     MIRA_CHECK(payload);
@@ -147,6 +155,83 @@ int ordinary_conversation_settlement_records_an_episode() {
         MIRA_CHECK(applied && applied->as_integer() == 1 && rejected &&
                    rejected->as_integer() == 0);
     }
+    return 0;
+}
+
+int record_isolates_bad_citations_across_durable_pages() {
+    MemoryAgentFixture fixture;
+    const auto binding = fixture.binding();
+    MIRA_CHECK(fixture.fact(binding, "first", "a"));
+    MIRA_CHECK(fixture.fact(binding, "second", "b"));
+    MemoryAgentConfig config;
+    config.max_events = 1;
+    config.durable_record_pages = true;
+    fixture.start(
+        [](const MemoryAgentInput &input, const OperationContext &) -> Result<MemoryAgentProposal> {
+            MemoryAgentProposal proposal;
+            if (input.events.empty())
+                return proposal;
+            proposal.memories = {{MemoryKind::Preference, {"invented-source=private-text", {1}}},
+                                 {MemoryKind::Preference, {"tone=brief", {0}}}};
+            return proposal;
+        },
+        config);
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.mode = MemoryAgentMode::Record;
+    request.write_scope = binding.scopes.front();
+    request.record_page_limit = 2;
+    const auto context = memory_context(binding.work);
+    MIRA_CHECK(fixture.service->bind(binding));
+    const auto submitted = fixture.service->submit(request, context);
+    MIRA_CHECK(submitted);
+    const auto report = submitted.value().result.get();
+    MIRA_CHECK(report && report.value().through_event_sequence == 2 &&
+               report.value().rejected_record_rows == 2 && report.value().record_pages.size() == 2);
+    MIRA_CHECK(report.value().consolidation.count_of(CandidateDisposition::Applied) == 4);
+    for (std::size_t i = 0; i < report.value().record_pages.size(); ++i) {
+        const auto &page = report.value().record_pages[i];
+        MIRA_CHECK(page.after == i && page.through == i + 1 && page.rejected.size() == 1 &&
+                   page.rejected.front().row == 0 &&
+                   page.rejected.front().reason == MemoryAgentRecordRejectReason::InvalidCitation);
+    }
+    const auto tools = fixture.service->tools();
+    const auto result_tool = std::ranges::find_if(
+        tools, [](const auto &tool) { return tool.spec.wire_name == "memory_result"; });
+    MIRA_CHECK(result_tool != tools.end());
+    const auto status = result_tool->handler(
+        JsonValue::Object{{"operation", submitted.value().operation.to_string()}}, context);
+    MIRA_CHECK(status && status.value().find("rejected_model_rows") &&
+               status.value().find("rejected_model_rows")->as_integer() == 2);
+    const auto status_text = to_json_string(status.value());
+    MIRA_CHECK(status_text.find("invalid-citation") != std::string::npos &&
+               status_text.find("private-text") == std::string::npos);
+
+    MemoryQuery query;
+    query.scopes = binding.scopes;
+    const auto stored = fixture.memory->query(query);
+    MIRA_CHECK(stored && stored.value().records.size() == 3 &&
+               std::ranges::none_of(stored.value().records, [](const auto &record) {
+                   return record.statement.find("private-text") != std::string::npos;
+               }));
+    const auto receipts = fixture.events->read({record_receipt_partition(binding), {}, 3});
+    MIRA_CHECK(receipts && receipts.value().events.size() == 2);
+    for (const auto &event : receipts.value().events) {
+        const auto payload = parse_json(event.payload.data);
+        MIRA_CHECK(payload && payload.value().find("rejected_model_rows") &&
+                   payload.value().find("rejected_model_rows")->as_integer() == 1);
+        MIRA_CHECK(event.payload.data.find("private-text") == std::string::npos);
+    }
+    MIRA_CHECK(fixture.service->close());
+    fixture.service.reset();
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    fixture.start({}, config);
+    MIRA_CHECK(fixture.service->bind(binding));
+    const auto replay = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(replay);
+    const auto resumed = replay.value().result.get();
+    MIRA_CHECK(resumed && resumed.value().through_event_sequence >= 2 &&
+               resumed.value().consolidation.entries.empty());
     return 0;
 }
 
@@ -338,6 +423,8 @@ int main() {
     if (const auto result = settlement_drains_the_fixed_event_snapshot(); result != 0)
         return result;
     if (const auto result = ordinary_conversation_settlement_records_an_episode(); result != 0)
+        return result;
+    if (const auto result = record_isolates_bad_citations_across_durable_pages(); result != 0)
         return result;
     if (const auto result = record_page_cap_and_failed_page_resume(); result != 0)
         return result;

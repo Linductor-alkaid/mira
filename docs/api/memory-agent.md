@@ -1,7 +1,7 @@
 # 记忆代理与完整请求准入
 
 > 状态：Active
-> 更新日期：2026-11-20
+> 更新日期：2026-11-26
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
 > 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
 > [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
@@ -84,6 +84,15 @@ Record 必须显式 write_scope，来源从 EventStore 读取，不接受模型�
 见 [DEC-157](../decisions/DEC-157-scoped-durable-record-pages.md)。
 结果 consolidation 给出 Applied、PendingApproval、Rejected 等状态；待审批 mutation
 只有经过宿主当前权限/删除屏障复核后，才可通过既有 apply_pending 提交。
+
+模型和宿主处理器的 Record 提议按行核对类型、陈述、结构化主张和来源引用。同页的有效
+提议继续经 `MemoryConsolidator`。`MemoryAgentResult::record_pages` 用 `after`（不含）和
+`through`（含）定界已检查的事件，`rejected` 给出该页原提议的零起算行号和原因。
+待处理页的作业水位 `through_event_sequence` 仍表示上次已提交处。拒绝总数由
+`rejected_record_rows` 汇总，也写入持久回执的 `rejected_model_rows`。工具结果中的
+`record_rejections` 和 `truncated_candidates` 分别说明提取拒因和合并容量。诊断省略
+候选正文。整份响应的格式、模式或预算错误仍作为作业错误返回。
+见 [DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)。
 
 结算后的 Record 可直接从已提交的设备循环完成事件、会话回答事件提取 `Episode`，无需
 配置提取模型。新事件记忆保留原事件 ID 与发生时间。候选处置及工具状态带 `kind`，

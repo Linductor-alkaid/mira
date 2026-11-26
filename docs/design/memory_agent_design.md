@@ -95,6 +95,10 @@ Record 从该 Session 的 EventStore 有界读取增量，只消费所属 Task �
 通过既有 MemoryConsolidator 提交；Preference 可能待审批，事实类验证不足会拒绝。
 状态明确区分 accepted、pending、completed、failed 和待审批，不虚报“已记住”。
 
+同页候选独立核对来源引用和声明。校验失败记录原行号和原因，有效行继续交给写入管线。
+多页作业用事件扫描区间标识各页诊断，持久回执保留拒绝计数。待批准和合并容量超限继续
+保留待处理水位。见 [DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)。
+
 既有 DEC-059 对 namespaced promotion/import 的兼容行为保留；新增
 ConsolidationPolicy::allow_model_import_exemption 默认为 true 以兼容旧调用方，
 MemoryAgentService **强制使用 false**。严格模式保留来源标签，但不能借标签豁免
