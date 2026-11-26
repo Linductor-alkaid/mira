@@ -38,6 +38,16 @@ JsonValue report_json(const MemoryAgentResult &result) {
         {"writes", std::move(entries)},
         {"compressed_items", static_cast<std::int64_t>(result.compressed_items)}};
     if (result.mode == MemoryAgentMode::Record) {
+        const auto counts = result.recording_counts();
+        report.emplace_back(
+            "recording_counts",
+            JsonValue::Object{
+                {"applied", static_cast<std::int64_t>(counts.applied)},
+                {"unchanged", static_cast<std::int64_t>(counts.unchanged)},
+                {"pending_approval", static_cast<std::int64_t>(counts.pending_approval)},
+                {"rejected", static_cast<std::int64_t>(counts.rejected)},
+                {"truncated", static_cast<std::int64_t>(counts.truncated)},
+                {"replayed", static_cast<std::int64_t>(counts.replayed)}});
         JsonValue::Array pages;
         for (const auto &page : result.record_pages) {
             if (page.rejected.empty())

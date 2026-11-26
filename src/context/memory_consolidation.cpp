@@ -122,6 +122,26 @@ std::size_t ConsolidationReport::count_of(CandidateDisposition disposition) cons
                                                   }));
 }
 
+MemoryRecordingCounts ConsolidationReport::recording_counts() const {
+    MemoryRecordingCounts counts;
+    counts.truncated = candidates_truncated;
+    for (const auto &entry : entries) {
+        if (entry.disposition == CandidateDisposition::PendingApproval) {
+            ++counts.pending_approval;
+        } else if (entry.disposition != CandidateDisposition::Applied) {
+            ++counts.rejected;
+        } else if (entry.idempotent_replay) {
+            ++counts.unchanged;
+            ++counts.replayed;
+        } else if (entry.reason_code == "duplicate-noop") {
+            ++counts.unchanged;
+        } else {
+            ++counts.applied;
+        }
+    }
+    return counts;
+}
+
 MemoryConsolidator::MemoryConsolidator(ConsolidationPolicy policy, IConsolidationModel *model)
     : policy_(std::move(policy)), model_(model) {}
 

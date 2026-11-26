@@ -15,7 +15,7 @@
 
 | 门禁 | 当前证据 | 未完成的验收及归属 |
 | --- | --- | --- |
-| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量。通用 Record 已校验原行证据及拒绝绕过社交来源的提议。见[写入验收索引](#evidence-recording) | `M30-03` 补六类共用的候选收集、汇总处置和其余类型的写入边界。`M30-38` 验收统一自动触发及六类路由 |
+| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量及共同处置汇总。通用 Record 已校验原行证据及拒绝绕过社交来源的提议。见[写入验收索引](#evidence-recording) | `M30-03` 补六类共用的候选收集和其余类型的写入边界。`M30-38` 验收统一自动触发及六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
@@ -53,6 +53,7 @@
 [偏好](#history-preference)、[社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)、
 [目标候选](#history-evidenced-commitments)及[技能提示](#history-skill-hint-candidate-report)。
 各自沿对应的范围与证据规则验收。
+六类入口的宿主回执汇总见[六类写入处置](#history-recording-receipts)。
 
 <a id="evidence-goals"></a>
 
@@ -118,6 +119,29 @@ ctest --test-dir build/asan --output-on-failure -R '^mira_(m30_recording|m36_mem
 
 Mira Maintainers 继续统一六类候选收集与报告。真实模型、生产宿主及目标平台按第 3 节的
 环境条件补证。
+
+<a id="history-recording-receipts"></a>
+
+### 2026-11-26 六类写入处置汇总
+
+以 `8bbeb08` 加本增量验证 M30-03 的统一宿主回执，依据
+[DEC-178](../decisions/DEC-178-memory-recording-receipts.md)。`mira_m30_recording_test`
+检查六类混合结果、分类总计、待审批及重放、入口失败，以及实际 Record 工具结果。
+`mira_m30_social_inference_test` 用持久画像及关系推断核对校验拒绝、合并拒绝、未解析、
+容量、重放和无重复计数。`mira_m4_consolidation_test` 复核共享写入管线，
+`mira_memory_agent_host_consumer_test` 通过公开头文件收集两个已授权工作的 Record 回执。
+
+Linux Debug 全量 **215/215**，上述四项 ASan 通过 **4/4**。clang-tidy、格式、文档、
+SBOM、平台边界及架构检查通过。复现命令如下。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m30_(recording|social_inference)|m4_consolidation|memory_agent_host_consumer)_test$'
+```
+
+Mira Maintainers 继续接通共同的候选收集。生产事件的重启消费、真实模型和目标平台按
+M30-38 和第 3 节补证。
 
 ## 4. 历史验收记录
 

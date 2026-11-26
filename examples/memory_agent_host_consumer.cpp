@@ -2,6 +2,7 @@
 #include <mira/agent_persona.hpp>
 #include <mira/interaction_coordinator.hpp>
 #include <mira/memory_agent.hpp>
+#include <mira/memory_recording_report.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include <kairo/executor.hpp>
@@ -197,6 +198,7 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
         return false;
     }
     // Verified host facts feed the existing pipeline, then scoped recall.
+    MemoryRecordingReport recording;
     for (std::size_t i = 0; i < bindings.size(); ++i) {
         const auto &binding = bindings[i];
         AppendRequest fact;
@@ -215,7 +217,13 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
         request.mode = MemoryAgentMode::Record;
         request.write_scope = binding.scopes.front();
         auto recorded = service.submit(request, context_for(binding.work));
-        if (!recorded || !recorded.value().result.get()) {
+        if (!recorded) {
+            std::cerr << "memory host: record submission failed\n";
+            return false;
+        }
+        recording.collect(recorded.value().result.get());
+        const auto &attempt = recording.attempts().back();
+        if (attempt.error || attempt.counts.applied != 1) {
             std::cerr << "memory host: recording failed\n";
             return false;
         }

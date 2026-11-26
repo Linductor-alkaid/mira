@@ -23,6 +23,7 @@
 | [环境与 Observation](environment-observation.md) | `environment.hpp`、`observation.hpp`、`coordinates.hpp`、`observation_pipeline.hpp`、`adapters/` | `IEnvironment` 契约、Observation 快照、坐标变换、Simulator/Android/Replay 适配器 |
 | [模型层与 Agent Loop](model-agent-loop.md) | `model_*.hpp`、`embedding_provider.hpp`、`reranker_provider.hpp`、`agent_loop.hpp`、`action_dispatcher.hpp`、`tool_executor.hpp`、`conversation_loop.hpp`、`conversation_log.hpp` | OpenAI-compatible Provider、路由/重试/熔断/预算网关、决策解析、离散闭环、Journal 输入派发、BuiltIn 工具边界、有限/持续会话循环、会话对话投影 |
 | [人格配置](model-agent-loop.md#宿主管理的人格dec-120)、[人格建议](model-agent-loop.md#从用户消息提交人格建议) | `agent_persona.hpp`、`agent_persona_suggestion.hpp` | 宿主管理的生效版本、Gateway 准入和带原文证据的待审建议 |
+| [六类记忆写入汇总](memory-agent.md#汇总六类写入结果) | `memory_recording_report.hpp` | 收集类型化回执、写入状态、幂等重放和入口错误 |
 | [Workflow 契约](workflow-contracts.md) | `workflow_ir.hpp`、`workflow_run.hpp`、`workflow_versioning.hpp`、`workflow_events.hpp`、`workflow_tools.hpp`、`workflow_compiler.hpp`、`workflow_navigation.hpp`、`workflow_learning.hpp`、`workflow_runtime.hpp`、`workflow_recovery.hpp` | Workflow IR 序列化与校验、参数绑定、WorkflowRun 状态视图与转换表、资产版本化、事件载荷、操作 Tool 规格、执行/介入/编译/导航/学习/恢复编排各层 |
 | [事件、Checkpoint 与恢复](events-recovery.md) | `event_store.hpp`、`artifact_store.hpp`、`json.hpp`、`replay.hpp`、`task_checkpoint.hpp`、`task_recovery.hpp`、`state_store.hpp` | EventStore 事实源、Artifact 存储、崩溃恢复规划、SQLite 参考后端 |
 | [持久会话片段](durable-memory-host.md#持久会话片段索引) | `sqlite_conversation_index.hpp`、`context_retrieval.hpp` | 固定水位重建、按会话全文检索、联合擦除 |

@@ -172,6 +172,8 @@ struct MemoryAgentResult final {
     bool deterministic_record_only = false;
     std::size_t rejected_record_rows = 0;
     std::vector<MemoryAgentRecordPageReport> record_pages{};
+
+    [[nodiscard]] MemoryRecordingCounts recording_counts() const;
 };
 struct MemoryAgentHandle final {
     OperationId operation;

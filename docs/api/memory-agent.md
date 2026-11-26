@@ -111,6 +111,28 @@ foreground=true 的操作可以通过 continuation_source 自动回流有界状�
 等待必须运行在受管 I/O worker，不能把长等待塞到有限任务池。非 foreground 的后台
 提取不会拖住父任务终态。
 
+## 汇总六类写入结果
+
+授权宿主可用 `mira/memory_recording_report.hpp` 在完成各所有者的操作后汇总回执。
+
+```cpp
+MemoryRecordingReport recording;
+recording.collect(record_handle.result.get());
+recording.collect(social_attribute_result);
+recording.collect_world_fact(world_fact_result);
+for (const auto &attempt : recording.attempts()) {
+    publish_recording_status(attempt);
+}
+```
+
+`attempts()` 按收集顺序提供六类入口结果，`totals(system)` 按类别汇总候选处置。
+`counts` 区分实际生效 `applied`、无变更
+`unchanged`、待审批、拒绝、未解析及截断。`replayed` 是已经解释为无变更或待审批的
+幂等重放子集。人格建议的待审回执计为待审批。事件入口还保留 Record 的 `more_pending`。
+入口报错保留 `ErrorCode` 和原错误的 `retryable` 标记，供宿主一起查看已完成的其他结果。
+类型化回执中的证据、具体记录和版本仍由原入口提供。`memory_result` 与宿主接口共用
+Record 的计数语义，发布在 `recording_counts`。见 [DEC-178](../decisions/DEC-178-memory-recording-receipts.md)。
+
 ## 修订、删除与关闭
 
 current 失效但 refreshable 为真、且 Runtime 仍接纳同一 task/epoch 时，Gateway 报告

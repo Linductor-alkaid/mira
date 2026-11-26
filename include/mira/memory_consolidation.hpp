@@ -96,6 +96,17 @@ struct ConsolidationEntry final {
     MemoryKind kind = MemoryKind::Preference;
 };
 
+struct MemoryRecordingCounts final {
+    std::size_t applied = 0;
+    std::size_t unchanged = 0;
+    std::size_t pending_approval = 0;
+    std::size_t rejected = 0;
+    std::size_t unresolved = 0;
+    std::size_t truncated = 0;
+    // Subset of unchanged writes and repeated pending approvals.
+    std::size_t replayed = 0;
+};
+
 struct ConsolidationReport final {
     // DEC-115: the pre-truncation candidate count (candidates that arrived).
     std::size_t candidates_examined = 0;
@@ -106,6 +117,7 @@ struct ConsolidationReport final {
     // Mutations held for human approval; apply them via apply_pending().
     std::vector<MemoryMutation> pending_approval;
     [[nodiscard]] std::size_t count_of(CandidateDisposition disposition) const;
+    [[nodiscard]] MemoryRecordingCounts recording_counts() const;
 };
 
 // Deterministic Verified Event -> Memory pipeline: extract candidates, classify

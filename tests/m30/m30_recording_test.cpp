@@ -1,12 +1,86 @@
 #include "m30_support.hpp"
 #include "support/conversation_loop_support.hpp"
 
+#include <mira/memory_recording_report.hpp>
+
 #include <algorithm>
 
 using namespace mira;
 using namespace mira::testing;
 
 namespace {
+
+int collects_six_recording_systems() {
+    MemoryRecordingReport report;
+    AgentPersonaSuggestionReceipt persona{Id128::generate(), true};
+    report.collect(Result{persona});
+
+    MemoryAgentResult record;
+    record.mode = MemoryAgentMode::Record;
+    record.more_pending = true;
+    record.rejected_record_rows = 1;
+    record.consolidation.candidates_truncated = 2;
+    ConsolidationEntry same_claim;
+    same_claim.reason_code = "duplicate-noop";
+    ConsolidationEntry awaiting_approval;
+    awaiting_approval.disposition = CandidateDisposition::PendingApproval;
+    record.consolidation.entries = {same_claim, awaiting_approval};
+    report.collect(Result{record});
+
+    Error denied;
+    denied.code = ErrorCode::PermissionDenied;
+    report.collect(Result<SocialMessageAttributeReport>{denied});
+
+    ConsolidationReport world;
+    world.entries.emplace_back();
+    report.collect_world_fact(Result{world});
+
+    GoalCreationReceipt first_goal;
+    GoalCreationReceipt repeated_goal;
+    repeated_goal.idempotent_replay = true;
+    report.collect(Result{std::vector{first_goal, repeated_goal}});
+    RecurringPlanCreationReceipt repeated_plan;
+    repeated_plan.idempotent_replay = true;
+    report.collect(Result{repeated_plan});
+
+    WorkflowRuntime::SkillHintRecordReport skill;
+    ConsolidationEntry rejected_hint;
+    rejected_hint.disposition = CandidateDisposition::RejectedForbidden;
+    skill.consolidation.entries.push_back(rejected_hint);
+    report.collect(Result{skill});
+    Error unavailable;
+    unavailable.code = ErrorCode::Unavailable;
+    unavailable.retryable = true;
+    report.collect(Result<WorkflowRuntime::SkillHintRecordReport>{unavailable});
+
+    const auto attempts = report.attempts();
+    MIRA_CHECK(attempts.size() == 8);
+    MIRA_CHECK(attempts[0].system == MemoryRecordingSystem::Persona &&
+               attempts[0].counts.pending_approval == 1 && attempts[0].counts.replayed == 1 &&
+               attempts[0].counts.applied == 0);
+    MIRA_CHECK(attempts[1].system == MemoryRecordingSystem::Event && attempts[1].more_pending &&
+               attempts[1].counts.unchanged == 1 && attempts[1].counts.pending_approval == 1 &&
+               attempts[1].counts.rejected == 1 && attempts[1].counts.truncated == 2);
+    MIRA_CHECK(attempts[2].system == MemoryRecordingSystem::Social &&
+               attempts[2].error == ErrorCode::PermissionDenied && !attempts[2].retryable &&
+               attempts[2].counts.rejected == 0);
+    MIRA_CHECK(attempts[3].system == MemoryRecordingSystem::World &&
+               attempts[3].counts.applied == 1 && !attempts[3].error);
+    MIRA_CHECK(attempts[4].system == MemoryRecordingSystem::Goal &&
+               attempts[4].counts.applied == 1 && attempts[4].counts.replayed == 1 &&
+               attempts[4].counts.unchanged == 1);
+    MIRA_CHECK(attempts[5].system == MemoryRecordingSystem::Goal &&
+               attempts[5].counts.applied == 0 && attempts[5].counts.replayed == 1);
+    MIRA_CHECK(attempts[6].system == MemoryRecordingSystem::Skill &&
+               attempts[6].counts.rejected == 1 && !attempts[6].error);
+    MIRA_CHECK(attempts[7].system == MemoryRecordingSystem::Skill &&
+               attempts[7].error == ErrorCode::Unavailable && attempts[7].retryable);
+    const auto goals = report.totals(MemoryRecordingSystem::Goal);
+    MIRA_CHECK(goals.applied == 1 && goals.unchanged == 2 && goals.replayed == 2);
+    const auto skills = report.totals(MemoryRecordingSystem::Skill);
+    MIRA_CHECK(skills.rejected == 1 && skills.applied == 0);
+    return 0;
+}
 
 SessionId record_receipt_partition(const MemoryWorkBinding &binding) {
     const auto hash = digest_string(
@@ -203,6 +277,9 @@ int record_isolates_bad_citations_across_durable_pages() {
         JsonValue::Object{{"operation", submitted.value().operation.to_string()}}, context);
     MIRA_CHECK(status && status.value().find("rejected_model_rows") &&
                status.value().find("rejected_model_rows")->as_integer() == 2);
+    const auto *counts = status.value().find("recording_counts");
+    MIRA_CHECK(counts && counts->find("applied") && counts->find("applied")->as_integer() == 4 &&
+               counts->find("rejected") && counts->find("rejected")->as_integer() == 2);
     const auto status_text = to_json_string(status.value());
     MIRA_CHECK(status_text.find("invalid-citation") != std::string::npos &&
                status_text.find("private-text") == std::string::npos);
@@ -418,6 +495,8 @@ int durable_record_preserves_an_unapproved_page() {
 } // namespace
 
 int main() {
+    if (const auto result = collects_six_recording_systems(); result != 0)
+        return result;
     if (const auto result = settlement_records_memory(); result != 0)
         return result;
     if (const auto result = settlement_drains_the_fixed_event_snapshot(); result != 0)

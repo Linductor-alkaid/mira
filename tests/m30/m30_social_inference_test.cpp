@@ -2,6 +2,7 @@
 #include "support/m3_support.hpp"
 #include "support/test.hpp"
 
+#include <mira/memory_recording_report.hpp>
 #include <mira/model_provider.hpp>
 #include <mira/social_attribute_inference.hpp>
 #include <mira/social_mention_inference.hpp>
@@ -373,10 +374,20 @@ int records_grounded_attributes_for_the_indexed_speaker() {
     fixture.directory = std::move(reopened).value();
     const auto replay = infer(first.value().message, fixture.operation());
     MIRA_CHECK(replay && replay.value().consolidation.entries.front().idempotent_replay);
+    MemoryRecordingReport collected;
+    collected.collect(result);
+    collected.collect(replay);
+    MIRA_CHECK(collected.attempts()[0].counts.applied == 2 &&
+               collected.attempts()[0].counts.rejected == 1 &&
+               collected.attempts()[1].counts.applied == 0 &&
+               collected.attempts()[1].counts.unchanged == 2 &&
+               collected.attempts()[1].counts.replayed == 2);
     provider.answer = R"({"attributes":[{"field":"role","quote":"接口文档"}]})";
     const auto conflict = infer(first.value().message, fixture.operation());
     MIRA_CHECK(conflict && conflict.value().consolidation.count_of(
                                CandidateDisposition::RejectedConflict) == 1);
+    collected.collect(conflict);
+    MIRA_CHECK(collected.attempts().back().counts.rejected == 1);
     const auto later = fixture.record(fixture.bilibili, "我现在负责质量验证。");
     MIRA_CHECK(later && later.value().speaker == first.value().speaker);
     provider.answer = R"({"attributes":[{"field":"role","quote":"质量验证"}]})";
@@ -522,6 +533,11 @@ int records_only_resolved_directed_relationships() {
                SocialAliasResolution::Missing);
     MIRA_CHECK(report.value().consolidation.count_of(CandidateDisposition::Applied) == 2 &&
                report.value().consolidation.entries.front().kind == MemoryKind::SocialRelationship);
+    MemoryRecordingReport collected;
+    collected.collect(report);
+    const auto &counts = collected.attempts().front().counts;
+    MIRA_CHECK(counts.applied == 2 && counts.rejected == 4 && counts.unresolved == 2 &&
+               counts.truncated == 1);
     const auto out = read(forward);
     const auto in = read(reverse);
     MIRA_CHECK(out && in && out.value().records.size() == 1 && in.value().records.size() == 1);

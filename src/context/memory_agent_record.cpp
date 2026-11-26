@@ -5,6 +5,13 @@
 #include <charconv>
 
 namespace mira {
+
+MemoryRecordingCounts MemoryAgentResult::recording_counts() const {
+    auto counts = consolidation.recording_counts();
+    counts.rejected += rejected_record_rows;
+    return counts;
+}
+
 namespace {
 constexpr std::string_view kRecordPage = "mira.memory-agent.record-page.v1";
 constexpr std::size_t kRecordPagePayloadMax = 1024;
