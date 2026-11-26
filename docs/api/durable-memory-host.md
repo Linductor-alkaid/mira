@@ -447,6 +447,27 @@ ID 分页，返回截至指定时点已到期、仍为 Pending 且未超过 `exp
 独立限额。宿主在 Executor 关闭前关闭目标库。到期查询产生待处理候选，执行授权沿
 宿主既有策略。见 [DEC-129](../decisions/DEC-129-durable-goals-and-commitments.md)。
 
+### 从已结算终答记录承诺
+
+`goal_commitment_recording.hpp` 提供 `record_conversation_commitment`。在 Executor 作业中，
+宿主从已授权对话提取承诺原文和绝对截止时间，并传入持久结算位置。`operation` 使用
+结算所属的会话、任务和任务世代。来源探针检查这些标识与目标归属的当前绑定，目标库
+沿 `open_authorized` 单独检查创建权限。
+
+```cpp
+const GoalCommitmentBinding binding{runtime_id, owner};
+const GoalCommitmentSource source{settled_event.session_sequence, settled_event.event_id};
+const GoalCommitmentCandidate candidate{exact_quote, due_at, expires_at};
+auto recorded = record_conversation_commitment(*goals, *events, binding, source, candidate,
+                                               operation, check_current_source_access);
+```
+
+入口核对成功结算记录指向的完整 `AssistantSpeech`，标题必须是终答逐字摘录。宿主解释
+承诺语义和日期。每个已结算的终答接纳一项承诺，按归属和终答事件派生目标 ID。相同定义
+重放返回 `GoalCreationReceipt.idempotent_replay`，已纠正、已结束或已擦除的目标沿原
+创建语义拒绝旧定义。普通 `create` 保留原有返回类型。见
+[DEC-164](../decisions/DEC-164-evidenced-conversation-commitments.md)。
+
 ### 纠正与提醒回执
 
 `SqliteGoalStore` schema 1.2 支持纠正 Pending 目标。宿主保留目标类型与创建时间，以

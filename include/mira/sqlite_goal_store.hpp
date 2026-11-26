@@ -60,6 +60,11 @@ struct GoalRecord final {
     std::size_t reminder_count = 0;
 };
 
+struct GoalCreationReceipt final {
+    GoalRecord record;
+    bool idempotent_replay = false;
+};
+
 struct GoalDefinitionVersion final {
     std::uint64_t revision = 0;
     GoalDefinition definition;
@@ -285,6 +290,8 @@ class SqliteGoalStore final {
     SqliteGoalStore &operator=(const SqliteGoalStore &) = delete;
 
     [[nodiscard]] Result<GoalRecord> create(const GoalKey &key, GoalDefinition definition);
+    [[nodiscard]] Result<GoalCreationReceipt> create_with_receipt(const GoalKey &key,
+                                                                  GoalDefinition definition);
     [[nodiscard]] Result<std::optional<GoalRecord>> read(const GoalKey &key) const;
     [[nodiscard]] Result<GoalRecord> settle(const GoalKey &key, std::uint64_t expected_revision,
                                             GoalResolution resolution);

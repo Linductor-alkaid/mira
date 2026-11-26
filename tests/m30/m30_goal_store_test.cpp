@@ -1,6 +1,8 @@
+#include "support/conversation_loop_support.hpp"
 #include "support/test.hpp"
 
 #include <mira/content_markers.hpp>
+#include <mira/goal_commitment_recording.hpp>
 #include <mira/sqlite_goal_store.hpp>
 
 #include <kairo/executor.hpp>
@@ -82,6 +84,147 @@ struct GoalFixture final {
 GoalDefinition commitment(GoalTime cutoff, std::string title) {
     return {GoalKind::Commitment, std::move(title), EventId::generate(),
             cutoff - 2h,          cutoff,           cutoff + 2h};
+}
+
+int records_commitment_from_terminal_answer() {
+    GoalFixture fixture(4, 1);
+    std::atomic<bool> allow_create{true};
+    const auto store_authorizer = [&](const GoalStoreAccess &access) {
+        return access.owner == fixture.owner &&
+               (access.operation != GoalStoreOperation::Create || allow_create);
+    };
+    MIRA_CHECK(fixture.reopen(store_authorizer));
+    constexpr std::string_view quote = "I will review the draft";
+    mira::testing::ConversationFixture conversation;
+    conversation.use_provider({mira::testing::text_response(std::string(quote) + " in an hour.")});
+    auto events = std::make_shared<FileEventStore>(fixture.root / "events");
+    auto operation = mira::testing::conversation_context();
+    operation.session = conversation.spec_.session_id;
+    operation.task = conversation.spec_.task_id;
+    operation.task_epoch = conversation.spec_.task_epoch;
+    {
+        auto loop = conversation.make_loop(ConversationLoopConfig{}, false);
+        loop.set_event_store(events, conversation.runtime_, operation.session);
+        const auto result = loop.run(conversation.spec_, operation);
+        MIRA_CHECK(result && result.value().outcome == ConversationOutcome::Answered);
+    }
+    operation.deadline.reset();
+    EventSliceQuery query;
+    query.session_id = operation.session;
+    query.event_type = "ConversationSettled";
+    const auto page = events->read_slice(query);
+    MIRA_CHECK(page && page.value().events.size() == 1);
+    const auto &settlement = page.value().events.front();
+    const GoalCommitmentSource source{settlement.session_sequence, settlement.event_id};
+    const GoalCommitmentBinding binding{conversation.runtime_, fixture.owner};
+    const GoalCommitmentCandidate candidate{std::string(quote), fixture.now + 1h, fixture.now + 2h};
+    bool allow_source = true;
+    int checks = 0;
+    const auto authorize = [&](const GoalCommitmentBinding &target,
+                               const OperationContext &context) {
+        ++checks;
+        return allow_source && target.owner == fixture.owner && target.runtime == binding.runtime &&
+               context.session == conversation.spec_.session_id &&
+               context.task == conversation.spec_.task_id;
+    };
+    const auto record = [&](const GoalCommitmentSource &evidence,
+                            const GoalCommitmentCandidate &claim,
+                            const GoalCommitmentAuthorizer &access) {
+        return fixture.executor
+            .submit_auto([&] {
+                return record_conversation_commitment(*fixture.store, *events, binding, evidence,
+                                                      claim, operation, access);
+            })
+            .get();
+    };
+    allow_source = false;
+    const auto denied =
+        record({source.settlement_sequence + 100, source.settlement_event}, candidate, authorize);
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied && checks == 1);
+    allow_source = true;
+    ++operation.task_epoch;
+    MIRA_CHECK(!record(source, candidate, authorize));
+    --operation.task_epoch;
+    auto unsupported_quote = candidate;
+    unsupported_quote.quote = "I will send an invoice";
+    MIRA_CHECK(!record(source, unsupported_quote, authorize));
+
+    const auto original = parse_json(settlement.payload.data);
+    MIRA_CHECK(original);
+    const auto *detail = original.value().find("detail");
+    MIRA_CHECK(detail && detail->find("answer_event") && detail->find("answer_sequence"));
+    const auto answer = EventId::parse(*detail->find("answer_event")->as_string());
+    MIRA_CHECK(answer);
+    auto malformed = original.value();
+    malformed.find("detail")->set("answer_event", EventId::generate().to_string());
+    const auto corrupt = events->append({EventId::generate(),
+                                         binding.runtime,
+                                         operation.session,
+                                         operation.task,
+                                         {"ConversationSettled", to_json_string(malformed)}});
+    MIRA_CHECK(corrupt);
+    MIRA_CHECK(!record({corrupt.value().session_sequence, corrupt.value().event_id}, candidate,
+                       authorize));
+    auto failed = original.value();
+    failed.find("detail")->set("outcome", "Failed");
+    const auto unsuccessful = events->append({EventId::generate(),
+                                              binding.runtime,
+                                              operation.session,
+                                              operation.task,
+                                              {"ConversationSettled", to_json_string(failed)}});
+    MIRA_CHECK(unsuccessful);
+    MIRA_CHECK(!record({unsuccessful.value().session_sequence, unsuccessful.value().event_id},
+                       candidate, authorize));
+
+    checks = 0;
+    const auto withdrawn =
+        record(source, candidate, [&](const auto &, const auto &) { return ++checks == 1; });
+    MIRA_CHECK(!withdrawn && withdrawn.error().code == ErrorCode::PermissionDenied && checks == 2);
+    bool cancelled = false;
+    checks = 0;
+    operation.cancellation_requested = [&] { return cancelled; };
+    const auto stopped = record(source, candidate, [&](const auto &, const auto &) {
+        cancelled = ++checks == 2;
+        return true;
+    });
+    MIRA_CHECK(!stopped && stopped.error().code == ErrorCode::Cancelled);
+    operation.cancellation_requested = {};
+    allow_create = false;
+    const auto refused = record(source, candidate, authorize);
+    MIRA_CHECK(!refused && refused.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(fixture.store->list({binding.owner, {}, 4, {}}).value().records.empty());
+    allow_create = true;
+
+    const auto accepted = record(source, candidate, authorize);
+    MIRA_CHECK(accepted && !accepted.value().idempotent_replay &&
+               accepted.value().record.definition);
+    const auto &saved = accepted.value().record;
+    MIRA_CHECK(saved.state == GoalState::Pending && saved.definition->source_event == *answer &&
+               saved.definition->title == quote && saved.definition->due_at == candidate.due_at);
+    const auto due = fixture.store->due({binding.owner, candidate.due_at, 4, {}});
+    MIRA_CHECK(due && due.value().records.size() == 1 &&
+               due.value().records.front().key == saved.key);
+    const auto duplicate = events->append({EventId::generate(), binding.runtime, operation.session,
+                                           operation.task, settlement.payload});
+    MIRA_CHECK(duplicate);
+    const auto duplicate_receipt = record(
+        {duplicate.value().session_sequence, duplicate.value().event_id}, candidate, authorize);
+    MIRA_CHECK(duplicate_receipt && duplicate_receipt.value().idempotent_replay &&
+               duplicate_receipt.value().record.key == saved.key);
+
+    events = std::make_shared<FileEventStore>(fixture.root / "events");
+    MIRA_CHECK(fixture.reopen(store_authorizer));
+    const auto replay = record(source, candidate, authorize);
+    MIRA_CHECK(replay && replay.value().idempotent_replay &&
+               replay.value().record.key == saved.key);
+    auto changed = candidate;
+    changed.due_at += 15min;
+    const auto conflict = record(source, changed, authorize);
+    MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(fixture.store->erase(saved.key));
+    MIRA_CHECK(!record(source, candidate, authorize) &&
+               fixture.store->read(saved.key).value()->state == GoalState::Erased);
+    return 0;
 }
 
 int bounded_due_pages_and_exact_owner() {
@@ -934,6 +1077,8 @@ int recurring_dispatch_revalidates_access_and_preserves_history() {
 } // namespace
 
 int main() {
+    if (const int result = records_commitment_from_terminal_answer(); result != 0)
+        return result;
     if (const int result = bounded_due_pages_and_exact_owner(); result != 0)
         return result;
     if (const int result = recover_states_quota_and_erasure(); result != 0)

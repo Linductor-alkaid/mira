@@ -181,10 +181,11 @@ void ConversationLoop::drain_user_messages(const AgentLoopSpec &spec,
     }
 }
 
-void ConversationLoop::emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
-                            EventClass classification) const {
-    loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
-                                  std::move(summary), classification);
+std::optional<AppendReceipt> ConversationLoop::emit(const AgentLoopSpec &spec, std::string type,
+                                                    JsonValue summary,
+                                                    EventClass classification) const {
+    return loop_support::emit_loop_event(events_, runtime_, session_, spec, std::move(type),
+                                         std::move(summary), classification);
 }
 
 std::optional<std::vector<ModelInputItem>> ConversationLoop::apply_history_transform(
@@ -530,6 +531,7 @@ Result<ModelRequest> ConversationLoop::build_request(
 Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                                                      const OperationContext &context) {
     ConversationLoopResult result;
+    std::optional<AppendReceipt> terminal_answer;
     if (spec.goal.empty()) {
         return conversation_error(ErrorCode::InvalidArgument,
                                   "conversation goal must not be empty");
@@ -1042,8 +1044,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             record.summary = "answer";
             // DEC-104: the terminal answer is the assistant's own speech;
             // record it as such before it moves into the run result.
-            emit(spec, "AssistantSpeech", assistant_speech_payload(record.turn, answer, {}),
-                 EventClass::State);
+            terminal_answer =
+                emit(spec, "AssistantSpeech", assistant_speech_payload(record.turn, answer, {}),
+                     EventClass::State);
             retain_turn(std::move(record));
             result.outcome = ConversationOutcome::Answered;
             result.answer = std::move(answer);
@@ -1126,6 +1129,11 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
     if (result.terminal_incomplete_reason.has_value()) {
         settled.emplace_back("incomplete_reason",
                              incomplete_reason_name(*result.terminal_incomplete_reason));
+    }
+    if (terminal_answer) {
+        settled.emplace_back("answer_event", terminal_answer->event_id.to_string());
+        settled.emplace_back("answer_sequence",
+                             continuous_support::event_counter(terminal_answer->session_sequence));
     }
     emit(spec, "ConversationSettled", JsonValue{std::move(settled)}, EventClass::State);
 

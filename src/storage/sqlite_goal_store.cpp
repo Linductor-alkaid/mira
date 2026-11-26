@@ -185,8 +185,8 @@ Result<std::optional<GoalRecord>> read_goal(sqlite3 *db, const GoalKey &key) {
     return std::optional{std::move(result).value()};
 }
 
-Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &options,
-                               const GoalKey &key, GoalDefinition definition) {
+Result<GoalCreationReceipt> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &options,
+                                        const GoalKey &key, GoalDefinition definition) {
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "goal creation transaction unavailable");
@@ -196,7 +196,7 @@ Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &option
     if (prior.value()) {
         if (prior.value()->state == GoalState::Pending && prior.value()->revision == 1 &&
             prior.value()->definition == definition)
-            return std::move(*prior.value());
+            return GoalCreationReceipt{std::move(*prior.value()), true};
         return goal_error(ErrorCode::InvalidState, "goal ID is already recorded or erased");
     }
     if (auto room = require_goal_capacity(db, "SELECT count(*) FROM goals", options.max_goals);
@@ -219,7 +219,7 @@ Result<GoalRecord> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &option
         return goal_error(ErrorCode::Internal, "goal creation failed");
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    return GoalRecord{key, GoalState::Pending, 1, std::move(definition), {}};
+    return GoalCreationReceipt{{key, GoalState::Pending, 1, std::move(definition), {}}, false};
 }
 
 Result<GoalRecord> settle_goal(sqlite3 *db, const GoalKey &key, std::uint64_t expected,
@@ -879,11 +879,19 @@ Result<std::unique_ptr<SqliteGoalStore>> SqliteGoalStore::open_impl(kairo::Execu
 }
 
 Result<GoalRecord> SqliteGoalStore::create(const GoalKey &key, GoalDefinition definition) {
+    auto created = create_with_receipt(key, std::move(definition));
+    if (!created)
+        return created.error();
+    return std::move(created).value().record;
+}
+
+Result<GoalCreationReceipt> SqliteGoalStore::create_with_receipt(const GoalKey &key,
+                                                                 GoalDefinition definition) {
     if (!valid_key(key) || !valid_definition(definition))
         return goal_error(ErrorCode::InvalidArgument, "invalid goal definition");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
-    return impl_->run<GoalRecord>(
+    return impl_->run<GoalCreationReceipt>(
         {key.owner, Resource::Goal, Operation::Create, key.id},
         [key, options = &impl_->options, definition = std::move(definition)](sqlite3 *db) mutable {
             return create_goal(db, *options, key, std::move(definition));

@@ -341,8 +341,8 @@ class ConversationLoop final {
                             ConversationLoopResult &result, std::size_t protected_items);
     [[nodiscard]] Result<std::vector<ModelInputItem>>
     collect_continuation(const AgentLoopSpec &spec, const OperationContext &context, bool wait);
-    void emit(const AgentLoopSpec &spec, std::string type, JsonValue summary,
-              EventClass classification) const;
+    std::optional<AppendReceipt> emit(const AgentLoopSpec &spec, std::string type,
+                                      JsonValue summary, EventClass classification) const;
 
     ModelGateway &gateway_;
     ConversationLoopConfig config_;

@@ -793,6 +793,8 @@ ConversationLoop 的 `ConversationSettled` 按会话顺序重建。
 两种终态均映射为 `LoopOutcome`，保留源 EventId、时间戳与 session_sequence。
 旧事件仍展示 steps；ConversationSettled 展示存在的数值字段 turns、total_turns、
 recoveries、tool_executions（turns 为保留记录数，total_turns 为累计推进尝试数）。
+终答取得耐久追加回执时，`ConversationSettled` 的 detail 还带 `answer_event` 和
+`answer_sequence`，供[承诺记录](durable-memory-host.md#从已结算终答记录承诺)精确取证。
 `outcome == "Answered"` 的条目按 `tool_executions` 区分措辞：
 `(terminal text + N tool call(s))` 或 `(terminal text only)`（DEC-104）。
 AssistantSpeech 条目渲染 `assistant said: <text>` 与逐调用

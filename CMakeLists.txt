@@ -252,6 +252,7 @@ add_library(mira_state_store
     src/storage/sqlite_conversation_index.cpp
     src/storage/sqlite_social_directory.cpp
     src/storage/social_message_inference.cpp
+    src/storage/goal_commitment_recording.cpp
     src/storage/sqlite_goal_store.cpp
     src/storage/sqlite_goal_dispatch.cpp
     src/storage/sqlite_goal_occurrence.cpp

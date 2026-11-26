@@ -18,7 +18,7 @@
 | `M30-G1` 候选经既有写入管线 | Record、Episode、社交属性与有向关系、偏好审批、世界观察、技能提示均有合并或类型化写入证据。见[写入验收索引](#evidence-recording) | `M30-03` 补余下类型化入口的候选与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
-| `M30-G4` 承诺、到期与状态解释 | 存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
+| `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
 | `M30-G5` 纠正、删除与发起者区分 | 已覆盖显式偏好批准、版本化纠正、范围擦除及恢复，见[偏好记录](#history-preference)。社交与会话已分别验收联合擦除 | `M30-05` 补逐记录遗忘、明确意图及四类发起者各自结算的回执。与 M31 联验容量回收、归档和 Erasure hold |
 | `M30-G6` 删除解释与失败正文 | 已覆盖擦除后拒绝旧结果及旧证据。失败轮次的正文和结果分别保存，见[会话结算维护验收](maintenance-2026-11-conversation-outcomes.md) | `M30-05` 验收完整删除说明，`M30-09` 验收同 scope 新世代和对旧来源、摘要及在途结果的阻断 |
 | `M30-G7` 记忆内容无授权效力 | `mira_m30_lifecycle_test` 覆盖当前 grant 检查，`mira_m30_preference_security_test` 覆盖越域及撤权拒绝，`mira_m36_context_admission_test` 覆盖候选准入的低权限边界 | `M30-07` 保留带授权字样的记忆与缺失当前授权组合场景的端到端验收 |
@@ -40,7 +40,7 @@
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
 | 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23，M30-03 接通验证事件写入 | [结构化事实、时间和导航重新观察](#history-world)、[验证事实写入](#history-verified-world-recording) |
-| 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch) |
+| 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46，M30-03 接纳终答承诺 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch)、[终答承诺接纳](#history-evidenced-commitments) |
 | 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34，M30-03 接通技能提示候选报告 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills)、[技能提示候选报告](#history-skill-hint-candidate-report) |
 | 社交来源账号与消息归因、自动提及、候选写入 | M30-35 / M30-40～42，M30-03 与 M30-36 的已交付部分 | [来源账号、消息证据和正文提及](#history-social-recording)、[属性](#history-social-attributes)、[有向关系](#history-social-relations)、[前序指代双证据](#history-social-references) |
 | 到期派发与已确认事实恢复 | M30-43～52，M30-37 的已交付部分 | [待派发、重复计划、兑现、只读对账、准入和完成证据](#history-goal-dispatch) |
@@ -54,7 +54,7 @@
 
 <a id="evidence-goals"></a>
 
-目标门禁的存储与运行时证据分别见[目标存储](#history-goals)和[派发及兑现](#history-goal-dispatch)。
+目标门禁的证据见[终答承诺接纳](#history-evidenced-commitments)、[目标存储](#history-goals)和[派发及兑现](#history-goal-dispatch)。
 
 ## 3. 里程碑关闭与补跑
 
@@ -1907,4 +1907,36 @@ clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志
 | 待验证 | 负责人及补跑条件 |
 | --- | --- |
 | 从生产技能结算触发候选处理及跨重启消费 | Mira Maintainers 与宿主集成者在 M30-38 接通持久技能来源消费后，运行重开、换版、撤权和擦除重放用例 |
+| Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |
+
+<a id="history-evidenced-commitments"></a>
+
+### 2026-11-26 从终答证据接纳一次性承诺
+
+基线 `045c31c`，分支 `feat/m30-memory-systems`。M30-03 按
+[DEC-164](../decisions/DEC-164-evidenced-conversation-commitments.md) 接通一次性承诺证据。
+实际 `ConversationLoop` 运行产生终答和结算，FileEventStore 持久保存引用，SQLite 记录
+承诺并通过到期索引读取。回归覆盖失败结算和错误事件引用拒绝、任务世代不符、原文不匹配、
+来源撤权、提交前取消、目标库独立拒绝、重复结算与重开幂等、变更冲突及擦除后重放。
+
+```bash
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_goal_store_test$' --repeat until-fail:15
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 3 --target mira_m30_goal_store_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m30_goal_store_test$'
+printf '%s\n' src/model/conversation_loop.cpp src/storage/goal_commitment_recording.cpp src/storage/sqlite_goal_store.cpp \
+  | xargs -P 3 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Debug 全量通过 **214/214**，目标库定向重复 **15/15**，ASan 定向 **1/1**。
+严格 clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志见
+`/tmp/mira-m30-commitment-*.log`。
+
+| 待验证 | 负责人及补跑条件 |
+| --- | --- |
+| 生产自动提取和消费、到期执行 | Mira Maintainers 与宿主集成者在 M30-38 接通结算消费，按原文语料验收承诺与期限解释。在 M30-37 连通已授权的到期派发、进程恢复与兑现 |
 | Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |

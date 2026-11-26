@@ -31,6 +31,7 @@
 | [社交画像字段](durable-memory-host.md#社交画像字段)、[社交关系](durable-memory-host.md#社交关系断言) | `social_profile.hpp` | 字段和有向关系断言、来源与时态检索 |
 | [世界事实](durable-memory-host.md#世界事实的新鲜度)、[从验证事件写入](durable-memory-host.md#从已提交的验证事件写入) | `world_fact.hpp`、`world_fact_recording.hpp` | 环境与应用事实、证据写入、实体属性索引和新鲜度 |
 | [目标与承诺](durable-memory-host.md#目标与承诺)、[派发回执](durable-memory-host.md#一次性目标的派发回执)、[目标兑现](durable-memory-host.md#按任务完成证据兑现一次性目标)、[重复计划](durable-memory-host.md#重复计划与触发回执)、[目标存储授权](durable-memory-host.md#目标存储授权) | `sqlite_goal_store.hpp` | 持久目标、派发、兑现、提醒与当前授权 |
+| [从已结算终答记录承诺](durable-memory-host.md#从已结算终答记录承诺) | `goal_commitment_recording.hpp` | 终答取证、稳定承诺身份和创建回执 |
 | [到期目标周期检查](durable-memory-host.md#周期检查到期目标和计划) | `goal_dispatch_poller.hpp` | 有界检查、按稳定 ID 交给宿主派发、回执及关闭 |
 | [日历及时区](durable-memory-host.md#日历及时区) | `goal_calendar.hpp` | 本地日期规则、固定时区快照和 UTC 触发时间 |
 | [当前技能记忆](workflow-contracts.md#当前技能记忆) | `workflow_runtime.hpp`、`tool_skill.hpp` | 按当前授权、归属和发布版本查技能 `Procedure` |

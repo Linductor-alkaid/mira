@@ -49,11 +49,13 @@ namespace mira::loop_support {
 // {task_id, task_epoch, detail} bound to the loop's runtime/session identity.
 // Best-effort by contract: a missing or failing event store never disturbs
 // the decision path.
-inline void emit_loop_event(const std::shared_ptr<IEventStore> &events, const RuntimeId &runtime,
-                            const SessionId &session, const AgentLoopSpec &spec, std::string type,
-                            JsonValue summary, EventClass classification) {
+inline std::optional<AppendReceipt> emit_loop_event(const std::shared_ptr<IEventStore> &events,
+                                                    const RuntimeId &runtime,
+                                                    const SessionId &session,
+                                                    const AgentLoopSpec &spec, std::string type,
+                                                    JsonValue summary, EventClass classification) {
     if (events == nullptr) {
-        return;
+        return std::nullopt;
     }
     JsonValue::Object envelope;
     envelope.emplace_back("task_id", spec.task_id.to_string());
@@ -66,7 +68,13 @@ inline void emit_loop_event(const std::shared_ptr<IEventStore> &events, const Ru
     append.task_id = spec.task_id;
     append.payload = EventPayload{std::move(type), to_json_string(JsonValue(std::move(envelope))),
                                   classification};
-    (void)events->append(append);
+    const auto appended = events->append(append);
+    if (!appended || appended.value().event_id != append.event_id ||
+        appended.value().session_sequence == 0 ||
+        (appended.value().achieved != Durability::ProcessCrash &&
+         appended.value().achieved != Durability::PowerLoss))
+        return std::nullopt;
+    return appended.value();
 }
 
 // Base ModelRequest shared by both loops: contract identity, task binding
