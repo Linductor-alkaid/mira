@@ -21,6 +21,14 @@ Error hint_error(ErrorCode code, const char *message) {
     return error;
 }
 
+Result<void> check_hint_operation(const OperationContext &operation) {
+    if (operation.cancelled())
+        return hint_error(ErrorCode::Cancelled, "skill hint recording cancelled");
+    if (operation.expired(Timestamp::now()))
+        return hint_error(ErrorCode::DeadlineExceeded, "skill hint recording expired");
+    return {};
+}
+
 bool hint_access_allowed(const WorkflowRuntime::SkillHintAuthorizer &authorize,
                          const MemoryScope &scope, std::string_view name,
                          WorkflowRuntime::SkillHintOperation operation) {
@@ -90,10 +98,12 @@ Result<WorkflowRuntime::SkillHintContext> WorkflowRuntime::skill_hint_context() 
                             learning_revision_};
 }
 
-Result<MemoryMutationResult>
-WorkflowRuntime::record_skill_hint(const SkillPublicationRegistry &skills, std::string_view name,
-                                   const WorkflowRunId &source_run, std::string_view hint,
-                                   const SkillHintAuthorizer &authorize) {
+Result<WorkflowRuntime::SkillHintRecordReport> WorkflowRuntime::record_skill_hint_candidate(
+    const SkillPublicationRegistry &skills, std::string_view name, const WorkflowRunId &source_run,
+    std::string_view hint, const SkillHintAuthorizer &authorize,
+    const OperationContext &operation) {
+    if (auto active = check_hint_operation(operation); !active)
+        return active.error();
     if (!is_valid_vocabulary_id(name) || source_run.is_nil() || !valid_hint_text(hint))
         return hint_error(ErrorCode::InvalidArgument, "invalid skill hint");
     const auto context = skill_hint_context();
@@ -123,16 +133,31 @@ WorkflowRuntime::record_skill_hint(const SkillPublicationRegistry &skills, std::
     candidate.proposed.labels = {hint_label(descriptor)};
     candidate.evidence = candidate.proposed.provenance;
     candidate.immutable_add_id = MutationId{learning_id_from_seed(seed + "|mutation")};
-    const auto result = MemoryConsolidator{}.consolidate_candidates(
+    if (auto active = check_hint_operation(operation); !active)
+        return active.error();
+    auto consolidated = MemoryConsolidator{}.consolidate_candidates(
         *binding.memory, {std::move(candidate)}, binding.scope, Timestamp::now());
+    if (!consolidated)
+        return consolidated.error();
+    if (consolidated.value().entries.size() != 1)
+        return hint_error(ErrorCode::Internal, "skill hint disposition is missing");
+    return SkillHintRecordReport{id, std::move(consolidated).value()};
+}
+
+Result<MemoryMutationResult>
+WorkflowRuntime::record_skill_hint(const SkillPublicationRegistry &skills, std::string_view name,
+                                   const WorkflowRunId &source_run, std::string_view hint,
+                                   const SkillHintAuthorizer &authorize) {
+    const auto result = record_skill_hint_candidate(skills, name, source_run, hint, authorize,
+                                                    make_control_context());
     if (!result)
         return result.error();
-    const auto &entry = result.value().entries.front();
+    const auto &entry = result.value().consolidation.entries.front();
     switch (entry.disposition) {
     case CandidateDisposition::Applied:
-        return MemoryMutationResult{entry.idempotent_replay ? MemoryMutationType::Noop
-                                                            : MemoryMutationType::Add,
-                                    id, entry.resulting_version, entry.idempotent_replay};
+        return MemoryMutationResult{
+            entry.idempotent_replay ? MemoryMutationType::Noop : MemoryMutationType::Add,
+            result.value().record, entry.resulting_version, entry.idempotent_replay};
     case CandidateDisposition::RejectedForbidden:
     case CandidateDisposition::RejectedInjection:
         return hint_error(ErrorCode::SafetyRejected, "skill hint content was rejected");

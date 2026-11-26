@@ -76,31 +76,31 @@ inline void must(const Result<void> &result, const char *what) {
 }
 
 // Fixed workflow identities.
-const WorkflowId kWorkflowAlpha = [] {
+inline const WorkflowId kWorkflowAlpha = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a1");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowBeta = [] {
+inline const WorkflowId kWorkflowBeta = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a2");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowGamma = [] {
+inline const WorkflowId kWorkflowGamma = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a3");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowDelta = [] {
+inline const WorkflowId kWorkflowDelta = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a4");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowEpsilon = [] {
+inline const WorkflowId kWorkflowEpsilon = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a5");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowZeta = [] {
+inline const WorkflowId kWorkflowZeta = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a6");
     return id.has_value() ? *id : WorkflowId{};
 }();
-const WorkflowId kWorkflowEta = [] {
+inline const WorkflowId kWorkflowEta = [] {
     const auto id = WorkflowId::parse("000000000000000000000000000000a7");
     return id.has_value() ? *id : WorkflowId{};
 }();
@@ -118,9 +118,10 @@ inline ToolId fixed_tool(const char *hex) {
 }
 
 // Fixed content-derived digests for hand-built views and reference pins.
-const Hash kDigestLookup = digest_string("m7-tr2/fixture/lookup-spec/v1");
-const Hash kDigestForeign = digest_string("m7-tr2/fixture/foreign-spec");
-const Sha256Digest kForeignDefinitionDigest = digest_string("m7-tr2/fixture/foreign-definition");
+inline const Hash kDigestLookup = digest_string("m7-tr2/fixture/lookup-spec/v1");
+inline const Hash kDigestForeign = digest_string("m7-tr2/fixture/foreign-spec");
+inline const Sha256Digest kForeignDefinitionDigest =
+    digest_string("m7-tr2/fixture/foreign-definition");
 
 // Fixed schemas for the registry-backed fixture tool.
 inline const char *kLookupSchema = R"json({
@@ -208,7 +209,7 @@ inline ExposedToolSpec hand_spec(const std::string &wire, const std::string &des
 
 // The standard two-tool hand view: one lookup tool plus an unreferenced
 // companion, both with fixed digests.
-std::vector<ExposedToolSpec> hand_view() {
+inline std::vector<ExposedToolSpec> hand_view() {
     return {hand_spec("delta.lookup", "wiring lookup tool v1", kDigestLookup,
                       fixed_tool("000000000000000000000000000000e1")),
             hand_spec("other.tool", "wiring other tool", kDigestForeign,
@@ -389,8 +390,8 @@ inline ToolProposal proposal_for(const ExposedToolSpec &spec, const JsonValue &a
     return proposal;
 }
 
-const ExposedToolSpec *find_exposed(std::span<const ExposedToolSpec> view,
-                                    const std::string &wire_name) {
+inline const ExposedToolSpec *find_exposed(std::span<const ExposedToolSpec> view,
+                                           const std::string &wire_name) {
     const auto found = std::find_if(view.begin(), view.end(), [&](const ExposedToolSpec &entry) {
         return entry.wire_name == wire_name;
     });

@@ -35,7 +35,7 @@
 | [日历及时区](durable-memory-host.md#日历及时区) | `goal_calendar.hpp` | 本地日期规则、固定时区快照和 UTC 触发时间 |
 | [当前技能记忆](workflow-contracts.md#当前技能记忆) | `workflow_runtime.hpp`、`tool_skill.hpp` | 按当前授权、归属和发布版本查技能 `Procedure` |
 | [按版本读取恢复经验](workflow-contracts.md#按版本读取恢复经验) | `workflow_runtime.hpp`、`memory_contracts.hpp` | 按当前归属、工作流版本和失败签名查 `RecoveryLesson` |
-| [记录和读取技能提示](workflow-contracts.md#记录和读取技能提示) | `workflow_runtime.hpp`、`memory_consolidation.hpp` | 按已结算技能调用记录 `SkillHint`，按当前发布版本读取 |
+| [记录和读取技能提示](workflow-contracts.md#记录和读取技能提示) | `workflow_runtime.hpp`、`memory_consolidation.hpp` | 按已结算技能调用写入 `SkillHint` 并报告候选处置，按当前发布版本读取 |
 | [按环境隔离技能记忆](workflow-contracts.md#按环境隔离技能记忆) | `skill_environment.hpp`、`workflow_runtime.hpp` | 工作或社交环境内的技能经验范围，事件与技能独立读写 |
 | [确定性文本原语](context-memory.md#text_segmentationhpp确定性文本原语) | `text_segmentation.hpp` | 止于码点边界的 UTF-8 截断、无词典的确定性分词（词、汉字单字、相邻两字），供进程内词法腿与耐久 FTS5 索引共用（DEC-147） |
 | [Context 与 Memory](context-memory.md) | `context_contracts.hpp`、`context_manager.hpp`、`context_retrieval.hpp`、`embedding_math.hpp`、`content_markers.hpp`、`verified_fact.hpp`、`memory_contracts.hpp`、`sqlite_memory_store.hpp`、`memory_consolidation.hpp`、`memory_embedding.hpp`、`provider_continuation.hpp`、`context_memory_supervisor.hpp`、`stateful_replay.hpp`、`context_curator.hpp` | 上下文预算与装配、Layer 1 检索召回（M17）、共享向量数值边界、长期记忆、consolidation、Provider continuation、supervisor、Working Context Curator（M21）与分析回放 |

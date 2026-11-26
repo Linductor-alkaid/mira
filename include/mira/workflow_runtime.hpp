@@ -3,6 +3,7 @@
 #include <mira/core_contracts.hpp>
 #include <mira/environment.hpp>
 #include <mira/event_store.hpp>
+#include <mira/memory_consolidation.hpp>
 #include <mira/memory_contracts.hpp>
 #include <mira/runtime.hpp>
 #include <mira/skill_environment.hpp>
@@ -460,6 +461,19 @@ class WorkflowRuntime final {
     enum class SkillHintOperation : std::uint8_t { Read, Record };
     using SkillHintAuthorizer =
         std::function<bool(const MemoryScope &, std::string_view, SkillHintOperation)>;
+
+    struct SkillHintRecordReport final {
+        MemoryId record; // Candidate identity, including when policy rejects the write.
+        ConsolidationReport consolidation;
+    };
+
+    // Host-only candidate submission for a successful skill run. Authorization
+    // and evidence errors are separate from the consolidation disposition.
+    [[nodiscard]] Result<SkillHintRecordReport>
+    record_skill_hint_candidate(const SkillPublicationRegistry &skills, std::string_view name,
+                                const WorkflowRunId &source_run, std::string_view hint,
+                                const SkillHintAuthorizer &authorize,
+                                const OperationContext &operation);
 
     // Host-only observations pinned to a successfully returned skill run.
     [[nodiscard]] Result<MemoryMutationResult>

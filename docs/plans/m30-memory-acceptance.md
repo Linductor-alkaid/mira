@@ -41,7 +41,7 @@
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
 | 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23，M30-03 接通验证事件写入 | [结构化事实、时间和导航重新观察](#history-world)、[验证事实写入](#history-verified-world-recording) |
 | 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch) |
-| 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills) |
+| 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34，M30-03 接通技能提示候选报告 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills)、[技能提示候选报告](#history-skill-hint-candidate-report) |
 | 社交来源账号与消息归因、自动提及、候选写入 | M30-35 / M30-40～42，M30-03 与 M30-36 的已交付部分 | [来源账号、消息证据和正文提及](#history-social-recording)、[属性](#history-social-attributes)、[有向关系](#history-social-relations)、[前序指代双证据](#history-social-references) |
 | 到期派发与已确认事实恢复 | M30-43～52，M30-37 的已交付部分 | [待派发、重复计划、兑现、只读对账、准入和完成证据](#history-goal-dispatch) |
 | Record 候选与持续处理 | M30-39，M30-03 与 M30-38 的已交付部分 | [多页提取](#history-social-recording)、[进度持久化](#history-record-cursors)、[Episode 与分类处置](#history-loop-episodes) |
@@ -50,7 +50,7 @@
 
 写入门禁的主要证据来自 [Record 与循环事件](#history-loop-episodes)、[偏好](#history-preference)、
 [社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)及
-[技能提示](#history-skills)。各自沿对应的范围与证据规则验收。
+[技能提示](#history-skill-hint-candidate-report)。各自沿对应的范围与证据规则验收。
 
 <a id="evidence-goals"></a>
 
@@ -1877,3 +1877,34 @@ Linux Debug 全量 **214/214**，世界事实定向重复通过 **15/15**，ASan
 | --- | --- |
 | 生产宿主的事件选择、租约和自动消费 | Mira Maintainers 与宿主集成者在 M30-38 接通生产事件和当前授权后，以重启、撤权和擦除并发场景验收 |
 | Windows、Android、远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |
+
+<a id="history-skill-hint-candidate-report"></a>
+
+### 2026-11-26 技能提示候选处置报告
+
+基线 `2e753aa`，分支 `feat/m30-memory-systems`。M30-03 按
+[DEC-163](../decisions/DEC-163-skill-hint-candidate-report.md) 把成功技能调用的
+`SkillHint` 写入接入标准候选报告。测试通过实际技能调用和 SQLite 验证候选分类、首次写入、
+策略拒绝、截止后跳过授权、提交前取消、幂等重放、擦除后无记录回灌及旧回执兼容。
+为满足文件规模预算，将测试的 `--report` 生成逻辑移到独立编译单元，拆分前后输出逐字节一致。
+
+```bash
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m7_tool_runtime_skill_test$' --repeat until-fail:15
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 3 --target mira_m7_tool_runtime_skill_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m7_tool_runtime_skill_test$'
+clang-tidy -p build/debug --warnings-as-errors='*' src/workflow/workflow_skill_hint.cpp
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Debug 全量通过 **214/214**，定向重复 **15/15**，ASan 定向 **1/1**。严格
+clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志见
+`/tmp/mira-m30-skill-candidate-*.log`。
+
+| 待验证 | 负责人及补跑条件 |
+| --- | --- |
+| 从生产技能结算触发候选处理及跨重启消费 | Mira Maintainers 与宿主集成者在 M30-38 接通持久技能来源消费后，运行重开、换版、撤权和擦除重放用例 |
+| Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |

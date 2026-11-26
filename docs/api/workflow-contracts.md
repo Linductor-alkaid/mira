@@ -397,6 +397,19 @@ auto hints = workflow.recall_skill_hints(skills, skill_name, check_current_hint_
 预期摘要以约束版本。已撤回或换版的提示可在原范围内做历史查证。见
 [DEC-138](../decisions/DEC-138-evidenced-skill-hints.md)。
 
+宿主需要汇总候选处置时，可在已有 Executor 作业内调用 `record_skill_hint_candidate`。
+
+```cpp
+auto candidate = workflow.record_skill_hint_candidate(
+    skills, skill_name, skill_run_id, observation, check_current_hint_access, operation);
+// Result 错误表示准入失败，成功时由 consolidation.entries 查看候选处置。
+```
+
+报告提供候选记录 ID 和 `ConsolidationReport`，可区分首次生效、幂等重放及策略拒绝。
+候选 ID 在策略拒绝时也可用于关联处置。即使重放旧回执表示成功，源记录仍可能已擦除。
+进入授权检查前和提交前检查 `operation` 的取消与截止。见
+[DEC-163](../decisions/DEC-163-skill-hint-candidate-report.md)。
+
 ## 按环境隔离技能记忆
 
 宿主可在 `set_learning_context` 的第四个参数传入已授权的 `SkillEnvironmentKey`。

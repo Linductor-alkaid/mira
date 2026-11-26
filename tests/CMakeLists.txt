@@ -961,6 +961,7 @@ mira_add_m7_reference_test(mira_m7_tool_skill_test m7/m7_tool_skill_test.cpp)
 # Procedure memory sync; gates M7-TR2-G1..G6.
 mira_add_m7_reference_test(mira_m7_tool_runtime_wiring_test m7/m7_tool_runtime_wiring_test.cpp)
 mira_add_m7_reference_test(mira_m7_tool_runtime_skill_test m7/m7_tool_runtime_skill_test.cpp)
+target_sources(mira_m7_tool_runtime_skill_test PRIVATE m7/m7_tool_runtime_skill_report.cpp)
 target_link_libraries(mira_m7_tool_runtime_skill_test PRIVATE Mira::state_store)
 
 if(TARGET mira_openssl_transport)
