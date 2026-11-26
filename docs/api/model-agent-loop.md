@@ -5,7 +5,8 @@
 > `model_sse.hpp`、`model_dialect.hpp`、`model_transport.hpp`、`model_upload.hpp`、
 > `embedding_provider.hpp`、
 > `model_tool.hpp`、`model_digest.hpp`、`model_replay.hpp`、`mira/agent_loop.hpp`、
-> `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`、`mira/agent_persona.hpp`
+> `mira/conversation_loop.hpp`、`mira/action_dispatcher.hpp`、`mira/agent_persona.hpp`、
+> `mira/agent_persona_suggestion.hpp`
 
 模型层采用 API-first 设计：Core 依赖显式 HTTP 模型方言（OpenAI / Anthropic Messages），不依赖任何供应商
 SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源码
@@ -32,6 +33,22 @@ Gateway 在原有宿主指令前缀中增加一个 Internal System 项，重新�
 
 可运行接线见[记忆宿主示例](../../examples/memory_agent_host_consumer.cpp)，其中两个已绑定
 工作在同一 Gateway 分别使用初始与新激活版本。
+
+### 从用户消息提交人格建议
+
+宿主可在 Executor 作业中用 `submit_agent_persona_suggestion` 提交已有用户原文的摘录。
+供应器按原任务的 `OperationContext` 关联当前授权的 Agent、人格版本与来源访问探针。
+
+```cpp
+const AgentPersonaSuggestionSource source{runtime_id, message.session_sequence, message.event_id};
+auto receipt = submit_agent_persona_suggestion(*events, source, exact_quote, quote_offset,
+                                               operation, bind_persona_for_review, stage_pending);
+```
+
+`quote_offset` 是原文 UTF-8 字节偏移，唯一摘录可省略。接收器得到稳定建议 ID、基准
+版本和摘要，以及来源引用和摘录。宿主接收器按 ID 保存待审数据并返回一致的回执，审查
+时复核来源、权限和基准版本。维护者通过已有配置提交和加载流程更新生效人格。
+见 [DEC-167](../decisions/DEC-167-evidenced-agent-persona-suggestions.md)。
 
 ## 每请求工具选择（DEC-097）
 

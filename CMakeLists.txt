@@ -170,6 +170,7 @@ add_library(mira_core
     src/model/model_upload.cpp
     src/model/model_gateway.cpp
     src/model/agent_persona.cpp
+    src/model/agent_persona_suggestion.cpp
     src/model/model_context_admission.cpp
     src/model/model_replay.cpp
     src/model/tool_executor.cpp

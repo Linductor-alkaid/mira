@@ -15,7 +15,7 @@
 
 | 门禁 | 当前证据 | 未完成的验收及归属 |
 | --- | --- | --- |
-| `M30-G1` 候选经既有写入管线 | Record、Episode、社交属性与有向关系、偏好审批、世界观察、技能提示均有合并或类型化写入证据。见[写入验收索引](#evidence-recording) | `M30-03` 补余下类型化入口的候选与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
+| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量。待审人格建议交由宿主，其他类型采用各自的合并或存储入口。见[写入验收索引](#evidence-recording) | `M30-03` 补共用收集与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
@@ -38,6 +38,7 @@
 | 实施细则、主体绑定、低权限候选准入 | M30-01 / M30-02 / M30-04 | [生命周期](#history-lifecycle)、[实施细则与 scoped Record](#history-record-cursors)，以及 [M36 机制验收](m36-memory-agent-context-integration.md) |
 | 偏好批准与版本化纠正 | M30-05 已交付部分 | [偏好审批、恢复与擦除测试](#history-preference) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
+| 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
 | 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23，M30-03 接通验证事件写入 | [结构化事实、时间和导航重新观察](#history-world)、[验证事实写入](#history-verified-world-recording) |
 | 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46，M30-03 接纳终答承诺及重复计划 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch)、[终答承诺接纳](#history-evidenced-commitments)、[批量接纳](#history-batched-commitments)、[终答重复计划](#history-recurring-commitment) |
@@ -48,9 +49,10 @@
 
 <a id="evidence-recording"></a>
 
-写入门禁的主要证据来自 [Record 与循环事件](#history-loop-episodes)、[偏好](#history-preference)、
-[社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)及
-[技能提示](#history-skill-hint-candidate-report)。各自沿对应的范围与证据规则验收。
+写入门禁的主要证据来自[人格建议](#history-persona-suggestions)、[Record 与循环事件](#history-loop-episodes)、
+[偏好](#history-preference)、[社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)、
+[目标候选](#history-evidenced-commitments)及[技能提示](#history-skill-hint-candidate-report)。
+各自沿对应的范围与证据规则验收。
 
 <a id="evidence-goals"></a>
 
@@ -2003,4 +2005,36 @@ Linux Debug 全量通过 **215/215**，重复计划定向重复 **15/15**，ASan
 | 待验证 | 负责人及补跑条件 |
 | --- | --- |
 | 生产环境的重复计划提取、规则供给及自动执行 | Mira Maintainers 与宿主集成者在 M30-38 接入结算与时区供给后，验证自然语言规则解释及跨重启消费。到期执行与任务恢复按 M30-37 联验 |
+| Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |
+
+<a id="history-persona-suggestions"></a>
+
+### 2026-11-26 从用户消息提交待审人格建议
+
+基线 `41c75e3`，分支 `feat/m30-memory-systems`。M30-03 按
+[DEC-167](../decisions/DEC-167-evidenced-agent-persona-suggestions.md) 接通已记录用户原文
+到宿主待审接收器。测试走实际 `ConversationLoop` 和 FileEventStore，使用测试接收器
+核对基准版本、建议身份及回执。覆盖重复摘录定位、UTF-8 区间、错误归属、任务世代、
+摘要不符、指令形态拒绝、撤权、取消、交付前换版、日志重开后的原 ID 重放，以及生效
+人格仍由宿主管理。
+
+```bash
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_persona_test$' --repeat until-fail:15
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 3 --target mira_m30_persona_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m30_persona_test$'
+clang-tidy -p build/debug --warnings-as-errors='*' src/model/agent_persona_suggestion.cpp
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Debug 全量通过 **215/215**，人格定向重复 **15/15**，ASan 定向 **1/1**。严格
+clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志见
+`/tmp/mira-m30-persona-suggestion-*.log`。
+
+| 待验证 | 负责人及补跑条件 |
+| --- | --- |
+| 宿主持久待审接收器与生产触发 | Mira Maintainers 与宿主集成者在接通待审队列及 M30-38 自动提取后，验证接收器重开、授权变动、来源清理和审查前基准版本复核 |
 | Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |
