@@ -270,10 +270,209 @@ int fulfillment_respects_dispatch_owner_version_and_current_access() {
     return 0;
 }
 
+int host_delivery_evidence_survives_restart_and_checks_dispatch_boundaries() {
+    FulfillmentFixture fixture;
+    MIRA_CHECK(fixture.host.coordinator_->close());
+    fixture.host.coordinator_.reset();
+    const auto submitted = now_ms() - 3min;
+    const WallTimePoint delivered = submitted + 2min;
+    const auto make_submission = [&] {
+        return GoalDispatchSubmission{SessionId::generate(), TaskId::generate(), submitted};
+    };
+    const auto source_for =
+        [&](const GoalDispatchSubmission &task,
+            std::string type = "bridge.goal.delivered.v1") -> Result<GoalDispatchCompletionSource> {
+        const auto appended =
+            fixture.events->append({EventId::generate(),
+                                    fixture.runtime_id,
+                                    task.session,
+                                    task.task,
+                                    {std::move(type), R"({"delivered":true})", EventClass::State}});
+        if (!appended)
+            return appended.error();
+        return GoalDispatchCompletionSource{fixture.runtime_id, appended.value().session_sequence,
+                                            appended.value().event_id};
+    };
+    int verifications = 0;
+    const GoalDispatchCompletionVerifier verify =
+        [&](const GoalDispatchReceipt &dispatch, const EventEnvelope &event,
+            const OperationContext &) -> Result<WallTimePoint> {
+        ++verifications;
+        if (event.payload.type != "bridge.goal.delivered.v1" ||
+            event.payload.data != R"({"delivered":true})" || !dispatch.submission)
+            return interaction_error(ErrorCode::InvalidState,
+                                     InteractionDomainCode::RuntimeCommandFailed,
+                                     "channel did not confirm delivery");
+        return delivered;
+    };
+    const auto register_source = [&](const GoalDispatchKey &key,
+                                     const GoalDispatchSubmission &submission,
+                                     const GoalDispatchCompletionSource &source,
+                                     const GoalDispatchCompletionVerifier &verifier) {
+        auto context = make_control_context();
+        context.session = submission.session;
+        context.task = submission.task;
+        return fixture.host.executor_
+            .submit_auto([&] {
+                return fixture.goals->record_dispatch_completion(key, *fixture.events, source,
+                                                                 verifier, context);
+            })
+            .get();
+    };
+
+    const auto submission = make_submission();
+    const GoalKey goal{fixture.owner, Id128::generate()};
+    const GoalKey unrelated{fixture.owner, Id128::generate()};
+    const auto dispatch = fixture.record_dispatch(goal, submission);
+    const auto other = fixture.record_dispatch(unrelated, submission);
+    const auto delivery = source_for(submission);
+    const auto answer = source_for(submission, "ConversationSettled");
+    MIRA_CHECK(dispatch && other && delivery && answer);
+    MIRA_CHECK(!register_source(dispatch.value(), submission, answer.value(), verify));
+    auto foreign = submission;
+    foreign.task = TaskId::generate();
+    MIRA_CHECK(!register_source(dispatch.value(), foreign, delivery.value(), verify));
+    auto wrong_source = delivery.value();
+    wrong_source.event = EventId::generate();
+    MIRA_CHECK(!register_source(dispatch.value(), submission, wrong_source, verify));
+    MIRA_CHECK(verifications == 0);
+    const auto before_dispatch = [&](const GoalDispatchReceipt &, const EventEnvelope &,
+                                     const OperationContext &) -> Result<WallTimePoint> {
+        return WallTimePoint{submitted - 1ms};
+    };
+    MIRA_CHECK(!register_source(dispatch.value(), submission, delivery.value(), before_dispatch));
+
+    std::atomic<bool> permitted{true};
+    MIRA_CHECK(fixture.reopen_goals([&](const GoalStoreAccess &access) {
+        return access.owner == fixture.owner && access.id == goal.id &&
+               access.operation == GoalStoreOperation::RecordDispatchCompletion && permitted.load();
+    }));
+    const auto revoke = [&](const GoalDispatchReceipt &, const EventEnvelope &,
+                            const OperationContext &) -> Result<WallTimePoint> {
+        permitted.store(false);
+        return delivered;
+    };
+    const auto denied = register_source(dispatch.value(), submission, delivery.value(), revoke);
+    MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(fixture.reopen_goals());
+    MIRA_CHECK(!fixture.goals->fulfill_dispatch(dispatch.value(), *fixture.events));
+
+    const auto published = register_source(dispatch.value(), submission, delivery.value(), verify);
+    MIRA_CHECK(published);
+    const auto replayed = register_source(dispatch.value(), submission, delivery.value(), verify);
+    MIRA_CHECK(replayed && replayed.value() == published.value());
+    const auto conflicting = source_for(submission);
+    MIRA_CHECK(conflicting &&
+               !register_source(dispatch.value(), submission, conflicting.value(), verify));
+    MIRA_CHECK(fixture.goals->read(goal).value()->state == GoalState::Pending);
+    fixture.events.reset();
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    MIRA_CHECK(fixture.reopen_goals());
+    const auto wrong_dispatch = fixture.goals->fulfill_dispatch(other.value(), *fixture.events);
+    MIRA_CHECK(!wrong_dispatch && wrong_dispatch.error().code == ErrorCode::InvalidState);
+    const auto fulfilled = fixture.goals->fulfill_dispatch(dispatch.value(), *fixture.events);
+    MIRA_CHECK(fulfilled && fulfilled.value().state == GoalState::Fulfilled &&
+               fulfilled.value().resolution);
+    MIRA_CHECK(fulfilled.value().resolution->evidence == published.value());
+    MIRA_CHECK(fulfilled.value().resolution->at ==
+               std::chrono::floor<std::chrono::milliseconds>(delivered));
+    MIRA_CHECK(
+        fixture.goals->fulfill_dispatch(dispatch.value(), *fixture.events).value().resolution ==
+        fulfilled.value().resolution);
+
+    for (const auto state : {GoalState::Pending, GoalState::Cancelled, GoalState::Expired}) {
+        const GoalKey invalidated{fixture.owner, Id128::generate()};
+        const auto task = make_submission();
+        const auto expiring =
+            state == GoalState::Expired ? std::optional<GoalTime>{submitted + 1min} : std::nullopt;
+        const auto prepared = fixture.record_dispatch(invalidated, task, expiring);
+        const auto evidence = source_for(task);
+        MIRA_CHECK(prepared && evidence &&
+                   register_source(prepared.value(), task, evidence.value(), verify));
+        if (state == GoalState::Pending) {
+            auto correction = *fixture.goals->read(invalidated).value()->definition;
+            correction.source_event = EventId::generate();
+            MIRA_CHECK(fixture.goals->correct(invalidated, 1, correction));
+        } else if (state == GoalState::Cancelled) {
+            MIRA_CHECK(
+                fixture.goals->settle(invalidated, 1, {state, EventId::generate(), submitted}));
+        }
+        MIRA_CHECK(!fixture.goals->fulfill_dispatch(prepared.value(), *fixture.events));
+        MIRA_CHECK(fixture.goals->read(invalidated).value()->state ==
+                   (state == GoalState::Cancelled ? state : GoalState::Pending));
+    }
+    return 0;
+}
+
 GoalKey ordered_goal(const GoalOwner &owner, std::uint8_t value) {
     Id128::Bytes bytes{};
     bytes.back() = value;
     return {owner, Id128{bytes}};
+}
+
+int dispatch_owner_roster_recovers_and_uses_the_permission_for_existing_work() {
+    FulfillmentFixture fixture;
+    const auto id = [](std::uint8_t value) {
+        Id128::Bytes bytes{};
+        bytes.back() = value;
+        return Id128{bytes};
+    };
+    const GoalOwner future{TenantId{id(1)}, UserId{id(1)}};
+    const GoalOwner hidden{TenantId{id(1)}, UserId{id(2)}};
+    const GoalOwner recurring{TenantId{id(1)}, UserId{id(3)}};
+    const GoalOwner waiting{TenantId{id(2)}, UserId{id(1)}};
+    const GoalOwner no_work{TenantId{id(2)}, UserId{id(2)}};
+    const auto now = now_ms();
+    for (const auto &owner : {future, hidden}) {
+        MIRA_CHECK(fixture.goals->create(
+            ordered_goal(owner, 1),
+            {GoalKind::Commitment, "Future review", EventId::generate(), now, now + 2h, {}}));
+    }
+    MIRA_CHECK(fixture.goals->create_plan(ordered_goal(recurring, 1),
+                                          {"Recurring review", EventId::generate(), now + 1h, 1h}));
+    MIRA_CHECK(fixture.record_dispatch(
+        ordered_goal(waiting, 1), {SessionId::generate(), TaskId::generate(), now - 2h}, now - 1h));
+    MIRA_CHECK(fixture.goals->create(
+        ordered_goal(no_work, 1),
+        {GoalKind::Task, "Unscheduled work", EventId::generate(), now, {}, {}}));
+    MIRA_CHECK(fixture.goals->create(
+        ordered_goal(no_work, 2),
+        {GoalKind::Commitment, "Expired work", EventId::generate(), now - 3h, now - 2h, now - 1h}));
+    MIRA_CHECK(fixture.reopen_goals());
+    const auto all = fixture.goals->dispatch_owners({now});
+    MIRA_CHECK(all && all.value().owners == (std::vector{future, hidden, recurring, waiting}) &&
+               !all.value().next);
+    MIRA_CHECK(fixture.goals->due_for_dispatch({future, now, 32, {}}).value().records.empty());
+    MIRA_CHECK(fixture.goals->pending_fulfillments({waiting}).value().records.size() == 1);
+
+    MIRA_CHECK(fixture.reopen_goals([&](const GoalStoreAccess &access) {
+        if (access.id)
+            return false;
+        if (access.owner == future)
+            return access.resource == GoalStoreResource::Goal &&
+                   access.operation == GoalStoreOperation::ReadDispatchDue;
+        if (access.owner == recurring)
+            return access.resource == GoalStoreResource::RecurringPlan &&
+                   access.operation == GoalStoreOperation::ReadDue;
+        if (access.owner == waiting || access.owner == hidden)
+            return access.resource == GoalStoreResource::Goal &&
+                   access.operation == GoalStoreOperation::ReadPendingFulfillments;
+        return false;
+    }));
+    GoalDispatchOwnerQuery query{now, 1};
+    const auto first = fixture.goals->dispatch_owners(query);
+    MIRA_CHECK(first && first.value().owners == std::vector{future} &&
+               first.value().next == future);
+    query.after = first.value().next;
+    const auto second = fixture.goals->dispatch_owners(query);
+    MIRA_CHECK(second && second.value().owners == std::vector{recurring} &&
+               second.value().next == recurring);
+    query.after = second.value().next;
+    const auto final = fixture.goals->dispatch_owners(query);
+    MIRA_CHECK(final && final.value().owners == std::vector{waiting} && !final.value().next);
+    MIRA_CHECK(!fixture.goals->due_for_dispatch({hidden, now, 32, {}}));
+    MIRA_CHECK(!fixture.goals->dispatch_owners({now, 0}));
+    return 0;
 }
 
 int poller_reconciles_existing_receipts_after_restart() {
@@ -822,6 +1021,13 @@ int main() {
     if (const int result = only_runtime_completion_can_fulfill_after_restart(); result != 0)
         return result;
     if (const int result = fulfillment_respects_dispatch_owner_version_and_current_access();
+        result != 0)
+        return result;
+    if (const int result = host_delivery_evidence_survives_restart_and_checks_dispatch_boundaries();
+        result != 0)
+        return result;
+    if (const int result =
+            dispatch_owner_roster_recovers_and_uses_the_permission_for_existing_work();
         result != 0)
         return result;
     if (const int result = poller_reconciles_existing_receipts_after_restart(); result != 0)

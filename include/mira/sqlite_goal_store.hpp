@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mira/event_store.hpp>
 #include <mira/goal_calendar.hpp>
 
 #include <chrono>
@@ -16,7 +17,6 @@ class Executor;
 
 namespace mira {
 
-class IEventStore;
 struct OperationContext;
 
 struct GoalOwner final {
@@ -128,6 +128,17 @@ struct GoalDispatchReceipt final {
     friend bool operator==(const GoalDispatchReceipt &, const GoalDispatchReceipt &) = default;
 };
 
+struct GoalDispatchCompletionSource final {
+    RuntimeId runtime;
+    SessionSequence sequence = 0;
+    EventId event;
+};
+
+// Verifies the delivery or action receipt and returns the actual completion time.
+// Called on the invoking worker without a goal-store transaction.
+using GoalDispatchCompletionVerifier = std::function<Result<WallTimePoint>(
+    const GoalDispatchReceipt &, const EventEnvelope &, const OperationContext &)>;
+
 struct GoalDispatchPreparation final {
     GoalDispatchReceipt receipt;
     bool newly_prepared = false;
@@ -142,6 +153,17 @@ struct GoalPendingFulfillmentQuery final {
 struct GoalPendingFulfillmentPage final {
     std::vector<GoalDispatchKey> records;
     std::optional<Id128> next; // Reuse the same owner on the next page.
+};
+
+struct GoalDispatchOwnerQuery final {
+    GoalTime as_of;
+    std::size_t limit = 32;
+    std::optional<GoalOwner> after{};
+};
+
+struct GoalDispatchOwnerPage final {
+    std::vector<GoalOwner> owners;
+    std::optional<GoalOwner> next; // Reuse as_of when advancing the cursor.
 };
 
 struct GoalListQuery final {
@@ -259,7 +281,8 @@ enum class GoalStoreOperation : std::uint8_t {
     PrepareDispatch,
     ReadDispatch,
     RecordDispatchSubmission,
-    ReadPendingFulfillments
+    ReadPendingFulfillments,
+    RecordDispatchCompletion
 };
 
 struct GoalStoreAccess final {
@@ -323,10 +346,19 @@ class SqliteGoalStore final {
     read_dispatch(const GoalKey &key) const;
     [[nodiscard]] Result<GoalDispatchReceipt>
     record_dispatch_submission(const GoalDispatchKey &key, GoalDispatchSubmission submission);
+    // Registers a ProcessCrash-durable attestation for fulfill_dispatch.
+    [[nodiscard]] Result<EventId> record_dispatch_completion(const GoalDispatchKey &,
+                                                             IEventStore &trusted_events,
+                                                             const GoalDispatchCompletionSource &,
+                                                             const GoalDispatchCompletionVerifier &,
+                                                             const OperationContext &);
     // Reads completion evidence from the trusted task event store for this dispatch.
     [[nodiscard]] Result<GoalRecord> fulfill_dispatch(const GoalDispatchKey &, IEventStore &);
     [[nodiscard]] Result<GoalPendingFulfillmentPage>
     pending_fulfillments(const GoalPendingFulfillmentQuery &) const;
+    // Discovers owners with authorized current or future dispatch work after restart.
+    [[nodiscard]] Result<GoalDispatchOwnerPage>
+    dispatch_owners(const GoalDispatchOwnerQuery &) const;
     // An empty result means the dispatch or its completion evidence is absent.
     [[nodiscard]] Result<std::optional<GoalRecord>>
     reconcile_dispatch_completion(const GoalDispatchKey &, IEventStore &, const OperationContext &);

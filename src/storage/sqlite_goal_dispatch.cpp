@@ -63,6 +63,37 @@ Result<void> check_reconciliation_context(const OperationContext &context) {
     return {};
 }
 
+Result<EventEnvelope> read_dispatch_completion_source(IEventStore &events,
+                                                      const GoalDispatchSubmission &submission,
+                                                      const GoalDispatchCompletionSource &source) {
+    EventSliceQuery query;
+    query.session_id = submission.session;
+    query.after_sequence = source.sequence - 1;
+    query.through_sequence = source.sequence;
+    query.limit = 1;
+    auto page = events.read_slice(query);
+    if (!page)
+        return page.error();
+    if (page.value().snapshot_through != source.sequence ||
+        page.value().scanned_through != source.sequence || page.value().has_more ||
+        page.value().events.size() != 1)
+        return goal_error(ErrorCode::DataLoss, "completion source position is invalid");
+    auto &event = page.value().events.front();
+    if (event.runtime_id != source.runtime || event.event_id != source.event ||
+        event.session_id != submission.session || event.task_id != submission.task ||
+        event.session_sequence != source.sequence)
+        return goal_error(ErrorCode::PermissionDenied, "completion source is outside the dispatch");
+    if (event.timestamp_origin == EventTimestampOrigin::UnavailableLegacy ||
+        event.timestamp.wall.time_since_epoch().count() <= 0)
+        return goal_error(ErrorCode::InvalidState, "completion source has no reliable timestamp");
+    if (event.payload.type == "ConversationSettled" || event.payload.type == "LoopSettled" ||
+        event.payload.type == "AssistantSpeech" ||
+        event.payload.type == kVerifiedTaskCompletionEvent)
+        return goal_error(ErrorCode::InvalidArgument,
+                          "completion source requires a verified outcome receipt");
+    return std::move(event);
+}
+
 Result<std::optional<GoalDispatchReceipt>> read_dispatch_row(sqlite3 *db, const GoalKey &goal) {
     Statement row(db, "SELECT revision,operation,prepared_at,session,task,submitted_at"
                       " FROM goal_dispatches WHERE tenant=?1 AND owner=?2 AND goal_id=?3");
@@ -220,6 +251,74 @@ Result<GoalRecord> SqliteGoalStore::fulfill_dispatch(const GoalDispatchKey &key,
     return std::move(*fulfilled.value());
 }
 
+Result<EventId> SqliteGoalStore::record_dispatch_completion(
+    const GoalDispatchKey &key, IEventStore &events, const GoalDispatchCompletionSource &source,
+    const GoalDispatchCompletionVerifier &verify, const OperationContext &context) {
+    if (!valid_key(key.goal) || !valid_dispatch_revision(key.revision) || key.operation.is_nil() ||
+        source.runtime.is_nil() || source.event.is_nil() || source.sequence == 0 ||
+        source.sequence > static_cast<SessionSequence>(storage::kMaxSqlInteger) || !verify ||
+        context.session.is_nil() || context.task.is_nil())
+        return goal_error(ErrorCode::InvalidArgument, "invalid dispatch completion registration");
+    if (const auto ready = check_reconciliation_context(context); !ready)
+        return ready.error();
+    const auto read_authorized = [&] {
+        return impl_->run<std::optional<GoalDispatchReceipt>>(
+            {key.goal.owner, GoalStoreResource::Goal, GoalStoreOperation::RecordDispatchCompletion,
+             key.goal.id},
+            [goal = key.goal](sqlite3 *db) { return read_dispatch_row(db, goal); });
+    };
+    const auto record = read_authorized();
+    if (!record)
+        return record.error();
+    if (!record.value() || record.value()->key != key || !record.value()->submission)
+        return goal_error(ErrorCode::InvalidState,
+                          "completion requires the original submitted dispatch");
+    const auto &submission = *record.value()->submission;
+    if (context.session != submission.session || context.task != submission.task)
+        return goal_error(ErrorCode::PermissionDenied,
+                          "completion operation is outside the dispatch");
+    if (const auto ready = check_reconciliation_context(context); !ready)
+        return ready.error();
+    const auto event = read_dispatch_completion_source(events, submission, source);
+    if (!event)
+        return event.error();
+    if (const auto ready = check_reconciliation_context(context); !ready)
+        return ready.error();
+    const auto completed = [&]() -> Result<WallTimePoint> {
+        try {
+            return verify(*record.value(), event.value(), context);
+        } catch (...) {
+            return goal_error(ErrorCode::InvalidState, "dispatch completion verifier failed");
+        }
+    }();
+    if (!completed)
+        return completed.error();
+    if (completed.value() < submission.submitted_at ||
+        completed.value() > event.value().timestamp.wall)
+        return goal_error(ErrorCode::InvalidState,
+                          "completion time is outside the dispatch evidence");
+    if (const auto ready = check_reconciliation_context(context); !ready)
+        return ready.error();
+    if (const auto durable = events.flush(Durability::ProcessCrash); !durable)
+        return durable.error();
+    const auto current = read_authorized();
+    if (!current)
+        return current.error();
+    if (current.value() != record.value())
+        return goal_error(ErrorCode::InvalidState,
+                          "dispatch changed during completion verification");
+    if (const auto ready = check_reconciliation_context(context); !ready)
+        return ready.error();
+    const auto receipt = append_verified_task_completion(
+        events, source.runtime, submission.session, submission.task,
+        {key.goal.owner.tenant, key.goal.owner.user, completed.value(),
+         VerifiedDispatchCompletionSource{key.operation, source.event, source.sequence}},
+        0);
+    if (!receipt)
+        return receipt.error();
+    return receipt.value().event_id;
+}
+
 Result<GoalPendingFulfillmentPage>
 SqliteGoalStore::pending_fulfillments(const GoalPendingFulfillmentQuery &query) const {
     if (!valid_owner(query.owner) || query.limit == 0 || query.limit > 128 ||
@@ -228,6 +327,64 @@ SqliteGoalStore::pending_fulfillments(const GoalPendingFulfillmentQuery &query) 
     return impl_->run<GoalPendingFulfillmentPage>(
         {query.owner, GoalStoreResource::Goal, GoalStoreOperation::ReadPendingFulfillments, {}},
         [query](sqlite3 *db) { return read_pending_fulfillments(db, query); });
+}
+
+Result<GoalDispatchOwnerPage>
+SqliteGoalStore::dispatch_owners(const GoalDispatchOwnerQuery &query) const {
+    if (!valid_time(query.as_of) || query.limit == 0 || query.limit > 128 ||
+        (query.after && !valid_owner(*query.after)))
+        return goal_error(ErrorCode::InvalidArgument, "invalid dispatch owner query");
+    return impl_->channel.run<GoalDispatchOwnerPage>([state = impl_.get(), query](sqlite3 *db)
+                                                         -> Result<GoalDispatchOwnerPage> {
+        // Keep the three authorization checks tied to their respective pending work.
+        Statement rows(db, "WITH work(tenant,owner,kind) AS ("
+                           " SELECT g.tenant,g.owner,CASE WHEN d.task IS NULL THEN 0 ELSE 1 END"
+                           " FROM goals g LEFT JOIN goal_dispatches d ON d.tenant=g.tenant"
+                           " AND d.owner=g.owner AND d.goal_id=g.id"
+                           " WHERE (g.tenant,g.owner)>(?1,?2) AND g.state=0"
+                           " AND (d.revision IS NULL OR d.revision=g.revision)"
+                           " AND (d.submitted_at IS NOT NULL OR (g.due_at IS NOT NULL"
+                           " AND (g.expires_at IS NULL OR g.expires_at>?3)))"
+                           " UNION ALL SELECT tenant,owner,2 FROM recurring_plans"
+                           " WHERE (tenant,owner)>(?1,?2) AND state=0 AND next_at IS NOT NULL)"
+                           " SELECT tenant,owner,max(kind=0),max(kind=1),max(kind=2) FROM work"
+                           " GROUP BY tenant,owner ORDER BY tenant,owner");
+        if (!rows.valid() ||
+            !bind_text(rows, 1, query.after ? query.after->tenant.to_string() : std::string{}) ||
+            !bind_text(rows, 2, query.after ? query.after->user.to_string() : std::string{}) ||
+            !bind_time(rows, 3, query.as_of))
+            return goal_error(ErrorCode::Internal, "dispatch owner query preparation failed");
+        GoalDispatchOwnerPage page;
+        int step = SQLITE_OK;
+        while ((step = sqlite3_step(rows.get())) == SQLITE_ROW) {
+            const GoalOwner owner{TenantId::parse(column_text(rows, 0)).value_or(TenantId{}),
+                                  UserId::parse(column_text(rows, 1)).value_or(UserId{})};
+            if (!valid_owner(owner))
+                return goal_error(ErrorCode::DataLoss, "dispatch owner identity is malformed");
+            const bool authorized =
+                (sqlite3_column_int(rows.get(), 2) != 0 &&
+                 state->allows(
+                     {owner, GoalStoreResource::Goal, GoalStoreOperation::ReadDispatchDue, {}})) ||
+                (sqlite3_column_int(rows.get(), 3) != 0 &&
+                 state->allows({owner,
+                                GoalStoreResource::Goal,
+                                GoalStoreOperation::ReadPendingFulfillments,
+                                {}})) ||
+                (sqlite3_column_int(rows.get(), 4) != 0 &&
+                 state->allows(
+                     {owner, GoalStoreResource::RecurringPlan, GoalStoreOperation::ReadDue, {}}));
+            if (!authorized)
+                continue;
+            if (page.owners.size() == query.limit) {
+                page.next = page.owners.back();
+                return page;
+            }
+            page.owners.push_back(owner);
+        }
+        if (step != SQLITE_DONE)
+            return goal_error(ErrorCode::Internal, "dispatch owner query failed");
+        return page;
+    });
 }
 
 Result<std::optional<GoalRecord>>
@@ -273,7 +430,9 @@ SqliteGoalStore::reconcile_dispatch_completion(const GoalDispatchKey &key, IEven
         return completion.error();
     const auto at = std::chrono::floor<std::chrono::milliseconds>(completion.value().completed_at);
     if (completion.value().tenant != key.goal.owner.tenant ||
-        completion.value().user != key.goal.owner.user || at < submission.submitted_at)
+        completion.value().user != key.goal.owner.user || at < submission.submitted_at ||
+        (completion.value().dispatch_source &&
+         completion.value().dispatch_source->operation != key.operation))
         return goal_error(ErrorCode::InvalidState,
                           "completion does not match the dispatch owner or time");
     if (const auto durable = events.flush(Durability::ProcessCrash); !durable)

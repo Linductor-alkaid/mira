@@ -545,10 +545,17 @@ struct MemoryLifecycleStatus final {
 
 inline constexpr std::string_view kVerifiedTaskCompletionEvent = "mira.task.verified-completion.v1";
 
+struct VerifiedDispatchCompletionSource final {
+    OperationId operation;
+    EventId event;
+    SessionSequence sequence = 0;
+};
+
 struct VerifiedTaskCompletion final {
     TenantId tenant;
     UserId user;
     WallTimePoint completed_at;
+    std::optional<VerifiedDispatchCompletionSource> dispatch_source{};
 };
 
 struct TaskAdmissionReceipt final {
@@ -562,6 +569,12 @@ struct TaskAdmissionReceipt final {
 
 // Validates the envelope and payload from the host's trusted task event store.
 [[nodiscard]] Result<VerifiedTaskCompletion> parse_verified_task_completion(const EventEnvelope &);
+
+// Encodes an attestation whose authority and source the publisher has already checked.
+[[nodiscard]] Result<AppendReceipt> append_verified_task_completion(IEventStore &, RuntimeId,
+                                                                    SessionId, TaskId,
+                                                                    const VerifiedTaskCompletion &,
+                                                                    ControlSequence);
 
 class InteractionCoordinator final {
   public:

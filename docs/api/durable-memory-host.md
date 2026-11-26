@@ -558,7 +558,39 @@ auto fulfilled = goals->fulfill_dispatch(dispatch_key, task_events);
 原派发无法覆盖当前状态。授权型目标库分别核对 `ReadDispatch` 和 `Settle`。
 见 [DEC-149](../decisions/DEC-149-verified-goal-fulfillment.md)。
 
+直接使用 `ConversationLoop` 的宿主可先把渠道送达回执或环境验证结果写入同一任务事件库，
+再在宿主的 Executor 作业中登记完成证据。
+
+```cpp
+const GoalDispatchCompletionSource source{runtime_id, delivery.session_sequence, delivery.event_id};
+auto operation = make_control_context();
+operation.session = dispatch_submission.session;
+operation.task = dispatch_submission.task;
+auto recorded = goals->record_dispatch_completion(dispatch_key, task_events, source,
+                                                   verify_delivery, operation);
+```
+
+`verify_delivery` 接收已提交的派发和读取到的原始事件，验证实际结果并返回完成时间。
+登记检查原事件位置、Runtime、会话、任务、提交时间和持久化，随后将带来源的位置和
+派发 operation 写入完成证明。记录成功后即可通过 `fulfill_dispatch` 兑现，也可重启后
+用相同的派发和事件库对账。授权型目标库对登记使用 `RecordDispatchCompletion`。
+[DEC-173](../decisions/DEC-173-host-verified-goal-completion.md)
+
 ### 周期检查到期目标和计划
+
+重开目标库后，宿主可用 `dispatch_owners` 获取需要派发器的归属。查询包括未来待派发
+目标、已提交待核对的目标和启用的重复计划。每页使用相同的启动时点，按 `next` 继续。
+
+```cpp
+GoalDispatchOwnerQuery query{startup_time};
+auto page = goals->dispatch_owners(query);
+// 为 page.value().owners 中的归属启动并持有派发器。
+// 若 page.value().next 存在，将其赋给 query.after 后继续查询。
+```
+
+授权型目标库仅返回具有对应工作且具备集合读取权限的租户和用户。一次性派发使用
+`ReadDispatchDue`，待核对使用 `ReadPendingFulfillments`，重复计划使用计划资源的
+`ReadDue`。[DEC-174](../decisions/DEC-174-dispatch-owner-discovery.md)
 
 `GoalDispatchPoller` 通过宿主的 Executor 定时检查一个已授权归属的目标。每轮最多读取
 一页待派发目标、一页重复计划和一页待结算目标，各自沿索引继续，轮换处理顺序。

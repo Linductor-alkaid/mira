@@ -22,3 +22,5 @@
 M30-46 验收真实 Runtime 主体和终态核验、持久证据重放、错误证据拒绝、版本冲突及
 重启兑现。生产自主任务准入和触发后自动关联仍由 M30-37 跟踪。
 周期发现并核对已派发的一次性目标见 [DEC-150](DEC-150-goal-fulfillment-polling.md)。
+
+直接集成宿主的送达证据接入见 [DEC-173](DEC-173-host-verified-goal-completion.md)。

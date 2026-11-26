@@ -110,20 +110,21 @@ class SqliteGoalStore::Impl final {
     Result<T> run_for_accesses(Accesses accesses, Op op) {
         return channel.run<T>([this, accesses = std::move(accesses),
                                op = std::move(op)](sqlite3 *db) mutable -> Result<T> {
-            if (authorizer) {
-                try {
-                    for (const auto &access : accesses) {
-                        if (!authorizer(access))
-                            return storage::goal_error(ErrorCode::PermissionDenied,
-                                                       "goal store access denied");
-                    }
-                } catch (...) {
+            for (const auto &access : accesses) {
+                if (!allows(access))
                     return storage::goal_error(ErrorCode::PermissionDenied,
                                                "goal store access denied");
-                }
             }
             return op(db);
         });
+    }
+
+    bool allows(const GoalStoreAccess &access) const noexcept {
+        try {
+            return !authorizer || authorizer(access);
+        } catch (...) {
+            return false;
+        }
     }
 
     const SqliteGoalStoreOptions options;
