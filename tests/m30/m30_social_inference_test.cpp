@@ -133,6 +133,11 @@ int resolves_candidate_names_and_preceding_speakers() {
     MIRA_CHECK(ambiguous && ambiguous->resolution == SocialAliasResolution::Ambiguous);
     const auto *missing = std::get_if<SocialAliasResult>(&result.value().mentions[2].candidate);
     MIRA_CHECK(missing && missing->resolution == SocialAliasResolution::Missing);
+    const auto &claims = result.value().claims.rows;
+    MIRA_CHECK(claims.size() == 3 && claims[0].row == 0 &&
+               claims[0].disposition == SocialClaimDisposition::Applied && claims[1].row == 1 &&
+               claims[1].reason == "literal-alias" && claims[2].row == 2 &&
+               claims[2].disposition == SocialClaimDisposition::Unresolved);
     const auto &request = *provider.captured;
     MIRA_CHECK(validate_model_request(request));
     MIRA_CHECK(request.tools.empty() && request.tool_choice.mode == ToolChoiceMode::None);
@@ -222,7 +227,9 @@ int rejects_fabricated_mentions_and_out_of_scope_sources() {
     provider.answer = to_json_string(JsonValue::Object{{"mentions", std::move(excess)}});
     const auto truncated = fixture.infer(provider, current.value().message, context);
     MIRA_CHECK(truncated && truncated.value().truncated && truncated.value().mentions.size() == 1 &&
-               truncated.value().rejected.size() == 7);
+               truncated.value().rejected.size() == 7 &&
+               truncated.value().claims.truncated_rows == 1 &&
+               truncated.value().claims.rows.size() == 8);
 
     provider.captured.reset();
     MemoryEventStore alternate;
@@ -317,10 +324,12 @@ int records_grounded_attributes_for_the_indexed_speaker() {
     MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied && !provider.captured);
     provider.answer = R"({"attributes":[{"field":"role","quote":"未出现"}]})";
     const auto fabricated = infer(first.value().message, fixture.operation());
-    MIRA_CHECK(!fabricated && fabricated.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(fabricated && fabricated.value().claims.rows.size() == 1 &&
+               fabricated.value().claims.rows[0].reason == "missing-source");
     provider.answer = R"({"attributes":[{"field":"private_field","quote":"导航开发"}]})";
     const auto invalid_field = infer(first.value().message, fixture.operation());
-    MIRA_CHECK(!invalid_field && invalid_field.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(invalid_field && invalid_field.value().claims.rows.size() == 1 &&
+               invalid_field.value().claims.rows[0].reason == "unknown-field");
     const std::vector<SocialMessageAttributeCandidate> invalid_batch{{"role", "导航开发"},
                                                                      {"team", "不存在"}};
     const auto invalid = fixture.storage.executor
@@ -332,10 +341,17 @@ int records_grounded_attributes_for_the_indexed_speaker() {
                              .get();
     MIRA_CHECK(!invalid && recall().value()->assertions.records.empty());
     provider.answer =
-        R"({"attributes":[{"field":"role","quote":"导航开发"},{"field":"team","quote":"夜航"}]})";
+        R"({"attributes":[{"field":"role","quote":"未出现"},{"field":"role","quote":"导航开发"},{"field":"team","quote":"夜航"}]})";
     const auto result = infer(first.value().message, fixture.operation());
     MIRA_CHECK(result && result.value().speaker == first.value() &&
                result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
+    const auto &attribute_rows = result.value().claims.rows;
+    MIRA_CHECK(attribute_rows.size() == 3 && attribute_rows[0].row == 0 &&
+               attribute_rows[0].disposition == SocialClaimDisposition::Dropped &&
+               attribute_rows[1].row == 1 &&
+               attribute_rows[1].disposition == SocialClaimDisposition::Applied &&
+               attribute_rows[2].row == 2 &&
+               attribute_rows[2].disposition == SocialClaimDisposition::Applied);
     MIRA_CHECK(result.value().consolidation.entries.front().kind == MemoryKind::SocialAttribute);
     MIRA_CHECK(provider.captured && provider.captured->tools.empty() &&
                !provider.captured->data_policy.allow_uploads &&
@@ -389,9 +405,61 @@ int records_grounded_attributes_for_the_indexed_speaker() {
     return 0;
 }
 
+int described_fields_require_the_configured_source_evidence() {
+    SocialFixture fixture(true);
+    MentionProvider provider;
+    const std::vector<SocialAttributeField> fields{
+        {"name",
+         "The speaker's own name, excluding names of pets or other people.",
+         {"我叫", "我是"}},
+        {"pet", "A pet the speaker says they own."},
+    };
+    const auto infer = [&](const SocialMessageLocator &message) {
+        return fixture.storage.executor
+            .submit_auto([&] {
+                return infer_and_record_social_message_attributes(
+                    *fixture.directory, *fixture.storage.events, provider, fixture.environment,
+                    message, fields, fixture.operation());
+            })
+            .get();
+    };
+    const auto pet = fixture.record(fixture.qq, "我养了一只橘猫，它叫胖虎。");
+    MIRA_CHECK(pet);
+    JsonValue::Array items(9, JsonValue::Object{{"field", "pet"}, {"quote", "胖虎"}});
+    items[0] = JsonValue::Object{{"field", "name"}, {"quote", "胖虎"}};
+    provider.answer = to_json_string(JsonValue::Object{{"attributes", std::move(items)}});
+    const auto result = infer(pet.value().message);
+    MIRA_CHECK(result && result.value().claims.truncated_rows == 1 &&
+               result.value().claims.rows.size() == 8);
+    MIRA_CHECK(result.value().claims.rows[0].reason == "missing-field-prefix" &&
+               result.value().claims.rows[1].disposition == SocialClaimDisposition::Applied &&
+               result.value().claims.rows[2].reason == "duplicate");
+    MIRA_CHECK(provider.captured);
+    const auto &prompt = std::get<TextPart>(provider.captured->input.at(1).content.front()).text;
+    MIRA_CHECK(prompt.find(fields[0].description) != std::string::npos &&
+               prompt.find(fields[0].value_prefixes[0]) != std::string::npos);
+    const auto recall_name = [&] {
+        return fixture.directory->recall_account_attribute(fixture.environment, fixture.qq, "name");
+    };
+    MIRA_CHECK(recall_name().value()->assertions.records.empty());
+    const auto current = fixture.record(fixture.qq, "我叫 小许。它叫胖虎。");
+    MIRA_CHECK(current);
+    provider.answer = R"({"attributes":[{"field":"name","quote":"小许"}]})";
+    const auto self = infer(current.value().message);
+    MIRA_CHECK(self && self.value().claims.rows[0].disposition == SocialClaimDisposition::Applied);
+    const auto recalled = recall_name();
+    MIRA_CHECK(recalled && recalled.value()->assertions.records.size() == 1 &&
+               recalled.value()->assertions.records[0].statement == "小许");
+    provider.answer = "bad JSON";
+    const auto malformed = infer(current.value().message);
+    MIRA_CHECK(!malformed && malformed.error().code == ErrorCode::InvalidModelOutput);
+    return 0;
+}
+
 int records_only_resolved_directed_relationships() {
     SocialFixture fixture(true);
-    const auto first = fixture.record(fixture.qq, "我指导陈工，李工指导我，我也指导赵工和吴工。");
+    const auto first =
+        fixture.record(fixture.qq, "我指导陈工，李工指导我，我也指导赵工和吴工，也指导老陈。");
     const auto chen = fixture.record(fixture.bilibili, "已收到。");
     MIRA_CHECK(first && chen);
     const SocialObjectKey li{fixture.environment, Id128::generate()};
@@ -399,7 +467,7 @@ int records_only_resolved_directed_relationships() {
     const SocialObjectKey zhao_b{fixture.environment, Id128::generate()};
     const SocialObjectKey external{{fixture.environment.tenant, Id128::generate()},
                                    Id128::generate()};
-    MIRA_CHECK(fixture.directory->activate(chen.value().speaker, {2, {"陈工"}}));
+    MIRA_CHECK(fixture.directory->activate(chen.value().speaker, {2, {"陈工", "老陈"}}));
     MIRA_CHECK(fixture.directory->activate(li, {1, {"李工"}}));
     MIRA_CHECK(fixture.directory->activate(zhao_a, {1, {"赵工"}}));
     MIRA_CHECK(fixture.directory->activate(zhao_b, {1, {"赵工"}}));
@@ -429,12 +497,25 @@ int records_only_resolved_directed_relationships() {
     provider.answer =
         R"({"relationships":[{"predicate":"mentors","alias":"陈工","quote":"我指导赵工","speaker_is_subject":true}]})";
     const auto fabricated = infer(first.value().message);
-    MIRA_CHECK(!fabricated && fabricated.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(fabricated && fabricated.value().claims.rows.size() == 1 &&
+               fabricated.value().claims.rows[0].reason == "missing-source");
+    provider.answer = "bad JSON";
+    const auto malformed = infer(first.value().message);
+    MIRA_CHECK(!malformed && malformed.error().code == ErrorCode::InvalidModelOutput);
     provider.answer =
-        R"({"relationships":[{"predicate":"mentors","alias":"陈工","quote":"我指导陈工","speaker_is_subject":true},{"predicate":"mentors","alias":"李工","quote":"李工指导我","speaker_is_subject":false},{"predicate":"mentors","alias":"赵工","quote":"我也指导赵工和吴工","speaker_is_subject":true},{"predicate":"mentors","alias":"吴工","quote":"我也指导赵工和吴工","speaker_is_subject":true}]})";
+        R"({"relationships":[{"predicate":"mentors","alias":"陈工","quote":"不存在的引文","speaker_is_subject":true},{"predicate":"mentors","alias":"陈工","quote":"我指导陈工","speaker_is_subject":true},{"predicate":"mentors","alias":"李工","quote":"李工指导我","speaker_is_subject":false},{"predicate":"mentors","alias":"赵工","quote":"我也指导赵工和吴工","speaker_is_subject":true},{"predicate":"mentors","alias":"吴工","quote":"我也指导赵工和吴工","speaker_is_subject":true},{"predicate":"mentors","alias":"老陈","quote":"也指导老陈","speaker_is_subject":true},null,{},false]})";
     const auto report = infer(first.value().message);
     MIRA_CHECK(report && report.value().participants.speaker == first.value());
-    MIRA_CHECK((report.value().unresolved == std::vector<std::size_t>{2, 3}));
+    MIRA_CHECK((report.value().unresolved == std::vector<std::size_t>{3, 4}));
+    const auto &relationship_rows = report.value().claims.rows;
+    MIRA_CHECK(report.value().claims.truncated_rows == 1 && relationship_rows.size() == 8 &&
+               relationship_rows[0].reason == "missing-source" && relationship_rows[1].row == 1 &&
+               relationship_rows[1].disposition == SocialClaimDisposition::Applied &&
+               relationship_rows[3].reason == "ambiguous-target" &&
+               relationship_rows[4].reason == "missing-target" &&
+               relationship_rows[5].reason == "duplicate-target" &&
+               relationship_rows[6].reason == "invalid-row" &&
+               relationship_rows[7].reason == "invalid-row");
     MIRA_CHECK(std::get<SocialAliasResult>(report.value().participants.mentions[2]).resolution ==
                SocialAliasResolution::Ambiguous);
     MIRA_CHECK(std::get<SocialAliasResult>(report.value().participants.mentions[3]).resolution ==
@@ -506,7 +587,8 @@ int grounds_pronoun_relationships_in_prior_speakers() {
     provider.answer =
         R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他指导我重构接口","speaker_is_subject":false,"prior_row":3}]})";
     const auto invalid = infer(current.value().message);
-    MIRA_CHECK(!invalid && invalid.error().code == ErrorCode::InvalidModelOutput);
+    MIRA_CHECK(invalid && invalid.value().claims.rows.size() == 1 &&
+               invalid.value().claims.rows[0].reason == "invalid-prior-row");
     MIRA_CHECK(read().value().records.empty());
     provider.answer =
         R"({"relationships":[{"predicate":"mentors","alias":"他","quote":"他指导我重构接口","speaker_is_subject":false,"prior_row":0}]})";
@@ -576,6 +658,8 @@ int main() {
     if (const auto result = invalidates_erased_or_cancelled_evidence(); result != 0)
         return result;
     if (const auto result = records_grounded_attributes_for_the_indexed_speaker(); result != 0)
+        return result;
+    if (const auto result = described_fields_require_the_configured_source_evidence(); result != 0)
         return result;
     if (const auto result = records_only_resolved_directed_relationships(); result != 0)
         return result;

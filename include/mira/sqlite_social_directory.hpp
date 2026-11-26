@@ -88,9 +88,38 @@ struct SocialMessageAttributeCandidate final {
     std::string quote; // Exact value excerpt from the indexed speaker's message.
 };
 
+struct SocialInferenceRejection final {
+    std::size_t row = 0;
+    std::string reason;
+};
+
+enum class SocialClaimDisposition : std::uint8_t { Applied, Dropped, Unresolved };
+
+struct SocialClaimRow final {
+    std::size_t row = 0;
+    SocialClaimDisposition disposition = SocialClaimDisposition::Dropped;
+    std::string reason;
+};
+
+struct SocialClaimReport final {
+    std::vector<SocialClaimRow> rows;
+    std::size_t truncated_rows = 0;
+};
+
+template <typename Candidate> struct SocialClaimExtraction final {
+    struct Proposal final {
+        std::size_t row = 0;
+        Candidate candidate;
+    };
+    std::vector<Proposal> proposals;
+    std::vector<SocialInferenceRejection> rejected;
+    std::size_t truncated_rows = 0;
+};
+
 struct SocialMessageAttributeReport final {
     SocialMessageEvidence speaker;
     ConsolidationReport consolidation;
+    SocialClaimReport claims{};
 };
 
 struct SocialMessagePage final {
@@ -123,6 +152,7 @@ struct SocialMessageRelationshipReport final {
     SocialMessageParticipants participants;
     std::vector<std::size_t> unresolved; // Positions in the input candidate list.
     ConsolidationReport consolidation;   // Remaining positions, in order.
+    SocialClaimReport claims{};
 };
 
 struct SqliteSocialDirectoryOptions final {

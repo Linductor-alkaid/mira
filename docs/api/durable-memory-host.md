@@ -219,8 +219,10 @@ auto inferred = executor.submit_auto([&] {
 }).get();
 ```
 
-每个候选保留原文、可选的前序发言位置和目录解析结果。同名返回歧义及候选。模型坏行
-在 `rejected` 中带原始行号与原因，超过数量时标记 `truncated`。模型响应格式错误、服务
+每个候选保留原文、可选的前序发言位置和目录解析结果。同名返回歧义及候选。
+`claims.rows` 按原始行号记录模型候选是否被采纳、丢弃或未解析。`rejected` 保留抽取
+校验的拒因，`claims.truncated_rows` 统计超过前八行的模型条目，`truncated` 也涵盖
+正文扫描或合并后的候选容量。模型响应格式错误、服务
 不可用或缺所需能力时，有效别名可随 `model_error` 一起返回。未获准的会话、取消和
 来源失效仍返回错误。模型请求关闭工具、存储和上传。宿主也可对准备好的文本调用
 `extract_social_mentions_with_report`。[DEC-175](../decisions/DEC-175-literal-social-mentions.md)
@@ -263,18 +265,28 @@ auto matching = memory.query(query);
 会话、字段词表和获准的模型。入口在同一受管作业内提取、复核并提交画像候选。
 
 ```cpp
-const std::vector<std::string> fields{"team", "role"};
+const std::vector<SocialAttributeField> fields{
+    {"team", "发言者自述所属的团队"},
+    {"name", "发言者自己的名字，排除宠物和其他人的名字", {"我叫", "我的名字是"}},
+};
 auto report = executor.submit_auto([&] {
     return infer_and_record_social_message_attributes(
         *directory, *events, *provider, environment, message, fields, operation);
 }).get();
 ```
 
-目录须与记忆库配对。字段和值来自本次候选，对象和来源由已索引消息确定。每个值必须
-逐字出现在原文中，断言以 `Inferred`、`Unverified` 保存。已有结构化候选也可直接调用
-`record_inferred_message_attributes`。报告包含发言证据和逐条 `ConsolidationReport`
-处置。重试同一来源和内容可得到幂等结果。画像擦除或授权作业取消后，迟到结果无法写入。
-见 [DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md)。
+目录须与记忆库配对。字段和值来自本次候选，对象和来源由已索引消息确定。字段说明随
+模型请求发送，现有只传字段键的调用仍可使用。每个值必须逐字出现在原文中。字段设置了
+`value_prefixes` 时，值前必须紧跟其中一个前缀，二者之间允许 ASCII 空白。上例中，
+“我养了一只橘猫，它叫胖虎”无法提供 `name` 字段所需的证据。
+
+断言以 `Inferred`、`Unverified` 保存。已有结构化候选也可直接调用
+`record_inferred_message_attributes`。模型入口的 `claims.rows` 按模型从零起算的原始行号
+报告写入或丢弃及其原因，`claims.truncated_rows` 统计超过前八行的条目。整份输出无法解析、
+授权失效和存储失败通过 `Result` 返回。报告保留发言证据和 `ConsolidationReport`。
+同一来源和内容可幂等重试，画像擦除或授权作业取消后，迟到结果无法写入。
+见 [DEC-159](../decisions/DEC-159-evidenced-social-attribute-recording.md) 和
+[DEC-176](../decisions/DEC-176-social-claim-row-results.md)。
 
 ## 社交关系断言
 
@@ -321,11 +333,15 @@ auto report = executor.submit_auto([&] {
 授权会话中更早的一条已索引消息的发言者。自动提取读取当前消息及前六个事件位置中已索引的
 文本。宿主直接提交前序引用时，在候选的 `prior_message` 中给出消息定位。
 
-`participants` 依候选顺序保留结果，`unresolved` 标出缺失、歧义及自环，其他位置
-对应 `consolidation` 中的处置。已写入断言保持 `Inferred`、`Unverified`。使用前序
-发言时，`provenance` 依次保留当前主张事件和前序发言事件。旧单证据断言仍可读取。
+`participants` 依通过提取校验的候选顺序保留发言者和另一端解析结果。模型入口的
+`claims.rows` 按模型从零起算的原始行号报告写入、丢弃或未解析及其原因，
+`claims.truncated_rows` 统计超过前八行的条目。`unresolved` 使用相同行号标出缺失、歧义及
+自环。直接提交结构化候选的入口使用宿主候选行号。已写入断言保持 `Inferred`、`Unverified`。
+使用前序发言时，`provenance` 依次保留当前主张事件和前序发言事件。旧单证据断言仍可读取。
 同一证据可幂等重试，目录变化或擦除使提交前的旧结果失效。
-见 [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md) 和 [DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md)。
+见 [DEC-160](../decisions/DEC-160-evidenced-social-relationship-recording.md)、
+[DEC-161](../decisions/DEC-161-social-relationship-reference-evidence.md) 和
+[DEC-176](../decisions/DEC-176-social-claim-row-results.md)。
 
 ## 社交记忆擦除恢复
 

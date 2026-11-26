@@ -25,6 +25,12 @@ extract_social_message_relationships(IModelProvider &, std::span<const SocialMen
                                      std::span<const std::string> predicates,
                                      const OperationContext &);
 
+[[nodiscard]] Result<SocialClaimExtraction<SocialTextRelationship>>
+extract_social_message_relationships_with_report(IModelProvider &,
+                                                 std::span<const SocialMentionUtterance>,
+                                                 std::span<const std::string> predicates,
+                                                 const OperationContext &);
+
 // Run in a managed host task after indexing the authorized message.
 [[nodiscard]] Result<SocialMessageRelationshipReport> infer_and_record_social_message_relationships(
     SqliteSocialDirectory &, const IEventStore &, IModelProvider &, const SocialEnvironmentKey &,

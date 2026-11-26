@@ -111,6 +111,23 @@ Result<void> check_sources(const SocialMessageParticipants &participants,
     return {};
 }
 
+SocialClaimRow consolidation_row(std::size_t row, const ConsolidationEntry &entry) {
+    const auto disposition = entry.disposition == CandidateDisposition::Applied
+                                 ? SocialClaimDisposition::Applied
+                                 : SocialClaimDisposition::Dropped;
+    return {row, disposition, entry.reason_code};
+}
+
+template <typename Candidate>
+void restore_model_rows(SocialClaimReport &report, const SocialClaimExtraction<Candidate> &source) {
+    for (auto &row : report.rows)
+        row.row = source.proposals[row.row].row;
+    for (const auto &row : source.rejected)
+        report.rows.push_back({row.row, SocialClaimDisposition::Dropped, row.reason});
+    report.truncated_rows = source.truncated_rows;
+    std::ranges::sort(report.rows, {}, &SocialClaimRow::row);
+}
+
 struct SocialTranscript final {
     SocialMessageEvidence speaker;
     std::vector<SocialMessageEvidence> history;
@@ -212,12 +229,12 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
         SocialMentionReference reference;
         std::optional<SocialMessageLocator> prior{};
         std::size_t offset = 0;
-        bool literal = false;
+        std::optional<std::size_t> model_row{};
     };
     constexpr std::size_t kMaxMentions = 8;
     std::vector<Mention> mentions;
     for (const auto &alias : found.value().matches)
-        mentions.push_back({alias.surface, alias.key, {}, alias.offset, true});
+        mentions.push_back({alias.surface, alias.key, {}, alias.offset});
     SocialInferredMentions result{current, {}};
     result.truncated = found.value().truncated;
 
@@ -233,22 +250,31 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
             result.model_error = proposed.error();
         } else {
             result.rejected = std::move(proposed.value().rejected);
-            result.truncated = result.truncated || proposed.value().truncated_rows != 0;
+            result.claims.truncated_rows = proposed.value().truncated_rows;
+            result.truncated = result.truncated || result.claims.truncated_rows != 0;
+            for (const auto &row : result.rejected)
+                result.claims.rows.push_back(
+                    {row.row, SocialClaimDisposition::Dropped, row.reason});
             for (const auto &mention : proposed.value().mentions) {
                 const auto key = storage::social_aliases::normalize_alias(mention.surface);
                 if (std::ranges::any_of(found.value().matches,
-                                        [&](const auto &alias) { return alias.key == key; }))
+                                        [&](const auto &alias) { return alias.key == key; })) {
+                    result.claims.rows.push_back(
+                        {mention.model_row, SocialClaimDisposition::Dropped, "literal-alias"});
                     continue;
+                }
                 if (mentions.size() == kMaxMentions) {
                     result.truncated = true;
-                    break;
+                    result.claims.rows.push_back(
+                        {mention.model_row, SocialClaimDisposition::Dropped, "mention-capacity"});
+                    continue;
                 }
                 const auto offset = text.find(mention.surface);
                 if (mention.prior_row) {
                     const auto &prior = history.at(*mention.prior_row).message;
-                    mentions.push_back({mention.surface, prior, prior, offset, false});
+                    mentions.push_back({mention.surface, prior, prior, offset, mention.model_row});
                 } else {
-                    mentions.push_back({mention.surface, key, {}, offset, false});
+                    mentions.push_back({mention.surface, key, {}, offset, mention.model_row});
                 }
             }
         }
@@ -273,12 +299,21 @@ infer_social_message_mentions(const SqliteSocialDirectory &directory, const IEve
         auto &candidate = resolved.value().mentions.at(history.size() + index);
         if (const auto *alias = std::get_if<SocialAliasResult>(&candidate)) {
             const bool resolved_name = alias->resolution != SocialAliasResolution::Missing;
-            if (resolved_name != mention.literal)
+            const bool literal = !mention.model_row;
+            if (mention.model_row)
+                result.claims.rows.push_back({*mention.model_row,
+                                              SocialClaimDisposition::Unresolved,
+                                              resolved_name ? "alias-changed" : "missing-target"});
+            if (resolved_name != literal)
                 continue;
+        } else if (mention.model_row) {
+            result.claims.rows.push_back(
+                {*mention.model_row, SocialClaimDisposition::Applied, "prior-speaker"});
         }
         result.mentions.push_back(
             {std::move(mention.surface), mention.prior, std::move(candidate)});
     }
+    std::ranges::sort(result.claims.rows, {}, &SocialClaimRow::row);
     return result;
 }
 
@@ -286,6 +321,18 @@ Result<SocialMessageAttributeReport> infer_and_record_social_message_attributes(
     SqliteSocialDirectory &directory, const IEventStore &events, IModelProvider &provider,
     const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
     std::span<const std::string> fields, const OperationContext &operation) {
+    std::vector<SocialAttributeField> described;
+    described.reserve(fields.size());
+    for (const auto &field : fields)
+        described.push_back({field});
+    return infer_and_record_social_message_attributes(directory, events, provider, environment,
+                                                      message, described, operation);
+}
+
+Result<SocialMessageAttributeReport> infer_and_record_social_message_attributes(
+    SqliteSocialDirectory &directory, const IEventStore &events, IModelProvider &provider,
+    const SocialEnvironmentKey &environment, const SocialMessageLocator &message,
+    std::span<const SocialAttributeField> fields, const OperationContext &operation) {
     if (operation.session != message.session || operation.session.is_nil())
         return source_error(ErrorCode::PermissionDenied,
                             "social attribute inference needs its authorized session");
@@ -300,12 +347,25 @@ Result<SocialMessageAttributeReport> infer_and_record_social_message_attributes(
     const auto event = storage::read_social_message_source(events, indexed.value().speaker);
     if (!event)
         return event.error();
-    auto proposed =
-        extract_social_message_attributes(provider, event.value().payload.data, fields, context);
+    auto proposed = extract_social_message_attributes_with_report(
+        provider, event.value().payload.data, fields, context);
     if (!proposed)
         return proposed.error();
-    return directory.record_inferred_message_attributes(environment, message, events,
-                                                        proposed.value(), context);
+    std::vector<SocialMessageAttributeCandidate> accepted;
+    accepted.reserve(proposed.value().proposals.size());
+    for (auto &row : proposed.value().proposals)
+        accepted.push_back(std::move(row.candidate));
+    auto recorded = directory.record_inferred_message_attributes(environment, message, events,
+                                                                 accepted, context);
+    if (!recorded)
+        return recorded.error();
+    auto &report = recorded.value();
+    if (report.consolidation.entries.size() != accepted.size())
+        return source_error(ErrorCode::DataLoss, "social attribute write report is incomplete");
+    for (std::size_t i = 0; i < accepted.size(); ++i)
+        report.claims.rows.push_back(consolidation_row(i, report.consolidation.entries[i]));
+    restore_model_rows(report.claims, proposed.value());
+    return recorded;
 }
 
 Result<SocialMessageRelationshipReport>
@@ -367,6 +427,7 @@ SqliteSocialDirectory::record_message_relationship_candidates(
     const auto recorded = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         event.value().timestamp.wall);
     std::vector<MemoryCandidate> prepared;
+    std::vector<std::size_t> prepared_rows;
     prepared.reserve(relationships.size());
     for (std::size_t index = 0; index < relationships.size(); ++index) {
         if (auto active = check_operation(context); !active)
@@ -391,6 +452,12 @@ SqliteSocialDirectory::record_message_relationship_candidates(
         }
         if (!target || *target == speaker.speaker) {
             report.unresolved.push_back(index);
+            const auto *alias = std::get_if<SocialAliasResult>(&reference);
+            const auto reason = target ? "self-reference"
+                                : alias && alias->resolution == SocialAliasResolution::Ambiguous
+                                    ? "ambiguous-target"
+                                    : "missing-target";
+            report.claims.rows.push_back({index, SocialClaimDisposition::Unresolved, reason});
             continue;
         }
         const SocialRelationshipKey endpoints =
@@ -403,14 +470,20 @@ SqliteSocialDirectory::record_message_relationship_candidates(
             return record.error();
         if (std::ranges::any_of(prepared, [&](const MemoryCandidate &candidate) {
                 return candidate.proposed.id == record.value().id;
-            }))
-            return source_error(ErrorCode::InvalidArgument,
-                                "social message contains a duplicate relationship candidate");
+            })) {
+            if (!expected_speaker)
+                return source_error(ErrorCode::InvalidArgument,
+                                    "social message contains a duplicate relationship candidate");
+            report.claims.rows.push_back(
+                {index, SocialClaimDisposition::Dropped, "duplicate-target"});
+            continue;
+        }
         MemoryCandidate candidate;
         candidate.proposed = std::move(record).value();
         candidate.evidence = candidate.proposed.provenance;
         candidate.reason = MutationReasonCode::Consolidation;
         prepared.push_back(std::move(candidate));
+        prepared_rows.push_back(index);
     }
     auto consolidated = commit_inferred_message_candidates(
         environment, report.participants, references, std::move(prepared), context);
@@ -420,6 +493,12 @@ SqliteSocialDirectory::record_message_relationship_candidates(
     mentions.erase(mentions.begin(),
                    mentions.begin() + static_cast<std::ptrdiff_t>(history.size()));
     report.consolidation = std::move(consolidated).value();
+    if (report.consolidation.entries.size() != prepared_rows.size())
+        return source_error(ErrorCode::DataLoss, "social relationship write report is incomplete");
+    for (std::size_t i = 0; i < prepared_rows.size(); ++i)
+        report.claims.rows.push_back(
+            consolidation_row(prepared_rows[i], report.consolidation.entries[i]));
+    std::ranges::sort(report.claims.rows, {}, &SocialClaimRow::row);
     return report;
 }
 
@@ -440,27 +519,26 @@ Result<SocialMessageRelationshipReport> infer_and_record_social_message_relation
     if (!transcript)
         return transcript.error();
     const auto &source = transcript.value();
-    if (source.history.empty()) {
-        const auto proposed = extract_social_message_relationships(
-            provider, source.rows.back().text, predicates, context);
-        if (!proposed)
-            return proposed.error();
-        return directory.record_message_relationship_candidates(
-            environment, message, events, proposed.value(), context, &source.speaker, {});
-    }
-    auto proposed =
-        extract_social_message_relationships(provider, source.rows, predicates, context);
+    auto proposed = extract_social_message_relationships_with_report(provider, source.rows,
+                                                                     predicates, context);
     if (!proposed)
         return proposed.error();
     std::vector<SocialMessageRelationshipCandidate> candidates;
-    candidates.reserve(proposed.value().size());
-    for (auto &relationship : proposed.value()) {
+    candidates.reserve(proposed.value().proposals.size());
+    for (auto &row : proposed.value().proposals) {
+        auto &relationship = row.candidate;
         if (relationship.prior_row)
             relationship.candidate.prior_message = source.history[*relationship.prior_row].message;
         candidates.push_back(std::move(relationship.candidate));
     }
-    return directory.record_message_relationship_candidates(
+    auto recorded = directory.record_message_relationship_candidates(
         environment, message, events, candidates, context, &source.speaker, source.history);
+    if (!recorded)
+        return recorded.error();
+    for (auto &row : recorded.value().unresolved)
+        row = proposed.value().proposals[row].row;
+    restore_model_rows(recorded.value().claims, proposed.value());
+    return recorded;
 }
 
 } // namespace mira

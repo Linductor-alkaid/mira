@@ -25,11 +25,7 @@ struct SocialMentionUtterance final {
 struct SocialTextMention final {
     std::string surface;
     std::optional<std::size_t> prior_row;
-};
-
-struct SocialInferenceRejection final {
-    std::size_t row = 0;
-    std::string reason;
+    std::size_t model_row = 0;
 };
 
 struct SocialMentionExtraction final {
@@ -59,6 +55,7 @@ struct SocialInferredMentions final {
     std::vector<SocialInferenceRejection> rejected{};
     bool truncated = false;
     std::optional<Error> model_error{};
+    SocialClaimReport claims{};
 };
 
 // Host entry point in Mira::state_store. Invoke in the existing managed task
