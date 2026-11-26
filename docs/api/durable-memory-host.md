@@ -463,10 +463,25 @@ auto recorded = record_conversation_commitment(*goals, *events, binding, source,
 ```
 
 入口核对成功结算记录指向的完整 `AssistantSpeech`，标题必须是终答逐字摘录。宿主解释
-承诺语义和日期。每个已结算的终答接纳一项承诺，按归属和终答事件派生目标 ID。相同定义
+承诺语义和日期。单项入口按归属和终答事件派生第一项目标 ID。相同定义
 重放返回 `GoalCreationReceipt.idempotent_replay`，已纠正、已结束或已擦除的目标沿原
 创建语义拒绝旧定义。普通 `create` 保留原有返回类型。见
 [DEC-164](../decisions/DEC-164-evidenced-conversation-commitments.md)。
+
+同一终答有多项承诺时，可用 `record_conversation_commitments` 一次提交最多八项。
+重复摘录使用可选的 `quote_offset` 指定终答正文的 UTF-8 字节偏移。
+
+```cpp
+const std::array excerpts{
+    GoalCommitmentExcerpt{{first_quote, first_due, first_expiry}},
+    GoalCommitmentExcerpt{{second_quote, second_due, second_expiry}, second_offset}};
+auto recorded = record_conversation_commitments(*goals, *events, binding, source, excerpts,
+                                                operation, check_current_source_access);
+```
+
+摘录的原文区间须互不重叠。回执按终答顺序返回，第一项与单项入口共用 ID。重放时保留
+已登记项的原顺序与原定义，可在其后追加新项。任一项授权、容量或身份冲突时整批失败，
+已存记录保持当前状态。见 [DEC-165](../decisions/DEC-165-batched-conversation-commitments.md)。
 
 ### 纠正与提醒回执
 

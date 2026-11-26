@@ -8,6 +8,7 @@
 #include <mira/json.hpp>
 
 #include <algorithm>
+#include <set>
 #include <utility>
 
 namespace mira {
@@ -185,11 +186,16 @@ Result<std::optional<GoalRecord>> read_goal(sqlite3 *db, const GoalKey &key) {
     return std::optional{std::move(result).value()};
 }
 
-Result<GoalCreationReceipt> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &options,
-                                        const GoalKey &key, GoalDefinition definition) {
-    Transaction transaction(db);
-    if (!transaction.valid())
-        return goal_error(ErrorCode::Unavailable, "goal creation transaction unavailable");
+Result<void> validate_creation(const GoalKey &key, const GoalDefinition &definition) {
+    if (!valid_key(key) || !valid_definition(definition))
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal definition");
+    if (matches_content_marker(definition.title, default_forbidden_content_markers()))
+        return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
+    return {};
+}
+
+Result<GoalCreationReceipt> create_goal_row(sqlite3 *db, const SqliteGoalStoreOptions &options,
+                                            const GoalKey &key, GoalDefinition definition) {
     auto prior = read_goal(db, key);
     if (!prior)
         return prior.error();
@@ -217,9 +223,39 @@ Result<GoalCreationReceipt> create_goal(sqlite3 *db, const SqliteGoalStoreOption
         !bind_time(insert, 9, definition.expires_at) || sqlite3_step(insert.get()) != SQLITE_DONE ||
         sqlite3_changes(db) != 1)
         return goal_error(ErrorCode::Internal, "goal creation failed");
+    return GoalCreationReceipt{{key, GoalState::Pending, 1, std::move(definition), {}}, false};
+}
+
+Result<GoalCreationReceipt> create_goal(sqlite3 *db, const SqliteGoalStoreOptions &options,
+                                        const GoalKey &key, GoalDefinition definition) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return goal_error(ErrorCode::Unavailable, "goal creation transaction unavailable");
+    auto receipt = create_goal_row(db, options, key, std::move(definition));
+    if (!receipt || receipt.value().idempotent_replay)
+        return receipt;
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    return GoalCreationReceipt{{key, GoalState::Pending, 1, std::move(definition), {}}, false};
+    return receipt;
+}
+
+Result<std::vector<GoalCreationReceipt>>
+create_goal_batch(sqlite3 *db, const SqliteGoalStoreOptions &options,
+                  std::vector<GoalCreationRequest> requests) {
+    Transaction transaction(db);
+    if (!transaction.valid())
+        return goal_error(ErrorCode::Unavailable, "goal creation transaction unavailable");
+    std::vector<GoalCreationReceipt> receipts;
+    receipts.reserve(requests.size());
+    for (auto &request : requests) {
+        auto receipt = create_goal_row(db, options, request.key, std::move(request.definition));
+        if (!receipt)
+            return receipt.error();
+        receipts.push_back(std::move(receipt).value());
+    }
+    if (auto committed = transaction.commit(); !committed)
+        return committed.error();
+    return receipts;
 }
 
 Result<GoalRecord> settle_goal(sqlite3 *db, const GoalKey &key, std::uint64_t expected,
@@ -887,14 +923,34 @@ Result<GoalRecord> SqliteGoalStore::create(const GoalKey &key, GoalDefinition de
 
 Result<GoalCreationReceipt> SqliteGoalStore::create_with_receipt(const GoalKey &key,
                                                                  GoalDefinition definition) {
-    if (!valid_key(key) || !valid_definition(definition))
-        return goal_error(ErrorCode::InvalidArgument, "invalid goal definition");
-    if (matches_content_marker(definition.title, default_forbidden_content_markers()))
-        return goal_error(ErrorCode::SafetyRejected, "goal title is not retainable");
+    if (auto valid = validate_creation(key, definition); !valid)
+        return valid.error();
     return impl_->run<GoalCreationReceipt>(
         {key.owner, Resource::Goal, Operation::Create, key.id},
         [key, options = &impl_->options, definition = std::move(definition)](sqlite3 *db) mutable {
             return create_goal(db, *options, key, std::move(definition));
+        });
+}
+
+Result<std::vector<GoalCreationReceipt>>
+SqliteGoalStore::create_batch_with_receipts(std::vector<GoalCreationRequest> requests) {
+    if (requests.empty() || requests.size() > kMaxGoalCreationBatch)
+        return goal_error(ErrorCode::InvalidArgument, "invalid goal batch size");
+    std::set<Id128> ids;
+    std::vector<GoalStoreAccess> accesses;
+    accesses.reserve(requests.size());
+    const auto &owner = requests.front().key.owner;
+    for (const auto &request : requests) {
+        if (request.key.owner != owner || !ids.insert(request.key.id).second)
+            return goal_error(ErrorCode::InvalidArgument, "goal batch ownership or keys disagree");
+        if (auto valid = validate_creation(request.key, request.definition); !valid)
+            return valid.error();
+        accesses.push_back({owner, Resource::Goal, Operation::Create, request.key.id});
+    }
+    return impl_->run_for_accesses<std::vector<GoalCreationReceipt>>(
+        std::move(accesses),
+        [options = &impl_->options, requests = std::move(requests)](sqlite3 *db) mutable {
+            return create_goal_batch(db, *options, std::move(requests));
         });
 }
 

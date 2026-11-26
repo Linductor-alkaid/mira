@@ -6,6 +6,7 @@
 > 冻结里程碑：M30
 > 依据：[DEC-129](DEC-129-durable-goals-and-commitments.md)、[DEC-133](DEC-133-goal-store-live-authorization.md)、
 > [DEC-156](DEC-156-m30-implementation-freeze.md)
+> 后续增量：[DEC-165](DEC-165-batched-conversation-commitments.md) 支持批量接纳，沿用本决策的单项身份。
 
 `ConversationSettled` 在终答取得耐久追加回执时附上 `AssistantSpeech` 事件 ID 和会话序号。
 引用为加法字段。缺少引用的历史结算仍可用于会话和 Episode 读取，本入口需要带引用的

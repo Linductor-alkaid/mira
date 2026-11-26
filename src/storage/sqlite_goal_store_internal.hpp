@@ -4,6 +4,7 @@
 
 #include <mira/sqlite_goal_store.hpp>
 
+#include <array>
 #include <limits>
 #include <utility>
 
@@ -102,12 +103,20 @@ class SqliteGoalStore::Impl final {
                   {"mira-goal-store", options.max_pending_requests, options.operation_timeout}) {}
 
     template <typename T, typename Op> Result<T> run(GoalStoreAccess access, Op op) {
-        return channel.run<T>([this, access, op = std::move(op)](sqlite3 *db) mutable -> Result<T> {
+        return run_for_accesses<T>(std::array{access}, std::move(op));
+    }
+
+    template <typename T, typename Accesses, typename Op>
+    Result<T> run_for_accesses(Accesses accesses, Op op) {
+        return channel.run<T>([this, accesses = std::move(accesses),
+                               op = std::move(op)](sqlite3 *db) mutable -> Result<T> {
             if (authorizer) {
                 try {
-                    if (!authorizer(access))
-                        return storage::goal_error(ErrorCode::PermissionDenied,
-                                                   "goal store access denied");
+                    for (const auto &access : accesses) {
+                        if (!authorizer(access))
+                            return storage::goal_error(ErrorCode::PermissionDenied,
+                                                       "goal store access denied");
+                    }
                 } catch (...) {
                     return storage::goal_error(ErrorCode::PermissionDenied,
                                                "goal store access denied");

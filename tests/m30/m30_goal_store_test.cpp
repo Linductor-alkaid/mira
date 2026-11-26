@@ -8,6 +8,7 @@
 #include <kairo/executor.hpp>
 #include <sqlite3.h>
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <stdexcept>
@@ -87,16 +88,24 @@ GoalDefinition commitment(GoalTime cutoff, std::string title) {
 }
 
 int records_commitment_from_terminal_answer() {
-    GoalFixture fixture(4, 1);
+    GoalFixture fixture(4, 2);
     std::atomic<bool> allow_create{true};
+    std::atomic<bool> limit_creates{false};
+    std::atomic<int> create_checks{0};
     const auto store_authorizer = [&](const GoalStoreAccess &access) {
         return access.owner == fixture.owner &&
-               (access.operation != GoalStoreOperation::Create || allow_create);
+               (access.operation != GoalStoreOperation::Create ||
+                (allow_create && (!limit_creates || ++create_checks == 1)));
     };
     MIRA_CHECK(fixture.reopen(store_authorizer));
     constexpr std::string_view quote = "I will review the draft";
+    constexpr std::string_view second_quote = "I will send the notes";
+    constexpr std::string_view third_quote = "I will check the final";
+    const auto answer_text = std::string(quote) + " in an hour. " + std::string(second_quote) +
+                             " in 90 minutes. " + std::string(third_quote) +
+                             " later. I repeat: " + std::string(second_quote) + ".";
     mira::testing::ConversationFixture conversation;
-    conversation.use_provider({mira::testing::text_response(std::string(quote) + " in an hour.")});
+    conversation.use_provider({mira::testing::text_response(answer_text)});
     auto events = std::make_shared<FileEventStore>(fixture.root / "events");
     auto operation = mira::testing::conversation_context();
     operation.session = conversation.spec_.session_id;
@@ -134,6 +143,14 @@ int records_commitment_from_terminal_answer() {
             .submit_auto([&] {
                 return record_conversation_commitment(*fixture.store, *events, binding, evidence,
                                                       claim, operation, access);
+            })
+            .get();
+    };
+    const auto record_batch = [&](std::span<const GoalCommitmentExcerpt> excerpts) {
+        return fixture.executor
+            .submit_auto([&] {
+                return record_conversation_commitments(*fixture.store, *events, binding, source,
+                                                       excerpts, operation, authorize);
             })
             .get();
     };
@@ -204,6 +221,39 @@ int records_commitment_from_terminal_answer() {
     const auto due = fixture.store->due({binding.owner, candidate.due_at, 4, {}});
     MIRA_CHECK(due && due.value().records.size() == 1 &&
                due.value().records.front().key == saved.key);
+    const GoalCommitmentExcerpt first{candidate};
+    const GoalCommitmentExcerpt second{{std::string(second_quote), fixture.now + 90min, {}},
+                                       answer_text.find(second_quote)};
+    const GoalCommitmentExcerpt third{{std::string(third_quote), fixture.now + 4h, {}}};
+    auto ambiguous = second;
+    ambiguous.quote_offset.reset();
+    MIRA_CHECK(!record_batch(std::array{first, ambiguous}));
+    auto wrong_offset = second;
+    ++*wrong_offset.quote_offset;
+    MIRA_CHECK(!record_batch(std::array{first, wrong_offset}));
+    MIRA_CHECK(!record_batch(std::array{first, first}));
+    MIRA_CHECK(!record_batch(std::vector<GoalCommitmentExcerpt>(kMaxGoalCreationBatch + 1, first)));
+
+    limit_creates = true;
+    const auto denied_batch = record_batch(std::array{first, second});
+    MIRA_CHECK(!denied_batch && denied_batch.error().code == ErrorCode::PermissionDenied &&
+               create_checks == 2);
+    limit_creates = false;
+    const auto quota = record_batch(std::array{first, second, third});
+    MIRA_CHECK(!quota && quota.error().code == ErrorCode::ResourceExhausted);
+    MIRA_CHECK(fixture.store->list({binding.owner, {}, 4, {}}).value().records.size() == 1);
+
+    const auto batch = record_batch(std::array{second, first});
+    MIRA_CHECK(batch && batch.value().size() == 2);
+    MIRA_CHECK(batch.value()[0].record.key == saved.key && batch.value()[0].idempotent_replay);
+    const auto &secondary = batch.value()[1];
+    MIRA_CHECK(!secondary.idempotent_replay && secondary.record.key != saved.key &&
+               secondary.record.definition && secondary.record.definition->title == second_quote &&
+               secondary.record.definition->source_event == *answer);
+    const auto both_due = fixture.store->due({binding.owner, second.candidate.due_at, 4, {}});
+    MIRA_CHECK(both_due && both_due.value().records.size() == 2 &&
+               both_due.value().records.back().key == secondary.record.key);
+
     const auto duplicate = events->append({EventId::generate(), binding.runtime, operation.session,
                                            operation.task, settlement.payload});
     MIRA_CHECK(duplicate);
@@ -217,10 +267,20 @@ int records_commitment_from_terminal_answer() {
     const auto replay = record(source, candidate, authorize);
     MIRA_CHECK(replay && replay.value().idempotent_replay &&
                replay.value().record.key == saved.key);
+    const auto replay_batch = record_batch(std::array{first, second});
+    MIRA_CHECK(replay_batch && replay_batch.value().size() == 2 &&
+               replay_batch.value()[0].idempotent_replay &&
+               replay_batch.value()[1].idempotent_replay &&
+               replay_batch.value()[1].record.key == secondary.record.key);
     auto changed = candidate;
     changed.due_at += 15min;
     const auto conflict = record(source, changed, authorize);
     MIRA_CHECK(!conflict && conflict.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(fixture.store->erase(secondary.record.key));
+    const auto erased_replay = record_batch(std::array{first, second});
+    MIRA_CHECK(!erased_replay && erased_replay.error().code == ErrorCode::InvalidState &&
+               fixture.store->read(secondary.record.key).value()->state == GoalState::Erased &&
+               fixture.store->read(saved.key).value()->state == GoalState::Pending);
     MIRA_CHECK(fixture.store->erase(saved.key));
     MIRA_CHECK(!record(source, candidate, authorize) &&
                fixture.store->read(saved.key).value()->state == GoalState::Erased);

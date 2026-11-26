@@ -92,6 +92,7 @@
 - [DEC-162](../decisions/DEC-162-verified-world-fact-recording.md)：从已提交的验证事实记录结构化世界观察。
 - [DEC-163](../decisions/DEC-163-skill-hint-candidate-report.md)：返回技能提示的候选处置报告。
 - [DEC-164](../decisions/DEC-164-evidenced-conversation-commitments.md)：从已结算终答记录一次性承诺并返回创建回执。
+- [DEC-165](../decisions/DEC-165-batched-conversation-commitments.md)：批量接纳同一终答中的一次性承诺。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -164,7 +165,7 @@
 
 后续工作按原编号推进。已交付的基础机制和增量证据见第 5.2 节及[验收文档](m30-memory-acceptance.md#2-按交付能力查证)。
 
-- [ ] `M30-03` 补齐其他类型化 owner 的候选接纳和处置报告，形成共用的候选收集与写入边界。已有 Session Record、Episode、显式偏好、社交属性与关系、结构化世界观察、技能提示和已有终答证据的一次性承诺。生产统一触发由 M30-38 验收。
+- [ ] `M30-03` 补齐其他类型化 owner 的候选接纳和处置报告，形成共用的候选收集与写入边界。已有 Session Record、Episode、显式偏好、社交属性与关系、结构化世界观察、技能提示和带终答证据的一次性承诺批量接纳。生产统一触发由 M30-38 验收。
 - [ ] `M30-05` 补齐「记住、纠正、忘掉」的结构化路由、精确范围与歧义处理、逐记录遗忘及可解释回执。显式偏好批准、版本化纠正与范围擦除已有独立证据。
 - [ ] `M30-06` 从有证据的已确认重要性和 Gateway 实际准入产出价值信号，区分未入选、失败准入、幂等重放与擦除，供 M31 消费。
 - [ ] `M30-09` 按 DEC-156 接通同 scope 删除后的新世代。旧来源、摘要、审批和在途结果继续受已有擦除屏障阻断，新明确输入可重新接纳。与 M31 联验屏障保留与回收。

@@ -65,6 +65,13 @@ struct GoalCreationReceipt final {
     bool idempotent_replay = false;
 };
 
+struct GoalCreationRequest final {
+    GoalKey key;
+    GoalDefinition definition;
+};
+
+inline constexpr std::size_t kMaxGoalCreationBatch = 8;
+
 struct GoalDefinitionVersion final {
     std::uint64_t revision = 0;
     GoalDefinition definition;
@@ -292,6 +299,10 @@ class SqliteGoalStore final {
     [[nodiscard]] Result<GoalRecord> create(const GoalKey &key, GoalDefinition definition);
     [[nodiscard]] Result<GoalCreationReceipt> create_with_receipt(const GoalKey &key,
                                                                   GoalDefinition definition);
+    // One owner and distinct keys. All writes succeed together; receipts
+    // follow request order and distinguish existing goals from new writes.
+    [[nodiscard]] Result<std::vector<GoalCreationReceipt>>
+    create_batch_with_receipts(std::vector<GoalCreationRequest> requests);
     [[nodiscard]] Result<std::optional<GoalRecord>> read(const GoalKey &key) const;
     [[nodiscard]] Result<GoalRecord> settle(const GoalKey &key, std::uint64_t expected_revision,
                                             GoalResolution resolution);
