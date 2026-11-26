@@ -952,6 +952,13 @@ JsonValue context_candidate_to_json(const ContextCandidate &candidate) {
     object.emplace_back("score", candidate.score);
     object.emplace_back("exact_hit", candidate.exact_hit);
     object.emplace_back("lexical_score", candidate.lexical_score);
+    if (candidate.lexical_bm25) {
+        object.emplace_back("lexical_bm25", *candidate.lexical_bm25);
+        JsonValue::Array matches;
+        for (const auto &term : candidate.lexical_matches)
+            matches.emplace_back(term);
+        object.emplace_back("lexical_matches", std::move(matches));
+    }
     object.emplace_back("vector_hit", candidate.vector_hit);
     object.emplace_back("vector_similarity", candidate.vector_similarity);
     return JsonValue(std::move(object));
@@ -1057,6 +1064,16 @@ Result<ContextCandidate> context_candidate_from_json(const JsonValue &json) {
     if (const auto *lexical = json.find("lexical_score");
         lexical != nullptr && lexical->is_number()) {
         candidate.lexical_score = lexical->as_number().value_or(0.0);
+    }
+    if (const auto *bm25 = json.find("lexical_bm25"); bm25 && bm25->is_number())
+        candidate.lexical_bm25 = bm25->as_number();
+    if (const auto *matches = json.find("lexical_matches"); matches && matches->is_array()) {
+        for (const auto &term : *matches->as_array()) {
+            if (!term.is_string())
+                return retrieval_error(ContextDomainCode::InvalidItem,
+                                       "lexical match must be text");
+            candidate.lexical_matches.push_back(*term.as_string());
+        }
     }
     if (const auto *vector_hit = json.find("vector_hit");
         vector_hit != nullptr && vector_hit->is_boolean()) {

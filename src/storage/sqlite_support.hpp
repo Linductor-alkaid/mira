@@ -17,8 +17,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <kairo/blocking_io.hpp>
 #include <kairo/executor.hpp>
@@ -51,6 +53,7 @@ struct FtsMatch final {
     // then bigrams, then characters, each group spread over the text; the
     // caller reports a degraded lexical leg.
     bool truncated = false;
+    std::vector<std::string> terms;
 };
 
 // Units one query may match. Each costs one index lookup over the whole
@@ -58,7 +61,10 @@ struct FtsMatch final {
 // query would otherwise take about a second on a 40,000-row index.
 constexpr std::size_t kMaxFtsMatchUnits = 128;
 
-[[nodiscard]] FtsMatch fts_match_expression(const std::string &text);
+// Reserved FTS token for a boundary between conversation utterances.
+inline constexpr std::string_view kConversationFtsBoundary = "\xEE\x80\x80";
+
+[[nodiscard]] FtsMatch fts_match_expression(const std::string &text, bool conversation = false);
 
 // SQLITE_TRANSIENT expands to an old-style cast; wrap the constant once so
 // Mira warning policy stays clean at every bind site.

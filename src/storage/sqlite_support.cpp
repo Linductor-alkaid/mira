@@ -49,7 +49,7 @@ namespace {
 
 } // namespace
 
-FtsMatch fts_match_expression(const std::string &text) {
+FtsMatch fts_match_expression(const std::string &text, bool conversation) {
     const auto units = segment_lexically(text, LexicalUnits::MatchUnits);
     // Unique units per kind in text order. A full-text index gives a
     // character that many rows share no weight, so a query too long to match
@@ -59,6 +59,9 @@ FtsMatch fts_match_expression(const std::string &text) {
     std::vector<std::string_view> bigrams;
     std::set<std::string_view> seen;
     for (const auto &unit : units) {
+        if (conversation && (unit.text.find(kConversationFtsBoundary) != std::string::npos ||
+                             unit.text.find_first_not_of('_') == std::string::npos))
+            continue;
         if (!seen.insert(unit.text).second) {
             continue;
         }
@@ -74,6 +77,8 @@ FtsMatch fts_match_expression(const std::string &text) {
             break;
         }
     }
+    if (conversation && (!words.empty() || !bigrams.empty()))
+        characters.clear();
     FtsMatch match;
     std::size_t budget = kMaxFtsMatchUnits;
     const std::pair<const std::vector<std::string_view> *, LexicalUnitKind> groups[] = {
@@ -92,6 +97,8 @@ FtsMatch fts_match_expression(const std::string &text) {
                 match.expression += " OR ";
             }
             match.expression += quoted_unit((*group)[index], kind);
+            if (conversation)
+                match.terms.emplace_back((*group)[index]);
         }
         budget -= taken;
     }

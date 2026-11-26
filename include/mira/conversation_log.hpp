@@ -24,6 +24,8 @@ struct ConversationEntry final {
     std::string text;
     EventId origin;
     SessionSequence session_sequence = 0;
+    // Unrendered AssistantSpeech text, empty when the turn only used tools.
+    std::string spoken_text{};
 };
 
 // Shared reducer for bounded consumers of conversation evidence. Unrelated

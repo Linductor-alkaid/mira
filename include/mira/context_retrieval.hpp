@@ -210,6 +210,9 @@ struct ContextCandidate final {
     double lexical_score = 0.0;
     bool vector_hit = false;
     double vector_similarity = 0.0;
+    // FTS5 evidence for the durable conversation index. bm25 is negative-better.
+    std::optional<double> lexical_bm25{};
+    std::vector<std::string> lexical_matches{};
 };
 
 struct ContextRetrievalResult final {

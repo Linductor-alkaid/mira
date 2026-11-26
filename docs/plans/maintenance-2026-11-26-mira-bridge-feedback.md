@@ -16,7 +16,7 @@
 | `MIRA-20261126-003` | Linux 离线通过 | Record 的确定性范围可观测、模型输出约束及逐候选拒绝 |
 | `MIRA-20261126-004` | Linux 离线通过 | 会话事实可显式启用，默认拒绝并报告原因。召回区分事实与偏好，标记未验证事实 |
 | `MIRA-20261126-005` | Linux 离线通过 | 按结构化身份合并证据或保留备选值。自由文本首尾句读归一化，沿用旧记录的 `subject=value` 解析 |
-| `MIRA-20261126-006` | 待实现 | 可召回正文投影、中文排序和按匹配项解释 |
+| `MIRA-20261126-006` | Linux 离线通过 | 发言正文与诊断的检索边界、双字命中和命中证据已验证。真实宿主语料待复跑 |
 | `MIRA-20261126-007` | 待实现 | 会话索引增量续建、结果一致性和擦除屏障 |
 | `MIRA-20261126-008` | Linux 离线通过 | 区分缺会话绑定与跨会话拒绝 |
 | `MIRA-20261126-009` | Linux 离线通过 | Layer 0 候选序号、准入原因和 ID 契约 |
@@ -55,6 +55,16 @@
 召回。`mira_m36_memory_agent_model_test` 验证内置模型输出的结构化身份可经 SQLite 查回，
 `mira_m4_sqlite_memory_test` 覆盖写入边界和 mutation 往返。这三项 ASan 测试均通过。
 Linux Debug 完整套件通过 215/215，既有 claim key 与写入策略回归通过。
+
+### 会话发言索引增量
+
+以 `00db8eb` 加本增量按 [DEC-171](../decisions/DEC-171-conversation-speech-search.md) 验证。
+`mira_m30_conversation_index_lexical_test` 覆盖仅共享一个双字的中文问句、跨发言与单字噪声、
+FTS 和精确查询的诊断排除、命中证据和分数复算，以及 schema 1.0、1.1 原地升级。
+`mira_m30_conversation_index_test` 验证授权、水位和擦除。Linux Debug 通过 215/215，
+上述两项 ASan 通过 2/2，格式、文档、SBOM、平台边界和架构门禁通过。
+真实语料的排序与工具发声记录由 Mira Maintainers 和 mira-bridge 集成者使用原始对话及
+发送回执补跑。全量前缀容量与增量续建在 007 跟踪。
 
 ## 宿主补跑
 

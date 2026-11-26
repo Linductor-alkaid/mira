@@ -1,6 +1,6 @@
 // Lexical behavior of the durable conversation index after DEC-147: Chinese
 // recall ranked by relevance, an oversized Chinese message, and the schema
-// 1.0 -> 1.1 migration that re-indexes history in place.
+// in-place migration of older conversation indexes.
 
 #include "support/m36_support.hpp"
 #include "support/test.hpp"
@@ -173,6 +173,71 @@ int chinese_segments_come_back_most_relevant_first() {
     return 0;
 }
 
+int speech_search_excludes_diagnostics_and_explains_matches() {
+    MemoryAgentFixture fixture;
+    const auto work = fixture.binding();
+    auto options = options_for(fixture.root / "speech.db");
+    options.segmentation.window_entries = 3;
+    auto opened = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    auto index = std::move(opened).value();
+    auto assistant = speech(fixture, work, "AssistantSpeech", "宠物是橘猫胖虎");
+    assistant.payload.data = to_json_string(JsonValue::Object{
+        {"detail",
+         JsonValue::Object{{"text", "宠物是橘猫胖虎"},
+                           {"tool_calls", JsonValue::Array{JsonValue::Object{
+                                              {"wire_name", "send_fixture"},
+                                              {"status", "executed"},
+                                              {"arguments", R"({"text":"toolpayload"})"}}}}}}});
+    auto settled = speech(fixture, work, "ConversationSettled", "unused");
+    settled.payload.data = R"({"detail":{"outcome":"Answered","turns":3,"total_turns":3}})";
+    MIRA_CHECK(
+        fixture.events->append(speech(fixture, work, "UserMessageInjected", "我养了一只宠物")));
+    MIRA_CHECK(fixture.events->append(assistant));
+    MIRA_CHECK(fixture.events->append(settled));
+    MIRA_CHECK(
+        fixture.events->append(speech(fixture, work, "AssistantSpeech", "橘树下遇见一只白猫")));
+    MIRA_CHECK(fixture.events->append(speech(fixture, work, "UserMessageInjected", "橘")));
+    MIRA_CHECK(fixture.events->append(speech(fixture, work, "AssistantSpeech", "猫")));
+    MIRA_CHECK(rebuild(fixture, *index, work, *fixture.events).value() == 6);
+
+    const auto check = [&](SqliteConversationIndex &store) -> int {
+        const auto found = store.retrieve(query_for(work, "那只橘猫长什么样"), {});
+        MIRA_CHECK(found && found.value().candidates.size() == 1);
+        const auto &candidate = found.value().candidates.front();
+        MIRA_CHECK(candidate.through_event_sequence == 3 && candidate.source_events.size() == 3);
+        MIRA_CHECK(candidate.lexical_matches == (std::vector<std::string>{"橘猫"}));
+        MIRA_CHECK(candidate.lexical_bm25 && *candidate.lexical_bm25 < 0.0);
+        MIRA_CHECK(candidate.lexical_score ==
+                   -*candidate.lexical_bm25 / (1.0 - *candidate.lexical_bm25));
+        const auto decoded = context_candidate_from_json(context_candidate_to_json(candidate));
+        MIRA_CHECK(decoded && decoded.value().lexical_matches == candidate.lexical_matches &&
+                   decoded.value().lexical_bm25 == candidate.lexical_bm25);
+        for (const auto *trace : {"send_fixture", "toolpayload", "settled", "assistant"}) {
+            MIRA_CHECK(store.retrieve(query_for(work, trace), {}).value().candidates.empty());
+            auto exact = query_for(work);
+            exact.exact_terms = {trace};
+            MIRA_CHECK(store.retrieve(exact, {}).value().candidates.empty());
+        }
+        const auto single = store.retrieve(query_for(work, "橘 _"), {});
+        MIRA_CHECK(single && single.value().candidates.size() == 2);
+        return 0;
+    };
+    MIRA_CHECK(check(*index) == 0);
+    MIRA_CHECK(index->close());
+    index.reset();
+    MIRA_CHECK(exec_sql(options.path,
+                        "ALTER TABLE conversation_segments DROP COLUMN search_text;"
+                        "UPDATE store_meta SET value='1.1' WHERE key='schema_version';"));
+    opened = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    index = std::move(opened).value();
+    MIRA_CHECK(check(*index) == 0);
+    MIRA_CHECK(rebuild(fixture, *index, work, *fixture.events).value() == 6);
+    MIRA_CHECK(index->close());
+    return 0;
+}
+
 // Before DEC-147 the cut of an oversized message fell on a byte boundary.
 // Inside a multi-byte character it left invalid UTF-8, which the publication
 // check rejected, so one long Chinese message failed the rebuild of its whole
@@ -245,6 +310,7 @@ int a_1_0_index_migrates_in_place() {
                         "DROP TRIGGER conversation_insert;"
                         "DROP TRIGGER conversation_delete;"
                         "DROP TABLE conversation_fts;"
+                        "ALTER TABLE conversation_segments DROP COLUMN search_text;"
                         "ALTER TABLE conversation_segments DROP COLUMN lexical;"
                         "CREATE VIRTUAL TABLE conversation_fts USING fts5(owner,text,"
                         " content='conversation_segments',content_rowid='rowid',"
@@ -282,14 +348,14 @@ int a_1_0_index_migrates_in_place() {
     }
     // Every segment now carries its index text, derived from its own text:
     // the first row, both sides of the page boundary and the last one.
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.1");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.2");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM pragma_table_info('conversation_segments')"
                             " WHERE name = 'lexical'") == "1");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM conversation_fts") == "70");
     for (const std::string rowid : {"1", "64", "65", "70"}) {
         const std::string where = " FROM conversation_segments WHERE rowid = " + rowid;
         MIRA_CHECK(scalar(path, "SELECT lexical" + where) ==
-                   lexical_index_text(scalar(path, "SELECT text" + where)));
+                   lexical_index_text(scalar(path, "SELECT search_text" + where)));
     }
     MIRA_CHECK(exec_sql(path, "INSERT INTO conversation_fts(conversation_fts,rank)"
                               " VALUES('integrity-check',1);"));
@@ -305,7 +371,7 @@ int a_1_0_index_migrates_in_place() {
     }
     // The idempotent rebuild left the segments as the migration wrote them.
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM conversation_segments") == "70");
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.1");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.2");
     {
         auto opened = SqliteConversationIndex::open(fixture.executor, options);
         MIRA_CHECK(opened);
@@ -327,6 +393,9 @@ int a_1_0_index_migrates_in_place() {
 
 int main() {
     if (const int result = chinese_segments_come_back_most_relevant_first(); result != 0) {
+        return result;
+    }
+    if (const int result = speech_search_excludes_diagnostics_and_explains_matches(); result != 0) {
         return result;
     }
     if (const int result = an_oversized_chinese_message_still_indexes(); result != 0) {

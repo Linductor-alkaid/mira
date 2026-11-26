@@ -57,6 +57,7 @@ namespace {
     }
     std::ostringstream text;
     bool has_content = false;
+    std::string spoken_text;
     // The speaker is carried structurally by `entry.kind`; prefixing the text
     // here would double up once `entry_line` (the single prefix renderer)
     // adds "assistant: " for text consumers, and replay conversion emits
@@ -68,6 +69,7 @@ namespace {
         const auto &spoken = *speech->as_string();
         if (!spoken.empty()) {
             text << spoken;
+            spoken_text = spoken;
             has_content = true;
         }
     }
@@ -105,6 +107,7 @@ namespace {
     entry.kind = ConversationEntry::Kind::AssistantSpeech;
     entry.recorded_at = envelope.timestamp;
     entry.text = text.str();
+    entry.spoken_text = std::move(spoken_text);
     entry.origin = envelope.event_id;
     entry.session_sequence = envelope.session_sequence;
     return entry;

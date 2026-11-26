@@ -84,22 +84,27 @@ query.text = "project update";
 auto recalled = conversation_index->retrieve(query, RetrievalBudget{});
 ```
 
-召回包含原生角色、来源事件和片段水位。全文索引以 scope 词项收窄：查询文本按
-[确定性分词](context-memory.md#text_segmentationhpp确定性文本原语)切成词、汉字单字和相邻两字，逐个加引号后以 OR 匹配，
-片段按相关度（bm25）从高到低返回，同分按来源序号倒序和 ID；不带文本的查询仍按
-最近片段序号及 ID 排序。查询超过 128 个单元时只匹配其中一个子集，结果以
-`degraded` 和 `note` 说明。`lexical_score` 是 0 到 1 之间的相关度，索引不给权重的
-匹配为 0。声明的 exact_terms 都必须逐字命中，无论是否有片段包含它们。角色转换及
-最终准入使用现有 `context_items_from_candidate` 和 Gateway。重建触发、授权复核与
-发布候选由宿主管理。
+召回包含原生角色、来源事件和片段水位。全文与 `exact_terms` 使用用户发言和
+`AssistantSpeech` 文本作为可检索正文。工具参数和结算仍随来源片段留存。纯工具发声的
+通道可将真实发言以 `AssistantSpeech` 文本入事件源。
+
+查询按确定性分词提取词和相邻双字，单字查询使用单字。查询单元逐个加引号并以 OR
+匹配。片段按 bm25 相关度排序，同分按来源序号倒序和 ID。无文本时按最近序号和 ID
+排序。超过 128 个单元时标记 `degraded` 并在 `note` 说明。`lexical_matches` 列出
+FTS5 命中的单元，`lexical_bm25` 提供未转换的 rank。`lexical_score` 仍可由
+`m / (1 + m)` 复算，其中 `m = max(0, -lexical_bm25)`。
+所有声明的 `exact_terms` 均须命中。角色转换及最终准入使用 `context_items_from_candidate`
+和 Gateway。重建触发、授权复核与候选发布由宿主管理。
 
 将同一个索引赋给 `MemoryAgentConfig::conversation_index`，先初始化 MemoryAgent
 重放持久擦除意图，再对外开放索引。会话擦除会持久封闭索引 scope，旧日志重建被拒。
 索引擦除失败时当前实例封闭读取与重建。宿主处理失败原因，关闭服务和索引，重开后
 重放擦除意图。原始事件、备份与磁盘回收由各自生命周期管理。
-参见 [DEC-122](../decisions/DEC-122-durable-conversation-index.md)；分词与排序的
-修订见 [DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)。片段表自 schema 1.1 起带索引文本列，1.0 的索引文件在打开时
-原地重建，水位与擦除屏障保持有效，历史会话无需宿主重建即可继续检索。
+schema 1.2 会在打开 1.0 或 1.1 文件时从历史片段重建派生正文和全文索引。水位、来源摘要
+与擦除屏障继续有效。旧片段依据既有工具调用行边界恢复发言。
+[DEC-122](../decisions/DEC-122-durable-conversation-index.md)
+[DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)
+[DEC-171](../decisions/DEC-171-conversation-speech-search.md)
 
 ## 社交对象目录
 

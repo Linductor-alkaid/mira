@@ -47,6 +47,9 @@
 
 ## 决策
 
+会话索引的发言投影、查询单元与命中证据后来由
+[DEC-171](DEC-171-conversation-speech-search.md) 修订。
+
 ### 1. 单一的确定性分词契约
 
 新增公开头 `include/mira/text_segmentation.hpp`，纯 Core，无词典、无平台依赖、

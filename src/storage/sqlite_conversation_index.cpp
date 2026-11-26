@@ -7,6 +7,7 @@
 #include <mira/text_segmentation.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <limits>
 #include <string>
@@ -22,10 +23,9 @@ Error index_error(ErrorCode code, std::string message) {
     return storage::store_error(code, "mira.conversation_index", 0, std::move(message));
 }
 
-constexpr SchemaVersion kConversationIndexSchema{1, 1};
+constexpr SchemaVersion kConversationIndexSchema{1, 2};
 
-// `lexical` is a segment's lexical index text (DEC-147), derived from `text`
-// for the full-text index; the digest covers `document` only.
+// The digest covers the provenance document. Search columns are derived.
 constexpr const char *kTables =
     "CREATE TABLE store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
     "CREATE TABLE conversation_sessions(session TEXT PRIMARY KEY, owner TEXT UNIQUE NOT NULL,"
@@ -33,7 +33,7 @@ constexpr const char *kTables =
     "CREATE TABLE conversation_erasures(owner TEXT PRIMARY KEY);"
     "CREATE TABLE conversation_segments("
     " id TEXT PRIMARY KEY, owner TEXT NOT NULL, through INTEGER NOT NULL,"
-    " text TEXT NOT NULL, lexical TEXT NOT NULL, document TEXT NOT NULL,"
+    " text TEXT NOT NULL, search_text TEXT NOT NULL, lexical TEXT NOT NULL, document TEXT NOT NULL,"
     " digest TEXT NOT NULL);"
     "CREATE INDEX conversation_segments_by_owner ON conversation_segments(owner,through DESC,id);";
 // The full-text index and the triggers that keep it in step with the segments.
@@ -61,24 +61,67 @@ std::string_view column(Statement &statement, int index) {
                 : std::string_view{};
 }
 
-// Schema 1.0 -> 1.1: the full-text index stores each segment's lexical units
-// instead of its text (DEC-147), kept in a column the triggers synchronize.
-// The old index is discarded and rebuilt in place, so watermarks, digests and
-// erasure barriers stay valid and history stays searchable without a host
-// rebuild.
-[[nodiscard]] Result<void> migrate_conversation_schema_1_0_to_1_1(sqlite3 *db) {
-    const std::string rebuild = std::string("DROP TRIGGER conversation_insert;"
-                                            "DROP TRIGGER conversation_delete;"
-                                            "DROP TABLE conversation_fts;"
-                                            "ALTER TABLE conversation_segments"
-                                            " ADD COLUMN lexical TEXT NOT NULL DEFAULT '';") +
-                                kFullText;
+struct SearchText final {
+    std::string text;
+    std::string lexical;
+
+    void append(std::string_view utterance) {
+        if (utterance.empty())
+            return;
+        if (!text.empty())
+            text += '\n';
+        text += utterance;
+        const auto units = lexical_index_text(utterance);
+        if (units.empty())
+            return;
+        if (!lexical.empty()) {
+            lexical += ' ';
+            lexical += storage::kConversationFtsBoundary;
+            lexical += ' ';
+        }
+        lexical += units;
+    }
+};
+
+std::string_view utterance(const ConversationSegmentEntry &turn,
+                           const ConversationEntry *source = nullptr) {
+    if (turn.kind == ConversationEntry::Kind::LoopOutcome)
+        return {};
+    std::string_view line = turn.text;
+    const std::string_view prefix =
+        turn.kind == ConversationEntry::Kind::AssistantSpeech ? "assistant: " : "user: ";
+    if (!line.starts_with(prefix))
+        return {};
+    line.remove_prefix(prefix.size());
+    constexpr std::string_view truncation = "\n[truncated]";
+    if (line.ends_with(truncation))
+        line.remove_suffix(truncation.size());
+    if (turn.kind == ConversationEntry::Kind::UserMessage)
+        return line;
+    if (source)
+        return truncate_utf8(source->spoken_text, line.size());
+    if (line.starts_with("tool call "))
+        return {};
+    return line.substr(0, line.find("\ntool call "));
+}
+
+[[nodiscard]] Result<void> migrate_conversation_search(sqlite3 *db, SchemaVersion previous) {
+    std::string rebuild = "DROP TRIGGER conversation_insert;"
+                          "DROP TRIGGER conversation_delete;"
+                          "DROP TABLE conversation_fts;"
+                          "ALTER TABLE conversation_segments ADD COLUMN search_text TEXT NOT NULL"
+                          " DEFAULT '';";
+    if (previous.minor == 0)
+        rebuild += "ALTER TABLE conversation_segments ADD COLUMN lexical TEXT NOT NULL DEFAULT '';";
+    rebuild += kFullText;
     if (auto rebuilt = storage::exec_sql(db, rebuild.c_str()); !rebuilt) {
         return rebuilt.error();
     }
-    Statement page(db, "SELECT rowid,owner,text FROM conversation_segments WHERE rowid > ?1"
-                       " ORDER BY rowid LIMIT 64");
-    Statement store(db, "UPDATE conversation_segments SET lexical = ?1 WHERE rowid = ?2");
+    Statement page(db,
+                   "SELECT rowid,owner,document,digest FROM conversation_segments WHERE rowid > ?1"
+                   " ORDER BY rowid LIMIT 64");
+    Statement store(db,
+                    "UPDATE conversation_segments SET search_text=?1, lexical=?2 WHERE rowid=?3");
     Statement index(db, "INSERT INTO conversation_fts(rowid,owner,lexical) VALUES(?1,?2,?3)");
     if (!page.valid() || !store.valid() || !index.valid()) {
         return index_error(ErrorCode::Internal,
@@ -87,15 +130,29 @@ std::string_view column(Statement &statement, int index) {
     std::int64_t last = 0;
     for (;;) {
         // A page is read to its end before any row of it is written.
-        std::vector<std::tuple<std::int64_t, std::string, std::string>> rows;
+        std::vector<std::tuple<std::int64_t, std::string, SearchText>> rows;
         if (sqlite3_bind_int64(page.get(), 1, last) != SQLITE_OK) {
             return index_error(ErrorCode::Internal,
                                "conversation index migration could not read segments");
         }
         int step = SQLITE_OK;
         while ((step = sqlite3_step(page.get())) == SQLITE_ROW) {
+            const auto document = column(page, 2);
+            if (document.size() > 128 * 1024 ||
+                digest_string(document).to_string() != column(page, 3))
+                return index_error(ErrorCode::DataLoss,
+                                   "conversation migration found a bad digest");
+            const auto parsed = parse_json(document);
+            if (!parsed)
+                return parsed.error();
+            const auto candidate = context_candidate_from_json(parsed.value());
+            if (!candidate)
+                return candidate.error();
+            SearchText search;
+            for (const auto &turn : candidate.value().turns)
+                search.append(utterance(turn));
             rows.emplace_back(sqlite3_column_int64(page.get(), 0), std::string(column(page, 1)),
-                              std::string(column(page, 2)));
+                              std::move(search));
         }
         page.reset();
         if (step != SQLITE_DONE) {
@@ -105,18 +162,17 @@ std::string_view column(Statement &statement, int index) {
         if (rows.empty()) {
             break;
         }
-        for (const auto &[rowid, owner, text] : rows) {
-            const std::string lexical = lexical_index_text(text);
+        for (const auto &[rowid, owner, search] : rows) {
             // The update fires no trigger; only inserts and deletes have one.
-            if (!bind_text(store, 1, lexical) ||
-                sqlite3_bind_int64(store.get(), 2, rowid) != SQLITE_OK ||
+            if (!bind_text(store, 1, search.text) || !bind_text(store, 2, search.lexical) ||
+                sqlite3_bind_int64(store.get(), 3, rowid) != SQLITE_OK ||
                 sqlite3_step(store.get()) != SQLITE_DONE) {
                 return index_error(ErrorCode::Internal,
                                    "conversation index migration could not store a segment");
             }
             store.reset();
             if (sqlite3_bind_int64(index.get(), 1, rowid) != SQLITE_OK ||
-                !bind_text(index, 2, owner) || !bind_text(index, 3, lexical) ||
+                !bind_text(index, 2, owner) || !bind_text(index, 3, search.lexical) ||
                 sqlite3_step(index.get()) != SQLITE_DONE) {
                 return index_error(ErrorCode::Internal,
                                    "conversation index migration could not index a segment");
@@ -194,6 +250,7 @@ Result<void> remove_segments(sqlite3 *db, const std::string &owner) {
 
 struct SegmentRow final {
     ContextCandidate candidate;
+    SearchText search;
     std::string document;
     std::string digest;
 };
@@ -297,6 +354,8 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
         row.candidate.turns = std::move(asset.entries);
         row.candidate.source_events = std::move(asset.source_events);
         row.candidate.through_event_sequence = asset.through_event_sequence;
+        for (std::size_t i = 0; i < row.candidate.turns.size(); ++i)
+            row.search.append(utterance(row.candidate.turns[i], &entries[segment.first_entry + i]));
         row.document = canonical_json_string(context_candidate_to_json(row.candidate));
         // A source entry with invalid UTF-8 cannot be encoded; reject it
         // before publication rather than store unreadable text.
@@ -345,19 +404,17 @@ Result<SessionSequence> publish(sqlite3 *db, const SqliteConversationIndexOption
     if (rows.value() > options.max_segments - projection.segments.size())
         return index_error(ErrorCode::ResourceExhausted, "conversation index capacity reached");
 
-    Statement insert(db, "INSERT INTO conversation_segments(id,owner,through,text,lexical,document,"
-                         "digest) VALUES(?1,?2,?3,?4,?5,?6,?7)");
+    Statement insert(db, "INSERT INTO conversation_segments(id,owner,through,text,search_text,"
+                         "lexical,document,digest) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)");
     for (const auto &row : projection.segments) {
-        // The triggers index this text, not the segment itself (DEC-147).
-        const std::string lexical = lexical_index_text(row.candidate.text);
         if (!insert.valid() || !bind_text(insert, 1, row.candidate.asset_id.to_string()) ||
             !bind_text(insert, 2, owner) ||
             sqlite3_bind_int64(insert.get(), 3,
                                static_cast<std::int64_t>(row.candidate.through_event_sequence)) !=
                 SQLITE_OK ||
-            !bind_text(insert, 4, row.candidate.text) || !bind_text(insert, 5, lexical) ||
-            !bind_text(insert, 6, row.document) || !bind_text(insert, 7, row.digest) ||
-            sqlite3_step(insert.get()) != SQLITE_DONE)
+            !bind_text(insert, 4, row.candidate.text) || !bind_text(insert, 5, row.search.text) ||
+            !bind_text(insert, 6, row.search.lexical) || !bind_text(insert, 7, row.document) ||
+            !bind_text(insert, 8, row.digest) || sqlite3_step(insert.get()) != SQLITE_DONE)
             return index_error(ErrorCode::Internal, "conversation segment insert failed");
         insert.reset();
     }
@@ -401,6 +458,45 @@ void note_deadline(ContextRetrievalResult &result) {
     result.quality.note = "conversation retrieval deadline reached";
 }
 
+// The MATCH expression starts with the owner phrase, followed by the
+// searchable terms in bind order. Report the latter using FTS5's own hits.
+void conversation_fts_matches(const Fts5ExtensionApi *api, Fts5Context *fts,
+                              sqlite3_context *result, int, sqlite3_value **) noexcept {
+    std::array<char, storage::kMaxFtsMatchUnits> flags;
+    const int terms = api->xPhraseCount(fts) - 1;
+    if (terms < 1 || terms > static_cast<int>(flags.size())) {
+        sqlite3_result_error_code(result, SQLITE_CORRUPT);
+        return;
+    }
+    for (int phrase = 1; phrase <= terms; ++phrase) {
+        Fts5PhraseIter iter{};
+        int column_index = -1;
+        const int status = api->xPhraseFirstColumn(fts, phrase, &iter, &column_index);
+        if (status != SQLITE_OK) {
+            sqlite3_result_error_code(result, status);
+            return;
+        }
+        flags[static_cast<std::size_t>(phrase - 1)] = column_index == 1 ? '1' : '0';
+    }
+    sqlite3_result_text(result, flags.data(), terms, storage::transient_copy());
+}
+
+Result<void> register_conversation_fts_matches(sqlite3 *db) {
+    fts5_api *api = nullptr;
+    Statement lookup(db, "SELECT fts5(?1)");
+    if (!lookup.valid() ||
+        // SQLite's typed pointer argument writes the API pointer through this slot.
+        // NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion)
+        sqlite3_bind_pointer(lookup.get(), 1, static_cast<void *>(&api), "fts5_api_ptr", nullptr) !=
+            SQLITE_OK ||
+        sqlite3_step(lookup.get()) != SQLITE_ROW || !api ||
+        api->xCreateFunction(api, "mira_conversation_matches", nullptr, conversation_fts_matches,
+                             nullptr) != SQLITE_OK)
+        return index_error(ErrorCode::Internal,
+                           "conversation match evidence could not be registered");
+    return {};
+}
+
 Result<ContextRetrievalResult> search(sqlite3 *db, const ContextQuery &query,
                                       const RetrievalBudget &budget,
                                       std::chrono::steady_clock::time_point deadline) {
@@ -433,7 +529,7 @@ Result<ContextRetrievalResult> search(sqlite3 *db, const ContextQuery &query,
     if (blocked.value())
         return result;
 
-    const auto match = storage::fts_match_expression(query.text);
+    const auto match = storage::fts_match_expression(query.text, true);
     if ((query.query_embedding && match.expression.empty() && query.exact_terms.empty()) ||
         (!query.text.empty() && match.expression.empty()))
         return result;
@@ -442,15 +538,15 @@ Result<ContextRetrievalResult> search(sqlite3 *db, const ContextQuery &query,
     // relevance. Without one the order stays newest-first.
     const bool lexical = !match.expression.empty();
     std::string sql = "SELECT s.document,s.digest,s.id,s.through,s.text,";
-    sql += lexical ? "rank" : "0.0";
+    sql += lexical ? "rank,mira_conversation_matches(conversation_fts)" : "0.0,NULL";
     sql += " FROM conversation_segments s";
     if (lexical)
         sql += " JOIN conversation_fts ON conversation_fts.rowid=s.rowid";
     sql += " WHERE s.owner=?";
     if (lexical)
-        sql += " AND conversation_fts MATCH ?";
+        sql += " AND conversation_fts MATCH ? AND rank MATCH 'bm25(0.0,1.0)'";
     for (std::size_t i = 0; i < query.exact_terms.size(); ++i)
-        sql += " AND instr(lower(s.text),lower(?))>0";
+        sql += " AND instr(lower(s.search_text),lower(?))>0";
     sql += lexical ? " ORDER BY rank,s.through DESC,s.id LIMIT ?"
                    : " ORDER BY s.through DESC,s.id LIMIT ?";
     Statement rows(db, sql.c_str());
@@ -505,7 +601,16 @@ Result<ContextRetrievalResult> search(sqlite3 *db, const ContextQuery &query,
         if (lexical) {
             // The same mapping as the memory store's lexical leg: 0 for a match
             // the index gives no weight, towards 1 as the match strengthens.
-            const double magnitude = std::max(0.0, -sqlite3_column_double(rows.get(), 5));
+            const double rank = sqlite3_column_double(rows.get(), 5);
+            const auto hits = column(rows, 6);
+            if (hits.size() != match.terms.size())
+                return index_error(ErrorCode::DataLoss,
+                                   "conversation match evidence is incomplete");
+            for (std::size_t i = 0; i < hits.size(); ++i)
+                if (hits[i] == '1')
+                    candidate.lexical_matches.push_back(match.terms[i]);
+            candidate.lexical_bm25 = rank;
+            const double magnitude = std::max(0.0, -rank);
             candidate.lexical_score = magnitude / (1.0 + magnitude);
         }
         candidate.score = candidate.lexical_score + (candidate.exact_hit ? 1.0 : 0.0);
@@ -565,12 +670,7 @@ SqliteConversationIndex::open(kairo::Executor &executor, SqliteConversationIndex
     const std::string ddl = std::string(kTables) + kFullText;
     auto opened = storage::open_reference_store(
         db_options, {"conversation-index", kConversationIndexSchema, ddl.c_str(), index_error,
-                     [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
-                         if (previous.minor < 1) {
-                             return migrate_conversation_schema_1_0_to_1_1(db);
-                         }
-                         return {};
-                     }});
+                     migrate_conversation_search});
     if (!opened)
         return opened.error();
     if (opened.value().diagnostics.read_only)
@@ -578,6 +678,8 @@ SqliteConversationIndex::open(kairo::Executor &executor, SqliteConversationIndex
     if (auto secure = storage::exec_sql(opened.value().database.get(), "PRAGMA secure_delete=ON;");
         !secure)
         return secure.error();
+    if (auto matches = register_conversation_fts_matches(opened.value().database.get()); !matches)
+        return matches.error();
     auto impl =
         std::make_unique<Impl>(executor, std::move(opened.value().database), std::move(options));
     return std::unique_ptr<SqliteConversationIndex>(new SqliteConversationIndex(std::move(impl)));
