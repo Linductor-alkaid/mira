@@ -1554,7 +1554,7 @@ class SqliteMemoryStore::Impl final {
         if (request.claim_key.has_value()) {
             const std::string wanted = memory_normalize_claim_key(*request.claim_key);
             std::erase_if(candidates, [&wanted](const Row &row) {
-                return memory_claim_key(row.statement).key != wanted;
+                return memory_claim_key(row.decoded).key != wanted;
             });
         }
 

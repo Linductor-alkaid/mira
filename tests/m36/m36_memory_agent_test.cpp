@@ -79,6 +79,7 @@ int terminal_event_recording_uses_existing_write_and_approval_gates() {
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 2);
     MIRA_CHECK(result.value().consolidation.pending_approval.empty());
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::RejectedInvalid) == 1);
+    MIRA_CHECK(result.value().consolidation.entries.back().reason_code == "kind-policy");
     auto snapshot = fixture.service->context_supplier()(memory_request(binding.work),
                                                         memory_context(binding.work));
     MIRA_CHECK(!snapshot);
@@ -88,6 +89,92 @@ int terminal_event_recording_uses_existing_write_and_approval_gates() {
     auto recalled = fixture.memory->query(query);
     MIRA_CHECK(recalled && recalled.value().records.size() == 1);
     MIRA_CHECK(recalled.value().records.front().verification == MemoryVerification::Verified);
+    return 0;
+}
+
+int session_facts_keep_their_kind_and_merge_evidence() {
+    MemoryAgentFixture fixture;
+    MemoryAgentConfig config;
+    config.consolidation.allow_unverified_session_facts = true;
+    config.recall_groups = {{{MemoryKind::EnvironmentFact}, 8, 4096},
+                            {{MemoryKind::Preference}, 8, 4096}};
+    fixture.start(
+        [](const MemoryAgentInput &input, const OperationContext &) -> Result<MemoryAgentProposal> {
+            MemoryAgentProposal proposal;
+            if (input.mode == MemoryAgentMode::Record) {
+                proposal.memories = {
+                    {MemoryKind::EnvironmentFact,
+                     {"The office uses Atlas Wi-Fi", {0}},
+                     MemoryClaim{"office.network_name", "Atlas"}},
+                    {MemoryKind::EnvironmentFact,
+                     {"Atlas is the office network", {1}},
+                     MemoryClaim{"Office.network_name", "atlas"}},
+                    {MemoryKind::EnvironmentFact,
+                     {"The office network is Nova", {1}},
+                     MemoryClaim{"office.network_name", "Nova"}},
+                    {MemoryKind::Preference,
+                     {"Prefer quiet office notifications\xE3\x80\x82", {0}}},
+                    {MemoryKind::Preference, {"Prefer quiet office notifications", {1}}},
+                };
+            }
+            return proposal;
+        },
+        config);
+    const auto binding = fixture.binding();
+    MIRA_CHECK(fixture.service->bind(binding));
+    for (const auto *text : {"Atlas office network", "Atlas or Nova office network"})
+        MIRA_CHECK(fixture.events->append({EventId::generate(),
+                                           fixture.runtime,
+                                           binding.work.session_id,
+                                           binding.work.task_id,
+                                           {"user_observation", text}}));
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    request.mode = MemoryAgentMode::Record;
+    request.write_scope = binding.scopes.front();
+    const auto record = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(record && record.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &recorded = record.value().result.get();
+    MIRA_CHECK(recorded && recorded.value().consolidation.entries.size() == 5);
+    const auto &entries = recorded.value().consolidation.entries;
+    MIRA_CHECK(entries[1].reason_code == "evidence-appended" &&
+               entries[2].reason_code == "alternative-preserved" &&
+               entries[4].reason_code == "evidence-appended");
+
+    MemoryQuery query;
+    query.scopes = binding.scopes;
+    query.claim_key = "office.network_name";
+    const auto facts = fixture.memory->query(query);
+    MIRA_CHECK(facts && facts.value().records.size() == 2);
+    for (const auto &fact : facts.value().records) {
+        MIRA_CHECK(fact.kind == MemoryKind::EnvironmentFact &&
+                   fact.verification == MemoryVerification::Unverified);
+        if (memory_claim_key(fact).value == "atlas")
+            MIRA_CHECK(fact.provenance.size() == 2 && !fact.alternative_of);
+        else
+            MIRA_CHECK(memory_claim_key(fact).value == "nova" && fact.alternative_of);
+    }
+    query.claim_key = "prefer quiet office notifications";
+    const auto preferences = fixture.memory->query(query);
+    MIRA_CHECK(preferences && preferences.value().records.size() == 1 &&
+               preferences.value().records.front().provenance.size() == 2);
+
+    request.mode = MemoryAgentMode::Recall;
+    request.write_scope.reset();
+    request.query = "office";
+    const auto recall = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(recall && recall.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &recalled = recall.value().result.get();
+    MIRA_CHECK(recalled && recalled.value().candidates.size() == 2);
+    const auto &fact_block =
+        std::get<TextPart>(recalled.value().candidates[0].content.front()).text;
+    const auto &preference_block =
+        std::get<TextPart>(recalled.value().candidates[1].content.front()).text;
+    MIRA_CHECK(fact_block.find("Atlas Wi-Fi") != std::string::npos &&
+               fact_block.find("[unverified]") != std::string::npos &&
+               fact_block.find("quiet office notifications") == std::string::npos);
+    MIRA_CHECK(preference_block.find("quiet office notifications") != std::string::npos &&
+               preference_block.find("Atlas") == std::string::npos);
     return 0;
 }
 
@@ -351,6 +438,8 @@ int main() {
     if (recall_renders_one_framed_block_and_dedupes_expansions())
         return 1;
     if (terminal_event_recording_uses_existing_write_and_approval_gates())
+        return 1;
+    if (session_facts_keep_their_kind_and_merge_evidence())
         return 1;
     return compression_requires_real_citations_and_matching_protocol_prefix();
 }

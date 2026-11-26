@@ -67,7 +67,8 @@ int catalog_activation_and_rollback() {
 
 int conversation_uses_persona_and_preserves_role_boundaries() {
     ConversationFixture fixture;
-    fixture.use_provider({text_response("answer")});
+    fixture.use_provider(
+        {text_response("answer"), text_response("second"), text_response("third")});
     fixture.gateway_->set_event_store(fixture.events_, fixture.runtime_, fixture.spec_.session_id);
     AgentPersonaCatalog catalog;
     const AgentPersonaKey key{TenantId::generate(), Id128::generate()};
@@ -137,6 +138,28 @@ int conversation_uses_persona_and_preserves_role_boundaries() {
                       std::string::npos;
     }
     MIRA_CHECK(audited);
+
+    for (const auto mode : {ConversationLimitMode::Finite, ConversationLimitMode::Continuous}) {
+        ConversationLoopConfig config;
+        config.limit_mode = mode;
+        auto default_loop = fixture.make_loop(config, false);
+        const auto default_result = default_loop.run(fixture.spec_, context);
+        MIRA_CHECK(default_result &&
+                   default_result.value().outcome == ConversationOutcome::Answered);
+    }
+    const auto all = fixture.provider_->requests();
+    MIRA_CHECK(all.size() == 3);
+    for (const auto index : {1U, 2U}) {
+        const auto &items = all[index].input;
+        MIRA_CHECK(items.front().role == ModelRole::System);
+        MIRA_CHECK(std::count_if(items.begin(), items.end(), [](const auto &item) {
+                       return item.role == ModelRole::System;
+                   }) == 1);
+        MIRA_CHECK(std::get<TextPart>(items.front().content.front()).text ==
+                   "Answer with the configured persona.");
+    }
+    MIRA_CHECK(all[1].prompt_provenance.system_template_digest ==
+               all[2].prompt_provenance.system_template_digest);
     return 0;
 }
 

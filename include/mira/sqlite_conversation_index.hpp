@@ -38,6 +38,8 @@ class SqliteConversationIndex final : public IConversationContextIndex {
     SqliteConversationIndex(const SqliteConversationIndex &) = delete;
     SqliteConversationIndex &operator=(const SqliteConversationIndex &) = delete;
 
+    // context.session must identify the authorized target session. A missing
+    // binding is InvalidArgument; a different binding is PermissionDenied.
     [[nodiscard]] Result<SessionSequence> rebuild(const TenantId &tenant, SessionId session,
                                                   const IEventStore &source,
                                                   const OperationContext &context);

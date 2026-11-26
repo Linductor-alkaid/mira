@@ -292,7 +292,13 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         }
 
         // 1. Forbidden content never persists.
-        if (context_text::carries_marker(proposed.statement, policy_.forbidden_markers)) {
+        const auto carries_marker = [&](const std::vector<std::string> &markers) {
+            return context_text::carries_marker(proposed.statement, markers) ||
+                   (proposed.claim &&
+                    (context_text::carries_marker(proposed.claim->subject, markers) ||
+                     context_text::carries_marker(proposed.claim->value, markers)));
+        };
+        if (carries_marker(policy_.forbidden_markers)) {
             entry.disposition = CandidateDisposition::RejectedForbidden;
             entry.reason_code = "forbidden-content-marker";
             report.entries.push_back(std::move(entry));
@@ -307,8 +313,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             report.entries.push_back(std::move(entry));
             continue;
         }
-        if ((candidate.model_assisted || immutable) &&
-            context_text::carries_marker(proposed.statement, policy_.injection_markers)) {
+        if ((candidate.model_assisted || immutable) && carries_marker(policy_.injection_markers)) {
             entry.disposition = CandidateDisposition::RejectedInjection;
             entry.reason_code = "instruction-shaped-model-text";
             report.entries.push_back(std::move(entry));
@@ -330,7 +335,9 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         // trusted-import exemption from per-kind verification/scope floors.
         if (candidate.model_assisted && !policy_.allow_model_import_exemption)
             policy_record.source_namespace.reset();
-        if (const auto kind_policy = check_memory_kind_policy(policy_record); !kind_policy) {
+        if (const auto kind_policy =
+                check_memory_kind_policy(policy_record, policy_.allow_unverified_session_facts);
+            !kind_policy) {
             entry.disposition = CandidateDisposition::RejectedInvalid;
             entry.reason_code = "kind-policy";
             report.entries.push_back(std::move(entry));
@@ -344,7 +351,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         // accumulates on duplicates, conflicting views coexist as preserved
         // alternatives, and only era succession replaces the authoritative
         // claim (design Context/Memory §13.5).
-        const auto claim = memory_claim_key(proposed.statement);
+        const auto claim = memory_claim_key(proposed);
         MemoryQuery conflict_query;
         conflict_query.scopes = {scope};
         conflict_query.kinds = std::vector<MemoryKind>{proposed.kind};
@@ -361,16 +368,18 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                 continue;
             }
             for (const auto &record : found.value().records) {
-                if (record.status != MemoryStatus::Active) {
+                if (record.status != MemoryStatus::Active || record.scope != scope ||
+                    record.kind != proposed.kind) {
                     continue;
                 }
                 // The store narrows the candidates by claim key; the Core
                 // verifies it, because a backend that ignores the filter
                 // must not turn an unrelated record into a conflict.
-                if (memory_claim_key(record.statement).key != claim.key) {
+                const auto incumbent_claim = memory_claim_key(record);
+                if (incumbent_claim.key != claim.key) {
                     continue;
                 }
-                if (memory_same_claim(record.statement, proposed.statement)) {
+                if (incumbent_claim.value == claim.value) {
                     duplicates.push_back(record);
                 } else {
                     alternatives.push_back(record);
@@ -465,6 +474,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                 mutation.id = entry.mutation;
                 mutation.scope = scope;
                 mutation.type = MemoryMutationType::AppendEvidence;
+                mutation.allow_unverified_session_facts = policy_.allow_unverified_session_facts;
                 mutation.target = conflict->id;
                 mutation.expected_version = conflict->version;
                 mutation.proposed = *conflict;
@@ -562,6 +572,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
             mutation.id = entry.mutation;
             mutation.scope = scope;
             mutation.proposed = proposed;
+            mutation.allow_unverified_session_facts = policy_.allow_unverified_session_facts;
             mutation.evidence =
                 candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
             mutation.reason = candidate.reason;
@@ -595,6 +606,7 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
         mutation.id = entry.mutation;
         mutation.scope = scope;
         mutation.proposed = proposed;
+        mutation.allow_unverified_session_facts = policy_.allow_unverified_session_facts;
         mutation.evidence = candidate.evidence.empty() ? proposed.provenance : candidate.evidence;
         mutation.reason = candidate.reason;
         if (preserve_incumbent.has_value()) {

@@ -138,10 +138,30 @@ out-of-service mutation 必须先 invalidate_scope；ArtifactStore 不能对未�
 没有强杀语义，资源须保留并重试。服务不负责启动/关闭 Executor，也不自动恢复旧模型
 请求、worker 或副作用。max_works/max_jobs/max_projection_artifacts 达限均明确拒绝。
 
+宿主交给 `ModelContextSupplier` 的每个 `ContextItem` 使用请求内唯一的 ID。源 `asset_id`
+可标识同一资产的多条片段，拆分时按资产及片段位置派生各自的 `ContextItemId`。准入错误
+附带从零开始的候选序号和拒绝原因，便于在宿主原始候选数组中定位。
+
 ## 模型候选策略与兼容性
 
-make_model_memory_agent 创建独立无工具 ConversationLoop，每次独占 provider，一个
-请求上限、合作取消和 JSON 提案校验。它只管理资料，不拥有设备或写库工具。
+`make_model_memory_agent` 以独立任务身份经 Gateway 发起单次无工具请求。Recall、Record
+和 Compress 使用各自的 strict JSON schema，所选模型 profile 需要声明该能力。Record 按
+当前事件页的局部序号引用来源，未知 kind 和无效引用的候选逐项丢弃，结果和诊断报告数量。
+
+Record 提议可带 `subject` 和 `value`。前者标识陈述所指的主体和属性，后者是该属性的
+取值。内置模型需要为这两个字段各给出字符串，缺少稳定身份时两个字段都留空。宿主自定义
+处理器可通过 `MemoryAgentMemory::claim` 提供同样的信息。同一作用域和类别中的同值陈述
+合并证据，原句继续用于显示和词法召回。
+
+宿主可通过 `MemoryAgentConfig::consolidation.allow_unverified_session_facts` 启用
+有事件出处的会话 `EnvironmentFact` 和 `ApplicationFact` 候选。写入保持 `Unverified`，
+候选仍经过既有审批策略。默认验证下限拒绝此类候选，报告中的原因是 `kind-policy`。
+召回文本标注未验证事实。事实和偏好可配置不同的召回组。见
+[DEC-170](../decisions/DEC-170-session-fact-admission-and-claim-identity.md)。
+
+省略模型处理器时，Record 继续使用确定性规则。宿主可通过结果和完成诊断中的
+`deterministic_record_only` 识别这一模式。它覆盖已有确定性事件规则，自然语言抽取可由
+内置或宿主自定义的处理器提供。见 [DEC-169](../decisions/DEC-169-memory-agent-structured-proposal-output.md)。
 
 MemoryAgentService 强制关闭 allow_model_import_exemption：即便提案携带 namespace，
 也先降到 Unverified 并检查 kind floor/scope。旧 ConsolidationPolicy 调用默认维持

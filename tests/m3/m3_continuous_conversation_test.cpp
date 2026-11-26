@@ -78,6 +78,11 @@ int long_run_compacts_owned_history_and_retains_recent_records() {
     MIRA_CHECK(fixture.registry_->retained_dispatch_count() == 0);
     const auto requests = fixture.provider_->requests();
     MIRA_CHECK(requests.size() == 1025);
+    const auto &system = requests.front().input.front();
+    const auto &instructions = std::get<TextPart>(system.content.front()).text;
+    MIRA_CHECK(system.provenance.source == "mira.conversation-loop.system.continuous.v1");
+    MIRA_CHECK(instructions.find("there is work you can do") != std::string::npos &&
+               instructions.find("before repeating it") != std::string::npos);
     for (const auto &request : requests) {
         MIRA_CHECK(request.task_id == fixture.spec_.task_id && request.task_epoch == 1);
         MIRA_CHECK(request.budget.scope == ModelBudgetScope::Request);
@@ -432,6 +437,44 @@ int invalid_config_and_finite_envelope_overflow_fail_before_dispatch() {
     }
     return 0;
 }
+
+int host_tool_choice_recovers_and_releases_on_progress() {
+    ConversationFixture fixture;
+    fixture.use_provider(
+        {text_response("not delivered"),
+         tool_call_response(fixture.echo_spec(), R"({"message":"delivered"})", "say"),
+         text_response("finished")});
+    auto loop = fixture.make_loop(continuous_config());
+    loop.set_tool_choice_selector([](const ModelRequest &request, const OperationContext &) {
+        for (const auto &item : request.input)
+            for (const auto &part : item.content)
+                if (std::holds_alternative<ToolResultPart>(part))
+                    return ToolChoice{};
+        return ToolChoice{ToolChoiceMode::Required, {}};
+    });
+    const auto result = loop.run(fixture.spec_, conversation_context());
+    MIRA_CHECK(result && result.value().outcome == ConversationOutcome::Answered);
+    MIRA_CHECK(result.value().answer == "finished" && result.value().tool_executions == 1 &&
+               result.value().recoveries == 1);
+    const auto requests = fixture.provider_->requests();
+    MIRA_CHECK(requests.size() == 3 && requests[0].tool_choice.mode == ToolChoiceMode::Required &&
+               requests[1].tool_choice.mode == ToolChoiceMode::Required &&
+               requests[2].tool_choice.mode == ToolChoiceMode::Auto);
+
+    for (const auto mode : {ToolChoiceMode::Required, ToolChoiceMode::Named}) {
+        ConversationFixture invalid;
+        invalid.use_provider({text_response("never called")});
+        auto rejected = invalid.make_loop(continuous_config(), mode == ToolChoiceMode::Named);
+        rejected.set_tool_choice_selector([mode](const ModelRequest &, const OperationContext &) {
+            return ToolChoice{mode, mode == ToolChoiceMode::Named ? ToolId::generate() : ToolId{}};
+        });
+        const auto refused = rejected.run(invalid.spec_, conversation_context());
+        MIRA_CHECK(refused && refused.value().outcome == ConversationOutcome::Failed &&
+                   refused.value().safe_summary.find("tool choice") != std::string::npos);
+        MIRA_CHECK(invalid.provider_->requests().empty());
+    }
+    return 0;
+}
 } // namespace
 
 int main() {
@@ -445,7 +488,8 @@ int main() {
                             cancellation_between_tools_and_executor_shutdown,
                             recovery_output_limit_and_tool_errors_remain_bounded,
                             successful_tool_round_resets_failure_and_continuation_episodes,
-                            invalid_config_and_finite_envelope_overflow_fail_before_dispatch}) {
+                            invalid_config_and_finite_envelope_overflow_fail_before_dispatch,
+                            host_tool_choice_recovers_and_releases_on_progress}) {
         if (const int code = test(); code != 0)
             return code;
     }

@@ -121,6 +121,14 @@ struct MemoryClaimKey final {
     bool keyed = false;
 };
 
+struct MemoryClaim final {
+    // Subject includes the entity and the property being asserted.
+    std::string subject;
+    std::string value;
+
+    [[nodiscard]] bool valid() const;
+};
+
 // Normalizes a claim subject: trims the ends, collapses internal whitespace
 // runs to a single space and folds ASCII case. The normalization is
 // idempotent, so a backend may apply it to a key it received.
@@ -237,6 +245,7 @@ struct MemoryRecord final {
     std::optional<SocialAttribute> social_attribute;
     std::optional<SocialRelationship> social_relationship;
     std::optional<WorldProperty> world_property;
+    std::optional<MemoryClaim> claim;
 
     [[nodiscard]] Result<void> validate() const;
 
@@ -248,7 +257,10 @@ struct MemoryRecord final {
 // scope allowlist (design Context/Memory §6.2). A record that carries a
 // source namespace is governed by the import contract instead (design
 // Context/Memory §19), so the gate does not apply to it.
-[[nodiscard]] Result<void> check_memory_kind_policy(const MemoryRecord &record);
+[[nodiscard]] Result<void> check_memory_kind_policy(const MemoryRecord &record,
+                                                    bool allow_unverified_session_facts = false);
+
+[[nodiscard]] MemoryClaimKey memory_claim_key(const MemoryRecord &record);
 
 // Default expiry of a claim of this kind recorded at `recorded_at`.
 // Nullopt when the kind carries no default lifetime.
@@ -293,6 +305,7 @@ struct MemoryMutation final {
     MemoryRecord proposed;
     std::vector<EventId> evidence;
     MutationReasonCode reason = MutationReasonCode::VerifiedEvent;
+    bool allow_unverified_session_facts = false; // Trusted host write policy (DEC-170).
 
     [[nodiscard]] Result<void> validate() const;
 };

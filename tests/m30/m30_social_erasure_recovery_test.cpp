@@ -5,6 +5,8 @@
 #include <mira/sqlite_social_directory.hpp>
 #include <sqlite3.h>
 
+#include <thread>
+
 namespace {
 using namespace mira;
 using namespace mira::testing;
@@ -118,6 +120,20 @@ int object_erasure_before_knowledge_completion() {
     MIRA_CHECK(recall && recall.value() && recall.value()->binding.object == target);
     MIRA_CHECK(recall.value()->assertions.records.size() == 1 &&
                recall.value()->assertions.records.front().id == profile.value().id);
+    fixture.memory->set_worker_paused(true);
+    auto in_flight = fixture.executor.submit_auto(
+        [&] { return directory->recall_account_attribute(env, other_source, "team"); });
+    const auto wait_until = std::chrono::steady_clock::now() + 2s;
+    while (fixture.memory->pending_requests() == 0 && std::chrono::steady_clock::now() < wait_until)
+        std::this_thread::yield();
+    const bool waiting = fixture.memory->pending_requests() != 0;
+    const auto renamed = directory->activate(target, {2, {"Target", "New alias"}});
+    fixture.memory->set_worker_paused(false);
+    const auto refreshed = in_flight.get();
+    MIRA_CHECK(waiting && renamed && refreshed && refreshed.value());
+    MIRA_CHECK(refreshed.value()->binding.object_revision == 2 &&
+               refreshed.value()->assertions.records.size() == 1 &&
+               refreshed.value()->assertions.records.front().id == profile.value().id);
     MIRA_CHECK(!directory->recall_account_attribute(env, other_source, "", 0));
     const SocialEnvironmentKey foreign{TenantId::generate(), env.environment};
     MIRA_CHECK(!directory->recall_account_attribute(foreign, other_source, "team").value());

@@ -1,5 +1,8 @@
 # Mira 实施总计划
 
+2026-11-26：mira-bridge 的连续会话与 M30 宿主问题按原反馈编号进入
+[宿主反馈维护计划](maintenance-2026-11-26-mira-bridge-feedback.md)。
+
 2026-11-25：[M30 长期记忆接入](m30-long-term-memory-integration.md)处于 In Progress。
 已交付增量、剩余工作和汇总范围以里程碑计划为准。平台矩阵、行为门禁与历史测试结果见
 [M30 验收文档](m30-memory-acceptance.md)。

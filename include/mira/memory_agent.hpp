@@ -85,6 +85,7 @@ struct MemoryAgentNote final {
 struct MemoryAgentMemory final {
     MemoryKind kind = MemoryKind::Preference;
     MemoryAgentNote note;
+    std::optional<MemoryClaim> claim{};
 };
 struct MemoryAgentProposal final {
     // Recall: optional subset of the supplied records; empty retains all.
@@ -93,6 +94,7 @@ struct MemoryAgentProposal final {
     std::vector<std::string> queries;
     std::vector<MemoryAgentMemory> memories;
     std::vector<MemoryAgentNote> summary;
+    std::size_t rejected_record_rows = 0;
 };
 
 struct MemoryAgentInput final {
@@ -148,6 +150,8 @@ struct MemoryAgentResult final {
     ConsolidationReport consolidation;
     std::size_t compressed_items = 0;
     std::optional<ArtifactDescriptor> projection_artifact;
+    bool deterministic_record_only = false;
+    std::size_t rejected_record_rows = 0;
 };
 struct MemoryAgentHandle final {
     OperationId operation;

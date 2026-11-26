@@ -846,6 +846,19 @@ int kind_policy_bounds_the_store() {
         MIRA_CHECK(refused.error().domain_code ==
                    static_cast<std::int32_t>(MemoryDomainCode::InvalidRecord));
 
+        auto outside_session = add_mutation(unobserved);
+        outside_session.allow_unverified_session_facts = true;
+        MIRA_CHECK(!store.value()->apply(outside_session));
+        unobserved.scope = {MemoryScopeKind::Session, "session-fact", std::nullopt};
+        auto opted_in = add_mutation(unobserved);
+        MIRA_CHECK(!store.value()->apply(opted_in));
+        opted_in.allow_unverified_session_facts = true;
+        const auto round_trip = memory_mutation_from_json(memory_mutation_to_json(opted_in));
+        MIRA_CHECK(round_trip && store.value()->apply(round_trip.value()));
+        const auto session_fact = store.value()->get(unobserved.id, unobserved.scope);
+        MIRA_CHECK(session_fact && session_fact.value() &&
+                   session_fact.value()->verification == MemoryVerification::Unverified);
+
         // A kind outside its scope allowlist never lands either: a procedure
         // is agent-owned operating knowledge, not user-profile content.
         MemoryScope user_scope;

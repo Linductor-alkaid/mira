@@ -77,6 +77,8 @@ struct ConsolidationPolicy final {
     // A proposal-only owner can require approval even for HumanCorrection.
     // Duplicate no-ops remain read-only; the default preserves old callers.
     bool require_explicit_approval = false;
+    // DEC-170: admit evidence-backed Unverified EnvironmentFact/ApplicationFact in Session.
+    bool allow_unverified_session_facts = false;
 
     [[nodiscard]] Result<void> validate() const;
 };

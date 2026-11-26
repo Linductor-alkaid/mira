@@ -92,6 +92,13 @@ int durable_recall_rebuild_and_scope_checks() {
     MIRA_CHECK(index->retrieve(query_for(foreign_tenant, "cedar"), {}).value().candidates.empty());
     const auto foreign_rebuild = rebuild(fixture, *index, foreign_tenant, *fixture.events);
     MIRA_CHECK(!foreign_rebuild && foreign_rebuild.error().code == ErrorCode::PermissionDenied);
+    const auto missing = index->rebuild(work.principal.tenant_id, work.work.session_id,
+                                        *fixture.events, make_control_context());
+    MIRA_CHECK(!missing && missing.error().code == ErrorCode::InvalidArgument &&
+               missing.error().safe_message.find("context.session") != std::string::npos);
+    const auto wrong_session = index->rebuild(work.principal.tenant_id, work.work.session_id,
+                                              *fixture.events, memory_context(other.work));
+    MIRA_CHECK(!wrong_session && wrong_session.error().code == ErrorCode::PermissionDenied);
 
     query = query_for(work, "cedar");
     query.query_embedding = ContextEmbedding{{1.0F}, ModelProfileId::generate()};

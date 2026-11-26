@@ -18,6 +18,11 @@ ContextItemId item_id(const std::string &seed) {
 Error invalid(const char *message) {
     return make_context_error(ContextDomainCode::InvalidItem, message);
 }
+Error invalid_candidate(std::size_t index, std::string_view reason) {
+    return make_context_error(ContextDomainCode::InvalidItem, "context candidate " +
+                                                                  std::to_string(index) + ": " +
+                                                                  std::string(reason));
+}
 } // namespace
 
 Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
@@ -93,18 +98,30 @@ Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
     for (const auto &item : build.items)
         ids.insert(item.id);
     std::size_t bytes = 0;
-    for (const auto &candidate : snapshot.candidates) {
+    for (std::size_t i = 0; i < snapshot.candidates.size(); ++i) {
+        const auto &candidate = snapshot.candidates[i];
         const bool memory = candidate.kind == ContextItemKind::RetrievedMemory &&
                             candidate.authority == ContextAuthority::RetrievedMemory;
         const bool summary = candidate.kind == ContextItemKind::CheckpointSummary &&
                              candidate.authority == ContextAuthority::UntrustedExternalData;
-        if ((!memory && !summary) || candidate.pinned || candidate.replaceable_by_reference ||
-            candidate.payload || !ids.insert(candidate.id).second || !candidate.validate())
-            return invalid("context supplier returned an elevated or invalid candidate");
+        if (!memory && !summary)
+            return invalid_candidate(i, "invalid kind or authority");
+        if (candidate.pinned)
+            return invalid_candidate(i, "pinned item");
+        if (candidate.replaceable_by_reference)
+            return invalid_candidate(i, "replaceable reference");
+        if (candidate.payload)
+            return invalid_candidate(i, "unexpected payload");
+        if (!ids.insert(candidate.id).second)
+            return invalid_candidate(i, "duplicate id");
+        if (!candidate.validate())
+            return invalid_candidate(i, "invalid item");
         for (const auto &part : candidate.content) {
             const auto *text = std::get_if<TextPart>(&part);
-            if (!text || text->text.size() > config.max_candidate_bytes - bytes)
-                return invalid("context candidates exceed text capacity");
+            if (!text)
+                return invalid_candidate(i, "expected text content");
+            if (text->text.size() > config.max_candidate_bytes - bytes)
+                return invalid_candidate(i, "text capacity exceeded");
             bytes += text->text.size();
         }
         build.items.push_back(candidate);

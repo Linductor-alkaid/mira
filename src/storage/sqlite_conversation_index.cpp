@@ -586,9 +586,15 @@ SqliteConversationIndex::open(kairo::Executor &executor, SqliteConversationIndex
 Result<SessionSequence> SqliteConversationIndex::rebuild(const TenantId &tenant, SessionId session,
                                                          const IEventStore &source,
                                                          const OperationContext &context) {
-    if (tenant.is_nil() || session.is_nil() || context.session != session)
+    if (context.session.is_nil())
+        return index_error(ErrorCode::InvalidArgument,
+                           "conversation rebuild requires context.session");
+    if (tenant.is_nil() || session.is_nil())
+        return index_error(ErrorCode::InvalidArgument,
+                           "conversation rebuild requires tenant and session");
+    if (context.session != session)
         return index_error(ErrorCode::PermissionDenied,
-                           "conversation rebuild requires a bound session");
+                           "conversation rebuild session binding disagrees");
     const auto epoch = impl_->privacy_epoch.load();
     if ((epoch & 1U) != 0U)
         return index_error(ErrorCode::Unavailable, "conversation index erasure fence is active");

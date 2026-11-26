@@ -278,7 +278,30 @@ MemoryClaimKey memory_claim_key(std::string_view statement) {
     MemoryClaimKey claim;
     const auto separator = statement.find('=');
     if (separator == std::string_view::npos) {
-        // No value: the statement is its own subject.
+        constexpr std::string_view ascii_punctuation = ".!?,;:";
+        // UTF-8 ideographic stops and full-width equivalents.
+        constexpr std::string_view punctuation[]{"\xE3\x80\x82", "\xE3\x80\x81", "\xEF\xBC\x81",
+                                                 "\xEF\xBC\x9F", "\xEF\xBC\x8C", "\xEF\xBC\x9B",
+                                                 "\xEF\xBC\x9A"};
+        while (!statement.empty()) {
+            if (is_claim_space(statement.front()) ||
+                ascii_punctuation.find(statement.front()) != std::string_view::npos)
+                statement.remove_prefix(1);
+            else if (is_claim_space(statement.back()) ||
+                     ascii_punctuation.find(statement.back()) != std::string_view::npos)
+                statement.remove_suffix(1);
+            else {
+                const auto mark = std::ranges::find_if(punctuation, [&](std::string_view token) {
+                    return statement.starts_with(token) || statement.ends_with(token);
+                });
+                if (mark == std::end(punctuation))
+                    break;
+                if (statement.starts_with(*mark))
+                    statement.remove_prefix(mark->size());
+                else
+                    statement.remove_suffix(mark->size());
+            }
+        }
         claim.key = memory_normalize_claim_key(statement);
         return claim;
     }
@@ -286,6 +309,19 @@ MemoryClaimKey memory_claim_key(std::string_view statement) {
     claim.value = memory_normalize_claim_key(statement.substr(separator + 1));
     claim.keyed = true;
     return claim;
+}
+
+MemoryClaimKey memory_claim_key(const MemoryRecord &record) {
+    if (!record.claim)
+        return memory_claim_key(record.statement);
+    return {memory_normalize_claim_key(record.claim->subject),
+            memory_normalize_claim_key(record.claim->value), true};
+}
+
+bool MemoryClaim::valid() const {
+    return subject.size() <= 512 && value.size() <= 1024 &&
+           !memory_normalize_claim_key(subject).empty() &&
+           !memory_normalize_claim_key(value).empty();
 }
 
 bool memory_same_claim(std::string_view lhs, std::string_view rhs) {
@@ -403,7 +439,8 @@ const MemoryKindPolicy &memory_kind_policy(MemoryKind kind) {
     return table[index];
 }
 
-Result<void> check_memory_kind_policy(const MemoryRecord &record) {
+Result<void> check_memory_kind_policy(const MemoryRecord &record,
+                                      bool allow_unverified_session_facts) {
     const auto &policy = memory_kind_policy(record.kind);
     // Namespaced content carries its own authority contract: the import
     // path caps it below HumanConfirmed and its provenance is the namespace
@@ -412,8 +449,14 @@ Result<void> check_memory_kind_policy(const MemoryRecord &record) {
     if (record.source_namespace.has_value()) {
         return Result<void>{};
     }
-    if (memory_verification_rank(record.verification) <
-        memory_verification_rank(policy.min_verification)) {
+    const bool session_fact =
+        allow_unverified_session_facts && record.verification == MemoryVerification::Unverified &&
+        record.scope.kind == MemoryScopeKind::Session &&
+        (record.kind == MemoryKind::EnvironmentFact ||
+         record.kind == MemoryKind::ApplicationFact) &&
+        std::ranges::any_of(record.provenance, [](EventId event) { return !event.is_nil(); });
+    if (!session_fact && memory_verification_rank(record.verification) <
+                             memory_verification_rank(policy.min_verification)) {
         return memory_error(MemoryDomainCode::InvalidRecord,
                             "memory kind requires a higher verification level");
     }
@@ -527,6 +570,8 @@ Result<void> MemoryRecord::validate() const {
     if (statement.empty()) {
         return memory_error(MemoryDomainCode::InvalidRecord, "memory record requires a statement");
     }
+    if (claim && !claim->valid())
+        return memory_error(MemoryDomainCode::InvalidRecord, "structured memory claim is invalid");
     if (!(confidence >= 0.0F && confidence <= 1.0F) || std::isnan(confidence)) {
         return memory_error(MemoryDomainCode::InvalidRecord, "confidence must be within [0,1]");
     }
@@ -710,7 +755,7 @@ Result<void> MemoryMutation::validate() const {
     // the record as it is, so it must stay applicable to a record written
     // before the policy existed (design Context/Memory §6.2, §13.4).
     if (type != MemoryMutationType::Tombstone) {
-        const auto policy = check_memory_kind_policy(proposed);
+        const auto policy = check_memory_kind_policy(proposed, allow_unverified_session_facts);
         if (!policy) {
             return policy.error();
         }
@@ -832,6 +877,9 @@ JsonValue memory_record_to_json(const MemoryRecord &record) {
     object.emplace_back("scope", memory_scope_to_json(record.scope));
     object.emplace_back("kind", memory_kind_name(record.kind));
     object.emplace_back("statement", record.statement);
+    if (record.claim)
+        object.emplace_back("claim", JsonValue::Object{{"subject", record.claim->subject},
+                                                       {"value", record.claim->value}});
     social_profile_detail::encode_assertion(record, object);
     world_fact_detail::encode(record, object);
     if (record.evidence.has_value()) {
@@ -1024,6 +1072,15 @@ Result<MemoryRecord> memory_record_from_json(const JsonValue &json) {
         return decoded.error();
     if (auto decoded = world_fact_detail::decode(json, record); !decoded)
         return decoded.error();
+    if (const auto *claim = json.find("claim")) {
+        const auto *subject = claim->find("subject");
+        const auto *value = claim->find("value");
+        if (subject && subject->is_string() && value && value->is_string())
+            record.claim = MemoryClaim{*subject->as_string(), *value->as_string()};
+        if (!record.claim || !record.claim->valid())
+            return memory_error(MemoryDomainCode::InvalidRecord,
+                                "structured memory claim is invalid");
+    }
     return record;
 }
 
@@ -1050,6 +1107,8 @@ JsonValue memory_mutation_to_json(const MemoryMutation &mutation) {
     }
     object.emplace_back("evidence", JsonValue(std::move(evidence)));
     object.emplace_back("reason", mutation_reason_name(mutation.reason));
+    if (mutation.allow_unverified_session_facts)
+        object.emplace_back("allow_unverified_session_facts", true);
     return JsonValue(std::move(object));
 }
 
@@ -1124,6 +1183,11 @@ Result<MemoryMutation> memory_mutation_from_json(const JsonValue &json) {
         } else if (name == "retention-expiry") {
             mutation.reason = MutationReasonCode::RetentionExpiry;
         }
+    }
+    if (const auto *allow = json.find("allow_unverified_session_facts")) {
+        if (!allow->is_boolean())
+            return memory_error(MemoryDomainCode::InvalidMutation, "invalid session fact policy");
+        mutation.allow_unverified_session_facts = *allow->as_boolean();
     }
     return mutation;
 }

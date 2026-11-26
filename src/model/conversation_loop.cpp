@@ -126,6 +126,10 @@ void ConversationLoop::set_tool_selector(ToolSelector selector) {
     tool_selector_ = std::move(selector);
 }
 
+void ConversationLoop::set_tool_choice_selector(ConversationToolChoiceSelector selector) {
+    tool_choice_selector_ = std::move(selector);
+}
+
 Result<void> ModelInputSupplyOptions::validate() const {
     if (max_items == 0 || max_image_bytes == 0) {
         return conversation_error(ErrorCode::InvalidArgument, "supply bounds must be positive");
@@ -404,17 +408,28 @@ ConversationLoop::resolve_supplied_input(const AgentLoopSpec &spec) {
 Result<ModelRequest> ConversationLoop::build_request(
     const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
     const std::string &feedback, const std::vector<std::string> &user_instructions,
-    const SuppliedInput &supplied) {
+    const SuppliedInput &supplied, const OperationContext &context) {
     ModelRequest request = loop_support::begin_model_request(spec, tools_.get());
 
+    const bool continuous = config_.limit_mode == ConversationLimitMode::Continuous;
     ModelInputItem system_item;
     system_item.role = ModelRole::System;
-    system_item.provenance.source = config_.system_prompt ? config_.system_prompt->template_id
-                                                          : "mira.conversation-loop.system.v1";
+    system_item.provenance.source = continuous ? "mira.conversation-loop.system.continuous.v1"
+                                               : "mira.conversation-loop.system.v1";
+    const auto builtin_system_digest = digest_string(system_item.provenance.source);
     system_item.authority = Sensitivity::Internal;
     TextPart system_text;
     if (config_.system_prompt) {
+        system_item.provenance.source = config_.system_prompt->template_id;
         system_text.text = config_.system_prompt->text;
+    } else if (continuous) {
+        system_text.text =
+            "You are Mira, an autonomous agent. Continue working toward the user's goal while "
+            "there is work you can do. Use the exposed tools as needed and review their results "
+            "before deciding what to do next. Check whether the goal is satisfied and whether "
+            "an action has already taken effect before repeating it. A text-only response ends "
+            "the conversation. Give it when the work is complete or when a concrete blocker "
+            "prevents further progress.";
     } else {
         system_text.text =
             "You are Mira, a conversational agent. Answer the user's request directly with "
@@ -505,7 +520,7 @@ Result<ModelRequest> ConversationLoop::build_request(
     request.prompt_provenance.system_template_digest =
         config_.system_prompt ? config_.system_prompt->template_digest.value_or(
                                     digest_string(config_.system_prompt->text))
-                              : digest_string("mira.conversation-loop.system.v1");
+                              : builtin_system_digest;
     if (tool_selector_) {
         const auto available = request.tools.size();
         auto selected = loop_support::select_tools(spec, request, tool_selector_);
@@ -514,6 +529,20 @@ Result<ModelRequest> ConversationLoop::build_request(
              selected ? EventClass::State : EventClass::Diagnostic);
         if (!selected) {
             return selected.error();
+        }
+    }
+    if (tool_choice_selector_) {
+        try {
+            auto operation = context;
+            operation.operation = request.operation_id;
+            auto choice = tool_choice_selector_(request, operation);
+            if (!choice)
+                return choice.error();
+            request.tool_choice = choice.value();
+            if (auto valid = validate_model_request(request); !valid)
+                return valid.error();
+        } catch (...) {
+            return conversation_error(ErrorCode::InvalidState, "tool choice selector failed");
         }
     }
     if (config_.system_prompt) {
@@ -670,7 +699,7 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 break;
             }
         }
-        auto request = build_request(spec, *replay, feedback, user_instructions, supplied);
+        auto request = build_request(spec, *replay, feedback, user_instructions, supplied, context);
         if (!request) {
             result.outcome = ConversationOutcome::Failed;
             result.safe_summary = "request assembly failed: " + request.error().safe_message;
@@ -700,7 +729,9 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
                 break;
             continue;
         }
-        auto call = gateway_.infer(request.value(), model_context, config_.inference);
+        auto infer_options = config_.inference;
+        infer_options.replace_default_conversation_system_with_persona = !config_.system_prompt;
+        auto call = gateway_.infer(request.value(), model_context, infer_options);
         if (!call) {
             if (call.error().code == ErrorCode::Cancelled) {
                 result.outcome = ConversationOutcome::Cancelled;
@@ -747,6 +778,18 @@ Result<ConversationLoopResult> ConversationLoop::run(const AgentLoopSpec &spec,
             break;
         }
         const auto parse_outcome = outcome.parse.outcome;
+        if (loop_support::violates_tool_choice(request.value().tool_choice, outcome)) {
+            record.note = "provider did not honor the requested tool choice";
+            retain_turn(std::move(record));
+            if (can_recover()) {
+                record_recovery();
+                feedback = "Continue the task using the tool choice in the current request.";
+                continue;
+            }
+            result.outcome = ConversationOutcome::Failed;
+            result.safe_summary = "provider did not honor tool choice after recovery";
+            break;
+        }
         if (parse_outcome == DecisionParseOutcome::Refused ||
             parse_outcome == DecisionParseOutcome::ContentFiltered) {
             result.outcome = ConversationOutcome::Failed;

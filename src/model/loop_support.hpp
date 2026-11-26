@@ -14,6 +14,24 @@
 
 namespace mira::loop_support {
 
+inline bool violates_tool_choice(const ToolChoice &choice, const ModelCallOutcome &outcome) {
+    if (choice.mode == ToolChoiceMode::Auto ||
+        outcome.response.status != ModelCompletionStatus::Completed)
+        return false;
+    const bool has_call = std::ranges::any_of(outcome.response.output, [](const auto &item) {
+        return std::holds_alternative<ToolCallOutput>(item);
+    });
+    if (choice.mode == ToolChoiceMode::None)
+        return has_call;
+    if (!has_call)
+        return true;
+    return choice.mode == ToolChoiceMode::Named && outcome.tool_proposals &&
+           std::ranges::any_of(outcome.tool_proposals->proposals,
+                               [&](const ToolProposal &proposal) {
+                                   return proposal.tool_id != choice.required_tool;
+                               });
+}
+
 // Close native call/result groups without executing proposals overtaken by
 // a user correction. This is a failure receipt, never an execution receipt.
 [[nodiscard]] inline ToolExecutionRecord superseded_tool_result(const ToolProposal &proposal) {

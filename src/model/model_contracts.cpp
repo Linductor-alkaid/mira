@@ -659,6 +659,9 @@ Result<void> validate_model_request(const ModelRequest &request) {
             }
         }
     }
+    if (request.tool_choice.mode == ToolChoiceMode::Required && request.tools.empty()) {
+        return contract_error("required tool choice needs at least one exposed tool");
+    }
     if (request.tool_choice.mode == ToolChoiceMode::Named &&
         std::none_of(request.tools.begin(), request.tools.end(), [&](const ExposedToolSpec &tool) {
             return tool.tool_id == request.tool_choice.required_tool;

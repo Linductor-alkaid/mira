@@ -10,9 +10,16 @@ int real_memory_loop_runs_with_isolated_identity_and_validates_citations() {
     MemoryAgentFixture fixture;
     auto profile = std::make_shared<ModelProfile>(
         make_profile(ProtocolDialect::OpenAIResponsesV1, "https://memory.test"));
+    const auto source_id = EventId::generate();
     auto provider = std::make_shared<RecordingProvider>(
-        profile, std::vector{text_response(
-                     R"({"summary":[{"text":"volume must remain below 30","citations":[0]}]})")});
+        profile,
+        std::vector{
+            text_response(
+                R"({"summary":[{"text":"volume must remain below 30","citations":[0]}]})"),
+            text_response(R"({"memories":[{"kind":"preference","text":"Prefer a brief reply",
+                             "subject":"tone","value":"brief","citations":[0]},
+                             {"kind":"invented_kind","text":"bad","subject":"","value":"","citations":[0]}]})"),
+            text_response("```json\nThis is a reflected prompt, not a proposal.\n```")});
     MemoryAgentModelConfig config;
     config.model = *profile;
     class Exclusive final : public IModelProvider {
@@ -45,12 +52,48 @@ int real_memory_loop_runs_with_isolated_identity_and_validates_citations() {
     const auto calls = provider->requests();
     MIRA_CHECK(calls.size() == 1 && calls.front().task_id != binding.work.task_id);
     MIRA_CHECK(calls.front().tools.empty());
+    MIRA_CHECK(calls.front().output_contract.mode == OutputMode::StrictJsonSchema);
     MIRA_CHECK(calls.front().prompt_provenance.context_selection_digest != Hash{});
     MIRA_CHECK(provider->request_text(0).find("memory specialist") != std::string::npos);
     // DEC-108: the compress prompt requires speaker attribution so compressed
     // context keeps who said what.
     MIRA_CHECK(provider->request_text(0).find("attribute quoted speech to its speaker") !=
                std::string::npos);
+    const auto digest = digest_string("internal event digest").to_string();
+    MIRA_CHECK(fixture.events->append(
+        {source_id,
+         fixture.runtime,
+         binding.work.session_id,
+         binding.work.task_id,
+         {"test_user_message", to_json_string(JsonValue::Object{{"text", "Please be brief"},
+                                                                {"event_id", source_id.to_string()},
+                                                                {"digest", digest}})}}));
+    request.mode = MemoryAgentMode::Record;
+    request.history.clear();
+    request.write_scope = binding.scopes.front();
+    auto recording = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(recording && recording.value().result.wait_for(3s) == std::future_status::ready);
+    const auto report = recording.value().result.get();
+    MIRA_CHECK(report && !report.value().deterministic_record_only &&
+               report.value().rejected_record_rows == 1 &&
+               report.value().consolidation.count_of(CandidateDisposition::Applied) == 1);
+    MemoryQuery claim_query;
+    claim_query.scopes = binding.scopes;
+    claim_query.claim_key = "tone";
+    const auto stored = fixture.memory->query(claim_query);
+    MIRA_CHECK(stored && stored.value().records.size() == 1 &&
+               memory_claim_key(stored.value().records.front()).value == "brief");
+    const auto prompt = provider->request_text(1);
+    MIRA_CHECK(prompt.find("Please be brief") != std::string::npos &&
+               prompt.find("Valid kind names:") != std::string::npos &&
+               prompt.find(digest) == std::string::npos &&
+               prompt.find(source_id.to_string()) == std::string::npos);
+    MemoryAgentInput input;
+    input.mode = MemoryAgentMode::Record;
+    input.work = binding.work;
+    const auto invalid =
+        make_model_memory_agent(fixture.executor, config)(input, memory_context(binding.work));
+    MIRA_CHECK(!invalid && invalid.error().code == ErrorCode::InvalidModelOutput);
     return 0;
 }
 

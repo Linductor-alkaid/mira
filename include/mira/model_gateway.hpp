@@ -31,6 +31,7 @@ struct InferOptions final {
     bool capture_raw_response = false;
     ModelPreviewSink preview_sink{};
     ModelThinkingPreviewSink thinking_preview_sink{};
+    bool replace_default_conversation_system_with_persona = false;
 };
 
 // The aggregate outcome of one gateway call: three success layers stay

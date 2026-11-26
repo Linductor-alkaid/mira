@@ -978,7 +978,8 @@ SqliteSocialDirectory::recall_account_attribute(const SocialEnvironmentKey &envi
     const auto current = resolve_account(environment, account);
     if (!current)
         return current.error();
-    if (current.value() != binding.value())
+    if (!current.value() || current.value()->object != binding.value()->object ||
+        current.value()->source_event != binding.value()->source_event)
         return directory_error(ErrorCode::InvalidState,
                                "social account binding changed during recall");
     return std::optional{

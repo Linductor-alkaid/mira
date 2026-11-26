@@ -110,6 +110,35 @@ int preserves_native_protocol_and_accounts_for_whole_request() {
     return 0;
 }
 
+int identifies_rejected_candidate_without_its_content() {
+    const auto profile = make_profile(ProtocolDialect::OpenAIResponsesV1, "https://api.test");
+    const AgentLoopSpec spec{TaskId::generate(), SessionId::generate(), 1, "goal", profile.id};
+    const auto request = memory_request(spec);
+    ContextItem valid;
+    valid.id = ContextItemId::generate();
+    valid.kind = ContextItemKind::RetrievedMemory;
+    valid.authority = ContextAuthority::RetrievedMemory;
+    valid.content = {TextPart{"private candidate text"}};
+    for (const auto reason :
+         {"duplicate id", "invalid kind or authority", "pinned item", "invalid item"}) {
+        auto bad = valid;
+        if (std::string_view(reason) != "duplicate id")
+            bad.id = ContextItemId::generate();
+        if (std::string_view(reason) == "invalid kind or authority")
+            bad.authority = ContextAuthority::SystemPolicy;
+        if (std::string_view(reason) == "pinned item")
+            bad.pinned = true;
+        if (std::string_view(reason) == "invalid item")
+            bad.id = {};
+        ModelContextSnapshot snapshot;
+        snapshot.candidates = {valid, bad};
+        const auto result = admit_model_request(request, profile, spec.session_id, snapshot);
+        MIRA_CHECK(!result &&
+                   result.error().safe_message == std::string("context candidate 1: ") + reason);
+    }
+    return 0;
+}
+
 int overflow_and_elevated_candidates_never_dispatch() {
     ConversationFixture fixture;
     fixture.use_provider({text_response("unused")});
@@ -275,6 +304,8 @@ int replay_wire_roles_reach_the_wire_and_system_roles_fail_closed() {
 } // namespace
 int main() {
     if (preserves_native_protocol_and_accounts_for_whole_request())
+        return 1;
+    if (identifies_rejected_candidate_without_its_content())
         return 1;
     if (overflow_and_elevated_candidates_never_dispatch())
         return 1;

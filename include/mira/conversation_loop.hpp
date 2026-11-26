@@ -24,6 +24,9 @@ namespace mira {
 // turn/tool cutoff. Zero finite limits keep their original meaning.
 enum class ConversationLimitMode : std::uint8_t { Finite, Continuous };
 
+using ConversationToolChoiceSelector =
+    std::function<Result<ToolChoice>(const ModelRequest &, const OperationContext &)>;
+
 // DEC-098: trusted host configuration, replacing the entire built-in System
 // text (including its tool-use suffix). Never populate from model/tool input.
 // Both text and template_id must contain non-whitespace. The ID becomes the
@@ -44,7 +47,7 @@ struct ConversationLoopConfig final {
     // (Continuous). A valid tool round starts a fresh episode.
     std::uint32_t max_recoveries = 2;
     std::chrono::milliseconds model_call_deadline{30'000};
-    // Whole-run budget for tool executions.
+    // Whole-run tool execution budget for explicitly Finite work.
     std::uint32_t max_tool_executions = 32;
     // Bounded continuations for a tolerated max_tokens cutoff (status
     // Incomplete, reason MaxOutputTokens), independent of max_recoveries:
@@ -238,6 +241,9 @@ class ConversationLoop final {
     void set_tool_registry(std::shared_ptr<BuiltinToolRegistry> tools);
     // DEC-097: same fail-closed per-request selection contract as AgentLoop.
     void set_tool_selector(ToolSelector selector);
+    // Chooses a request policy after filtering its visible tools. The host
+    // may use the current history to release a forced choice on later turns.
+    void set_tool_choice_selector(ConversationToolChoiceSelector selector);
 
     // Attaches the optional supplied-input seam (DEC-053) and its per-request
     // bounds. Without a supplier, request assembly stays unchanged byte for
@@ -322,7 +328,7 @@ class ConversationLoop final {
     [[nodiscard]] Result<ModelRequest>
     build_request(const AgentLoopSpec &spec, const std::vector<ModelInputItem> &history,
                   const std::string &feedback, const std::vector<std::string> &user_instructions,
-                  const SuppliedInput &supplied);
+                  const SuppliedInput &supplied, const OperationContext &context);
     // Pops every pending user message, records UserMessageInjected events
     // and appends the texts to the standing instructions of this run.
     void drain_user_messages(const AgentLoopSpec &spec,
@@ -351,6 +357,7 @@ class ConversationLoop final {
     SessionId session_;
     std::shared_ptr<BuiltinToolRegistry> tools_;
     ToolSelector tool_selector_;
+    ConversationToolChoiceSelector tool_choice_selector_;
     ModelInputSupplier input_supplier_;
     ModelInputIdentityProvider identity_provider_;
     HistoryTransformer history_transformer_;

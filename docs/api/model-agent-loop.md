@@ -26,7 +26,8 @@ SDK；凭据经 `SecretRef`/`ISecretResolver` 解析，绝不进入事件或源�
 原始请求。对已绑定身份，生效版本
 缺失、探针失效、供应失败或上下文预算不足都会阻止发送。
 
-Gateway 在原有宿主指令前缀中增加一个 Internal System 项，重新按完整请求预算准入。
+Gateway 按完整请求预算准入人格的 Internal System 项。当前人格接管 `ConversationLoop`
+默认 System 提示；显式宿主 `system_prompt` 在前，随后是人格。未绑定人格时使用原请求。
 原有工具与用户、历史角色保持原权限。每次 infer 使用同一激活版本，使用本地组装并
 清除旧的远端续接状态。失效后停止转发新的预览，迟到完成只保留诊断和用量。已经发出
 的请求及已经传给 UI 的预览由其外部生命周期管理。审计记录版本与提示摘要。
@@ -51,6 +52,12 @@ auto receipt = submit_agent_persona_suggestion(*events, source, exact_quote, quo
 见 [DEC-167](../decisions/DEC-167-evidenced-agent-persona-suggestions.md)。
 
 ## 每请求工具选择（DEC-097）
+
+`ConversationLoop::set_tool_choice_selector` 在本轮工具筛选后调用宿主选择器。对于工具即
+发声通道的宿主，可在待执行轮设置 `Required` 或 `Named`，观察工具结果后再恢复 `Auto`。
+选择器留空时默认 `Auto`。请求选择的工具必须可见，提供者返回不符合选择的响应进入既有
+恢复路径，不据此执行工具或结算为已答复。Continuous 保留合法工具往返，任务完成仍由
+宿主按实际结果验证。见 [DEC-168](../decisions/DEC-168-continuous-host-tool-and-persona-controls.md)。
 
 M36/DEC-101 在工具选择后由 Gateway 对完整请求执行 Layer 0 准入。原始角色和协议
 不重写，选中的工具不能被静默裁掉；可选记忆/摘要仅为低权限候选。每个 fallback
@@ -730,6 +737,10 @@ loop.set_history_transformer(compact_history);
 计算，完整工具轮后重置；累计 recoveries/output_continuations 仅作饱和 uint64
 统计，Finite 仍按整任务额度。没有 compactor 时可运行短任务，历史满后明确
 Failed（`history capacity exhausted after compaction`）；不静默删除事实或重启任务。
+
+内置 System 提示要求模型在工作可推进时继续行动，复核工具执行结果，并在重复动作前
+检查其是否已生效。目标完成或出现具体阻塞时使用纯文本终答。绑定人格或显式宿主 System
+提示可以提供相应通道的终答约定，见 [DEC-168](../decisions/DEC-168-continuous-host-tool-and-persona-controls.md)。
 
 每请求 budget scope=Request、max_requests=1、max_output_tokens=每轮输出上限，
 不再乘累计轮次。Request scope 属 **model contract 2.0**，旧 reader 拒绝该 major，

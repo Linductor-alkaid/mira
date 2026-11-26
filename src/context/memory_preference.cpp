@@ -21,8 +21,7 @@ Result<std::optional<MemoryRecord>> current_claim(IMemory &memory, const MemoryS
         return std::optional<MemoryRecord>{};
     const auto &record = found.value().records.front();
     if (record.scope != scope || record.kind != MemoryKind::Preference ||
-        record.status != MemoryStatus::Active ||
-        memory_claim_key(record.statement).key != query.claim_key)
+        record.status != MemoryStatus::Active || memory_claim_key(record).key != query.claim_key)
         return error(ErrorCode::PermissionDenied, "memory backend returned a foreign preference");
     return std::optional<MemoryRecord>{record};
 }

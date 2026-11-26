@@ -90,10 +90,10 @@ MemoryAgentService::State::read_preference(const PreferenceEntry &entry) const {
             return error(ErrorCode::DataLoss, "preference mutation is malformed");
         result.mutation = std::move(decoded).value();
         if (result.mutation->target.has_value() != result.previous.has_value() ||
-            (result.previous && (result.mutation->target != result.previous->id ||
-                                 result.mutation->expected_version != result.previous->version ||
-                                 memory_claim_key(result.previous->statement).key !=
-                                     memory_claim_key(result.statement).key)) ||
+            (result.previous &&
+             (result.mutation->target != result.previous->id ||
+              result.mutation->expected_version != result.previous->version ||
+              memory_claim_key(*result.previous).key != memory_claim_key(result.statement).key)) ||
             (result.applied && result.applied->record != result.mutation->proposed.id))
             return error(ErrorCode::DataLoss, "preference approval frame is inconsistent");
     } else if (result.state != PreferenceProposalState::NoChange)

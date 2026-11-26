@@ -73,6 +73,7 @@ int settlement_drains_the_fixed_event_snapshot() {
     MIRA_CHECK(host.coordinator->record_settlement("multi-page", TaskState::Completed));
     const auto result = host.finish(task);
     MIRA_CHECK(result && !result.value().more_pending);
+    MIRA_CHECK(result.value().deterministic_record_only);
     MIRA_CHECK(result.value().consolidation.count_of(CandidateDisposition::Applied) == 3);
     MemoryQuery query;
     query.scopes = binding.scopes;

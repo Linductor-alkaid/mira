@@ -25,6 +25,13 @@ constexpr const char *kMemoryAuditPrefix = "mira.memory-agent.";
 // at most three bytes.
 constexpr std::size_t kRecallHeaderMaxBytes = kRecallHeader.size() + 3;
 
+std::string_view verification_prefix(const MemoryRecord &record) {
+    if (record.verification == MemoryVerification::Unverified &&
+        (record.kind == MemoryKind::EnvironmentFact || record.kind == MemoryKind::ApplicationFact))
+        return "[unverified] ";
+    return {};
+}
+
 ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation,
                          std::optional<std::size_t> group_index) {
     ContextItem item;
@@ -40,6 +47,7 @@ ContextItem memory_block(const std::vector<MemoryRecord> &records, const Operati
     std::string text = std::string{kRecallHeader} + std::to_string(records.size()) + "]";
     for (const auto &record : records) {
         text += kRecallSeparator;
+        text += verification_prefix(record);
         text += record.statement;
         authority = std::max(authority, record.sensitivity);
         item.provenance.insert(item.provenance.end(), record.provenance.begin(),
@@ -92,6 +100,11 @@ Result<void> MemoryAgentService::State::emit(const Job &job, const char *type,
         detail.emplace_back("compressed_items",
                             static_cast<std::int64_t>(result->compressed_items));
         detail.emplace_back("through_sequence", std::to_string(result->through_event_sequence));
+        if (result->mode == MemoryAgentMode::Record) {
+            detail.emplace_back("deterministic_record_only", result->deterministic_record_only);
+            detail.emplace_back("rejected_model_rows",
+                                static_cast<std::int64_t>(result->rejected_record_rows));
+        }
         if (result->projection_artifact) {
             detail.emplace_back("projection_artifact", result->projection_artifact->id.to_string());
             detail.emplace_back("projection_digest",
@@ -243,6 +256,7 @@ void MemoryAgentService::State::run(const std::shared_ptr<Job> &job, kairo::Stop
             combined.through_event_sequence = page.through_event_sequence;
             combined.more_pending = page.more_pending;
             combined.degraded = combined.degraded || page.degraded;
+            combined.rejected_record_rows += page.rejected_record_rows;
             auto &report = combined.consolidation;
             report.candidates_examined += page.consolidation.candidates_examined;
             report.candidates_truncated += page.consolidation.candidates_truncated;
@@ -476,7 +490,8 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 const auto index = static_cast<std::size_t>(group - groups.begin());
                 if (selected[index].size() >= group->max_records || seen.contains(record.id))
                     continue;
-                const auto size = kRecallSeparator.size() + record.statement.size();
+                const auto size = kRecallSeparator.size() + verification_prefix(record).size() +
+                                  record.statement.size();
                 if (grouped && size > group->max_bytes - sizes[index]) {
                     result.degraded = true;
                     continue;
@@ -514,12 +529,15 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         result.projection_artifact = artifact.value();
     }
     if (input.mode == MemoryAgentMode::Record) {
+        result.deterministic_record_only = !processor;
+        result.rejected_record_rows = proposal.rejected_record_rows;
         ProposedMemories model;
         for (const auto &memory_proposal : proposal.memories) {
             MemoryCandidate candidate;
             candidate.proposed.id = MemoryId::generate();
             candidate.proposed.kind = memory_proposal.kind;
             candidate.proposed.statement = memory_proposal.note.text;
+            candidate.proposed.claim = memory_proposal.claim;
             candidate.proposed.verification = MemoryVerification::Unverified;
             candidate.proposed.confidence = 0.5F;
             candidate.model_assisted = true;

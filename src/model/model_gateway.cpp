@@ -57,8 +57,17 @@ namespace {
 }
 
 [[nodiscard]] ModelRequest with_persona(const ModelRequest &request,
-                                        const AgentPersonaSnapshot &persona) {
+                                        const AgentPersonaSnapshot &persona,
+                                        bool replace_conversation_default) {
     auto rendered = request;
+    if (replace_conversation_default && !rendered.input.empty() &&
+        rendered.input.front().role == ModelRole::System &&
+        (rendered.input.front().provenance.source == "mira.conversation-loop.system.v1" ||
+         rendered.input.front().provenance.source ==
+             "mira.conversation-loop.system.continuous.v1")) {
+        rendered.input.erase(rendered.input.begin());
+        rendered.prompt_provenance.system_template_digest = {};
+    }
     const auto &revision = persona.revision();
     ModelInputItem instruction;
     instruction.role = ModelRole::System;
@@ -71,7 +80,7 @@ namespace {
         });
     rendered.input.insert(position, std::move(instruction));
     rendered.prompt_provenance.system_template_digest = canonical_json_digest(JsonValue::Object{
-        {"base", request.prompt_provenance.system_template_digest.to_string()},
+        {"base", rendered.prompt_provenance.system_template_digest.to_string()},
         {"tenant", persona.key().tenant.to_string()},
         {"agent", persona.key().agent.to_string()},
         {"version", revision.version},
@@ -191,7 +200,9 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &original_reques
             if (!persona_current(*persona))
                 return make_context_error(ContextDomainCode::StaleBuild,
                                           "persona binding is no longer current");
-            rendered_request = with_persona(original_request, persona->snapshot);
+            rendered_request =
+                with_persona(original_request, persona->snapshot,
+                             options.replace_default_conversation_system_with_persona);
             if (auto valid = validate_model_request(*rendered_request); !valid)
                 return valid.error();
         }
