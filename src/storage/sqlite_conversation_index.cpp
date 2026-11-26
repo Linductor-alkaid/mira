@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <tuple>
@@ -23,13 +24,17 @@ Error index_error(ErrorCode code, std::string message) {
     return storage::store_error(code, "mira.conversation_index", 0, std::move(message));
 }
 
-constexpr SchemaVersion kConversationIndexSchema{1, 2};
+constexpr SchemaVersion kConversationIndexSchema{1, 3};
+constexpr const char *kCapacity =
+    "CREATE TABLE conversation_capacity(id INTEGER PRIMARY KEY CHECK(id=1),"
+    " segments INTEGER NOT NULL CHECK(segments>=0));";
 
 // The digest covers the provenance document. Search columns are derived.
 constexpr const char *kTables =
     "CREATE TABLE store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
     "CREATE TABLE conversation_sessions(session TEXT PRIMARY KEY, owner TEXT UNIQUE NOT NULL,"
-    " through INTEGER NOT NULL, digest TEXT NOT NULL);"
+    " through INTEGER NOT NULL, digest TEXT NOT NULL, entries INTEGER NOT NULL,"
+    " anchor TEXT NOT NULL, segmentation TEXT NOT NULL);"
     "CREATE TABLE conversation_erasures(owner TEXT PRIMARY KEY);"
     "CREATE TABLE conversation_segments("
     " id TEXT PRIMARY KEY, owner TEXT NOT NULL, through INTEGER NOT NULL,"
@@ -188,10 +193,30 @@ struct SessionHead final {
     std::string owner;
     SessionSequence through = 0;
     std::string digest;
+    std::size_t entries = 0;
+    std::string anchor;
+    std::string segmentation;
+    friend bool operator==(const SessionHead &, const SessionHead &) = default;
 };
 
+Result<void> migrate_conversation_progress(sqlite3 *db) {
+    const std::string sql =
+        std::string(kCapacity) +
+        "INSERT INTO conversation_capacity SELECT 1,count(*) FROM conversation_segments;"
+        "ALTER TABLE conversation_sessions ADD COLUMN entries INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE conversation_sessions ADD COLUMN anchor TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE conversation_sessions ADD COLUMN segmentation TEXT NOT NULL DEFAULT '';"
+        "WITH totals(owner,n) AS MATERIALIZED (SELECT "
+        "owner,sum(json_array_length(document,'$.turns'))"
+        " FROM conversation_segments GROUP BY owner)"
+        " UPDATE conversation_sessions SET entries=coalesce((SELECT n FROM totals WHERE"
+        " totals.owner=conversation_sessions.owner),0);";
+    return storage::exec_sql(db, sql.c_str());
+}
+
 Result<std::optional<SessionHead>> read_head(sqlite3 *db, const std::string &session) {
-    Statement select(db, "SELECT owner,through,digest FROM conversation_sessions WHERE session=?1");
+    Statement select(db, "SELECT owner,through,digest,entries,anchor,segmentation"
+                         " FROM conversation_sessions WHERE session=?1");
     if (!select.valid() || !bind_text(select, 1, session))
         return index_error(ErrorCode::Internal, "conversation head query could not be prepared");
     const auto step = sqlite3_step(select.get());
@@ -200,11 +225,17 @@ Result<std::optional<SessionHead>> read_head(sqlite3 *db, const std::string &ses
     if (step != SQLITE_ROW)
         return index_error(ErrorCode::Internal, "conversation head could not be read");
     const auto through = sqlite3_column_int64(select.get(), 1);
-    if (through < 0 || !digest_from_hex(column(select, 0)) || !digest_from_hex(column(select, 2)))
+    const auto entries = sqlite3_column_int64(select.get(), 3);
+    const auto anchor = column(select, 4);
+    if (through < 0 || entries < 0 || entries > through ||
+        static_cast<std::uint64_t>(entries) > std::numeric_limits<std::size_t>::max() ||
+        (!anchor.empty() && !digest_from_hex(anchor)) || !digest_from_hex(column(select, 0)) ||
+        !digest_from_hex(column(select, 2)))
         return index_error(ErrorCode::DataLoss, "conversation head is malformed");
-    return std::optional{SessionHead{std::string(column(select, 0)),
-                                     static_cast<SessionSequence>(through),
-                                     std::string(column(select, 2))}};
+    return std::optional{
+        SessionHead{std::string(column(select, 0)), static_cast<SessionSequence>(through),
+                    std::string(column(select, 2)), static_cast<std::size_t>(entries),
+                    std::string(anchor), std::string(column(select, 5))}};
 }
 
 Result<bool> erased(sqlite3 *db, const std::string &owner) {
@@ -240,12 +271,20 @@ Result<std::size_t> count(sqlite3 *db, const char *sql, const std::string *owner
     return static_cast<std::size_t>(sqlite3_column_int64(select.get(), 0));
 }
 
+Result<void> adjust_segment_count(sqlite3 *db, std::int64_t change) {
+    Statement update(db, "UPDATE conversation_capacity SET segments=segments+?1 WHERE id=1");
+    if (!update.valid() || sqlite3_bind_int64(update.get(), 1, change) != SQLITE_OK ||
+        sqlite3_step(update.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
+        return index_error(ErrorCode::Internal, "conversation segment counter update failed");
+    return {};
+}
+
 Result<void> remove_segments(sqlite3 *db, const std::string &owner) {
     Statement remove(db, "DELETE FROM conversation_segments WHERE owner=?1");
     if (!remove.valid() || !bind_text(remove, 1, owner) ||
         sqlite3_step(remove.get()) != SQLITE_DONE)
         return index_error(ErrorCode::Internal, "conversation segment deletion failed");
-    return {};
+    return adjust_segment_count(db, -sqlite3_changes64(db));
 }
 
 struct SegmentRow final {
@@ -255,8 +294,48 @@ struct SegmentRow final {
     std::string digest;
 };
 
+struct RebuildState final {
+    std::optional<SessionHead> head;
+    std::optional<SegmentRow> tail;
+};
+
+Result<RebuildState> read_rebuild_state(sqlite3 *db, const std::string &session,
+                                        const std::string &owner) {
+    auto head = read_rebuild_head(db, session, owner);
+    if (!head)
+        return head.error();
+    RebuildState result{std::move(head).value(), {}};
+    if (!result.head || result.head->entries == 0)
+        return result;
+    Statement row(db, "SELECT document,digest,search_text,lexical FROM conversation_segments"
+                      " WHERE owner=?1 ORDER BY through DESC,id LIMIT 1");
+    if (!row.valid() || !bind_text(row, 1, owner) || sqlite3_step(row.get()) != SQLITE_ROW)
+        return index_error(ErrorCode::DataLoss, "conversation tail is missing");
+    const auto document = column(row, 0);
+    if (document.size() > 128 * 1024 || digest_string(document).to_string() != column(row, 1))
+        return index_error(ErrorCode::DataLoss, "conversation tail digest mismatch");
+    const auto json = parse_json(document);
+    if (!json)
+        return json.error();
+    auto candidate = context_candidate_from_json(json.value());
+    if (!candidate || candidate.value().turns.empty() ||
+        candidate.value().turns.size() > result.head->entries ||
+        candidate.value().through_event_sequence > result.head->through ||
+        !candidate.value().session || candidate.value().session->to_string() != session)
+        return index_error(ErrorCode::DataLoss, "conversation tail is malformed");
+    result.tail = SegmentRow{std::move(candidate).value(),
+                             {std::string(column(row, 2)), std::string(column(row, 3))},
+                             std::string(document),
+                             std::string(column(row, 1))};
+    return result;
+}
+
 struct SessionProjection final {
-    SessionSequence through = 0;
+    ConversationIndexProgress progress;
+    std::size_t entries = 0;
+    std::string anchor;
+    std::string segmentation;
+    std::optional<ContextAssetId> replace_tail;
     std::vector<SegmentRow> segments;
     std::string digest;
 };
@@ -269,12 +348,94 @@ Result<void> check_context(const OperationContext &context) {
     return {};
 }
 
-Result<SessionProjection> project(SessionId session, const IEventStore &source,
-                                  const SqliteConversationIndexOptions &options,
-                                  const OperationContext &context) {
+std::string source_anchor(const EventEnvelope &event) {
+    return digest_string(event.event_id.to_string() +
+                         digest_string(event.payload.type).to_string() +
+                         digest_string(event.payload.data).to_string())
+        .to_string();
+}
+
+Result<EventEnvelope> read_anchor(SessionId session, const IEventStore &source,
+                                  SessionSequence sequence) {
+    if (sequence == 0)
+        return index_error(ErrorCode::DataLoss, "conversation anchor has no sequence");
     EventSliceQuery query;
     query.session_id = session;
-    query.limit = 128;
+    query.after_sequence = sequence - 1;
+    query.through_sequence = sequence;
+    query.limit = 1;
+    query.byte_limit = 64 * 1024 * 1024;
+    auto page = source.read_slice(query);
+    if (!page)
+        return page.error();
+    if (page.value().snapshot_through != sequence || page.value().scanned_through != sequence ||
+        page.value().has_more || page.value().events.size() != 1 ||
+        page.value().events.front().session_id != session ||
+        page.value().events.front().session_sequence != sequence ||
+        page.value().events.front().event_id.is_nil())
+        return index_error(ErrorCode::DataLoss, "conversation source anchor is malformed");
+    return std::move(page.value().events.front());
+}
+
+std::string_view role_prefix(ConversationEntry::Kind kind) {
+    switch (kind) {
+    case ConversationEntry::Kind::UserMessage:
+        return "user: ";
+    case ConversationEntry::Kind::AssistantSpeech:
+        return "assistant: ";
+    case ConversationEntry::Kind::LoopOutcome:
+        return "loop: ";
+    }
+    return {};
+}
+
+Result<void> check_tail(SessionId session, const IEventStore &source, const RebuildState &state,
+                        const ConversationSegmentationOptions &options) {
+    if (!state.tail)
+        return {};
+    const auto &turn = state.tail->candidate.turns.back();
+    auto event = read_anchor(session, source, turn.session_sequence);
+    if (!event)
+        return event.error();
+    auto entry = project_conversation_entry(event.value());
+    if (!entry)
+        return entry.error();
+    if (!entry.value() || turn.origin != event.value().event_id || turn.kind != entry.value()->kind)
+        return index_error(ErrorCode::DataLoss, "conversation tail source changed");
+    auto rendered = segment_conversation(session, std::span(&*entry.value(), 1), options);
+    if (!rendered)
+        return rendered.error();
+    if (rendered.value().front().text != turn.text)
+        return index_error(ErrorCode::DataLoss, "conversation tail text changed");
+    return {};
+}
+
+Result<SessionProjection> project(SessionId session, const IEventStore &source,
+                                  const SqliteConversationIndexOptions &options,
+                                  const OperationContext &context, const RebuildState &state,
+                                  bool partial) {
+    SessionProjection result;
+    result.segmentation = std::to_string(options.segmentation.window_entries) + ":" +
+                          std::to_string(options.segmentation.max_segment_bytes);
+    const auto base = state.head ? state.head->through : 0;
+    if (state.head && !state.head->segmentation.empty() &&
+        state.head->segmentation != result.segmentation)
+        return index_error(ErrorCode::InvalidState, "conversation segmentation changed");
+    if (base != 0) {
+        auto anchor = read_anchor(session, source, base);
+        if (!anchor)
+            return anchor.error();
+        result.anchor = source_anchor(anchor.value());
+        if (!state.head->anchor.empty() && result.anchor != state.head->anchor)
+            return index_error(ErrorCode::DataLoss,
+                               "conversation source changed at published watermark");
+    }
+    if (auto checked = check_tail(session, source, state, options.segmentation); !checked)
+        return checked.error();
+
+    EventSliceQuery query;
+    query.session_id = session;
+    query.after_sequence = base;
     query.byte_limit = options.max_source_bytes;
     std::size_t bytes_left = options.max_source_bytes;
     std::vector<ConversationEntry> entries;
@@ -282,14 +443,19 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
     for (;;) {
         if (auto active = check_context(context); !active)
             return active.error();
+        const auto scanned = static_cast<std::size_t>(query.after_sequence - base);
+        query.limit = std::min<std::size_t>(128, options.max_source_events - scanned);
         auto read = source.read_slice(query);
-        if (!read)
+        if (!read) {
+            if (partial && query.after_sequence > base &&
+                read.error().code == ErrorCode::ResourceExhausted)
+                break;
             return read.error();
+        }
         auto &page = read.value();
-        if (page.snapshot_through > options.max_source_events)
-            return index_error(ErrorCode::ResourceExhausted,
-                               "conversation source event limit exceeded");
         if ((query.through_sequence && *query.through_sequence != page.snapshot_through) ||
+            page.snapshot_through >
+                static_cast<SessionSequence>(std::numeric_limits<std::int64_t>::max()) ||
             page.scanned_through > page.snapshot_through ||
             page.has_more != (page.scanned_through < page.snapshot_through) ||
             page.scanned_through < query.after_sequence ||
@@ -297,6 +463,9 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
             page.events.size() > query.limit ||
             page.events.size() != page.scanned_through - query.after_sequence)
             return index_error(ErrorCode::DataLoss, "conversation source page is not contiguous");
+        if (!partial && page.snapshot_through - base > options.max_source_events)
+            return index_error(ErrorCode::ResourceExhausted,
+                               "conversation source event budget exceeded");
         auto previous = query.after_sequence;
         for (const auto &event : page.events) {
             if (event.session_id != session || event.event_id.is_nil() ||
@@ -319,23 +488,59 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
                 entries.push_back(std::move(*projected.value()));
             }
         }
+        if (!page.events.empty())
+            result.anchor = source_anchor(page.events.back());
         query.through_sequence = page.snapshot_through;
         query.after_sequence = page.scanned_through;
         if (!page.has_more)
+            break;
+        if (partial &&
+            (bytes_left == 0 || query.after_sequence - base == options.max_source_events))
             break;
         if (bytes_left == 0)
             return index_error(ErrorCode::ResourceExhausted,
                                "conversation source byte limit exceeded");
         query.byte_limit = bytes_left;
     }
-    auto segments = segment_conversation(session, entries, options.segmentation);
+    result.progress = {query.after_sequence, *query.through_sequence};
+    result.entries = state.head ? state.head->entries : 0;
+    if (entries.empty()) {
+        result.digest = state.head ? state.head->digest : digest_string("").to_string();
+        return result;
+    }
+    std::size_t retained = 0;
+    std::size_t first_entry = result.entries;
+    if (state.tail && state.tail->candidate.turns.size() < options.segmentation.window_entries &&
+        state.tail->candidate.text.size() <= options.segmentation.max_segment_bytes) {
+        std::vector<ConversationEntry> extended;
+        for (const auto &turn : state.tail->candidate.turns) {
+            const auto prefix = role_prefix(turn.kind);
+            if (!turn.text.starts_with(prefix))
+                return index_error(ErrorCode::DataLoss,
+                                   "conversation tail role prefix is malformed");
+            ConversationEntry entry;
+            entry.kind = turn.kind;
+            entry.text = turn.text.substr(prefix.size());
+            entry.origin = turn.origin;
+            entry.session_sequence = turn.session_sequence;
+            extended.push_back(std::move(entry));
+        }
+        retained = extended.size();
+        first_entry -= retained;
+        extended.insert(extended.end(), std::make_move_iterator(entries.begin()),
+                        std::make_move_iterator(entries.end()));
+        entries = std::move(extended);
+        result.replace_tail = state.tail->candidate.asset_id;
+    }
+    if (entries.size() > std::numeric_limits<std::size_t>::max() - first_entry)
+        return index_error(ErrorCode::ResourceExhausted, "conversation entry offset overflow");
+    result.entries = first_entry + entries.size();
+    auto segments = segment_conversation(session, entries, options.segmentation, first_entry);
     if (!segments)
         return segments.error();
-    SessionProjection result;
-    result.through = *query.through_sequence;
     if (segments.value().size() > options.max_segments)
         return index_error(ErrorCode::ResourceExhausted, "conversation segment limit exceeded");
-    std::string digests;
+    std::string digests = state.head ? state.head->digest : "";
     for (auto &segment : segments.value()) {
         ContextIndexAsset asset{segment.asset_id,
                                 ContextAssetKind::ConversationSegment,
@@ -354,14 +559,22 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
         row.candidate.turns = std::move(asset.entries);
         row.candidate.source_events = std::move(asset.source_events);
         row.candidate.through_event_sequence = asset.through_event_sequence;
+        const auto offset = segment.first_entry - first_entry;
+        if (offset < retained)
+            row.search = state.tail->search;
         for (std::size_t i = 0; i < row.candidate.turns.size(); ++i)
-            row.search.append(utterance(row.candidate.turns[i], &entries[segment.first_entry + i]));
+            if (offset + i >= retained)
+                row.search.append(utterance(row.candidate.turns[i], &entries[offset + i]));
         row.document = canonical_json_string(context_candidate_to_json(row.candidate));
         // A source entry with invalid UTF-8 cannot be encoded; reject it
         // before publication rather than store unreadable text.
         if (!parse_json(row.document))
             return index_error(ErrorCode::DataLoss, "conversation segment cannot be encoded");
         row.digest = digest_string(row.document).to_string();
+        if (offset < retained && row.digest == state.tail->digest) {
+            result.replace_tail.reset();
+            continue;
+        }
         digests += row.digest;
         result.segments.push_back(std::move(row));
     }
@@ -369,9 +582,11 @@ Result<SessionProjection> project(SessionId session, const IEventStore &source,
     return result;
 }
 
-Result<SessionSequence> publish(sqlite3 *db, const SqliteConversationIndexOptions &options,
-                                const std::string &session, const std::string &owner,
-                                const SessionProjection &projection) {
+Result<ConversationIndexProgress> publish(sqlite3 *db,
+                                          const SqliteConversationIndexOptions &options,
+                                          const std::string &session, const std::string &owner,
+                                          const std::optional<SessionHead> &base,
+                                          const SessionProjection &projection) {
     Transaction tx(db);
     if (!tx.valid())
         return index_error(ErrorCode::Unavailable,
@@ -379,16 +594,12 @@ Result<SessionSequence> publish(sqlite3 *db, const SqliteConversationIndexOption
     const auto head = read_rebuild_head(db, session, owner);
     if (!head)
         return head.error();
-    if (head.value()) {
-        if (projection.through < head.value()->through)
-            return index_error(ErrorCode::InvalidState, "conversation snapshot is stale");
-        if (projection.through == head.value()->through) {
-            if (projection.digest != head.value()->digest)
-                return index_error(ErrorCode::DataLoss,
-                                   "conversation changed under the same watermark");
-            return projection.through;
-        }
-    } else {
+    if (head.value() != base)
+        return index_error(ErrorCode::InvalidState, "conversation head advanced during rebuild");
+    if (base && projection.progress.through == base->through && projection.anchor == base->anchor &&
+        projection.segmentation == base->segmentation)
+        return projection.progress;
+    if (!base) {
         const auto sessions = count(db, "SELECT count(*) FROM conversation_sessions");
         if (!sessions)
             return sessions.error();
@@ -396,12 +607,21 @@ Result<SessionSequence> publish(sqlite3 *db, const SqliteConversationIndexOption
             return index_error(ErrorCode::ResourceExhausted, "conversation session limit reached");
     }
 
-    if (auto removed = remove_segments(db, owner); !removed)
-        return removed.error();
-    const auto rows = count(db, "SELECT count(*) FROM conversation_segments");
+    if (projection.replace_tail) {
+        Statement remove(db, "DELETE FROM conversation_segments WHERE owner=?1 AND id=?2");
+        if (!remove.valid() || !bind_text(remove, 1, owner) ||
+            !bind_text(remove, 2, projection.replace_tail->to_string()) ||
+            sqlite3_step(remove.get()) != SQLITE_DONE || sqlite3_changes(db) != 1)
+            return index_error(ErrorCode::DataLoss, "conversation tail replacement failed");
+    }
+    const auto rows = count(db, "SELECT segments FROM conversation_capacity WHERE id=1");
     if (!rows)
         return rows.error();
-    if (rows.value() > options.max_segments - projection.segments.size())
+    const std::size_t removed = projection.replace_tail ? 1 : 0;
+    if (rows.value() < removed)
+        return index_error(ErrorCode::DataLoss, "conversation segment count is malformed");
+    if (!projection.segments.empty() &&
+        rows.value() - removed > options.max_segments - projection.segments.size())
         return index_error(ErrorCode::ResourceExhausted, "conversation index capacity reached");
 
     Statement insert(db, "INSERT INTO conversation_segments(id,owner,through,text,search_text,"
@@ -418,17 +638,28 @@ Result<SessionSequence> publish(sqlite3 *db, const SqliteConversationIndexOption
             return index_error(ErrorCode::Internal, "conversation segment insert failed");
         insert.reset();
     }
-    Statement water(db, "INSERT INTO conversation_sessions(session,owner,through,digest)"
-                        " VALUES(?1,?2,?3,?4) ON CONFLICT(session) DO UPDATE SET"
-                        " through=excluded.through,digest=excluded.digest");
+    if (auto counted =
+            adjust_segment_count(db, static_cast<std::int64_t>(projection.segments.size()) -
+                                         static_cast<std::int64_t>(removed));
+        !counted)
+        return counted.error();
+    Statement water(db, "INSERT INTO conversation_sessions(session,owner,through,digest,entries,"
+                        "anchor,segmentation) VALUES(?1,?2,?3,?4,?5,?6,?7)"
+                        " ON CONFLICT(session) DO UPDATE SET through=excluded.through,"
+                        " digest=excluded.digest,entries=excluded.entries,anchor=excluded.anchor,"
+                        " segmentation=excluded.segmentation");
     if (!water.valid() || !bind_text(water, 1, session) || !bind_text(water, 2, owner) ||
-        sqlite3_bind_int64(water.get(), 3, static_cast<std::int64_t>(projection.through)) !=
+        sqlite3_bind_int64(water.get(), 3,
+                           static_cast<std::int64_t>(projection.progress.through)) != SQLITE_OK ||
+        !bind_text(water, 4, projection.digest) ||
+        sqlite3_bind_int64(water.get(), 5, static_cast<std::int64_t>(projection.entries)) !=
             SQLITE_OK ||
-        !bind_text(water, 4, projection.digest) || sqlite3_step(water.get()) != SQLITE_DONE)
+        !bind_text(water, 6, projection.anchor) || !bind_text(water, 7, projection.segmentation) ||
+        sqlite3_step(water.get()) != SQLITE_DONE)
         return index_error(ErrorCode::Internal, "conversation watermark write failed");
     if (auto committed = tx.commit(); !committed)
         return committed.error();
-    return projection.through;
+    return projection.progress;
 }
 
 class QueryDeadline final {
@@ -643,6 +874,18 @@ class SqliteConversationIndex::Impl final {
     // its StoreChannel call so concurrent erasure invalidates older results.
     std::atomic<std::uint64_t> privacy_epoch{0};
     std::mutex erasure_mutex;
+    std::atomic_flag capacity_reported;
+
+    void report_capacity(const Error &error) noexcept {
+        if (error.code != ErrorCode::ResourceExhausted || !options.capacity_warning ||
+            capacity_reported.test_and_set())
+            return;
+        try {
+            options.capacity_warning(error);
+        } catch (...) {
+            // The caller still receives the original failure.
+        }
+    }
 };
 
 SqliteConversationIndex::SqliteConversationIndex(std::unique_ptr<Impl> impl)
@@ -667,10 +910,18 @@ SqliteConversationIndex::open(kairo::Executor &executor, SqliteConversationIndex
     db_options.path = options.path;
     db_options.exclusive_owner = true;
     db_options.busy_timeout = std::min(options.operation_timeout, std::chrono::milliseconds{5000});
-    const std::string ddl = std::string(kTables) + kFullText;
+    const std::string ddl = std::string(kTables) + kFullText + kCapacity +
+                            "INSERT INTO conversation_capacity VALUES(1,0);";
     auto opened = storage::open_reference_store(
         db_options, {"conversation-index", kConversationIndexSchema, ddl.c_str(), index_error,
-                     migrate_conversation_search});
+                     [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
+                         if (previous.minor < 2) {
+                             if (auto migrated = migrate_conversation_search(db, previous);
+                                 !migrated)
+                                 return migrated.error();
+                         }
+                         return migrate_conversation_progress(db);
+                     }});
     if (!opened)
         return opened.error();
     if (opened.value().diagnostics.read_only)
@@ -688,6 +939,23 @@ SqliteConversationIndex::open(kairo::Executor &executor, SqliteConversationIndex
 Result<SessionSequence> SqliteConversationIndex::rebuild(const TenantId &tenant, SessionId session,
                                                          const IEventStore &source,
                                                          const OperationContext &context) {
+    auto result = update(tenant, session, source, context, false);
+    if (!result)
+        return result.error();
+    return result.value().through;
+}
+
+Result<ConversationIndexProgress>
+SqliteConversationIndex::advance(const TenantId &tenant, SessionId session,
+                                 const IEventStore &source, const OperationContext &context) {
+    return update(tenant, session, source, context, true);
+}
+
+Result<ConversationIndexProgress> SqliteConversationIndex::update(const TenantId &tenant,
+                                                                  SessionId session,
+                                                                  const IEventStore &source,
+                                                                  const OperationContext &context,
+                                                                  bool partial) {
     if (context.session.is_nil())
         return index_error(ErrorCode::InvalidArgument,
                            "conversation rebuild requires context.session");
@@ -707,26 +975,32 @@ Result<SessionSequence> SqliteConversationIndex::rebuild(const TenantId &tenant,
     if (auto active = check_context(context); !active)
         return active.error();
     const auto session_key = session.to_string();
-    auto permitted = impl_->channel.run<std::optional<SessionHead>>(
-        [session_key, owner](sqlite3 *db) { return read_rebuild_head(db, session_key, owner); });
+    auto permitted = impl_->channel.run<RebuildState>(
+        [session_key, owner](sqlite3 *db) { return read_rebuild_state(db, session_key, owner); });
     if (!permitted)
         return permitted.error();
     if (impl_->privacy_epoch.load() != epoch)
         return index_error(ErrorCode::InvalidState,
                            "conversation projection invalidated by erasure");
-    auto projection = project(session, source, impl_->options, context);
-    if (!projection)
+    auto projection = project(session, source, impl_->options, context, permitted.value(), partial);
+    if (!projection) {
+        impl_->report_capacity(projection.error());
         return projection.error();
+    }
     if (auto active = check_context(context); !active)
         return active.error();
-    return impl_->channel.run<SessionSequence>(
+    auto published = impl_->channel.run<ConversationIndexProgress>(
         [state = impl_.get(), epoch, owner, session = session_key,
-         projection = std::move(projection).value()](sqlite3 *db) -> Result<SessionSequence> {
+         base = std::move(permitted.value().head), projection = std::move(projection).value()](
+            sqlite3 *db) -> Result<ConversationIndexProgress> {
             if (state->privacy_epoch.load() != epoch)
                 return index_error(ErrorCode::InvalidState,
                                    "conversation projection invalidated by erasure");
-            return publish(db, state->options, session, owner, projection);
+            return publish(db, state->options, session, owner, base, projection);
         });
+    if (!published)
+        impl_->report_capacity(published.error());
+    return published;
 }
 
 Result<ContextRetrievalResult> SqliteConversationIndex::retrieve(const ContextQuery &query,
@@ -766,33 +1040,37 @@ Result<void> SqliteConversationIndex::erase_scope(const Sha256Digest &digest) {
     if ((impl_->privacy_epoch.load() & 1U) != 0U)
         return index_error(ErrorCode::Unavailable, "conversation index requires erasure recovery");
     impl_->privacy_epoch.fetch_add(1);
-    auto result = impl_->channel.run<void>(
-        [owner = digest.to_string(),
-         capacity = impl_->options.max_erasure_barriers](sqlite3 *db) -> Result<void> {
-            Transaction tx(db);
-            if (!tx.valid())
-                return index_error(ErrorCode::Unavailable,
-                                   "conversation erasure transaction unavailable");
-            const auto blocked = erased(db, owner);
-            if (!blocked)
-                return blocked.error();
-            if (!blocked.value()) {
-                const auto barriers = count(db, "SELECT count(*) FROM conversation_erasures");
-                if (!barriers)
-                    return barriers.error();
-                if (barriers.value() >= capacity)
-                    return index_error(ErrorCode::ResourceExhausted,
-                                       "conversation erasure barrier capacity reached");
-                Statement insert(db, "INSERT INTO conversation_erasures(owner) VALUES(?1)");
-                if (!insert.valid() || !bind_text(insert, 1, owner) ||
-                    sqlite3_step(insert.get()) != SQLITE_DONE)
-                    return index_error(ErrorCode::Internal,
-                                       "conversation erasure barrier write failed");
-            }
-            if (auto removed = remove_segments(db, owner); !removed)
-                return removed;
-            return tx.commit();
-        });
+    auto result = impl_->channel.run<void>([owner = digest.to_string(),
+                                            capacity = impl_->options.max_erasure_barriers](
+                                               sqlite3 *db) -> Result<void> {
+        Transaction tx(db);
+        if (!tx.valid())
+            return index_error(ErrorCode::Unavailable,
+                               "conversation erasure transaction unavailable");
+        const auto blocked = erased(db, owner);
+        if (!blocked)
+            return blocked.error();
+        if (!blocked.value()) {
+            const auto barriers = count(db, "SELECT count(*) FROM conversation_erasures");
+            if (!barriers)
+                return barriers.error();
+            if (barriers.value() >= capacity)
+                return index_error(ErrorCode::ResourceExhausted,
+                                   "conversation erasure barrier capacity reached");
+            Statement insert(db, "INSERT INTO conversation_erasures(owner) VALUES(?1)");
+            if (!insert.valid() || !bind_text(insert, 1, owner) ||
+                sqlite3_step(insert.get()) != SQLITE_DONE)
+                return index_error(ErrorCode::Internal,
+                                   "conversation erasure barrier write failed");
+        }
+        if (auto removed = remove_segments(db, owner); !removed)
+            return removed;
+        Statement clear(db, "UPDATE conversation_sessions SET entries=0,anchor='' WHERE owner=?1");
+        if (!clear.valid() || !bind_text(clear, 1, owner) ||
+            sqlite3_step(clear.get()) != SQLITE_DONE)
+            return index_error(ErrorCode::Internal, "conversation source anchor removal failed");
+        return tx.commit();
+    });
     if (result)
         impl_->privacy_epoch.fetch_add(1);
     return result;

@@ -332,7 +332,8 @@ struct ConversationSegment final {
 
 [[nodiscard]] Result<std::vector<ConversationSegment>>
 segment_conversation(const SessionId &session, std::span<const ConversationEntry> entries,
-                     const ConversationSegmentationOptions &options = {});
+                     const ConversationSegmentationOptions &options = {},
+                     std::size_t first_entry = 0);
 
 // ---------------------------------------------------------------------------
 // Layer 0 admission path

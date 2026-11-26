@@ -228,6 +228,10 @@ int speech_search_excludes_diagnostics_and_explains_matches() {
     index.reset();
     MIRA_CHECK(exec_sql(options.path,
                         "ALTER TABLE conversation_segments DROP COLUMN search_text;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN entries;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN anchor;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN segmentation;"
+                        "DROP TABLE conversation_capacity;"
                         "UPDATE store_meta SET value='1.1' WHERE key='schema_version';"));
     opened = SqliteConversationIndex::open(fixture.executor, options);
     MIRA_CHECK(opened);
@@ -312,6 +316,10 @@ int a_1_0_index_migrates_in_place() {
                         "DROP TABLE conversation_fts;"
                         "ALTER TABLE conversation_segments DROP COLUMN search_text;"
                         "ALTER TABLE conversation_segments DROP COLUMN lexical;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN entries;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN anchor;"
+                        "ALTER TABLE conversation_sessions DROP COLUMN segmentation;"
+                        "DROP TABLE conversation_capacity;"
                         "CREATE VIRTUAL TABLE conversation_fts USING fts5(owner,text,"
                         " content='conversation_segments',content_rowid='rowid',"
                         " tokenize='unicode61');"
@@ -348,7 +356,7 @@ int a_1_0_index_migrates_in_place() {
     }
     // Every segment now carries its index text, derived from its own text:
     // the first row, both sides of the page boundary and the last one.
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.2");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.3");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM pragma_table_info('conversation_segments')"
                             " WHERE name = 'lexical'") == "1");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM conversation_fts") == "70");
@@ -371,7 +379,7 @@ int a_1_0_index_migrates_in_place() {
     }
     // The idempotent rebuild left the segments as the migration wrote them.
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM conversation_segments") == "70");
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.2");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.3");
     {
         auto opened = SqliteConversationIndex::open(fixture.executor, options);
         MIRA_CHECK(opened);

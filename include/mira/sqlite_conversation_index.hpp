@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 
 namespace kairo {
@@ -18,11 +19,19 @@ struct SqliteConversationIndexOptions final {
     std::size_t max_sessions = 128;
     std::size_t max_segments = 4096;
     std::size_t max_erasure_barriers = 4096;
+    // New events and payload bytes allowed per update, independent of history length.
     std::size_t max_source_events = 4096;
     std::size_t max_source_bytes = 4 * 1024 * 1024;
     std::size_t max_pending_requests = 32;
     std::chrono::milliseconds operation_timeout{30000};
     ConversationSegmentationOptions segmentation;
+    // Invoked on the calling worker at the first rebuild/advance capacity failure.
+    std::function<void(const Error &)> capacity_warning{};
+};
+
+struct ConversationIndexProgress final {
+    SessionSequence through = 0;
+    SessionSequence snapshot_through = 0;
 };
 
 // A rebuildable SQLite/FTS5 projection for authenticated session history.
@@ -43,12 +52,18 @@ class SqliteConversationIndex final : public IConversationContextIndex {
     [[nodiscard]] Result<SessionSequence> rebuild(const TenantId &tenant, SessionId session,
                                                   const IEventStore &source,
                                                   const OperationContext &context);
+    // Publish the next bounded prefix of the current snapshot.
+    [[nodiscard]] Result<ConversationIndexProgress>
+    advance(const TenantId &tenant, SessionId, const IEventStore &, const OperationContext &);
     [[nodiscard]] Result<ContextRetrievalResult> retrieve(const ContextQuery &query,
                                                           const RetrievalBudget &budget) override;
     [[nodiscard]] Result<void> erase_scope(const Sha256Digest &) override;
     [[nodiscard]] Result<void> close() noexcept;
 
   private:
+    [[nodiscard]] Result<ConversationIndexProgress> update(const TenantId &, SessionId,
+                                                           const IEventStore &,
+                                                           const OperationContext &, bool partial);
     class Impl;
     explicit SqliteConversationIndex(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;

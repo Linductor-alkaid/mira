@@ -39,6 +39,172 @@ ContextQuery query_for(const MemoryWorkBinding &work, std::string text = {}) {
     return query;
 }
 
+class CountingSource final : public IEventStore {
+  public:
+    explicit CountingSource(IEventStore &source) : source_(source) {}
+    Result<AppendReceipt> append(const AppendRequest &request) override {
+        return source_.append(request);
+    }
+    Result<std::vector<AppendReceipt>> append_batch(std::span<const AppendRequest> batch) override {
+        return source_.append_batch(batch);
+    }
+    Result<EventPage> read(const EventQuery &query) const override { return source_.read(query); }
+    Result<EventSlicePage> read_slice(const EventSliceQuery &query) const override {
+        auto page = source_.read_slice(query);
+        if (page)
+            events_read += page.value().events.size();
+        if (on_slice)
+            on_slice(query);
+        return page;
+    }
+    Result<StoreRecoveryReport> recover(const RecoveryOptions &options) override {
+        return source_.recover(options);
+    }
+    Result<void> flush(Durability durability) override { return source_.flush(durability); }
+
+    mutable std::size_t events_read = 0;
+    std::function<void(const EventSliceQuery &)> on_slice;
+
+  private:
+    IEventStore &source_;
+};
+
+int incremental_batches_match_one_pass_and_keep_the_previous_snapshot_on_failure() {
+    MemoryAgentFixture fixture;
+    const auto work = fixture.binding();
+    CountingSource source(*fixture.events);
+    SqliteConversationIndexOptions options;
+    options.path = fixture.root / "incremental.db";
+    options.max_source_events = 4;
+    options.segmentation.window_entries = 3;
+    options.segmentation.max_segment_bytes = 80;
+    std::size_t warnings = 0;
+    options.capacity_warning = [&](const Error &error) {
+        if (error.code == ErrorCode::ResourceExhausted)
+            ++warnings;
+    };
+    auto opened = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    auto index = std::move(opened).value();
+    const auto say = [&](std::string text) {
+        return source.append(speech(fixture, work, "AssistantSpeech", std::move(text)));
+    };
+    MIRA_CHECK(say("cedar one") && say("cedar two"));
+    MIRA_CHECK(rebuild(fixture, *index, work, source).value() == 2);
+    MIRA_CHECK(index->close());
+    index.reset();
+    opened = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(opened);
+    index = std::move(opened).value();
+
+    for (int i = 3; i <= 43; ++i) {
+        if (i % 7 == 0) {
+            MIRA_CHECK(source.append(speech(fixture, work, "TaskStateChanged", "noise")));
+        } else if (i % 9 == 0) {
+            MIRA_CHECK(say("cedar " + std::string(150, 's')));
+        } else {
+            MIRA_CHECK(say("cedar number " + std::to_string(i)));
+        }
+    }
+    for (int retry = 0; retry < 2; ++retry) {
+        auto overflow = rebuild(fixture, *index, work, source);
+        MIRA_CHECK(!overflow && overflow.error().code == ErrorCode::ResourceExhausted);
+    }
+    MIRA_CHECK(warnings == 1);
+    MIRA_CHECK(index->retrieve(query_for(work, "cedar"), {})
+                   .value()
+                   .candidates.front()
+                   .through_event_sequence == 2);
+    SessionSequence through = 2;
+    while (through < 43) {
+        source.events_read = 0;
+        const auto next =
+            fixture.executor
+                .submit_auto([&] {
+                    return index->advance(work.principal.tenant_id, work.work.session_id, source,
+                                          memory_context(work.work));
+                })
+                .get();
+        MIRA_CHECK(next && next.value().through > through && next.value().through - through <= 4 &&
+                   next.value().snapshot_through == 43);
+        MIRA_CHECK(source.events_read <= 6);
+        through = next.value().through;
+    }
+
+    options.path = fixture.root / "one-pass.db";
+    options.max_source_events = 128;
+    auto full = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(full && rebuild(fixture, *full.value(), work, source).value() == 43);
+    RetrievalBudget budget;
+    budget.top_k = 64;
+    for (const auto *text : {"", "cedar"}) {
+        const auto query = query_for(work, text);
+        const auto expected = full.value()->retrieve(query, budget);
+        const auto actual = index->retrieve(query, budget);
+        MIRA_CHECK(expected && actual && expected.value().candidates.size() > 8 &&
+                   actual.value().candidates.size() == expected.value().candidates.size());
+        for (std::size_t i = 0; i < expected.value().candidates.size(); ++i)
+            MIRA_CHECK(context_candidate_to_json(actual.value().candidates[i]) ==
+                       context_candidate_to_json(expected.value().candidates[i]));
+    }
+    MIRA_CHECK(say("cedar late"));
+    bool published = false;
+    source.on_slice = [&](const EventSliceQuery &query) {
+        if (!query.through_sequence && query.after_sequence == 43) {
+            const auto inner = index->rebuild(work.principal.tenant_id, work.work.session_id,
+                                              *fixture.events, memory_context(work.work));
+            published = inner && inner.value() == 44;
+        }
+    };
+    const auto superseded = rebuild(fixture, *index, work, source);
+    MIRA_CHECK(published && !superseded && superseded.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(index->retrieve(query_for(work, "late"), {}).value().candidates.size() == 1);
+
+    MIRA_CHECK(say("cedar after competing publisher"));
+    bool erased = false;
+    source.on_slice = [&](const EventSliceQuery &query) {
+        if (!query.through_sequence && query.after_sequence == 44) {
+            const auto owner = memory_erasure_scope_digest(work.scopes.front());
+            erased = index->erase_scope(owner).has_value();
+        }
+    };
+    auto invalidated = rebuild(fixture, *index, work, source);
+    MIRA_CHECK(erased && !invalidated && invalidated.error().code == ErrorCode::InvalidState);
+    MIRA_CHECK(index->retrieve(query_for(work, "cedar"), {}).value().candidates.empty());
+    MIRA_CHECK(!rebuild(fixture, *index, work, source));
+    return 0;
+}
+
+int byte_budget_can_publish_the_prefix_before_an_oversized_event() {
+    MemoryAgentFixture fixture;
+    const auto work = fixture.binding();
+    SqliteConversationIndexOptions options;
+    options.path = fixture.root / "bytes.db";
+    auto small = speech(fixture, work, "AssistantSpeech", "cedar small");
+    options.max_source_bytes = small.payload.type.size() + small.payload.data.size();
+    MIRA_CHECK(fixture.events->append(small));
+    MIRA_CHECK(
+        fixture.events->append(speech(fixture, work, "AssistantSpeech", std::string(256, 'x'))));
+    auto index = SqliteConversationIndex::open(fixture.executor, options);
+    MIRA_CHECK(index);
+    const auto advance = [&] {
+        return fixture.executor
+            .submit_auto([&] {
+                return index.value()->advance(work.principal.tenant_id, work.work.session_id,
+                                              *fixture.events, memory_context(work.work));
+            })
+            .get();
+    };
+    const auto prefix = advance();
+    MIRA_CHECK(prefix && prefix.value().through == 1 && prefix.value().snapshot_through == 2);
+    const auto blocked = advance();
+    MIRA_CHECK(!blocked && blocked.error().code == ErrorCode::ResourceExhausted);
+    const auto recalled = index.value()->retrieve(query_for(work, "cedar"), {});
+    MIRA_CHECK(recalled && recalled.value().candidates.size() == 1 &&
+               recalled.value().candidates.front().through_event_sequence == 1);
+    return 0;
+}
+
 int durable_recall_rebuild_and_scope_checks() {
     MemoryAgentFixture fixture;
     const auto work = fixture.binding();
@@ -204,6 +370,13 @@ int joint_erasure_and_recovery() {
 } // namespace
 
 int main() {
+    if (const auto result =
+            incremental_batches_match_one_pass_and_keep_the_previous_snapshot_on_failure();
+        result != 0)
+        return result;
+    if (const auto result = byte_budget_can_publish_the_prefix_before_an_oversized_event();
+        result != 0)
+        return result;
     if (const auto result = durable_recall_rebuild_and_scope_checks(); result != 0)
         return result;
     return joint_erasure_and_recovery();

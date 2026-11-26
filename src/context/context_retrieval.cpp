@@ -656,7 +656,7 @@ namespace {
 
 Result<std::vector<ConversationSegment>>
 segment_conversation(const SessionId &session, std::span<const ConversationEntry> entries,
-                     const ConversationSegmentationOptions &options) {
+                     const ConversationSegmentationOptions &options, std::size_t first_entry) {
     const auto valid = options.validate();
     if (!valid) {
         return valid.error();
@@ -664,9 +664,12 @@ segment_conversation(const SessionId &session, std::span<const ConversationEntry
     if (session.is_nil()) {
         return retrieval_error(ContextDomainCode::InvalidItem, "segmentation requires a session");
     }
+    if (entries.size() > std::numeric_limits<std::size_t>::max() - first_entry) {
+        return retrieval_error(ContextDomainCode::InvalidItem,
+                               "conversation entry offset overflow");
+    }
 
     std::vector<ConversationSegment> segments;
-    std::size_t first_entry = 0;
     std::size_t consumed = 0;
     std::string text;
     std::vector<EventId> source_events;

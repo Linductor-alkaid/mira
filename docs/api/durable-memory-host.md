@@ -68,9 +68,13 @@ ResourceExhausted。`directory_capacity()` 返回当前总量和扫描计数，�
 将 `SqliteConversationIndex` 接到宿主的授权会话和现有 Executor。使用独占 SQLite
 数据库文件。宿主选定已授权 Session 和 Tenant，消费有限重建任务的 future，再按精确
 Session 和其配对的 Session scope 走 IContextRetriever。重建要求支持
-`read_slice` 的事件源并固定本轮来源上界。它处理本会话的完整有界前缀，超过配置的
-事件或字节上限时返回 ResourceExhausted 并保留旧索引。扫描与提交之间检查协作取消。
-SQLite 已接纳的写入可能在等待超时后完成；按相同身份和水位重试可核对结果。
+`read_slice` 的事件源并固定本轮来源上界。`rebuild` 从已发布水位续建，`max_source_events`
+和 `max_source_bytes` 约束本轮新增来源。超过预算时返回 `ResourceExhausted` 并保留已发布
+快照。积压可以反复用 `advance` 追平，直到结果的 `through` 等于 `snapshot_through`。
+单个事件超过整轮字节预算时还需调整预算。`capacity_warning` 可接收每次打开后首次容量
+拒绝的诊断。续建固定既有会话的分段选项，并在一个事务发布片段和水位。并发推进或
+擦除会拒绝失效的批次。SQLite 已接纳的写入可能在等待超时后完成，再次调用会核对
+已发布水位。
 
 ```cpp
 auto built = executor.submit_auto([&] {
@@ -100,11 +104,12 @@ FTS5 命中的单元，`lexical_bm25` 提供未转换的 rank。`lexical_score` 
 重放持久擦除意图，再对外开放索引。会话擦除会持久封闭索引 scope，旧日志重建被拒。
 索引擦除失败时当前实例封闭读取与重建。宿主处理失败原因，关闭服务和索引，重开后
 重放擦除意图。原始事件、备份与磁盘回收由各自生命周期管理。
-schema 1.2 会在打开 1.0 或 1.1 文件时从历史片段重建派生正文和全文索引。水位、来源摘要
-与擦除屏障继续有效。旧片段依据既有工具调用行边界恢复发言。
+schema 1.3 打开旧文件时恢复已投影条目数。1.0 和 1.1 文件同时从历史片段重建派生正文和
+全文索引。水位与擦除屏障继续有效。旧片段依据既有工具调用行边界恢复发言。
 [DEC-122](../decisions/DEC-122-durable-conversation-index.md)
 [DEC-147](../decisions/DEC-147-lexical-segmentation-and-query-composition.md)
 [DEC-171](../decisions/DEC-171-conversation-speech-search.md)
+[DEC-172](../decisions/DEC-172-incremental-conversation-index.md)
 
 ## 社交对象目录
 
