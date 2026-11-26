@@ -1,7 +1,7 @@
 # M30 验收与验证记录
 
 > 状态：In Progress
-> 更新日期：2026-11-25
+> 更新日期：2026-11-26
 > 负责人：Mira Maintainers
 > 所属计划：[M30 长期记忆接入](m30-long-term-memory-integration.md)
 > 验收依据：[DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md) 与
@@ -15,7 +15,7 @@
 
 | 门禁 | 当前证据 | 未完成的验收及归属 |
 | --- | --- | --- |
-| `M30-G1` 候选经既有写入管线 | Record、Episode、社交属性与有向关系、偏好审批、技能提示均有合并或类型化写入证据。见[写入验收索引](#evidence-recording) | `M30-03` 补余下类型化入口的候选与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
+| `M30-G1` 候选经既有写入管线 | Record、Episode、社交属性与有向关系、偏好审批、世界观察、技能提示均有合并或类型化写入证据。见[写入验收索引](#evidence-recording) | `M30-03` 补余下类型化入口的候选与处置报告，并验证直写绕过的拒绝或标记。`M30-38` 验收统一自动触发及六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
@@ -39,7 +39,7 @@
 | 偏好批准与版本化纠正 | M30-05 已交付部分 | [偏好审批、恢复与擦除测试](#history-preference) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
-| 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23 | [结构化事实、时间和导航重新观察](#history-world) |
+| 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23，M30-03 接通验证事件写入 | [结构化事实、时间和导航重新观察](#history-world)、[验证事实写入](#history-verified-world-recording) |
 | 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch) |
 | 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills) |
 | 社交来源账号与消息归因、自动提及、候选写入 | M30-35 / M30-40～42，M30-03 与 M30-36 的已交付部分 | [来源账号、消息证据和正文提及](#history-social-recording)、[属性](#history-social-attributes)、[有向关系](#history-social-relations)、[前序指代双证据](#history-social-references) |
@@ -49,7 +49,8 @@
 <a id="evidence-recording"></a>
 
 写入门禁的主要证据来自 [Record 与循环事件](#history-loop-episodes)、[偏好](#history-preference)、
-[社交候选](#history-social-attributes)及[技能提示](#history-skills)。各自沿对应的范围与证据规则验收。
+[社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)及
+[技能提示](#history-skills)。各自沿对应的范围与证据规则验收。
 
 <a id="evidence-goals"></a>
 
@@ -1845,3 +1846,34 @@ Linux Debug 全量 **214/214**，四项社交测试各连续通过 **25/25**，A
 `/tmp/mira-m30-reference-final-debug-*.log`、`/tmp/mira-m30-reference-final-repeat.log`、
 `/tmp/mira-m30-reference-asan-*.log`、`/tmp/mira-m30-reference-final-tidy.log` 和
 `/tmp/mira-m30-reference-final-quality.log`。
+
+<a id="history-verified-world-recording"></a>
+
+### 2026-11-26 从验证事件记录世界观察
+
+基线 `27c0b1e`，分支 `feat/m30-memory-systems`。M30-03 按
+[DEC-162](../decisions/DEC-162-verified-world-fact-recording.md) 接通类型化世界事实写入。
+测试通过生产者 `VerifiedFactPublisher` 生成验证事件，再由宿主入口从 FileEventStore
+取证并写入 SQLite。覆盖候选处置、同租户错误 scope、跨租户拒绝、错误事实键及事件定位、
+世代不符、截止与提交前取消、重开幂等、擦除后拒绝失效来源，以及租约释放。
+
+```bash
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_world_fact_test$' --repeat until-fail:15
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 3 --target mira_m30_world_fact_test
+ctest --test-dir build/asan --output-on-failure -R '^mira_m30_world_fact_test$'
+clang-tidy -p build/debug --warnings-as-errors='*' src/context/world_fact_recording.cpp
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Debug 全量 **214/214**，世界事实定向重复通过 **15/15**，ASan 定向 **1/1**。
+严格 clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志见
+`/tmp/mira-m30-world-record-*.log`。
+
+| 待验证 | 负责人及补跑条件 |
+| --- | --- |
+| 生产宿主的事件选择、租约和自动消费 | Mira Maintainers 与宿主集成者在 M30-38 接通生产事件和当前授权后，以重启、撤权和擦除并发场景验收 |
+| Windows、Android、远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |

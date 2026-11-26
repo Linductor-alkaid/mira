@@ -29,7 +29,7 @@
 | [社交消息参与者](durable-memory-host.md#解析当前发言者和引用对象) | `sqlite_social_directory.hpp` | 当前发言者、账号提及、引用消息和带歧义的正文别名候选 |
 | [社交正文引用提取](durable-memory-host.md#自动提取正文中的对象引用) | `social_mention_inference.hpp` | 从已索引消息推断正文中的名称和前序发言指代，返回证据候选 |
 | [社交画像字段](durable-memory-host.md#社交画像字段)、[社交关系](durable-memory-host.md#社交关系断言) | `social_profile.hpp` | 字段和有向关系断言、来源与时态检索 |
-| [世界事实](durable-memory-host.md#世界事实的新鲜度) | `world_fact.hpp` | 环境与应用事实、实体属性索引和新鲜度 |
+| [世界事实](durable-memory-host.md#世界事实的新鲜度)、[从验证事件写入](durable-memory-host.md#从已提交的验证事件写入) | `world_fact.hpp`、`world_fact_recording.hpp` | 环境与应用事实、证据写入、实体属性索引和新鲜度 |
 | [目标与承诺](durable-memory-host.md#目标与承诺)、[派发回执](durable-memory-host.md#一次性目标的派发回执)、[目标兑现](durable-memory-host.md#按任务完成证据兑现一次性目标)、[重复计划](durable-memory-host.md#重复计划与触发回执)、[目标存储授权](durable-memory-host.md#目标存储授权) | `sqlite_goal_store.hpp` | 持久目标、派发、兑现、提醒与当前授权 |
 | [到期目标周期检查](durable-memory-host.md#周期检查到期目标和计划) | `goal_dispatch_poller.hpp` | 有界检查、按稳定 ID 交给宿主派发、回执及关闭 |
 | [日历及时区](durable-memory-host.md#日历及时区) | `goal_calendar.hpp` | 本地日期规则、固定时区快照和 UTC 触发时间 |

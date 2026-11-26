@@ -1,7 +1,7 @@
 # 持久记忆宿主接入
 
 > 状态：Active
-> 更新日期：2026-11-25
+> 更新日期：2026-11-26
 > 关联：[存储研究](../design/memory-storage-reference-study.md)、
 > [记忆代理 API](memory-agent.md)、[存储维护计划](../plans/maintenance-2026-11-memory-storage.md)
 
@@ -365,6 +365,28 @@ scope，擦除按所提交的 scope 执行。
 
 结构化观察通过宿主专用入口读取。宿主仍负责当前授权、观察和动作验证。
 见 [DEC-127](../decisions/DEC-127-world-fact-address-and-freshness.md)。
+
+### 从已提交的验证事件写入
+
+`world_fact_recording.hpp` 提供 `record_verified_world_fact`。适用于宿主已通过
+`VerifiedFactPublisher` 提交带观察证据的 `TaskFactVerified` v1 事件，并拥有来源和目标
+的精确授权。宿主负责配置可信事件库、事实键到世界属性的映射，以及写入租约。
+
+```cpp
+const WorldFactRecordingBinding binding{
+    runtime_id, authorized_verifier_scope, "screen.display_scale", authorized_world_scope,
+    {entity_id, "display_scale"}};
+const WorldFactSource source{publication.session_sequence, publication.event_id};
+auto report = record_verified_world_fact(*memory_store, *events, binding, source, operation,
+                                         acquire_world_write_lease);
+// 检查 report 的错误或候选处置，再推进宿主处理进度。
+```
+
+在已有的 Executor 作业中调用，`operation` 携带来源的会话、任务和任务世代。入口按单个
+事件位置取证，使用验证主张的值和有效区间，并沿 `MemoryConsolidator` 提交。观察引用该
+验证事件，可沿事件继续追溯原始观察。复查或跨重启重试使用同一事件位置和映射。租约在
+读取前取得，在提交前复核，并持有至写入结束。宿主通过同一权限边界处理撤权、擦除和
+来源失效。见 [DEC-162](../decisions/DEC-162-verified-world-fact-recording.md)。
 
 ## 导航重新观察
 

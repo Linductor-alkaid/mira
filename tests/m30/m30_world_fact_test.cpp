@@ -1,7 +1,9 @@
 #include "support/m36_support.hpp"
 #include "support/test.hpp"
 
+#include <mira/verified_fact.hpp>
 #include <mira/world_fact.hpp>
+#include <mira/world_fact_recording.hpp>
 
 namespace {
 using namespace mira;
@@ -25,6 +27,181 @@ bool reads(SqliteMemoryStore &memory, const WorldFactQuery &query, const MemoryR
     const auto lookup = memory.lookup_world_fact(query);
     return lookup && lookup.value().state == WorldFactState::Current && lookup.value().record &&
            memory_record_to_json(*lookup.value().record) == memory_record_to_json(record);
+}
+
+class NativeObservationLease final : public IVerifiedFactLease {
+  public:
+    Result<void> validate(const PublishedTaskFact &fact, const EventEnvelope &source,
+                          const OperationContext &) override {
+        const auto body = parse_json(source.payload.data);
+        const auto *scale = body ? body.value().find("display_scale") : nullptr;
+        if (!scale || !scale->is_string() || *scale->as_string() != fact.claim.value) {
+            Error error;
+            error.code = ErrorCode::InvalidObservation;
+            return error;
+        }
+        return {};
+    }
+};
+
+struct WorldRecordingAuthority final {
+    bool allowed = true;
+    bool cancel_on_validation = false;
+    bool cancelled = false;
+    unsigned entered = 0;
+    unsigned released = 0;
+};
+
+class WorldRecordingLease final : public IWorldFactRecordingLease {
+  public:
+    explicit WorldRecordingLease(WorldRecordingAuthority &authority) : authority_(authority) {
+        ++authority_.entered;
+    }
+    ~WorldRecordingLease() override { ++authority_.released; }
+
+    Result<void> validate() override {
+        if (!authority_.allowed)
+            return make_memory_error(MemoryDomainCode::ScopeDenied, "fixture withdrew access");
+        authority_.cancelled = authority_.cancel_on_validation;
+        return {};
+    }
+
+  private:
+    WorldRecordingAuthority &authority_;
+};
+
+int records_committed_verification() {
+    MemoryAgentFixture fixture;
+    const auto work = fixture.binding();
+    const auto tenant = fixture.principal.tenant_id;
+    const auto environment = Id128::generate();
+    const WorldFactRecordingBinding binding{
+        fixture.runtime,
+        {MemoryScopeKind::Environment, "test-display", tenant.to_string()},
+        "screen.display_scale",
+        world_environment_scope(tenant, environment).value(),
+        {Id128::generate(), "display_scale"}};
+
+    auto context = make_control_context();
+    context.session = work.work.session_id;
+    context.task = work.work.task_id;
+    context.task_epoch = work.work.task_epoch;
+    VerifiedFactClaim claim;
+    claim.publication_id = EventId::generate();
+    claim.task = context.task;
+    claim.task_epoch = context.task_epoch;
+    claim.environment_epoch = work.environment_epoch;
+    claim.key = binding.verified_key;
+    claim.value = "125%";
+    claim.verifier = "fixture.display";
+    claim.evidence_event = EventId::generate();
+    const auto observation = canonical_json_string(
+        JsonValue::Object{{"observation_id", ObservationId::generate().to_string()},
+                          {"observed_at", wall_nanos(Timestamp::now())},
+                          {"task_epoch", static_cast<std::int64_t>(claim.task_epoch)},
+                          {"environment_epoch", static_cast<std::int64_t>(claim.environment_epoch)},
+                          {"display_scale", claim.value}});
+    const auto observed = fixture.events->append({claim.evidence_event,
+                                                  fixture.runtime,
+                                                  context.session,
+                                                  context.task,
+                                                  {"ObservationRecorded", observation}});
+    MIRA_CHECK(observed);
+    claim.evidence_digest = digest_string(observation);
+    claim.valid_from = Timestamp::now().wall;
+    claim.valid_until = claim.valid_from + 1h;
+    const auto publish =
+        [](const PublishedTaskFact &, const EventEnvelope &,
+           const OperationContext &) -> Result<std::unique_ptr<IVerifiedFactLease>> {
+        return std::unique_ptr<IVerifiedFactLease>{std::make_unique<NativeObservationLease>()};
+    };
+    const auto published =
+        fixture.executor
+            .submit_auto([&] {
+                return VerifiedFactPublisher{fixture.runtime, context.session,
+                                             binding.verified_scope, fixture.events, publish}
+                    .publish(claim, context);
+            })
+            .get();
+    MIRA_CHECK(published);
+    const WorldFactSource source{published.value().session_sequence, published.value().event_id};
+
+    WorldRecordingAuthority authority;
+    context.cancellation_requested = [&] { return authority.cancelled; };
+    const WorldFactRecordingLeaseAcquirer acquire =
+        [&](const WorldFactRecordingBinding &, const WorldFactSource &,
+            const OperationContext &) -> Result<std::unique_ptr<IWorldFactRecordingLease>> {
+        return std::unique_ptr<IWorldFactRecordingLease>{
+            std::make_unique<WorldRecordingLease>(authority)};
+    };
+    const auto record = [&](const WorldFactRecordingBinding &target, const WorldFactSource &event) {
+        return fixture.executor
+            .submit_auto([&] {
+                return record_verified_world_fact(*fixture.memory, *fixture.events, target, event,
+                                                  context, acquire);
+            })
+            .get();
+    };
+
+    auto foreign = binding;
+    foreign.world_scope = world_environment_scope(TenantId::generate(), environment).value();
+    MIRA_CHECK(!record(foreign, source) && authority.entered == 0);
+    auto wrong_key = binding;
+    wrong_key.verified_key = "screen.rotation";
+    MIRA_CHECK(!record(wrong_key, source));
+    auto wrong_scope = binding;
+    wrong_scope.verified_scope.subject_id = "unrelated-display";
+    MIRA_CHECK(!record(wrong_scope, source));
+    wrong_scope.verified_scope.kind = MemoryScopeKind::User;
+    MIRA_CHECK(!record(wrong_scope, source));
+    MIRA_CHECK(!record(binding, {source.sequence, EventId::generate()}));
+    MIRA_CHECK(!record(binding, {observed.value().session_sequence, claim.evidence_event}));
+    ++context.task_epoch;
+    MIRA_CHECK(!record(binding, source));
+    --context.task_epoch;
+    context.deadline = context.started_at.monotonic;
+    auto expired = record(binding, source);
+    MIRA_CHECK(!expired && expired.error().code == ErrorCode::DeadlineExceeded);
+    context.deadline.reset();
+
+    authority.cancel_on_validation = true;
+    const auto stopped = record(binding, source);
+    MIRA_CHECK(!stopped && stopped.error().code == ErrorCode::Cancelled);
+    authority.cancel_on_validation = false;
+    authority.cancelled = false;
+    const WorldFactQuery query{binding.world_scope, binding.property, {}, {}};
+    MIRA_CHECK(fixture.memory->lookup_world_fact(query).value().state == WorldFactState::Missing);
+
+    const auto applied = record(binding, source);
+    MIRA_CHECK(applied && applied.value().count_of(CandidateDisposition::Applied) == 1 &&
+               !applied.value().entries.front().idempotent_replay);
+    const auto current = fixture.memory->lookup_world_fact(query);
+    MIRA_CHECK(current && current.value().record &&
+               current.value().record->statement == claim.value &&
+               current.value().record->kind == MemoryKind::EnvironmentFact &&
+               current.value().record->verification == MemoryVerification::Observed &&
+               current.value().record->provenance == std::vector<EventId>{claim.publication_id});
+
+    fixture.events = std::make_shared<FileEventStore>(fixture.root / "events");
+    MIRA_CHECK(fixture.memory->close());
+    SqliteMemoryStoreOptions options;
+    options.path = fixture.root / "memory.db";
+    auto reopened = SqliteMemoryStore::open(fixture.executor, options);
+    MIRA_CHECK(reopened);
+    fixture.memory = std::move(reopened).value();
+    const auto replay = record(binding, source);
+    MIRA_CHECK(replay && replay.value().entries.front().idempotent_replay &&
+               reads(*fixture.memory, query, *current.value().record));
+
+    authority.allowed = false;
+    ErasureRequest erase;
+    erase.scope = binding.world_scope;
+    erase.reason = "test source retired";
+    const auto erased = fixture.memory->erase(erase);
+    MIRA_CHECK(erased && erased.value().status == ErasureStatus::Complete);
+    MIRA_CHECK(!record(binding, source) && authority.entered == authority.released);
+    MIRA_CHECK(fixture.memory->lookup_world_fact(query).value().state == WorldFactState::Missing);
+    return 0;
 }
 
 int exact_scope_and_freshness() {
@@ -167,5 +344,7 @@ int ambiguous_and_untrusted_observation() {
 int main() {
     if (const int result = exact_scope_and_freshness(); result != 0)
         return result;
-    return ambiguous_and_untrusted_observation();
+    if (const int result = ambiguous_and_untrusted_observation(); result != 0)
+        return result;
+    return records_committed_verification();
 }

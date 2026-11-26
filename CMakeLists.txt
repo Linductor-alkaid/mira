@@ -115,6 +115,7 @@ add_library(mira_core
     src/context/social_profile.cpp
     src/context/social_mention_extraction.cpp
     src/context/world_fact.cpp
+    src/context/world_fact_recording.cpp
     src/context/goal_calendar.cpp
     src/context/memory_consolidation.cpp
     src/context/extraction_model_provider.cpp
