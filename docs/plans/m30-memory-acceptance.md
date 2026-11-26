@@ -40,7 +40,7 @@
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
 | 世界事实及重新观察 | M30-14 汇总 M30-22 / M30-23，M30-03 接通验证事件写入 | [结构化事实、时间和导航重新观察](#history-world)、[验证事实写入](#history-verified-world-recording) |
-| 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46，M30-03 接纳终答承诺 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch)、[终答承诺接纳](#history-evidenced-commitments)、[批量接纳](#history-batched-commitments) |
+| 目标持久层 | M30-15 汇总 M30-24～28，兑现证据来自 M30-46，M30-03 接纳终答承诺及重复计划 | [目标和计划存储、授权、纠正及提醒回执](#history-goals)、[派发与兑现](#history-goal-dispatch)、[终答承诺接纳](#history-evidenced-commitments)、[批量接纳](#history-batched-commitments)、[终答重复计划](#history-recurring-commitment) |
 | 技能目录、带版本的恢复经验与提示 | M30-16 汇总 M30-29～34，M30-03 接通技能提示候选报告 | [技能发布、撤回、版本、授予范围及故障续办](#history-skills)、[技能提示候选报告](#history-skill-hint-candidate-report) |
 | 社交来源账号与消息归因、自动提及、候选写入 | M30-35 / M30-40～42，M30-03 与 M30-36 的已交付部分 | [来源账号、消息证据和正文提及](#history-social-recording)、[属性](#history-social-attributes)、[有向关系](#history-social-relations)、[前序指代双证据](#history-social-references) |
 | 到期派发与已确认事实恢复 | M30-43～52，M30-37 的已交付部分 | [待派发、重复计划、兑现、只读对账、准入和完成证据](#history-goal-dispatch) |
@@ -1971,4 +1971,36 @@ Linux Debug 全量通过 **214/214**，目标库定向重复 **15/15**，ASan �
 | 待验证 | 负责人及补跑条件 |
 | --- | --- |
 | 生产的多承诺提取与跨重启消费 | Mira Maintainers 与宿主集成者在 M30-38 接通结算消费后，验证稳定排序、失败重试和擦除后重放。到期执行由 M30-37 联验 |
+| Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |
+
+<a id="history-recurring-commitment"></a>
+
+### 2026-11-26 从终答证据接纳重复计划
+
+基线 `0618c33`，分支 `feat/m30-memory-systems`。M30-03 按
+[DEC-166](../decisions/DEC-166-evidenced-recurring-plan-recording.md) 在现有目标库接纳来自
+已结算终答的重复计划。新增测试走实际 `ConversationLoop`、FileEventStore 和 SQLite。
+覆盖固定间隔、日历快照、来源与计划资源权限、错误摘录、到期索引、触发推进后重开重放、
+定义冲突、取消与擦除屏障，以及与同一终答的一次性承诺共存。
+
+```bash
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure -R '^mira_m30_recurring_commitment_test$' --repeat until-fail:15
+cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DMIRA_ENABLE_ASAN=ON -DMIRA_BUILD_TESTS=ON
+cmake --build build/asan -j 3 --target mira_m30_recurring_commitment_test mira_m30_goal_store_test
+ctest --test-dir build/asan -j 2 --output-on-failure -R '^mira_m30_(recurring_commitment|goal_store)_test$'
+printf '%s\n' src/storage/goal_commitment_recording.cpp src/storage/sqlite_goal_store.cpp \
+  | xargs -P 2 -n 1 clang-tidy -p build/debug --warnings-as-errors='*'
+cmake --build build/debug --target format-check docs-check sbom-check platform-boundary-check architecture-check
+git diff --check
+```
+
+Linux Debug 全量通过 **215/215**，重复计划定向重复 **15/15**，ASan 定向 **2/2**。
+严格 clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。日志见
+`/tmp/mira-m30-recurring-commitment-*.log`。
+
+| 待验证 | 负责人及补跑条件 |
+| --- | --- |
+| 生产环境的重复计划提取、规则供给及自动执行 | Mira Maintainers 与宿主集成者在 M30-38 接入结算与时区供给后，验证自然语言规则解释及跨重启消费。到期执行与任务恢复按 M30-37 联验 |
 | Windows、Android、完整远端 CI 和真实宿主 | Mira Maintainers 在推送被测版本并具备对应环境后，按第 3 节矩阵补跑 |

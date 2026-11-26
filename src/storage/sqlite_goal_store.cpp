@@ -650,9 +650,10 @@ bool bind_plan(Statement &statement, const RecurringPlanDefinition &definition, 
                 : sqlite3_bind_null(statement.get(), 9) == SQLITE_OK);
 }
 
-Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOptions &options,
-                                            const GoalKey &key,
-                                            RecurringPlanDefinition definition) {
+Result<RecurringPlanCreationReceipt> create_plan_row(sqlite3 *db,
+                                                     const SqliteGoalStoreOptions &options,
+                                                     const GoalKey &key,
+                                                     RecurringPlanDefinition definition) {
     Transaction transaction(db);
     if (!transaction.valid())
         return goal_error(ErrorCode::Unavailable, "plan creation transaction unavailable");
@@ -663,7 +664,7 @@ Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOp
         const auto &plan = *prior.value();
         if (plan.state == RecurringPlanState::Active && plan.revision == 1 &&
             plan.definition == definition)
-            return std::move(*prior.value());
+            return RecurringPlanCreationReceipt{std::move(*prior.value()), true};
         return goal_error(ErrorCode::InvalidState, "plan ID is already recorded or erased");
     }
     if (auto room =
@@ -686,8 +687,8 @@ Result<RecurringPlanRecord> create_plan_row(sqlite3 *db, const SqliteGoalStoreOp
         return goal_error(ErrorCode::Internal, "plan creation failed");
     if (auto committed = transaction.commit(); !committed)
         return committed.error();
-    return RecurringPlanRecord{key, RecurringPlanState::Active, 1, std::move(definition), first,
-                               {}};
+    return RecurringPlanCreationReceipt{
+        {key, RecurringPlanState::Active, 1, std::move(definition), first, {}}, false};
 }
 
 Result<RecurringPlanRecord> replace_plan_row(sqlite3 *db, const GoalKey &key,
@@ -1044,11 +1045,19 @@ Result<GoalReminderReceipt> SqliteGoalStore::record_reminder(const GoalKey &key,
 
 Result<RecurringPlanRecord> SqliteGoalStore::create_plan(const GoalKey &key,
                                                          RecurringPlanDefinition definition) {
+    auto created = create_plan_with_receipt(key, std::move(definition));
+    if (!created)
+        return created.error();
+    return std::move(created).value().record;
+}
+
+Result<RecurringPlanCreationReceipt>
+SqliteGoalStore::create_plan_with_receipt(const GoalKey &key, RecurringPlanDefinition definition) {
     if (!valid_key(key) || !first_plan_occurrence(definition))
         return goal_error(ErrorCode::InvalidArgument, "invalid recurring plan definition");
     if (matches_content_marker(definition.title, default_forbidden_content_markers()))
         return goal_error(ErrorCode::SafetyRejected, "recurring plan title is not retainable");
-    return impl_->run<RecurringPlanRecord>(
+    return impl_->run<RecurringPlanCreationReceipt>(
         {key.owner, Resource::RecurringPlan, Operation::Create, key.id},
         [key, options = &impl_->options, definition = std::move(definition)](sqlite3 *db) mutable {
             return create_plan_row(db, *options, key, std::move(definition));

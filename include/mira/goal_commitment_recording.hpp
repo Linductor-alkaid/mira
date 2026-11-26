@@ -29,6 +29,14 @@ struct GoalCommitmentExcerpt final {
     std::optional<std::size_t> quote_offset = std::nullopt; // UTF-8 byte offset in the answer.
 };
 
+struct GoalRecurringPlanCandidate final {
+    std::string quote;
+    GoalTime first_at;
+    std::chrono::milliseconds interval{};
+    std::optional<GoalCalendarRule> calendar = std::nullopt;
+    std::optional<std::size_t> quote_offset = std::nullopt;
+};
+
 // Checks live access to the source work and its exact goal owner. The
 // authorized SqliteGoalStore separately guards creation on its worker.
 using GoalCommitmentAuthorizer =
@@ -46,6 +54,13 @@ using GoalCommitmentAuthorizer =
 [[nodiscard]] Result<std::vector<GoalCreationReceipt>> record_conversation_commitments(
     SqliteGoalStore &goals, const IEventStore &events, const GoalCommitmentBinding &binding,
     const GoalCommitmentSource &source, std::span<const GoalCommitmentExcerpt> excerpts,
+    const OperationContext &operation, const GoalCommitmentAuthorizer &authorize);
+
+// One recurring plan per terminal answer, with a plan identity separate from
+// its one-time goals. Replaying an active definition preserves its progress.
+[[nodiscard]] Result<RecurringPlanCreationReceipt> record_conversation_recurring_plan(
+    SqliteGoalStore &goals, const IEventStore &events, const GoalCommitmentBinding &binding,
+    const GoalCommitmentSource &source, const GoalRecurringPlanCandidate &candidate,
     const OperationContext &operation, const GoalCommitmentAuthorizer &authorize);
 
 } // namespace mira

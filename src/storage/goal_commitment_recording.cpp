@@ -33,6 +33,26 @@ bool source_authorized(const GoalCommitmentBinding &binding, const OperationCont
     }
 }
 
+bool valid_source(const GoalCommitmentBinding &binding, const GoalCommitmentSource &source,
+                  const OperationContext &operation) {
+    return !binding.runtime.is_nil() && !binding.owner.tenant.is_nil() &&
+           !binding.owner.user.is_nil() && source.settlement_sequence != 0 &&
+           !source.settlement_event.is_nil() && !operation.session.is_nil() &&
+           !operation.task.is_nil() && !operation.operation.is_nil();
+}
+
+bool valid_quote_size(std::string_view quote) { return !quote.empty() && quote.size() <= 512; }
+
+Result<void> check_source_access(const GoalCommitmentBinding &binding,
+                                 const OperationContext &operation,
+                                 const GoalCommitmentAuthorizer &authorize) {
+    if (auto active = check_operation(operation); !active)
+        return active.error();
+    if (!source_authorized(binding, operation, authorize))
+        return commitment_error(ErrorCode::PermissionDenied, "commitment source access denied");
+    return check_operation(operation);
+}
+
 Result<EventEnvelope> read_evidence(const IEventStore &events, const GoalCommitmentBinding &binding,
                                     const OperationContext &operation, SessionSequence sequence,
                                     EventId id, const char *type) {
@@ -74,8 +94,9 @@ Result<JsonValue> read_detail(const EventEnvelope &event, const OperationContext
     return std::move(*detail);
 }
 
-GoalKey commitment_key(const GoalOwner &owner, EventId answer, std::size_t slot) {
-    auto identity = "mira.conversation.commitment.v1/" + owner.tenant.to_string() + "/" +
+GoalKey sourced_goal_key(std::string_view prefix, const GoalOwner &owner, EventId answer,
+                         std::size_t slot = 0) {
+    auto identity = std::string(prefix) + "/" + owner.tenant.to_string() + "/" +
                     owner.user.to_string() + "/" + answer.to_string();
     if (slot != 0)
         identity += "/" + std::to_string(slot);
@@ -144,26 +165,31 @@ struct LocatedCommitment final {
     const GoalCommitmentCandidate *candidate;
 };
 
+Result<std::size_t> locate_quote(std::string_view answer, std::string_view quote,
+                                 std::optional<std::size_t> offset, bool require_unique) {
+    const auto position = offset ? *offset : answer.find(quote);
+    if (position > answer.size() || !answer.substr(position).starts_with(quote))
+        return commitment_error(ErrorCode::InvalidArgument,
+                                "commitment quote is outside the complete answer");
+    if (require_unique && !offset && answer.find(quote, position + 1) != std::string_view::npos)
+        return commitment_error(ErrorCode::InvalidArgument, "commitment quote is ambiguous");
+    if (matches_content_marker(quote, default_injection_content_markers()))
+        return commitment_error(ErrorCode::SafetyRejected, "commitment quote is not retainable");
+    return position;
+}
+
 Result<std::vector<GoalCreationRequest>>
 prepare_creations(const GoalOwner &owner, const TerminalAnswer &answer,
                   std::span<const GoalCommitmentExcerpt> excerpts) {
     std::vector<LocatedCommitment> located;
     located.reserve(excerpts.size());
-    const std::string_view text = answer.text;
     for (const auto &excerpt : excerpts) {
         const auto &candidate = excerpt.candidate;
         const auto offset =
-            excerpt.quote_offset ? *excerpt.quote_offset : text.find(candidate.quote);
-        if (offset > text.size() || !text.substr(offset).starts_with(candidate.quote))
-            return commitment_error(ErrorCode::InvalidArgument,
-                                    "commitment quote is outside the complete answer");
-        if (excerpts.size() > 1 && !excerpt.quote_offset &&
-            text.find(candidate.quote, offset + 1) != std::string_view::npos)
-            return commitment_error(ErrorCode::InvalidArgument, "commitment quote is ambiguous");
-        if (matches_content_marker(candidate.quote, default_injection_content_markers()))
-            return commitment_error(ErrorCode::SafetyRejected,
-                                    "commitment quote is not retainable");
-        located.push_back({offset, &candidate});
+            locate_quote(answer.text, candidate.quote, excerpt.quote_offset, excerpts.size() > 1);
+        if (!offset)
+            return offset.error();
+        located.push_back({offset.value(), &candidate});
     }
     std::ranges::sort(located, {}, &LocatedCommitment::offset);
     std::vector<GoalCreationRequest> requests;
@@ -174,7 +200,8 @@ prepare_creations(const GoalOwner &owner, const TerminalAnswer &answer,
             return commitment_error(ErrorCode::InvalidArgument, "commitment quotes overlap");
         const auto &candidate = *entry.candidate;
         previous_end = entry.offset + candidate.quote.size();
-        requests.push_back({commitment_key(owner, answer.event, requests.size()),
+        requests.push_back({sourced_goal_key("mira.conversation.commitment.v1", owner, answer.event,
+                                             requests.size()),
                             {GoalKind::Commitment, candidate.quote, answer.event,
                              answer.recorded_at, candidate.due_at, candidate.expires_at}});
     }
@@ -199,22 +226,16 @@ Result<std::vector<GoalCreationReceipt>> record_conversation_commitments(
     SqliteGoalStore &goals, const IEventStore &events, const GoalCommitmentBinding &binding,
     const GoalCommitmentSource &source, std::span<const GoalCommitmentExcerpt> excerpts,
     const OperationContext &operation, const GoalCommitmentAuthorizer &authorize) {
-    if (binding.runtime.is_nil() || binding.owner.tenant.is_nil() || binding.owner.user.is_nil() ||
-        source.settlement_sequence == 0 || source.settlement_event.is_nil() ||
-        operation.session.is_nil() || operation.task.is_nil() || operation.operation.is_nil() ||
-        excerpts.empty() || excerpts.size() > kMaxGoalCreationBatch ||
+    if (!valid_source(binding, source, operation) || excerpts.empty() ||
+        excerpts.size() > kMaxGoalCreationBatch ||
         std::ranges::any_of(excerpts, [](const GoalCommitmentExcerpt &excerpt) {
-            return excerpt.candidate.quote.empty() || excerpt.candidate.quote.size() > 512;
+            return !valid_quote_size(excerpt.candidate.quote);
         }))
         return commitment_error(ErrorCode::InvalidArgument, "commitment candidate is incomplete");
-    if (auto active = check_operation(operation); !active)
-        return active.error();
-    if (!source_authorized(binding, operation, authorize))
-        return commitment_error(ErrorCode::PermissionDenied, "commitment source access denied");
 
     try {
-        if (auto active = check_operation(operation); !active)
-            return active.error();
+        if (auto access = check_source_access(binding, operation, authorize); !access)
+            return access.error();
         const auto answer = read_terminal_answer(events, binding, source, operation);
         if (!answer)
             return answer.error();
@@ -222,13 +243,42 @@ Result<std::vector<GoalCreationReceipt>> record_conversation_commitments(
         if (!requests)
             return requests.error();
 
-        if (!source_authorized(binding, operation, authorize))
-            return commitment_error(ErrorCode::PermissionDenied, "commitment source access denied");
-        if (auto active = check_operation(operation); !active)
-            return active.error();
+        if (auto access = check_source_access(binding, operation, authorize); !access)
+            return access.error();
         return goals.create_batch_with_receipts(std::move(requests).value());
     } catch (...) {
         return commitment_error(ErrorCode::Internal, "commitment recording operation failed");
+    }
+}
+
+Result<RecurringPlanCreationReceipt> record_conversation_recurring_plan(
+    SqliteGoalStore &goals, const IEventStore &events, const GoalCommitmentBinding &binding,
+    const GoalCommitmentSource &source, const GoalRecurringPlanCandidate &candidate,
+    const OperationContext &operation, const GoalCommitmentAuthorizer &authorize) {
+    if (!valid_source(binding, source, operation) || !valid_quote_size(candidate.quote))
+        return commitment_error(ErrorCode::InvalidArgument,
+                                "recurring plan candidate is incomplete");
+
+    try {
+        if (auto access = check_source_access(binding, operation, authorize); !access)
+            return access.error();
+        const auto answer = read_terminal_answer(events, binding, source, operation);
+        if (!answer)
+            return answer.error();
+        if (auto offset =
+                locate_quote(answer.value().text, candidate.quote, candidate.quote_offset, true);
+            !offset)
+            return offset.error();
+        const auto key = sourced_goal_key("mira.conversation.recurring-plan.v1", binding.owner,
+                                          answer.value().event);
+        RecurringPlanDefinition definition{candidate.quote, answer.value().event,
+                                           candidate.first_at, candidate.interval,
+                                           candidate.calendar};
+        if (auto access = check_source_access(binding, operation, authorize); !access)
+            return access.error();
+        return goals.create_plan_with_receipt(key, std::move(definition));
+    } catch (...) {
+        return commitment_error(ErrorCode::Internal, "recurring plan recording operation failed");
     }
 }
 

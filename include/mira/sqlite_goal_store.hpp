@@ -184,6 +184,11 @@ struct RecurringPlanRecord final {
     std::optional<RecurringPlanCancellation> cancellation;
 };
 
+struct RecurringPlanCreationReceipt final {
+    RecurringPlanRecord record;
+    bool idempotent_replay = false;
+};
+
 struct RecurringDueCursor final {
     GoalTime scheduled_at;
     Id128 plan;
@@ -336,6 +341,8 @@ class SqliteGoalStore final {
 
     [[nodiscard]] Result<RecurringPlanRecord> create_plan(const GoalKey &key,
                                                           RecurringPlanDefinition definition);
+    [[nodiscard]] Result<RecurringPlanCreationReceipt>
+    create_plan_with_receipt(const GoalKey &key, RecurringPlanDefinition definition);
     [[nodiscard]] Result<RecurringPlanRecord> replace_plan(const GoalKey &key,
                                                            std::uint64_t expected_revision,
                                                            RecurringPlanDefinition definition);

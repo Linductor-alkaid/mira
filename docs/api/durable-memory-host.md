@@ -655,6 +655,23 @@ auto receipt = goals->record_occurrence({key, active_revision, scheduled_at}, re
 清理计划定义与回执，保留 ID 屏障。同 ID 的一次性任务使用单独的命名空间。回执供宿主
 判断去重；派发前仍须核对现行授权和计划版本。见 [DEC-130](../decisions/DEC-130-durable-recurring-goal-plans.md)。
 
+### 从已结算终答记录重复计划
+
+`goal_commitment_recording.hpp` 提供 `record_conversation_recurring_plan`，复用一次性承诺的
+结算和终答取证。宿主解释间隔、首次时间或日历规则，提交终答逐字摘录。重复摘录用
+`quote_offset` 标明 UTF-8 字节位置。目标库继续执行 `RecurringPlan/Create` 授权。
+
+```cpp
+const GoalRecurringPlanCandidate plan{exact_quote, first_at, interval};
+auto receipt = record_conversation_recurring_plan(*goals, *events, binding, source, plan,
+                                                  operation, check_current_source_access);
+```
+
+日历计划传入 `calendar` 快照，并令 `interval` 为零。同一归属的每条终答可接纳一个
+重复计划，计划和该终答的一次性承诺使用各自 ID。创建回执通过 `idempotent_replay`
+区分首次创建和重放。重放当前定义时返回计划的现有进度。改动规则沿 `replace_plan`
+换版，取消或擦除的计划拒绝旧创建。见 [DEC-166](../decisions/DEC-166-evidenced-recurring-plan-recording.md)。
+
 ### 重复计划派发回执
 
 目标库 schema 1.5 在触发记录上保存准备身份和任务提交回执。`prepare_occurrence_dispatch`
