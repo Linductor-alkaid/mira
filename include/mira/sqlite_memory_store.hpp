@@ -126,6 +126,9 @@ class SqliteMemoryStore final : public IMemory,
     SqliteMemoryStore &operator=(const SqliteMemoryStore &) = delete;
 
     [[nodiscard]] Result<MemoryQueryResult> query(const MemoryQuery &query) const override;
+    [[nodiscard]] Result<std::optional<MemoryRecord>>
+    find_current_claim(const MemoryScope &, MemoryKind, std::string_view,
+                       std::chrono::steady_clock::time_point deadline) const override;
     [[nodiscard]] Result<std::optional<MemoryRecord>> get(MemoryId record,
                                                           const MemoryScope &scope) const override;
     [[nodiscard]] Result<MemoryMutationResult> apply(const MemoryMutation &mutation) override;

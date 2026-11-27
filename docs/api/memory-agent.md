@@ -349,6 +349,20 @@ const auto staged = executor.submit_auto([&] {
 相同意图和 ID 可恢复原提案，重复值保留原记录版本和出处。新的或更正后的偏好须由宿主
 使用已有 `decide_preference` 结算。见 [DEC-180](../decisions/DEC-180-explicit-preference-intent.md)。
 
+### 查找纠正或遗忘的目标
+
+宿主从用户请求提取主张键后，可在 Executor 有限任务内调用
+`InteractionCoordinator::resolve_memory_target`。例如「把回复风格改成详细」的目标选择器为
+`MemoryTargetSelector{MemoryScopeKind::User, MemoryKind::Preference, "answer.style"}`。
+`OperationContext` 必须含当前工作和截止时间。服务复核 `mira.memory.manage`，从绑定推导
+精确的 User 或当前 Session 范围，只查询该范围和类型的当前记录。
+
+唯一匹配返回 ID 和版本。空结果表示当前范围和类型无匹配，`VersionConflict` 表示多个 ID
+匹配，宿主应澄清目标。精确解析需要存储适配器支持，即使正文相同的记录也分别计数。已有
+结构化偏好入口继续支持旧适配器。解析后将得到的 ID 和版本交给对应的纠正或遗忘入口，
+这些入口会复核授权和版本。遗忘续办使用原操作 ID 与原目标。见
+[DEC-183](../decisions/DEC-183-exact-memory-intent-target.md)。
+
 ### 显式忘掉一条记录
 
 当前工作已解析出目标记录后，宿主在 Executor 有限任务中调用

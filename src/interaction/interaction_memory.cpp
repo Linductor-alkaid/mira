@@ -192,35 +192,43 @@ InteractionCoordinator::memory_status(const PrincipalContext &principal, TaskId 
     return status;
 }
 
+Result<std::shared_ptr<MemoryAgentService>>
+InteractionCoordinator::Impl::memory_intent_owner(const PrincipalContext &principal) {
+    const std::lock_guard serialize(submit_mutex);
+    if (!initialized || stopping.load() || !memory)
+        return memory_error(ErrorCode::InvalidState, "memory intent owner is unavailable");
+    if (!interaction_support::permitted(principal, config))
+        return memory_error(ErrorCode::PermissionDenied, "memory intent is unavailable");
+    return memory;
+}
+
+Result<std::optional<MemoryIntentTarget>>
+InteractionCoordinator::resolve_memory_target(const PrincipalContext &principal,
+                                              const MemoryTargetSelector &selector,
+                                              const OperationContext &operation) const {
+    auto service = impl_->memory_intent_owner(principal);
+    if (!service)
+        return service.error();
+    return service.value()->resolve_memory_target(principal, selector, operation);
+}
+
 Result<PreferenceProposal>
 InteractionCoordinator::submit_preference_intent(const PrincipalContext &principal,
                                                  PreferenceIntentRequest request,
                                                  const OperationContext &operation) {
-    std::shared_ptr<MemoryAgentService> service;
-    {
-        const std::lock_guard serialize(impl_->submit_mutex);
-        if (!impl_->initialized || impl_->stopping.load() || !impl_->memory)
-            return memory_error(ErrorCode::InvalidState, "memory intent owner is unavailable");
-        if (!interaction_support::permitted(principal, impl_->config))
-            return memory_error(ErrorCode::PermissionDenied, "memory intent is unavailable");
-        service = impl_->memory;
-    }
-    return service->propose_preference_intent(principal, std::move(request), operation);
+    auto service = impl_->memory_intent_owner(principal);
+    if (!service)
+        return service.error();
+    return service.value()->propose_preference_intent(principal, std::move(request), operation);
 }
 
 Result<MemoryRecordErasureReceipt>
 InteractionCoordinator::submit_forget_intent(const PrincipalContext &principal,
                                              const MemoryForgetRequest &request,
                                              const OperationContext &operation) {
-    std::shared_ptr<MemoryAgentService> service;
-    {
-        const std::lock_guard serialize(impl_->submit_mutex);
-        if (!impl_->initialized || impl_->stopping.load() || !impl_->memory)
-            return memory_error(ErrorCode::InvalidState, "memory intent owner is unavailable");
-        if (!interaction_support::permitted(principal, impl_->config))
-            return memory_error(ErrorCode::PermissionDenied, "memory intent is unavailable");
-        service = impl_->memory;
-    }
-    return service->forget_record(principal, request, operation);
+    auto service = impl_->memory_intent_owner(principal);
+    if (!service)
+        return service.error();
+    return service.value()->forget_record(principal, request, operation);
 }
 } // namespace mira

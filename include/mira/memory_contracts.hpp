@@ -558,6 +558,11 @@ class IMemory {
 
     // Scope-filtered hybrid retrieval; never crosses the query scopes.
     [[nodiscard]] virtual Result<MemoryQueryResult> query(const MemoryQuery &query) const = 0;
+    // Exact current claim lookup for host mutations. Different IDs with the
+    // same claim are ambiguous, including records with identical statements.
+    [[nodiscard]] virtual Result<std::optional<MemoryRecord>>
+    find_current_claim(const MemoryScope &, MemoryKind, std::string_view,
+                       std::chrono::steady_clock::time_point deadline) const;
     // Reads one record under the caller's declared scope. A record outside
     // that scope is indistinguishable from a record that does not exist and
     // yields an empty optional, so a by-id read never becomes an existence

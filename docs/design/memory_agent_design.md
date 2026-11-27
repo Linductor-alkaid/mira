@@ -141,6 +141,11 @@ scope 接收新知识所需的世代/来源水位协议尚未交付，需由 M30
 续办，存储回执及控制结算均确认后恢复该范围的记忆工作。见
 [DEC-182](../decisions/DEC-182-host-record-forget-intent.md)。
 
+`resolve_memory_target` 与遗忘入口共用工作绑定和当前授权检查。它使用记录主张键在准确的
+User 或 Session 范围和指定类型内检查当前 ID。SQLite 跳过失效、未来和已替换的记录，
+两个不同 ID 命中即返回歧义。解析结果只有 ID 和版本，宿主在后续提交时复用两者进行
+版本校验。见 [DEC-183](../decisions/DEC-183-exact-memory-intent-target.md)。
+
 ## 6. 插话、任务结束与接管
 
 input_sink 装饰现有 IUserInputSink，不另建路由器。Coordinator 投递前校验主体；装饰器

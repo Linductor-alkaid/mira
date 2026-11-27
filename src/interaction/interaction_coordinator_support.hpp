@@ -204,6 +204,8 @@ class InteractionCoordinator::Impl final {
     [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
                                                            const LedgerEntry &);
     void stage_memory(const InputEnvelope &, const PrincipalTaskEntry &);
+    [[nodiscard]] Result<std::shared_ptr<MemoryAgentService>>
+    memory_intent_owner(const PrincipalContext &);
     void activate_memory(TaskId);
     void settle_memory(TaskId);
     void revoke_memory(TaskId);

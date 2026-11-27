@@ -116,6 +116,9 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     // Receipts use commit_mutex; the temporary holds also use mutex for admission.
     std::map<OperationId, RecordForget> record_forgets;
     std::map<std::string, OperationId> record_forget_holds;
+    [[nodiscard]] Result<MemoryWorkBinding> record_intent_binding(const PrincipalContext &,
+                                                                  const MemoryScope &,
+                                                                  const OperationContext &) const;
     [[nodiscard]] bool record_forget_held(const MemoryWorkBinding &) const; // mutex held
     [[nodiscard]] Result<bool> restore_record_forget(const EventEnvelope &);
     [[nodiscard]] Result<void> clean_record_forget(const RecordForget &);

@@ -8,6 +8,16 @@
 
 namespace mira {
 
+Result<std::optional<MemoryRecord>>
+IMemory::find_current_claim(const MemoryScope &, MemoryKind, std::string_view,
+                            std::chrono::steady_clock::time_point) const {
+    Error error;
+    error.code = ErrorCode::UnsupportedCapability;
+    error.domain = "mira.memory";
+    error.safe_message = "exact current claim lookup is unavailable";
+    return error;
+}
+
 Result<void> MemoryQuery::validate() const {
     if (scopes.empty()) {
         return make_memory_error(MemoryDomainCode::ScopeDenied,

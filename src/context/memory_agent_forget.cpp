@@ -16,10 +16,16 @@ Error target_changed() {
 
 Result<void> check_operation(const OperationContext &operation) {
     if (operation.cancelled())
-        return error(ErrorCode::Cancelled, "memory forget was cancelled");
+        return error(ErrorCode::Cancelled, "memory intent was cancelled");
     if (operation.expired(Timestamp::now()))
-        return error(ErrorCode::DeadlineExceeded, "memory forget deadline expired");
+        return error(ErrorCode::DeadlineExceeded, "memory intent deadline expired");
     return {};
+}
+
+MemoryScope intent_scope(MemoryScopeKind kind, const PrincipalContext &principal,
+                         SessionId session) {
+    return kind == MemoryScopeKind::User ? memory_user_scope(principal)
+                                         : memory_session_scope(principal, session);
 }
 
 Result<void> append_forget(IEventStore &events, RuntimeId runtime, OperationId operation,
@@ -111,6 +117,76 @@ Result<bool> MemoryAgentService::State::restore_record_forget(const EventEnvelop
     return true;
 }
 
+Result<MemoryWorkBinding>
+MemoryAgentService::State::record_intent_binding(const PrincipalContext &principal,
+                                                 const MemoryScope &scope,
+                                                 const OperationContext &operation) const {
+    const auto key = memory_agent_support::scope_key(scope);
+    MemoryWorkBinding binding;
+    {
+        const std::lock_guard lock(mutex);
+        const auto found = works.find(operation.task);
+        if (!initialized || closing || found == works.end() || !found->second.active ||
+            found->second.revoked || found->second.input_pending ||
+            !memory_agent_support::same_owner(operation, found->second.binding.work) ||
+            !owner(found->second.binding.principal, principal) ||
+            std::ranges::find(found->second.binding.scopes, scope) ==
+                found->second.binding.scopes.end() ||
+            blocked_scopes.contains(key))
+            return error(ErrorCode::PermissionDenied, "memory intent target is unavailable");
+        binding = found->second.binding;
+    }
+    if (!manage(principal, scope, operation.session) ||
+        !memory_agent_support::request_current(binding))
+        return error(ErrorCode::PermissionDenied, "memory intent target is unavailable");
+    return binding;
+}
+
+Result<std::optional<MemoryIntentTarget>>
+MemoryAgentService::resolve_memory_target(const PrincipalContext &principal,
+                                          const MemoryTargetSelector &selector,
+                                          const OperationContext &operation) const try {
+    if ((selector.scope != MemoryScopeKind::User && selector.scope != MemoryScopeKind::Session) ||
+        memory_kind_policy(selector.kind).kind != selector.kind || !operation.deadline ||
+        selector.claim_key.size() > 4096 || selector.claim_key.find('\0') != std::string::npos)
+        return error(ErrorCode::InvalidArgument, "memory target requires a scope, kind and key");
+    const auto claim_key = memory_normalize_claim_key(selector.claim_key);
+    if (claim_key.empty())
+        return error(ErrorCode::InvalidArgument, "memory target claim key is empty");
+    auto &s = *state_;
+    const std::lock_guard lifecycle(s.close_mutex);
+    const std::lock_guard serialize(s.commit_mutex);
+    if (auto active = check_operation(operation); !active)
+        return active.error();
+    const auto scope = intent_scope(selector.scope, principal, operation.session);
+    const auto binding = s.record_intent_binding(principal, scope, operation);
+    if (!binding)
+        return binding.error();
+    if (s.record_forget_holds.contains(memory_agent_support::scope_key(scope)))
+        return make_memory_error(MemoryDomainCode::ErasurePending,
+                                 "memory scope is awaiting record forget");
+
+    const auto match =
+        s.memory->find_current_claim(scope, selector.kind, claim_key, *operation.deadline);
+    if (auto active = check_operation(operation); !active)
+        return active.error();
+    if (!manage(principal, scope, operation.session) ||
+        !memory_agent_support::request_current(binding.value()))
+        return error(ErrorCode::PermissionDenied, "memory intent target is unavailable");
+    if (!match)
+        return match.error();
+    if (!match.value())
+        return std::optional<MemoryIntentTarget>{};
+    const auto &record = *match.value();
+    if (record.scope != scope || record.kind != selector.kind || record.id.is_nil() ||
+        record.version == 0 || record.status != MemoryStatus::Active ||
+        memory_claim_key(record).key != claim_key)
+        return error(ErrorCode::DataLoss, "memory backend returned an invalid intent target");
+    return std::optional{MemoryIntentTarget{record.id, record.version}};
+} catch (...) {
+    return error(ErrorCode::Unavailable, "memory target lookup failed");
+}
+
 Result<MemoryRecordErasureReceipt>
 MemoryAgentService::forget_record(const PrincipalContext &principal,
                                   const MemoryForgetRequest &request,
@@ -128,30 +204,15 @@ MemoryAgentService::forget_record(const PrincipalContext &principal,
         return error(ErrorCode::InvalidArgument, "memory forget requires a deadline");
     if (auto active = check_operation(operation); !active)
         return active.error();
-    const auto scope = request.scope == MemoryScopeKind::User
-                           ? memory_user_scope(principal)
-                           : memory_session_scope(principal, operation.session);
+    const auto scope = intent_scope(request.scope, principal, operation.session);
     const auto key = memory_agent_support::scope_key(scope);
-    MemoryWorkBinding binding;
-    {
-        const std::lock_guard lock(s.mutex);
-        const auto found = s.works.find(operation.task);
-        if (!s.initialized || s.closing || found == s.works.end() || !found->second.active ||
-            found->second.revoked || found->second.input_pending ||
-            !memory_agent_support::same_owner(operation, found->second.binding.work) ||
-            !owner(found->second.binding.principal, principal) ||
-            std::ranges::find(found->second.binding.scopes, scope) ==
-                found->second.binding.scopes.end() ||
-            s.blocked_scopes.contains(key))
-            return denied();
-        binding = found->second.binding;
-    }
+    const auto binding = s.record_intent_binding(principal, scope, operation);
+    if (!binding)
+        return binding.error();
     const auto current = [&] {
         return manage(principal, scope, operation.session) &&
-               memory_agent_support::request_current(binding);
+               memory_agent_support::request_current(binding.value());
     };
-    if (!current())
-        return denied();
     if (!s.memory->supports_record_erasure())
         return error(ErrorCode::UnsupportedCapability,
                      "memory backend cannot erase an exact record");

@@ -55,6 +55,26 @@ int coordinator_resolves_explicit_preference_intents() {
             })
             .get();
     };
+    const auto resolve = [&](const PrincipalContext &principal, const MemoryTargetSelector &target,
+                             OperationContext operation) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.coordinator->resolve_memory_target(principal, target, operation);
+            })
+            .get();
+    };
+    const MemoryTargetSelector answer_style{MemoryScopeKind::User, MemoryKind::Preference,
+                                            " ANSWER.Style "};
+    const auto missing = resolve(host.principal, answer_style, memory_context(spec));
+    MIRA_CHECK(missing && !missing.value());
+    auto stopped = memory_context(spec);
+    stopped.cancellation_requested = [] { return true; };
+    const auto cancelled = resolve(host.principal, answer_style, stopped);
+    MIRA_CHECK(!cancelled && cancelled.error().code == ErrorCode::Cancelled);
+    stopped.cancellation_requested = {};
+    stopped.deadline = std::chrono::steady_clock::now();
+    const auto timed_out = resolve(host.principal, answer_style, stopped);
+    MIRA_CHECK(!timed_out && timed_out.error().code == ErrorCode::DeadlineExceeded);
     MemoryQuery query;
     query.scopes = {scope};
     PreferenceIntentRequest remember{PreferenceIntent::Remember,
@@ -63,6 +83,8 @@ int coordinator_resolves_explicit_preference_intents() {
     unauthorized.grants.pop_back();
     const auto denied = submit(unauthorized, remember);
     MIRA_CHECK(!denied && denied.error().code == ErrorCode::PermissionDenied);
+    const auto lookup_denied = resolve(unauthorized, answer_style, memory_context(spec));
+    MIRA_CHECK(!lookup_denied && lookup_denied.error().code == ErrorCode::PermissionDenied);
     unauthorized = host.principal;
     unauthorized.user_id = UserId::generate();
     const auto foreign = submit(unauthorized, remember);
@@ -85,6 +107,10 @@ int coordinator_resolves_explicit_preference_intents() {
     MIRA_CHECK(decided && decided.value().applied);
     const auto original = host.storage.memory->get(decided.value().applied->record, scope);
     MIRA_CHECK(original && original.value());
+    const auto original_target = resolve(host.principal, answer_style, memory_context(spec));
+    MIRA_CHECK(original_target && original_target.value() &&
+               original_target.value()->record == original.value()->id &&
+               original_target.value()->version == original.value()->version);
     remember.proposal.id = MutationId::generate();
     const auto repeated = submit(host.principal, remember);
     MIRA_CHECK(repeated && repeated.value().state == PreferenceProposalState::NoChange);
@@ -102,12 +128,12 @@ int coordinator_resolves_explicit_preference_intents() {
     correct.intent = PreferenceIntent::Correct;
     const auto incomplete = submit(host.principal, correct);
     MIRA_CHECK(!incomplete && incomplete.error().code == ErrorCode::InvalidArgument);
-    correct.proposal.target = original.value()->id;
-    correct.proposal.expected_version = original.value()->version + 1;
+    correct.proposal.target = original_target.value()->record;
+    correct.proposal.expected_version = original_target.value()->version + 1;
     const auto stale = submit(host.principal, correct);
     MIRA_CHECK(!stale &&
                stale.error().domain_code == static_cast<int>(MemoryDomainCode::VersionConflict));
-    correct.proposal.expected_version = original.value()->version;
+    correct.proposal.expected_version = original_target.value()->version;
     const auto correction = submit(host.principal, correct);
     MIRA_CHECK(correction && correction.value().mutation &&
                correction.value().mutation->type == MemoryMutationType::Supersede &&
@@ -116,6 +142,9 @@ int coordinator_resolves_explicit_preference_intents() {
                original.value()->id);
     const auto applied = approve(correction.value());
     MIRA_CHECK(applied && applied.value().applied);
+    const auto corrected_target = resolve(host.principal, answer_style, memory_context(spec));
+    MIRA_CHECK(corrected_target && corrected_target.value() &&
+               corrected_target.value()->record == applied.value().applied->record);
     const auto replayed = submit(host.principal, correct);
     MIRA_CHECK(replayed && replayed.value().applied &&
                replayed.value().applied->record == applied.value().applied->record);
@@ -145,6 +174,9 @@ int coordinator_resolves_explicit_preference_intents() {
     const auto ambiguous = submit(host.principal, correct);
     MIRA_CHECK(!ambiguous && ambiguous.error().domain_code ==
                                  static_cast<int>(MemoryDomainCode::VersionConflict));
+    const auto ambiguous_target = resolve(host.principal, answer_style, memory_context(spec));
+    MIRA_CHECK(!ambiguous_target && ambiguous_target.error().domain_code ==
+                                        static_cast<int>(MemoryDomainCode::VersionConflict));
 
     PreferenceIntentRequest independent{PreferenceIntent::Remember,
                                         {MutationId::generate(), "timezone=UTC", {}, {}}};
@@ -213,15 +245,49 @@ int coordinator_resolves_explicit_preference_intents() {
     const auto session_records = host.storage.memory->query(session_query);
     MIRA_CHECK(session_records && session_records.value().records.size() == 1);
     const auto &session_record = session_records.value().records.front();
-    const MemoryForgetRequest forget_session{OperationId::generate(), MemoryScopeKind::Session,
-                                             session_record.id, session_record.version};
-    const auto wrong_grant = run_forget(host.principal, forget_session);
+    const MemoryTargetSelector network{MemoryScopeKind::Session, MemoryKind::EnvironmentFact,
+                                       "Network"};
+    const auto wrong_grant = resolve(host.principal, network, memory_context(spec));
     MIRA_CHECK(!wrong_grant && wrong_grant.error().code == ErrorCode::PermissionDenied);
     auto session_principal = host.principal;
     session_principal.grants.back().resources.scope = session_scope.subject_id;
+    const auto found_network = resolve(session_principal, network, memory_context(spec));
+    MIRA_CHECK(found_network && found_network.value() &&
+               found_network.value()->record == session_record.id);
+    auto wrong_kind = network;
+    wrong_kind.kind = MemoryKind::ApplicationFact;
+    const auto other_kind = resolve(session_principal, wrong_kind, memory_context(spec));
+    MIRA_CHECK(other_kind && !other_kind.value());
+    auto duplicate = session_record;
+    duplicate.id = MemoryId::generate();
+    const auto added_duplicate = host.storage.executor
+                                     .submit_auto([&] {
+                                         MemoryMutation add;
+                                         add.id = MutationId::generate();
+                                         add.type = MemoryMutationType::Add;
+                                         add.scope = session_scope;
+                                         add.proposed = duplicate;
+                                         add.evidence = duplicate.provenance;
+                                         return host.storage.memory->apply(add);
+                                     })
+                                     .get();
+    MIRA_CHECK(added_duplicate);
+    MIRA_CHECK(host.storage.memory->query(session_query).value().records.size() == 1);
+    const auto ambiguous_network = resolve(session_principal, network, memory_context(spec));
+    MIRA_CHECK(!ambiguous_network && ambiguous_network.error().domain_code ==
+                                         static_cast<int>(MemoryDomainCode::VersionConflict));
+
+    const MemoryForgetRequest forget_session{OperationId::generate(), MemoryScopeKind::Session,
+                                             found_network.value()->record,
+                                             found_network.value()->version};
+    const auto forget_wrong_grant = run_forget(host.principal, forget_session);
+    MIRA_CHECK(!forget_wrong_grant &&
+               forget_wrong_grant.error().code == ErrorCode::PermissionDenied);
     const auto erased_session = run_forget(session_principal, forget_session);
     MIRA_CHECK(erased_session && erased_session.value().identity.scope == session_scope &&
                erased_session.value().erasure.status == ErasureStatus::Complete);
+    const auto surviving = resolve(session_principal, network, memory_context(spec));
+    MIRA_CHECK(surviving && surviving.value() && surviving.value()->record == duplicate.id);
     return 0;
 }
 

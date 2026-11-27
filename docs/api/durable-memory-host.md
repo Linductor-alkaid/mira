@@ -63,6 +63,14 @@ ResourceExhausted。`directory_capacity()` 返回当前总量和扫描计数，�
 对已授权任务取证时，可使用[事件切片](events-recovery.md#有界事件切片)分批读取任务、
 事件类型和时间窗口。FileEventStore 重开时从日志重建位置索引。
 
+## 当前主张精确查找
+
+在上层已校验工作和授权的前提下，`SqliteMemoryStore::find_current_claim` 使用准确的
+User 或 Session、记录类型和规范化主张键查找当前记录。只在完整检查后报告单条或空结果，
+同一键下两个当前 ID 会返回 `VersionConflict`。索引首先限定范围和状态，随后检查主张键。
+查找使用绝对单调时钟截止时间，复用擦除屏障和 SQLite worker。面向宿主的协调层入口只返回
+目标的 ID 和版本。见 [DEC-183](../decisions/DEC-183-exact-memory-intent-target.md)。
+
 ## 存储层逐记录擦除
 
 已核对当前授权的宿主可对 User 或 Session 记录调用 `erase_record`。调用提供稳定操作

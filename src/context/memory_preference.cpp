@@ -5,11 +5,29 @@ namespace mira {
 using namespace memory_preference;
 namespace {
 Result<std::optional<MemoryRecord>> current_claim(IMemory &memory, const MemoryScope &scope,
-                                                  const std::string &statement) {
+                                                  const std::string &statement,
+                                                  const OperationContext &operation) {
+    const auto key = memory_claim_key(statement).key;
+    const auto validated = [&](const MemoryRecord &record) -> Result<std::optional<MemoryRecord>> {
+        if (record.scope != scope || record.kind != MemoryKind::Preference ||
+            record.status != MemoryStatus::Active || memory_claim_key(record).key != key)
+            return error(ErrorCode::PermissionDenied,
+                         "memory backend returned a foreign preference");
+        return std::optional<MemoryRecord>{record};
+    };
+    auto exact = memory.find_current_claim(scope, MemoryKind::Preference, key, *operation.deadline);
+    if (exact) {
+        if (!exact.value())
+            return exact;
+        return validated(*exact.value());
+    }
+    if (exact.error().code != ErrorCode::UnsupportedCapability)
+        return exact.error();
+
     MemoryQuery query;
     query.scopes = {scope};
     query.kinds = std::vector<MemoryKind>{MemoryKind::Preference};
-    query.claim_key = memory_claim_key(statement).key;
+    query.claim_key = key;
     query.max_results = 2;
     const auto found = memory.query(query);
     if (!found)
@@ -19,18 +37,15 @@ Result<std::optional<MemoryRecord>> current_claim(IMemory &memory, const MemoryS
                                  "preference claim is ambiguous");
     if (found.value().records.empty())
         return std::optional<MemoryRecord>{};
-    const auto &record = found.value().records.front();
-    if (record.scope != scope || record.kind != MemoryKind::Preference ||
-        record.status != MemoryStatus::Active || memory_claim_key(record).key != query.claim_key)
-        return error(ErrorCode::PermissionDenied, "memory backend returned a foreign preference");
-    return std::optional<MemoryRecord>{record};
+    return validated(found.value().records.front());
 }
 JsonValue::Object decision_json(const PreferenceProposal &proposal) {
     return JsonValue::Object{{"id", proposal.id.to_string()},
                              {"digest", proposal.digest.to_string()}};
 }
-Result<void> precondition(IMemory &memory, const PreferenceProposal &proposal) {
-    auto current = current_claim(memory, proposal.scope, proposal.statement);
+Result<void> precondition(IMemory &memory, const PreferenceProposal &proposal,
+                          const OperationContext &operation) {
+    auto current = current_claim(memory, proposal.scope, proposal.statement, operation);
     if (!current)
         return current.error();
     const auto &mutation = *proposal.mutation;
@@ -127,7 +142,7 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
     }
     if (preference_entries.size() >= config.max_preference_proposals)
         return error(ErrorCode::ResourceExhausted, "preference receipt capacity exceeded");
-    auto previous = current_claim(*memory, scope, request.statement);
+    auto previous = current_claim(*memory, scope, request.statement, context);
     if (!previous)
         return previous.error();
     if (request.target && (!previous.value() || previous.value()->id != *request.target ||
@@ -328,7 +343,7 @@ MemoryAgentService::State::decide_preference(const PrincipalContext &principal, 
                  existing.value()->verification == mutation.proposed.verification;
     }
     if (!replay) {
-        if (auto current = precondition(*memory, proposal.value()); !current)
+        if (auto current = precondition(*memory, proposal.value(), context); !current)
             return current.error();
     }
     if (auto ready = preference_available(context); !ready)

@@ -60,6 +60,15 @@ struct MemoryForgetRequest final {
     MemoryId record;
     std::uint64_t expected_version = 0;
 };
+struct MemoryTargetSelector final {
+    MemoryScopeKind scope = MemoryScopeKind::User;
+    MemoryKind kind = MemoryKind::Preference;
+    std::string claim_key;
+};
+struct MemoryIntentTarget final {
+    MemoryId record;
+    std::uint64_t version = 0;
+};
 struct PreferenceProposal final {
     MutationId id;
     Sha256Digest digest;
@@ -272,6 +281,9 @@ class MemoryAgentService final {
     // Must precede out-of-service mutations; invalidates all dependent work.
     [[nodiscard]] Result<void> invalidate_scope(const MemoryScope &scope);
     [[nodiscard]] Result<ErasureResult> erase_scope(const MemoryScope &scope);
+    [[nodiscard]] Result<std::optional<MemoryIntentTarget>>
+    resolve_memory_target(const PrincipalContext &, const MemoryTargetSelector &,
+                          const OperationContext &) const;
     [[nodiscard]] Result<MemoryRecordErasureReceipt>
     forget_record(const PrincipalContext &, const MemoryForgetRequest &, const OperationContext &);
 

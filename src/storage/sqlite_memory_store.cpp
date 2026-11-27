@@ -1257,6 +1257,62 @@ class SqliteMemoryStore::Impl final {
 
     // ---- retrieval ----
 
+    [[nodiscard]] static Result<std::optional<MemoryRecord>>
+    find_current_claim(sqlite3 *db, const MemoryScope &scope, MemoryKind kind,
+                       std::string_view claim_key, std::chrono::steady_clock::time_point deadline) {
+        if ((scope.kind != MemoryScopeKind::User && scope.kind != MemoryScopeKind::Session) ||
+            scope.subject_id.empty() || scope.subject_id.size() > 256 || !scope.tenant_id ||
+            scope.tenant_id->empty() || scope.tenant_id->size() > 256 ||
+            memory_kind_policy(kind).kind != kind || claim_key.size() > 4096 ||
+            claim_key.find('\0') != std::string_view::npos)
+            return store_error(ErrorCode::InvalidArgument, "invalid current claim lookup");
+        const auto wanted = memory_normalize_claim_key(claim_key);
+        if (wanted.empty())
+            return store_error(ErrorCode::InvalidArgument, "current claim key is empty");
+
+        const auto key = scope_key_of(scope);
+        if (auto hold = check_no_hold(db, key); !hold)
+            return hold.error();
+        Statement scan(
+            db, "SELECT id, scope_key, kind, statement, recorded_at, confidence, verification,"
+                " sensitivity_rank, status, evidence, valid_from, document FROM memory_records"
+                " WHERE scope_key = ?1 AND kind = ?2 AND status = 'active' AND recorded_at <= ?3"
+                " AND valid_from <= ?3 AND (valid_until IS NULL OR valid_until > ?3)"
+                " AND (expires_at IS NULL OR expires_at > ?3)");
+        if (!scan.valid())
+            return store_error(ErrorCode::Internal, "current claim lookup failed to prepare");
+        const auto kind_name = memory_kind_name(kind);
+        sqlite3_bind_text(scan.get(), 1, key.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_text(scan.get(), 2, kind_name.c_str(), -1, storage::transient_copy());
+        sqlite3_bind_int64(scan.get(), 3, wall_nanos(std::chrono::system_clock::now()));
+
+        std::optional<MemoryRecord> match;
+        for (;;) {
+            if (std::chrono::steady_clock::now() >= deadline)
+                return store_error(ErrorCode::DeadlineExceeded, "current claim lookup timed out");
+            const auto step = sqlite3_step(scan.get());
+            if (step == SQLITE_DONE)
+                return match;
+            if (step != SQLITE_ROW)
+                return store_error(ErrorCode::Internal, "current claim lookup failed");
+            auto row = decode_row(scan.get());
+            if (!row)
+                return row.error();
+            auto &record = row.value().decoded;
+            // The index key can collide for legacy scope strings containing a delimiter.
+            if (record.scope != scope)
+                continue;
+            if (record.kind != kind || record.status != MemoryStatus::Active)
+                return store_error(ErrorCode::DataLoss, "current claim row is inconsistent");
+            if (memory_claim_key(record).key != wanted)
+                continue;
+            if (match)
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "current memory claim is ambiguous");
+            match.emplace(std::move(record));
+        }
+    }
+
     [[nodiscard]] static Result<WorldFactLookup> lookup_world_fact(sqlite3 *db,
                                                                    const WorldFactQuery &request) {
         if (auto valid = request.validate(); !valid)
@@ -2890,6 +2946,16 @@ SqliteMemoryStore::~SqliteMemoryStore() {
 Result<MemoryQueryResult> SqliteMemoryStore::query(const MemoryQuery &query) const {
     return impl_->run<MemoryQueryResult>(
         [this, query](sqlite3 *db) { return impl_->query(db, query); });
+}
+
+Result<std::optional<MemoryRecord>>
+SqliteMemoryStore::find_current_claim(const MemoryScope &scope, MemoryKind kind,
+                                      std::string_view claim_key,
+                                      std::chrono::steady_clock::time_point deadline) const {
+    return impl_->run<std::optional<MemoryRecord>>(
+        [scope, kind, key = std::string(claim_key), deadline](sqlite3 *db) {
+            return Impl::find_current_claim(db, scope, kind, key, deadline);
+        });
 }
 
 Result<WorldFactLookup> SqliteMemoryStore::lookup_world_fact(const WorldFactQuery &query) const {
