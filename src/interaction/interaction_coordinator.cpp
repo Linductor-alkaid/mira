@@ -612,7 +612,8 @@ Result<InputDisposition> InteractionCoordinator::submit_impl(InputEnvelope envel
     disposition.session_id = candidate.session_id;
     disposition.task_id = candidate.task_id;
 
-    impl_->stage_memory(envelope, candidate);
+    impl_->stage_memory(
+        envelope, clarification_answer ? std::nullopt : std::optional{entry.ingress_id}, candidate);
 
     auto &queue = impl_->pending[candidate.task_id];
     const bool already_waiting = !queue.empty();

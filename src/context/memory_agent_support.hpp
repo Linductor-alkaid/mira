@@ -154,6 +154,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     struct PreferenceIntentAuthority final {
         const PrincipalContext &principal;
         PreferenceIntent intent;
+        std::optional<ControlIngressId> input_source;
     };
     [[nodiscard]] Result<PreferenceProposal>
     propose_preference(PreferenceProposalRequest, const OperationContext &,

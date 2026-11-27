@@ -90,6 +90,11 @@ Recall 在绑定 allowlist 中查询，模型可选择提供的记录或提出�
 选中的事实 statement 合并为单个带框架头的 user 消息（`[recalled memory v1|count=N]`），
 不逐条注入裸 user 消息（DEC-108）。
 
+偏好行带有 `use=advisory`、适用范围、槽位和证据等级。已验证的偏好仍作为可选参考，
+供 Mira 联系自身目标、承诺和当前任务判断是否采纳。模型可见范围使用相对标签，事件引用
+留在候选 provenance。Gateway 继续按 P4 可选信息准入。见
+[DEC-185](../decisions/DEC-185-advisory-preference-recall.md)。
+
 Record 从该 Session 的 EventStore 有界读取增量，只消费所属 Task 的事件。模型只返回
 带事件索引引用的 statement/kind。服务填充 provenance、scope 和 Unverified 等字段，
 通过既有 MemoryConsolidator 提交；Preference 可能待审批，事实类验证不足会拒绝。
@@ -145,6 +150,11 @@ scope 接收新知识所需的世代/来源水位协议尚未交付，需由 M30
 User 或 Session 范围和指定类型内检查当前 ID。SQLite 跳过失效、未来和已替换的记录，
 两个不同 ID 命中即返回歧义。解析结果只有 ID 和版本，宿主在后续提交时复用两者进行
 版本校验。见 [DEC-183](../decisions/DEC-183-exact-memory-intent-target.md)。
+
+协调层在路由时绑定原输入 ingress ID 与摘要，队列接纳后开放 `prepare_memory_intent`。
+准备返回带稳定操作 ID 的偏好提案或遗忘请求。提交序列检查新请求的来源是否仍是当前
+已接纳输入。已登记的遗忘可在重开后按原请求续办，来源参与操作身份校验。见
+[DEC-184](../decisions/DEC-184-evidenced-preference-input-intents.md)。
 
 ## 6. 插话、任务结束与接管
 

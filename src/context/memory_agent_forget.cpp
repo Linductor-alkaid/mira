@@ -219,12 +219,14 @@ MemoryAgentService::forget_record(const PrincipalContext &principal,
     if (scope.kind == MemoryScopeKind::User && s.preference_fence)
         return *s.preference_fence;
 
-    const auto fingerprint = canonical_json_digest(
-        JsonValue::Object{{"user", principal.user_id.to_string()},
-                          {"identity_version", std::to_string(principal.identity_version)},
-                          {"scope_digest", key},
-                          {"record", request.record.to_string()},
-                          {"version", std::to_string(request.expected_version)}});
+    JsonValue::Object intent{{"user", principal.user_id.to_string()},
+                             {"identity_version", std::to_string(principal.identity_version)},
+                             {"scope_digest", key},
+                             {"record", request.record.to_string()},
+                             {"version", std::to_string(request.expected_version)}};
+    if (request.input_source)
+        intent.emplace_back("input_source", request.input_source->to_string());
+    const auto fingerprint = canonical_json_digest(JsonValue{std::move(intent)});
     const MemoryRecordErasureRequest storage_request{request.operation, scope, request.record,
                                                      request.expected_version};
     auto found = s.record_forgets.find(request.operation);
@@ -236,6 +238,8 @@ MemoryAgentService::forget_record(const PrincipalContext &principal,
         if (found->second.complete)
             return s.memory->erase_record(storage_request);
     } else {
+        if (request.input_source && request.input_source != binding.value().input_source)
+            return error(ErrorCode::InvalidState, "memory intent input was replaced");
         if (s.record_forget_holds.contains(key))
             return make_memory_error(MemoryDomainCode::ErasurePending,
                                      "memory scope is awaiting an earlier forget");

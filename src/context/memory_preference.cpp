@@ -132,6 +132,8 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
     if (intent)
         fingerprint.emplace_back(
             "intent", intent->intent == PreferenceIntent::Remember ? "remember" : "correct");
+    if (intent && intent->input_source)
+        fingerprint.emplace_back("input_source", intent->input_source->to_string());
     const auto request_digest = canonical_json_digest(JsonValue{std::move(fingerprint)});
     if (const auto existing = preference_entries.find(request.id);
         existing != preference_entries.end()) {
@@ -140,6 +142,8 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
             return error(ErrorCode::PermissionDenied, "preference request id is unavailable");
         return receipt(existing->second);
     }
+    if (intent && intent->input_source && intent->input_source != binding.input_source)
+        return error(ErrorCode::InvalidState, "memory intent input was replaced");
     if (preference_entries.size() >= config.max_preference_proposals)
         return error(ErrorCode::ResourceExhausted, "preference receipt capacity exceeded");
     auto previous = current_claim(*memory, scope, request.statement, context);
@@ -407,7 +411,7 @@ MemoryAgentService::propose_preference_intent(const PrincipalContext &principal,
     try {
         return state_->propose_preference(
             std::move(request.proposal), context,
-            State::PreferenceIntentAuthority{principal, request.intent});
+            State::PreferenceIntentAuthority{principal, request.intent, request.input_source});
     } catch (...) {
         const std::lock_guard lock(state_->commit_mutex);
         state_->preference_fence =

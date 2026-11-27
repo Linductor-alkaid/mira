@@ -13,13 +13,16 @@ namespace mira {
 using memory_agent_support::error;
 using memory_agent_support::history_json;
 namespace {
-// Recall facts merge into one framed user-role block (DEC-1xx): bare
+// Recall facts merge into one framed user-role block (DEC-108): bare
 // statements as individual user messages read as live user speech, and
 // per-record speaker labels would only re-spend tokens. Verbatim conversation
 // replay never goes through here — that path expands speaker-tagged turns
 // into native roles via `context_items_from_candidate`.
 constexpr std::string_view kRecallHeader = "[recalled memory v1|count=";
 constexpr std::string_view kRecallSeparator = "\n- ";
+constexpr std::string_view kPreferenceAdvisory =
+    "\nUse recorded preferences as optional context. Weigh their scope and relevance "
+    "alongside your goals, commitments and current task requirements.";
 constexpr const char *kMemoryAuditPrefix = "mira.memory-agent.";
 // The group cap is at most 64 records, so the count and closing bracket use
 // at most three bytes.
@@ -32,28 +35,51 @@ std::string_view verification_prefix(const MemoryRecord &record) {
     return {};
 }
 
-ContextItem memory_block(const std::vector<MemoryRecord> &records, const OperationId &operation,
+struct RecallBlock final {
+    std::string lines;
+    std::vector<EventId> provenance;
+    std::size_t count = 0;
+    Sensitivity sensitivity = Sensitivity::Public;
+    bool has_preferences = false;
+};
+
+std::string recall_line(const MemoryRecord &record, std::span<const MemoryScope> scopes,
+                        const MemoryScope &user, const MemoryScope &session) {
+    if (record.kind != MemoryKind::Preference)
+        return std::string(verification_prefix(record)) + record.statement;
+    const char *applies_to = "authorized-scope";
+    if (record.scope == user)
+        applies_to = "current-user";
+    else if (record.scope == session)
+        applies_to = "current-session";
+    const auto slot = std::ranges::find(scopes, record.scope) - scopes.begin();
+    return to_json_string(JsonValue::Object{
+        {"kind", "preference"},
+        {"use", "advisory"},
+        {"applies_to", applies_to},
+        {"scope", memory_scope_kind_name(record.scope.kind)},
+        {"scope_slot", static_cast<std::size_t>(slot)},
+        {"verification", memory_verification_name(record.verification)},
+        {"statement", record.statement},
+    });
+}
+
+ContextItem memory_block(RecallBlock block, const OperationId &operation,
                          std::optional<std::size_t> group_index) {
     ContextItem item;
-    auto seed =
-        "mira.memory.recall|" + operation.to_string() + "|" + std::to_string(records.size());
+    auto seed = "mira.memory.recall|" + operation.to_string() + "|" + std::to_string(block.count);
     if (group_index)
         seed += "|" + std::to_string(*group_index);
     item.id = ContextItemId{context_asset_id_from_seed(seed).value};
     item.kind = ContextItemKind::RetrievedMemory;
     item.authority = ContextAuthority::RetrievedMemory;
     item.sequence = group_index.value_or(0);
-    Sensitivity authority = Sensitivity::Public;
-    std::string text = std::string{kRecallHeader} + std::to_string(records.size()) + "]";
-    for (const auto &record : records) {
-        text += kRecallSeparator;
-        text += verification_prefix(record);
-        text += record.statement;
-        authority = std::max(authority, record.sensitivity);
-        item.provenance.insert(item.provenance.end(), record.provenance.begin(),
-                               record.provenance.end());
-    }
-    item.content.emplace_back(TextPart{std::move(text), authority});
+    std::string text = std::string{kRecallHeader} + std::to_string(block.count) + "]";
+    if (block.has_preferences)
+        text += kPreferenceAdvisory;
+    text += block.lines;
+    item.provenance = std::move(block.provenance);
+    item.content.emplace_back(TextPart{std::move(text), block.sensitivity});
     return item;
 }
 bool in_scopes(const MemoryRecord &record, const std::vector<MemoryScope> &scopes) {
@@ -483,9 +509,10 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         return valid.error();
 
     if (input.mode == MemoryAgentMode::Recall) {
-        std::vector<std::vector<MemoryRecord>> selected(groups.size());
-        std::vector<std::size_t> sizes(groups.size(), kRecallHeaderMaxBytes);
+        std::vector<RecallBlock> selected(groups.size());
         std::set<MemoryId> seen;
+        const auto user = memory_user_scope(job->binding.principal);
+        const auto session = memory_session_scope(job->binding.principal, input.work.session_id);
         const auto admit = [&](const std::vector<MemoryRecord> &records, bool filter) {
             for (const auto &record : records) {
                 if (filter && !proposal.selected_memories.empty() &&
@@ -495,17 +522,27 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 const auto group = std::find_if(groups.begin(), groups.end(),
                                                 [&](const auto &g) { return in_group(record, g); });
                 const auto index = static_cast<std::size_t>(group - groups.begin());
-                if (selected[index].size() >= group->max_records || seen.contains(record.id))
+                auto &block = selected[index];
+                if (block.count >= group->max_records || seen.contains(record.id))
                     continue;
-                const auto size = kRecallSeparator.size() + verification_prefix(record).size() +
-                                  record.statement.size();
-                if (grouped && size > group->max_bytes - sizes[index]) {
+                const auto line = recall_line(record, job->binding.scopes, user, session);
+                const bool has_preferences =
+                    block.has_preferences || record.kind == MemoryKind::Preference;
+                const auto size = kRecallHeaderMaxBytes + block.lines.size() +
+                                  kRecallSeparator.size() + line.size() +
+                                  (has_preferences ? kPreferenceAdvisory.size() : 0);
+                if ((grouped || has_preferences) && size > group->max_bytes) {
                     result.degraded = true;
                     continue;
                 }
-                sizes[index] += size;
                 seen.insert(record.id);
-                selected[index].push_back(record);
+                block.lines += kRecallSeparator;
+                block.lines += line;
+                block.provenance.insert(block.provenance.end(), record.provenance.begin(),
+                                        record.provenance.end());
+                ++block.count;
+                block.sensitivity = std::max(block.sensitivity, record.sensitivity);
+                block.has_preferences = has_preferences;
             }
         };
         admit(input.records, true);
@@ -515,9 +552,10 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 return extra.error();
         }
         for (std::size_t index = 0; index < groups.size(); ++index) {
-            if (!selected[index].empty())
-                result.candidates.push_back(memory_block(
-                    selected[index], job->id, grouped ? std::optional{index} : std::nullopt));
+            if (selected[index].count > 0)
+                result.candidates.push_back(
+                    memory_block(std::move(selected[index]), job->id,
+                                 grouped ? std::optional{index} : std::nullopt));
         }
         std::size_t bytes = 0;
         for (const auto &item : result.candidates)

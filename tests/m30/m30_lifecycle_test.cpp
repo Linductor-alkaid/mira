@@ -1,5 +1,7 @@
 #include "m30_support.hpp"
 
+#include <algorithm>
+
 using namespace mira;
 using namespace mira::testing;
 
@@ -31,8 +33,21 @@ int main() {
     // DEC-108: one recall renders all selected records as a single framed
     // block instead of one bare user message per record.
     MIRA_CHECK(recalled && recalled.value().candidates.size() == 1);
-    MIRA_CHECK(std::get<TextPart>(recalled.value().candidates.front().content.front()).text ==
-               "[recalled memory v1|count=1]\n- volume=30");
+    const auto &block =
+        std::get<TextPart>(recalled.value().candidates.front().content.front()).text;
+    MIRA_CHECK(block.starts_with(
+        "[recalled memory v1|count=1]\nUse recorded preferences as optional context."));
+    const auto start = block.find("\n- ");
+    MIRA_CHECK(start != std::string::npos);
+    const auto row = parse_json(std::string_view(block).substr(start + 3));
+    MIRA_CHECK(row);
+    const auto field = [&](std::string_view key) -> std::string_view {
+        const auto *value = row.value().find(key);
+        const auto *text = value ? value->as_string() : nullptr;
+        return text ? std::string_view(*text) : std::string_view{};
+    };
+    MIRA_CHECK(field("use") == "advisory" && field("applies_to") == "current-user" &&
+               field("statement") == "volume=30");
     status = host.coordinator->memory_status(host.principal, task);
     MIRA_CHECK(status && !status.value().suspended && status.value().job);
     const auto operation = status.value().job->operation;
@@ -48,12 +63,22 @@ int main() {
         model.use_provider({text_response("received scoped preference")});
         model.gateway_->set_context_supplier(host.service->context_supplier());
         auto loop = model.make_loop({}, false);
+        const std::string task_requirement = "Set volume=45 for this task.";
+        MIRA_CHECK(loop.enqueue_user_message(task_requirement));
         MIRA_CHECK(loop.run(model.spec_, memory_context(model.spec_)));
         const auto text = model.provider_->request_text(0);
+        MIRA_CHECK(text.find(task_requirement) != std::string::npos);
         MIRA_CHECK(text.find("volume=30") != std::string::npos);
         MIRA_CHECK(text.find("volume=90") == std::string::npos);
         MIRA_CHECK(text.find("volume=80") == std::string::npos);
         const auto requests = model.provider_->requests();
+        const auto &messages = requests.front().input;
+        const auto preference = std::ranges::find_if(messages, [](const ModelInputItem &item) {
+            return item.provenance.source == "mira.context.retrieved-memory.v1";
+        });
+        MIRA_CHECK(preference != messages.end() && preference->role == ModelRole::User &&
+                   preference->authority == Sensitivity::Public &&
+                   std::get<TextPart>(preference->content.front()).text == block);
         MIRA_CHECK(requests.front().prompt_provenance.context_selection_digest != Hash{});
     }
 

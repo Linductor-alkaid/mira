@@ -52,6 +52,7 @@ enum class PreferenceIntent : std::uint8_t { Remember, Correct };
 struct PreferenceIntentRequest final {
     PreferenceIntent intent = PreferenceIntent::Remember;
     PreferenceProposalRequest proposal;
+    std::optional<ControlIngressId> input_source = std::nullopt;
 };
 
 struct MemoryForgetRequest final {
@@ -59,6 +60,7 @@ struct MemoryForgetRequest final {
     MemoryScopeKind scope = MemoryScopeKind::User;
     MemoryId record;
     std::uint64_t expected_version = 0;
+    std::optional<ControlIngressId> input_source = std::nullopt;
 };
 struct MemoryTargetSelector final {
     MemoryScopeKind scope = MemoryScopeKind::User;
@@ -96,6 +98,8 @@ struct MemoryWorkBinding final {
     // (DEC-112 metadata): only records carrying at least one of these labels
     // participate. Host-defined data tags; bounds mirror MemoryQuery::labels.
     std::vector<std::string> labels;
+    // Coordinator-authenticated original input for prepared memory requests.
+    std::optional<ControlIngressId> input_source = std::nullopt;
 };
 
 struct MemoryAgentNote final {

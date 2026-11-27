@@ -203,7 +203,9 @@ class InteractionCoordinator::Impl final {
                                                            OperationId) const;
     [[nodiscard]] Result<LedgerEntry> finish_clarification(const LedgerEntry &,
                                                            const LedgerEntry &);
-    void stage_memory(const InputEnvelope &, const PrincipalTaskEntry &);
+    static constexpr std::size_t kMaxMemoryIntentInputBytes = 4096;
+    void stage_memory(const InputEnvelope &, std::optional<ControlIngressId>,
+                      const PrincipalTaskEntry &);
     [[nodiscard]] Result<std::shared_ptr<MemoryAgentService>>
     memory_intent_owner(const PrincipalContext &);
     void activate_memory(TaskId);
@@ -213,6 +215,7 @@ class InteractionCoordinator::Impl final {
         MemoryWorkBinding binding;
         std::uint64_t revision = 0;
         MemoryLifecycleStatus status;
+        Sha256Digest input_digest;
     };
     std::shared_ptr<MemoryAgentService> memory;
     std::unordered_map<TaskId, MemoryWork, StrongIdHash<TaskId>> memory_works;

@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace kairo {
@@ -543,6 +544,8 @@ struct MemoryLifecycleStatus final {
     std::optional<Error> error;
 };
 
+using PreparedMemoryIntent = std::variant<PreferenceIntentRequest, MemoryForgetRequest>;
+
 inline constexpr std::string_view kVerifiedTaskCompletionEvent = "mira.task.verified-completion.v1";
 
 struct VerifiedDispatchCompletionSource final {
@@ -605,6 +608,10 @@ class InteractionCoordinator final {
     // this coordinator and before Runtime/Executor. Automatically maps only
     // User + current Session scopes; no model-selected scope expansion.
     [[nodiscard]] Result<void> set_memory_service(std::shared_ptr<MemoryAgentService>);
+    // Prepare an explicit request from the current accepted input. No write.
+    [[nodiscard]] Result<std::optional<PreparedMemoryIntent>>
+    prepare_memory_intent(const PrincipalContext &, ControlIngressId, std::string_view,
+                          const OperationContext &) const;
     // Submit a host-interpreted user intent under the current work and grant.
     [[nodiscard]] Result<PreferenceProposal> submit_preference_intent(const PrincipalContext &,
                                                                       PreferenceIntentRequest,

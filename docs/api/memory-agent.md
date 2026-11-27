@@ -47,6 +47,13 @@ Recall 的 query 只在绑定 scope 中检索，返回类型化候选，实际�
 默认把事实 statement 合并为单个带框架头的 user 消息（DEC-108）。逐字会话回放候选
 按原始说话人展开为原生 User/Assistant 消息，永不 System/Developer。
 
+`Preference` 在同一召回框中作为 `use=advisory` 的 JSON 行出现。作用域、绑定内槽位和
+验证等级随正文一起呈现，原文中的引号和换行经过转义。`current-user` 和 `current-session`
+限于与工作绑定实际相同的范围，其他获准范围标记为 `authorized-scope`。包含偏好的框还会
+说明这类信息可供 Mira 根据自身目标、已接下的承诺和当前任务权衡。字节额度计入这些说明
+和转义后的内容，超过额度的偏好候选报告降级。见
+[DEC-185](../decisions/DEC-185-advisory-preference-recall.md)。
+
 宿主可在构造服务前配置召回组。每组独立按 kinds 查询并形成一个候选，组序即供给顺序。
 kind 在全部组内唯一，单组 max_records 为正、max_bytes 至少 64。各组配额之和分别
 受 max_records 与 max_result_bytes 限制。配额覆盖初始及模型补充查询，max_bytes
@@ -328,7 +335,30 @@ Approving 需宿主核对，不能以过期为由声称先前没有写入。
 收敛相关并发写入；它会耐久作废待确认提案。resolve Approving 后才允许该操作。
 scope erase 与重开会清理关联提案 Artifact，包括已批准回执的正文；已被调用方持有
 的预览副本不能再次作为准入或审批凭据。scope 删除后仍不可重新绑定，M30-09 未开放。
-本 API 不新增自然语言解析器、承诺调度、逐记录物理删除或 UI；这些继续由后续工作承担。
+承诺调度和前端接入各自由 M30 的对应工作项验收。
+
+### 从当前用户输入准备偏好意图
+
+输入成功路由且已被当前工作的输入队列接纳后，宿主可调用
+`InteractionCoordinator::prepare_memory_intent(principal, ingress_id, input_text, operation)`。
+使用提交输入得到的 `ingress_id` 和完整原文。此入口在 Executor 有限任务中执行，
+`OperationContext` 包含当前工作和截止时间。
+
+| 意图 | 明确请求示例 | 结果 |
+| --- | --- | --- |
+| 记住 | `请记住偏好：answer.style=简洁` | `PreferenceIntentRequest`，走既有审批 |
+| 纠正 | `Please correct preference answer.style=详细` | `PreferenceIntentRequest`，含准确记录 ID 和版本 |
+| 忘掉 | `忘掉偏好 answer.style` | `MemoryForgetRequest`，含准确记录 ID 和版本 |
+
+也支持 `remember preference`、`correct preference`、`forget preference`，中文前缀可带「请」。
+命令须独立成一行，偏好键使用字母、数字、点、下划线或连字符。普通文本与完整引用返回
+空结果。识别到命令但格式不完整时返回 `InvalidArgument`。纠正或忘掉找不到当前记录时
+返回 `NotFound`，多个匹配时返回 `VersionConflict`，宿主可以要求澄清。
+
+准备不会提交写入。按返回类型交给 `submit_preference_intent` 或 `submit_forget_intent`。
+首次提交要求来源仍是当前已接纳的输入。保存返回的结构化请求以便重试，尤其是逐记录遗忘
+所用的操作 ID 和版本。原文摘要只在当前工作保留，持久回执沿原有确认及授权契约。见
+[DEC-184](../decisions/DEC-184-evidenced-preference-input-intents.md)。
 
 ### 显式的记住与纠正
 

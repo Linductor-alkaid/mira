@@ -5,15 +5,17 @@ namespace {
 using namespace mira;
 using namespace mira::testing;
 
+struct TemporaryArtifacts final {
+    std::filesystem::path root = std::filesystem::temp_directory_path() /
+                                 ("mira-preference-intent-" + Id128::generate().to_string());
+    ~TemporaryArtifacts() {
+        std::error_code ignored;
+        std::filesystem::remove_all(root, ignored);
+    }
+};
+
 int coordinator_resolves_explicit_preference_intents() {
-    struct TemporaryArtifacts final {
-        std::filesystem::path root = std::filesystem::temp_directory_path() /
-                                     ("mira-preference-intent-" + Id128::generate().to_string());
-        ~TemporaryArtifacts() {
-            std::error_code ignored;
-            std::filesystem::remove_all(root, ignored);
-        }
-    } artifacts;
+    TemporaryArtifacts artifacts;
     MemoryAgentConfig config;
     config.artifacts = std::make_shared<FileArtifactStore>(artifacts.root);
     InteractionMemoryFixture host(
@@ -291,6 +293,130 @@ int coordinator_resolves_explicit_preference_intents() {
     return 0;
 }
 
+int prepares_memory_intents_from_current_user_input() {
+    TemporaryArtifacts artifacts;
+    MemoryAgentConfig config;
+    config.artifacts = std::make_shared<FileArtifactStore>(artifacts.root);
+    InteractionMemoryFixture host({}, config);
+    CapabilityGrant manage;
+    manage.capability = "mira.memory.manage";
+    manage.version = host.principal.identity_version;
+    host.principal.grants.push_back(manage);
+
+    const auto remember = host.input("explicit-remember", "请记住偏好：answer.style=简洁");
+    const auto admitted = host.coordinator->submit_input(remember);
+    MIRA_CHECK(admitted && admitted.value().task_id && admitted.value().session_id);
+    const auto task = *admitted.value().task_id;
+    const auto context = [&] { return memory_context(host.spec(admitted.value())); };
+    const auto prepare = [&](ControlIngressId ingress, std::string_view text) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.coordinator->prepare_memory_intent(host.principal, ingress, text,
+                                                               context());
+            })
+            .get();
+    };
+    const auto pending = prepare(admitted.value().ingress_id, remember.content);
+    MIRA_CHECK(!pending && pending.error().code == ErrorCode::PermissionDenied);
+    MIRA_CHECK(host.coordinator->register_sink(task, std::make_shared<m28::RecordingSink>()));
+    MIRA_CHECK(host.finish(task));
+    const auto spoofed = prepare(admitted.value().ingress_id, "记住偏好 answer.style=详细");
+    MIRA_CHECK(!spoofed && spoofed.error().code == ErrorCode::PermissionDenied);
+    const auto first = prepare(admitted.value().ingress_id, remember.content);
+    MIRA_CHECK(first && first.value() &&
+               std::holds_alternative<PreferenceIntentRequest>(*first.value()));
+    const auto remember_plan = std::get<PreferenceIntentRequest>(*first.value());
+    MIRA_CHECK(remember_plan.input_source == admitted.value().ingress_id);
+    const auto same = prepare(admitted.value().ingress_id, remember.content);
+    MIRA_CHECK(same && same.value() &&
+               std::get<PreferenceIntentRequest>(*same.value()).proposal.id ==
+                   remember_plan.proposal.id);
+
+    const auto write_preference = [&](const PreferenceIntentRequest &request) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.coordinator->submit_preference_intent(host.principal, request,
+                                                                  context());
+            })
+            .get();
+    };
+    const auto approve = [&](const PreferenceProposal &proposal) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.service->decide_preference(host.principal, proposal.id, proposal.digest,
+                                                       ConfirmationDecision::Approve, context());
+            })
+            .get();
+    };
+    const auto proposal = write_preference(remember_plan);
+    MIRA_CHECK(proposal && proposal.value().state == PreferenceProposalState::Pending);
+    const auto accepted = approve(proposal.value());
+    MIRA_CHECK(accepted && accepted.value().applied);
+
+    const auto send = [&](std::string id, std::string text) {
+        auto input = host.input(std::move(id), std::move(text));
+        input.target_task = task;
+        return host.coordinator->submit_input(input);
+    };
+    constexpr auto quoted = "\"忘掉偏好 answer.style\"";
+    const auto quote = send("quoted-command", quoted);
+    MIRA_CHECK(quote && quote.value().stage == InputStage::Routed);
+    const auto ordinary = prepare(quote.value().ingress_id, quoted);
+    MIRA_CHECK(ordinary && !ordinary.value());
+    MIRA_CHECK(!prepare(admitted.value().ingress_id, remember.content));
+
+    constexpr auto correction = "Please correct preference answer.style=详细";
+    const auto correct_input = send("explicit-correct", correction);
+    MIRA_CHECK(correct_input && correct_input.value().stage == InputStage::Routed);
+    const auto needs_change = prepare(correct_input.value().ingress_id, correction);
+    MIRA_CHECK(needs_change && needs_change.value());
+    const auto correct_plan = std::get<PreferenceIntentRequest>(*needs_change.value());
+    MIRA_CHECK(correct_plan.intent == PreferenceIntent::Correct &&
+               correct_plan.proposal.target == accepted.value().applied->record);
+    auto mismatched_source = correct_plan;
+    mismatched_source.input_source = ControlIngressId::generate();
+    const auto rejected_correction = write_preference(mismatched_source);
+    MIRA_CHECK(!rejected_correction && rejected_correction.error().code == ErrorCode::InvalidState);
+    const auto corrected_proposal = write_preference(correct_plan);
+    MIRA_CHECK(corrected_proposal &&
+               corrected_proposal.value().state == PreferenceProposalState::Pending);
+    const auto corrected = approve(corrected_proposal.value());
+    MIRA_CHECK(corrected && corrected.value().applied);
+
+    constexpr auto deletion = "忘掉偏好 answer.style";
+    const auto stale_input = send("explicit-forget-stale", deletion);
+    MIRA_CHECK(stale_input && stale_input.value().stage == InputStage::Routed);
+    const auto stale_plan = prepare(stale_input.value().ingress_id, deletion);
+    MIRA_CHECK(stale_plan && stale_plan.value());
+    const auto newer_input = send("replace-forget", "继续保留当前偏好");
+    MIRA_CHECK(newer_input && newer_input.value().stage == InputStage::Routed);
+    const auto forget = [&](const MemoryForgetRequest &request) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.coordinator->submit_forget_intent(host.principal, request, context());
+            })
+            .get();
+    };
+    const auto stale = forget(std::get<MemoryForgetRequest>(*stale_plan.value()));
+    MIRA_CHECK(!stale && stale.error().code == ErrorCode::InvalidState);
+
+    const auto forget_input = send("explicit-forget", deletion);
+    MIRA_CHECK(forget_input && forget_input.value().stage == InputStage::Routed);
+    const auto selected = prepare(forget_input.value().ingress_id, deletion);
+    MIRA_CHECK(selected && selected.value());
+    const auto forget_plan = std::get<MemoryForgetRequest>(*selected.value());
+    MIRA_CHECK(forget_plan.record == corrected.value().applied->record);
+    const auto forgotten = forget(forget_plan);
+    MIRA_CHECK(forgotten && forgotten.value().erasure.status == ErasureStatus::Complete);
+    const auto missing = prepare(forget_input.value().ingress_id, deletion);
+    MIRA_CHECK(!missing && missing.error().code == ErrorCode::NotFound);
+    const auto recorded = send("confirm-forget", "好的");
+    MIRA_CHECK(recorded && recorded.value().stage == InputStage::Routed);
+    const auto replay = forget(forget_plan);
+    MIRA_CHECK(replay && replay.value().idempotent_replay);
+    return 0;
+}
+
 int reopens_the_typed_proposal_without_losing_idempotency() {
     PreferenceFixture host;
     const PreferenceIntentRequest request{PreferenceIntent::Remember,
@@ -313,13 +439,16 @@ int reopens_the_typed_proposal_without_losing_idempotency() {
 
 int continues_forget_after_lost_control_acknowledgements() {
     PreferenceFixture host;
+    const auto source = ControlIngressId::generate();
+    host.binding.input_source = source;
+    MIRA_CHECK(host.reopen());
     const auto proposal = host.propose("theme=dark");
     MIRA_CHECK(proposal);
     const auto applied = host.decide(proposal.value());
     MIRA_CHECK(applied && applied.value().applied);
     const auto &mutation = *applied.value().applied;
     const MemoryForgetRequest request{OperationId::generate(), MemoryScopeKind::User,
-                                      mutation.record, mutation.new_version};
+                                      mutation.record, mutation.new_version, source};
     const auto forget = [&] {
         return host.run([&] {
             return host.service->forget_record(host.storage.principal, request, host.context());
@@ -350,6 +479,7 @@ int continues_forget_after_lost_control_acknowledgements() {
     MIRA_CHECK(!hidden_preview && hidden_preview.error().domain_code ==
                                       static_cast<int>(MemoryDomainCode::ErasurePending));
     host.storage.runtime = RuntimeId::generate();
+    host.binding.input_source.reset();
     MIRA_CHECK(host.query().value().records.size() == 1 && host.reopen());
     const auto held = recall();
     MIRA_CHECK(!held &&
@@ -378,6 +508,8 @@ int continues_forget_after_lost_control_acknowledgements() {
 
 int main() {
     if (const auto result = coordinator_resolves_explicit_preference_intents(); result != 0)
+        return result;
+    if (const auto result = prepares_memory_intents_from_current_user_input(); result != 0)
         return result;
     if (const auto result = reopens_the_typed_proposal_without_losing_idempotency(); result != 0)
         return result;

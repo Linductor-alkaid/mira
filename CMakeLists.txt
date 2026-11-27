@@ -97,6 +97,7 @@ add_library(mira_core
     src/interaction/interaction_clarification.cpp
     src/interaction/interaction_context.cpp
     src/interaction/interaction_memory.cpp
+    src/interaction/interaction_memory_intent.cpp
     src/context/context_contracts.cpp
     src/context/context_manager.cpp
     src/context/context_retrieval.cpp

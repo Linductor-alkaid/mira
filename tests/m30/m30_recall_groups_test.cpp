@@ -112,10 +112,83 @@ int invalid_group_layouts_fail_before_work() {
     }
     return 0;
 }
+
+int tagged_preferences_distinguish_authorized_scopes() {
+    MemoryAgentFixture fixture;
+    fixture.start();
+    auto binding = fixture.binding("volume");
+    const auto session = binding.scopes.front();
+    const auto user = memory_user_scope(binding.principal);
+    auto other = binding.principal;
+    other.user_id = UserId::generate();
+    const auto authorized = memory_user_scope(other);
+    binding.scopes = {user, session, authorized};
+    MIRA_CHECK(fixture.service->bind(binding));
+    auto &store = *fixture.memory;
+    const std::string quoted = "volume=\"normal\"\nonly during a demo";
+    MIRA_CHECK(seed(store, user, MemoryKind::Preference, quoted));
+    MIRA_CHECK(seed(store, session, MemoryKind::Preference, "volume=35 in this session"));
+    MIRA_CHECK(seed(store, authorized, MemoryKind::Preference, "volume=40 for another user"));
+    MemoryAgentRequest request;
+    request.task = binding.work.task_id;
+    const auto job = fixture.service->submit(request, memory_context(binding.work));
+    MIRA_CHECK(job && job.value().result.wait_for(3s) == std::future_status::ready);
+    const auto &result = job.value().result.get();
+    MIRA_CHECK(result && result.value().candidates.size() == 1);
+    const auto &block = std::get<TextPart>(result.value().candidates.front().content.front()).text;
+    MIRA_CHECK(block.starts_with("[recalled memory v1|count=3]"));
+    MIRA_CHECK(block.find(R"("applies_to":"current-user","scope":"user","scope_slot":0)") !=
+               std::string::npos);
+    MIRA_CHECK(block.find(R"("applies_to":"current-session","scope":"session","scope_slot":1)") !=
+               std::string::npos);
+    MIRA_CHECK(block.find(R"("applies_to":"authorized-scope","scope":"user","scope_slot":2)") !=
+               std::string::npos);
+    MIRA_CHECK(
+        block.find(
+            R"("verification":"verified","statement":"volume=\"normal\"\nonly during a demo")") !=
+        std::string::npos);
+    MIRA_CHECK(block.find(quoted) == std::string::npos);
+    MIRA_CHECK(block.find(binding.principal.tenant_id.to_string()) == std::string::npos);
+    MIRA_CHECK(block.find(other.user_id.to_string()) == std::string::npos);
+    MIRA_CHECK(block.find(authorized.subject_id) == std::string::npos);
+    return 0;
+}
+
+int an_oversized_preference_leaves_other_memories_available() {
+    for (const bool grouped : {false, true}) {
+        MemoryAgentFixture fixture;
+        MemoryAgentConfig config;
+        config.max_records = 2;
+        config.max_result_bytes = 180;
+        if (grouped)
+            config.recall_groups = {{{MemoryKind::Preference}, 1, 80},
+                                    {{MemoryKind::EnvironmentFact}, 1, 100}};
+        fixture.start({}, config);
+        const auto binding = fixture.binding("volume");
+        MIRA_CHECK(fixture.service->bind(binding));
+        const auto &scope = binding.scopes.front();
+        MIRA_CHECK(seed(*fixture.memory, scope, MemoryKind::Preference, "volume=quiet"));
+        MIRA_CHECK(seed(*fixture.memory, scope, MemoryKind::EnvironmentFact, "volume=limit"));
+        MemoryAgentRequest request;
+        request.task = binding.work.task_id;
+        const auto job = fixture.service->submit(request, memory_context(binding.work));
+        MIRA_CHECK(job && job.value().result.wait_for(3s) == std::future_status::ready);
+        const auto &result = job.value().result.get();
+        MIRA_CHECK(result && result.value().degraded && result.value().candidates.size() == 1);
+        const auto &block =
+            std::get<TextPart>(result.value().candidates.front().content.front()).text;
+        MIRA_CHECK(block == "[recalled memory v1|count=1]\n- volume=limit");
+    }
+    return 0;
+}
 } // namespace
 
 int main() {
     if (auto result = recall_groups_keep_independent_limits_and_scope(); result != 0)
+        return result;
+    if (auto result = tagged_preferences_distinguish_authorized_scopes(); result != 0)
+        return result;
+    if (auto result = an_oversized_preference_leaves_other_memories_available(); result != 0)
         return result;
     return invalid_group_layouts_fail_before_work();
 }

@@ -29,6 +29,7 @@ InteractionCoordinator::set_memory_service(std::shared_ptr<MemoryAgentService> m
 }
 
 void InteractionCoordinator::Impl::stage_memory(const InputEnvelope &input,
+                                                std::optional<ControlIngressId> ingress,
                                                 const PrincipalTaskEntry &task) {
     if (!memory)
         return;
@@ -48,6 +49,8 @@ void InteractionCoordinator::Impl::stage_memory(const InputEnvelope &input,
     binding.work.session_id = task.session_id;
     binding.work.task_epoch = snapshot.value().epoch;
     binding.work.goal = task.goal;
+    if (input.content.size() <= kMaxMemoryIntentInputBytes)
+        binding.input_source = ingress;
     binding.user_constraints = task.constraints;
     binding.environment_epoch = snapshot.value().environment_epoch;
     binding.scopes = {memory_user_scope(input.principal),
@@ -63,6 +66,7 @@ void InteractionCoordinator::Impl::stage_memory(const InputEnvelope &input,
         return current && !is_terminal(current.value().state) && current.value().epoch == epoch &&
                current.value().environment_epoch == environment;
     };
+    work.input_digest = binding.input_source ? digest_string(input.content) : Sha256Digest{};
     work.binding = std::move(binding);
     try {
         auto staged = memory->stage_input(work.binding);
