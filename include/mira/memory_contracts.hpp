@@ -588,6 +588,7 @@ class IMemory {
     [[nodiscard]] virtual Result<ErasureResult> erase(const ErasureRequest &request) = 0;
     // Trusted host supplies the exact authorized scope and version. Backends
     // without atomic scoped erasure must fail without mutating the record.
+    [[nodiscard]] virtual bool supports_record_erasure() const noexcept { return false; }
     [[nodiscard]] virtual Result<MemoryRecordErasureReceipt>
     erase_record(const MemoryRecordErasureRequest &) {
         Error error;

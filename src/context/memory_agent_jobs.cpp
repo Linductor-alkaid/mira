@@ -171,6 +171,9 @@ Result<MemoryAgentHandle> MemoryAgentService::State::submit(MemoryAgentRequest r
         return error(ErrorCode::InvalidState, "memory work is not active");
     if (!memory_agent_support::same_owner(context, found->second.binding.work))
         return error(ErrorCode::PermissionDenied, "memory job context does not own the work");
+    if (record_forget_held(found->second.binding))
+        return make_memory_error(MemoryDomainCode::ErasurePending,
+                                 "memory work has a pending record forget");
     if (request.expected_revision && *request.expected_revision != found->second.revision)
         return error(ErrorCode::InvalidState, "captured memory source revision is stale");
     if (context.cancelled_or_expired(Timestamp::now()))

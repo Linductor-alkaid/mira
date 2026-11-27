@@ -348,3 +348,23 @@ const auto staged = executor.submit_auto([&] {
 `VersionConflict`。`Correct` 使用确切的记录 ID 和当前版本，替换同一偏好键的值。
 相同意图和 ID 可恢复原提案，重复值保留原记录版本和出处。新的或更正后的偏好须由宿主
 使用已有 `decide_preference` 结算。见 [DEC-180](../decisions/DEC-180-explicit-preference-intent.md)。
+
+### 显式忘掉一条记录
+
+当前工作已解析出目标记录后，宿主在 Executor 有限任务中调用
+`InteractionCoordinator::submit_forget_intent`。服务从工作绑定推导 User 或 Session
+范围，要求现行 `mira.memory.manage` 授权及带截止时间的 `OperationContext`。
+在同一操作 ID 下提交相同目标可以续办。
+
+```cpp
+const MemoryForgetRequest request{forget_id, MemoryScopeKind::User, record_id, expected_version};
+const auto receipt = executor.submit_auto([&] {
+    return coordinator.submit_forget_intent(principal, request, operation);
+}).get();
+```
+
+服务失效受影响的回忆及压缩缓存，清理引用目标 ID 的偏好提案正文，并清理只标记了范围
+依赖的压缩工件。待处理期间，相关工作的记忆作业暂停。完成时返回存储的擦除状态、计数
+和重放标记。提交或控制回执失败时用同一 `forget_id` 核对，重开后由当前授权宿主续办。
+原始事件和会话发言索引保留各自的删除入口。见
+[DEC-182](../decisions/DEC-182-host-record-forget-intent.md)。

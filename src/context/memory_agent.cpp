@@ -100,6 +100,11 @@ Result<void> MemoryAgentService::initialize() {
         return error(ErrorCode::InvalidState, "memory agent is closing");
     if (s.initialized)
         return {};
+    s.blocked_scopes.clear();
+    s.record_forgets.clear();
+    s.record_forget_holds.clear();
+    s.projections.clear();
+    s.preference_entries.clear();
     EventQuery query{memory_agent_support::control_partition(), std::nullopt, 256};
     std::set<std::string> conversation_erasure;
     do {
@@ -112,6 +117,11 @@ Result<void> MemoryAgentService::initialize() {
             if (!preference)
                 return preference.error();
             if (preference.value())
+                continue;
+            auto forgotten = s.restore_record_forget(event);
+            if (!forgotten)
+                return forgotten.error();
+            if (forgotten.value())
                 continue;
             if (event.payload.type == "mira.memory-agent.projection-stored.v1") {
                 auto payload = parse_json(event.payload.data);
@@ -276,6 +286,9 @@ Result<void> MemoryAgentService::release_work(TaskId task) {
 Result<void> MemoryAgentService::invalidate_scope(const MemoryScope &scope) {
     auto &s = *state_;
     const std::lock_guard serialize(s.commit_mutex);
+    if (s.record_forget_holds.contains(memory_agent_support::scope_key(scope)))
+        return make_memory_error(MemoryDomainCode::ErasurePending,
+                                 "scope has a pending record forget");
     if (auto invalidated = s.invalidate_preference_proposals(scope); !invalidated)
         return invalidated;
     const std::lock_guard lock(s.mutex);
@@ -299,6 +312,9 @@ Result<ErasureResult> MemoryAgentService::erase_scope(const MemoryScope &scope) 
             }))
             return error(ErrorCode::PermissionDenied, "erasure scope has no host binding");
         const auto key = memory_agent_support::scope_key(scope);
+        if (s.record_forget_holds.contains(key))
+            return make_memory_error(MemoryDomainCode::ErasurePending,
+                                     "scope has a pending record forget");
         if (!s.blocked_scopes.contains(key) && s.blocked_scopes.size() >= s.config.max_works * 16)
             return error(ErrorCode::ResourceExhausted, "memory erasure barrier capacity exceeded");
         s.blocked_scopes.insert(key);
@@ -347,6 +363,7 @@ bool MemoryAgentService::State::current(const Job &job) const {
     const auto found = works.find(job.request.task);
     return !closing && found != works.end() && !found->second.revoked &&
            !found->second.input_pending && found->second.revision == job.revision &&
+           !record_forget_held(found->second.binding) &&
            (job.request.mode == MemoryAgentMode::Record ||
             (found->second.active && memory_agent_support::request_current(found->second.binding)));
 }

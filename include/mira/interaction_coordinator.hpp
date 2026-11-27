@@ -609,6 +609,9 @@ class InteractionCoordinator final {
     [[nodiscard]] Result<PreferenceProposal> submit_preference_intent(const PrincipalContext &,
                                                                       PreferenceIntentRequest,
                                                                       const OperationContext &);
+    [[nodiscard]] Result<MemoryRecordErasureReceipt>
+    submit_forget_intent(const PrincipalContext &, const MemoryForgetRequest &,
+                         const OperationContext &);
     [[nodiscard]] Result<MemoryLifecycleStatus> memory_status(const PrincipalContext &,
                                                               TaskId) const;
 

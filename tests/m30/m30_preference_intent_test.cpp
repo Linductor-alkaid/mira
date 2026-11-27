@@ -16,7 +16,14 @@ int coordinator_resolves_explicit_preference_intents() {
     } artifacts;
     MemoryAgentConfig config;
     config.artifacts = std::make_shared<FileArtifactStore>(artifacts.root);
-    InteractionMemoryFixture host({}, config);
+    InteractionMemoryFixture host(
+        [](const MemoryAgentInput &input, const OperationContext &) -> Result<MemoryAgentProposal> {
+            MemoryAgentProposal proposal;
+            if (input.mode == MemoryAgentMode::Compress)
+                proposal.summary = {{"Prior answer preference", {0}}};
+            return proposal;
+        },
+        config);
     CapabilityGrant grant;
     grant.capability = "mira.memory.manage";
     grant.version = host.principal.identity_version;
@@ -138,6 +145,83 @@ int coordinator_resolves_explicit_preference_intents() {
     const auto ambiguous = submit(host.principal, correct);
     MIRA_CHECK(!ambiguous && ambiguous.error().domain_code ==
                                  static_cast<int>(MemoryDomainCode::VersionConflict));
+
+    PreferenceIntentRequest independent{PreferenceIntent::Remember,
+                                        {MutationId::generate(), "timezone=UTC", {}, {}}};
+    const auto unrelated = submit(host.principal, independent);
+    MIRA_CHECK(unrelated && unrelated.value().state == PreferenceProposalState::Pending);
+    MemoryAgentRequest compress;
+    compress.mode = MemoryAgentMode::Compress;
+    compress.task = task;
+    compress.history = {history_text("Use brief replies"), history_text("Thanks")};
+    auto compressed = host.service->submit(compress, memory_context(spec));
+    MIRA_CHECK(compressed);
+    const auto &projection = compressed.value().result.get();
+    MIRA_CHECK(projection && projection.value().projection_artifact);
+    const auto &artifact = *projection.value().projection_artifact;
+    const auto snapshot =
+        host.service->context_supplier()(memory_request(spec), memory_context(spec));
+    MIRA_CHECK(snapshot && snapshot.value().current() && config.artifacts->open(artifact));
+
+    const auto old = host.storage.memory->get(original.value()->id, scope);
+    MIRA_CHECK(old && old.value() && old.value()->status == MemoryStatus::Superseded);
+    const MemoryForgetRequest forget{OperationId::generate(), MemoryScopeKind::User,
+                                     old.value()->id, old.value()->version};
+    const auto run_forget = [&](const PrincipalContext &principal,
+                                const MemoryForgetRequest &request) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.coordinator->submit_forget_intent(principal, request,
+                                                              memory_context(spec));
+            })
+            .get();
+    };
+    const auto no_permission = run_forget(unauthorized, forget);
+    MIRA_CHECK(!no_permission && no_permission.error().code == ErrorCode::PermissionDenied);
+    auto wrong_version = forget;
+    ++wrong_version.expected_version;
+    MIRA_CHECK(!run_forget(host.principal, wrong_version) && snapshot.value().current());
+    const auto forgotten = run_forget(host.principal, forget);
+    MIRA_CHECK(forgotten && forgotten.value().erasure.status == ErasureStatus::Complete &&
+               forgotten.value().erasure.counts.records_removed == 1 &&
+               !snapshot.value().current());
+    MIRA_CHECK(!config.artifacts->open(artifact));
+    MIRA_CHECK(!host.storage.memory->get(forget.record, scope).value());
+    MIRA_CHECK(host.storage.memory->get(applied.value().applied->record, scope).value());
+    const auto preview = [&](MutationId id) {
+        return host.storage.executor
+            .submit_auto([&] {
+                return host.service->preference_proposal(host.principal, id, memory_context(spec));
+            })
+            .get();
+    };
+    const auto erased_preference = preview(correction.value().id);
+    MIRA_CHECK(erased_preference &&
+               erased_preference.value().state == PreferenceProposalState::Erased &&
+               !erased_preference.value().previous && erased_preference.value().statement.empty());
+    MIRA_CHECK(preview(unrelated.value().id).value().statement == "timezone=UTC");
+    MIRA_CHECK(approve(unrelated.value()));
+    const auto repeated_forget = run_forget(host.principal, forget);
+    MIRA_CHECK(repeated_forget && repeated_forget.value().idempotent_replay);
+
+    const auto session_binding = host.binding(input.value());
+    const auto &session_scope = session_binding.scopes.front();
+    MIRA_CHECK(host.storage.seed(session_binding, "network=local"));
+    MemoryQuery session_query;
+    session_query.scopes = {session_scope};
+    session_query.claim_key = "network";
+    const auto session_records = host.storage.memory->query(session_query);
+    MIRA_CHECK(session_records && session_records.value().records.size() == 1);
+    const auto &session_record = session_records.value().records.front();
+    const MemoryForgetRequest forget_session{OperationId::generate(), MemoryScopeKind::Session,
+                                             session_record.id, session_record.version};
+    const auto wrong_grant = run_forget(host.principal, forget_session);
+    MIRA_CHECK(!wrong_grant && wrong_grant.error().code == ErrorCode::PermissionDenied);
+    auto session_principal = host.principal;
+    session_principal.grants.back().resources.scope = session_scope.subject_id;
+    const auto erased_session = run_forget(session_principal, forget_session);
+    MIRA_CHECK(erased_session && erased_session.value().identity.scope == session_scope &&
+               erased_session.value().erasure.status == ErasureStatus::Complete);
     return 0;
 }
 
@@ -160,10 +244,76 @@ int reopens_the_typed_proposal_without_losing_idempotency() {
     MIRA_CHECK(!untyped && untyped.error().code == ErrorCode::PermissionDenied);
     return 0;
 }
+
+int continues_forget_after_lost_control_acknowledgements() {
+    PreferenceFixture host;
+    const auto proposal = host.propose("theme=dark");
+    MIRA_CHECK(proposal);
+    const auto applied = host.decide(proposal.value());
+    MIRA_CHECK(applied && applied.value().applied);
+    const auto &mutation = *applied.value().applied;
+    const MemoryForgetRequest request{OperationId::generate(), MemoryScopeKind::User,
+                                      mutation.record, mutation.new_version};
+    const auto forget = [&] {
+        return host.run([&] {
+            return host.service->forget_record(host.storage.principal, request, host.context());
+        });
+    };
+    const auto recall = [&] {
+        MemoryAgentRequest req;
+        req.task = host.binding.work.task_id;
+        req.mode = MemoryAgentMode::Recall;
+        return host.service->submit(req, host.context());
+    };
+    const auto correction_id = MutationId::generate();
+    host.fault->fail_type = "mira.memory-agent.preference-proposed.v1";
+    host.fault->after_write = true;
+    const auto lost_proposal = host.propose("theme=light", correction_id);
+    MIRA_CHECK(!lost_proposal && lost_proposal.error().code == ErrorCode::DataLoss);
+    const auto blocked_forget = forget();
+    MIRA_CHECK(!blocked_forget && blocked_forget.error().code == ErrorCode::DataLoss &&
+               host.query().value().records.size() == 1);
+    host.storage.runtime = RuntimeId::generate();
+    MIRA_CHECK(host.reopen() && host.preview(correction_id).value().previous);
+
+    host.fault->fail_type = "mira.memory-agent.record-forget-prepared.v1";
+    host.fault->after_write = true;
+    const auto lost_prepare = forget();
+    MIRA_CHECK(!lost_prepare && lost_prepare.error().code == ErrorCode::DataLoss && !recall());
+    const auto hidden_preview = host.preview(correction_id);
+    MIRA_CHECK(!hidden_preview && hidden_preview.error().domain_code ==
+                                      static_cast<int>(MemoryDomainCode::ErasurePending));
+    host.storage.runtime = RuntimeId::generate();
+    MIRA_CHECK(host.query().value().records.size() == 1 && host.reopen());
+    const auto held = recall();
+    MIRA_CHECK(!held &&
+               held.error().domain_code == static_cast<int>(MemoryDomainCode::ErasurePending));
+    const auto erased_preview = host.preview(proposal.value().id);
+    MIRA_CHECK(erased_preview && erased_preview.value().state == PreferenceProposalState::Erased);
+    MIRA_CHECK(host.preview(correction_id).value().state == PreferenceProposalState::Erased);
+
+    host.fault->fail_type = "mira.memory-agent.record-forget-completed.v1";
+    const auto lost_completion = forget();
+    MIRA_CHECK(!lost_completion && lost_completion.error().code == ErrorCode::DataLoss &&
+               host.query().value().records.empty() && !recall());
+    host.storage.runtime = RuntimeId::generate();
+    MIRA_CHECK(host.reopen() && !recall());
+    const auto completed = forget();
+    MIRA_CHECK(completed && completed.value().idempotent_replay &&
+               completed.value().erasure.counts.records_removed == 1);
+    MIRA_CHECK(host.reopen());
+    const auto allowed = recall();
+    MIRA_CHECK(allowed && allowed.value().result.get());
+    const auto replay = forget();
+    MIRA_CHECK(replay && replay.value().idempotent_replay);
+    return 0;
+}
 } // namespace
 
 int main() {
     if (const auto result = coordinator_resolves_explicit_preference_intents(); result != 0)
         return result;
-    return reopens_the_typed_proposal_without_losing_idempotency();
+    if (const auto result = reopens_the_typed_proposal_without_losing_idempotency(); result != 0)
+        return result;
+    return continues_forget_after_lost_control_acknowledgements();
 }

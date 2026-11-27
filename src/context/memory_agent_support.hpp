@@ -105,6 +105,20 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     bool closing = false;
     bool initialized = false;
     std::set<std::string> blocked_scopes;
+    struct RecordForget final {
+        std::string scope;
+        Sha256Digest identity;
+        std::vector<MutationId> preferences;
+        bool durable = false;
+        bool complete = false;
+        bool target_changed = false;
+    };
+    // Receipts use commit_mutex; the temporary holds also use mutex for admission.
+    std::map<OperationId, RecordForget> record_forgets;
+    std::map<std::string, OperationId> record_forget_holds;
+    [[nodiscard]] bool record_forget_held(const MemoryWorkBinding &) const; // mutex held
+    [[nodiscard]] Result<bool> restore_record_forget(const EventEnvelope &);
+    [[nodiscard]] Result<void> clean_record_forget(const RecordForget &);
     struct Projection final {
         ArtifactDescriptor artifact;
         std::vector<std::string> scopes;
@@ -128,10 +142,12 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     [[nodiscard]] Result<void> append_preference(const char *, JsonValue::Object,
                                                  EventId = EventId{});
     [[nodiscard]] Result<bool> restore_preference(const EventEnvelope &);
-    [[nodiscard]] Result<PreferenceProposal> read_preference(const PreferenceEntry &) const;
+    [[nodiscard]] Result<PreferenceProposal> read_preference(const PreferenceEntry &,
+                                                             bool for_erasure = false) const;
     [[nodiscard]] Result<void> erase_preference_bodies(const std::string &, bool privacy);
     [[nodiscard]] Result<void> invalidate_preference_proposals(const MemoryScope &);
     [[nodiscard]] Result<void> clean_preference_bodies();
+    [[nodiscard]] Result<void> clean_preference_body(const PreferenceEntry &);
     struct PreferenceIntentAuthority final {
         const PrincipalContext &principal;
         PreferenceIntent intent;

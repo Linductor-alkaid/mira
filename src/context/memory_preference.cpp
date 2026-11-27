@@ -88,6 +88,9 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
         std::find(binding.scopes.begin(), binding.scopes.end(), scope) == binding.scopes.end() ||
         blocked_scopes.contains(memory_agent_support::scope_key(scope)))
         return error(ErrorCode::PermissionDenied, "preference user scope is not authorized");
+    if (record_forget_holds.contains(memory_agent_support::scope_key(scope)))
+        return make_memory_error(MemoryDomainCode::ErasurePending,
+                                 "preference scope has a pending record forget");
     const auto authorized = [&] {
         return !intent ||
                (owner(binding.principal, intent->principal) && manage(intent->principal, scope));
@@ -274,6 +277,9 @@ MemoryAgentService::State::decide_preference(const PrincipalContext &principal, 
         !manage(principal, found->second.proposal.scope))
         return error(ErrorCode::PermissionDenied, "preference proposal is unavailable");
     auto &entry = found->second;
+    if (record_forget_holds.contains(memory_agent_support::scope_key(entry.proposal.scope)))
+        return make_memory_error(MemoryDomainCode::ErasurePending,
+                                 "preference scope has a pending record forget");
     if (digest != entry.proposal.digest)
         return error(ErrorCode::InvalidArgument, "preference approval digest does not match");
     if (closed(entry.proposal.state))
@@ -406,6 +412,14 @@ MemoryAgentService::preference_proposal(const PrincipalContext &principal, Mutat
         if (found == state_->preference_entries.end() || !owner(found->second.owner, principal) ||
             !manage(principal, found->second.proposal.scope))
             return error(ErrorCode::PermissionDenied, "preference proposal is unavailable");
+        const auto hold = state_->record_forget_holds.find(
+            memory_agent_support::scope_key(found->second.proposal.scope));
+        if (hold != state_->record_forget_holds.end() && !closed(found->second.proposal.state)) {
+            const auto &forget = state_->record_forgets.at(hold->second);
+            if (std::ranges::find(forget.preferences, id) != forget.preferences.end())
+                return make_memory_error(MemoryDomainCode::ErasurePending,
+                                         "preference is awaiting record forget");
+        }
         auto result = state_->read_preference(found->second);
         if (auto ready = state_->preference_available(context); !ready)
             return ready.error();

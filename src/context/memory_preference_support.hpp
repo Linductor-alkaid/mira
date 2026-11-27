@@ -27,11 +27,13 @@ template <typename Id> Id identity(std::string_view domain, MutationId request) 
     std::copy_n(digest.bytes.begin(), bytes.size(), bytes.begin());
     return Id{Id128{bytes}};
 }
-inline bool manage(const PrincipalContext &principal, const MemoryScope &scope) {
+inline bool manage(const PrincipalContext &principal, const MemoryScope &scope,
+                   std::optional<SessionId> authorized_session = std::nullopt) {
     if (principal.user_id.is_nil() || principal.tenant_id.is_nil() ||
         principal.identity_version == 0 ||
         principal.auth_strength == AuthenticationStrength::Anonymous ||
-        scope != memory_user_scope(principal))
+        (scope != memory_user_scope(principal) &&
+         (!authorized_session || scope != memory_session_scope(principal, *authorized_session))))
         return false;
     const auto now = std::chrono::system_clock::now();
     return std::any_of(principal.grants.begin(), principal.grants.end(), [&](const auto &grant) {

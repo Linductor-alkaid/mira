@@ -19,14 +19,14 @@
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
-| `M30-G5` 纠正、删除与发起者区分 | 已覆盖显式偏好批准、版本化纠正、范围擦除及恢复，见[偏好记录](#history-preference)。社交与会话已分别验收联合擦除 | `M30-05` 补逐记录遗忘、明确意图及四类发起者各自结算的回执。与 M31 联验容量回收、归档和 Erasure hold |
+| `M30-G5` 纠正、删除与发起者区分 | 已覆盖显式偏好批准、版本化纠正、范围擦除、[结构化单条遗忘及续办](#history-host-record-forget)。社交与会话已分别验收联合擦除 | `M30-05` 补自然语言意图、目标解析及四类发起者各自结算的回执。与 M31 联验容量回收、归档和 Erasure hold |
 | `M30-G6` 删除解释与失败正文 | 已覆盖擦除后拒绝旧结果及旧证据。失败轮次的正文和结果分别保存，见[会话结算维护验收](maintenance-2026-11-conversation-outcomes.md) | `M30-05` 验收完整删除说明，`M30-09` 验收同 scope 新世代和对旧来源、摘要及在途结果的阻断 |
 | `M30-G7` 记忆内容无授权效力 | `mira_m30_lifecycle_test` 覆盖当前 grant 检查，`mira_m30_preference_security_test` 覆盖越域及撤权拒绝，`mira_m36_context_admission_test` 覆盖候选准入的低权限边界 | `M30-07` 保留带授权字样的记忆与缺失当前授权组合场景的端到端验收 |
 | `M30-G8` 架构与契约同步 | 已实施增量持续通过本地文档、架构及平台边界检查 | `M30-08` 对照最终实现收口决策、设计、API、术语与总计划，按同一最终 Git head 收集目标矩阵 |
 
 [Issue #111 的偏好场景](https://github.com/Linductor-alkaid/mira/issues/111)由
-`M30-07` 汇总验收。Linux 离线已有批准、纠正与范围擦除的分段证据，逐记录遗忘与
-统一意图闭环仍归 `M30-05`。范围隔离和重复提及的结果分别归入 G3 和 G2。
+`M30-07` 汇总验收。Linux 离线已有批准、纠正、范围擦除和结构化单条遗忘的分段证据。
+自然语言意图和目标解析仍归 `M30-05`。范围隔离和重复提及的结果分别归入 G3 和 G2。
 
 ## 2. 按交付能力查证
 
@@ -37,7 +37,7 @@
 | --- | --- | --- |
 | 实施细则、主体绑定、低权限候选准入 | M30-01 / M30-02 / M30-04 | [生命周期](#history-lifecycle)、[实施细则与 scoped Record](#history-record-cursors)，以及 [M36 机制验收](m36-memory-agent-context-integration.md) |
 | 偏好记住、审批与版本化纠正 | M30-05 已交付部分 | [结构化偏好意图](#history-preference-intents)、[偏好审批、恢复与擦除测试](#history-preference) |
-| 逐记录擦除与重启回执 | M30-05 存储层增量 | [精确范围和版本擦除](#history-scoped-record-erasure) |
+| 逐记录擦除、宿主遗忘与重启回执 | M30-05 已交付部分 | [精确范围和版本擦除](#history-scoped-record-erasure)、[宿主遗忘和派生失效](#history-host-record-forget) |
 | 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
@@ -74,7 +74,7 @@
 | 技能、世界事实和目标的真实宿主联动 | Mira Maintainers、宿主集成者 | 接通生产授权及技能目录后补 M30-16 的宿主和真实环境验证。验证世界事实过期重观，并在 M30-37 检查漏触发、重复、取消、纠正、兑现和进程退出恢复 |
 | 价值信号进入容量策略 | Mira Maintainers | M30-06 提供确认重要性及 Gateway 实际准入信号后，复跑正常准入、幂等重放、失败与擦除，再由 M31 验证策略读取 |
 | 真实模型的提取、巩固、召回质量及长会话稳定性 | Mira Maintainers、宿主集成者 | 固定端点、模型、测试语料与真实工作负载，提交可复跑的准确率、延迟及稳定性结果 |
-| 删除生命周期与后续里程碑接缝 | Mira Maintainers | M30-05 接通逐记录遗忘、M30-09 接通新世代后复跑。容量回收不解除擦除屏障由 M31 联验。M33 消费到期派发；其主动预算与新的主动行为准入独立验收 |
+| 删除生命周期与后续里程碑接缝 | Mira Maintainers、宿主集成者 | M30-05 接通自然语言意图、M30-09 接通新世代后复跑来源回灌和删除说明。容量回收与擦除屏障由 M31 联验。M33 消费到期派发，其主动预算和主动行为准入独立验收 |
 
 ### 2026-11-25 计划与证据复核
 
@@ -220,6 +220,30 @@ ctest --test-dir build/asan --output-on-failure \
 
 Mira Maintainers 继续接通 M30-05 的交互入口和提案、缓存等派生内容清理。接通持久来源和
 宿主授权后联验旧证据的重新提取、目标平台及真实宿主场景。条件见第 3 节。
+
+<a id="history-host-record-forget"></a>
+
+### 2026-11-27 宿主单条遗忘与派生失效
+
+以 `30da99d` 加本增量验证 M30-05 的结构化遗忘，依据
+[DEC-182](../decisions/DEC-182-host-record-forget-intent.md)。`mira_m30_preference_intent_test`
+覆盖 User 和 Session 的授权资源匹配、过时版本、失效的请求快照与压缩工件、涉及被擦除
+记录的提案清理，以及其他提案继续审批。故障测试覆盖偏好提案回执不确定时先恢复目录，
+以及遗忘准备回执和结算回执丢失后的范围隔离、跨重开续办和幂等结果。
+
+Linux Debug 全量 **218/218**，遗忘入口连续复跑 **10/10**，遗忘入口与逐记录擦除
+ASan 专项 **2/2**。clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure \
+  -R '^mira_m30_preference_intent_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_m30_(preference_intent|record_erasure)_test$'
+```
+
+Mira Maintainers 与宿主集成者在自然语言路由、目标解析和持久来源接通后，按
+M30-05、M30-09 和 M30-38 验证删除说明与旧来源回灌阻断。目标平台补跑条件见第 3 节。
 
 ## 4. 历史验收记录
 

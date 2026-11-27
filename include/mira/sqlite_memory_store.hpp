@@ -134,6 +134,9 @@ class SqliteMemoryStore final : public IMemory,
                                    const LegacyMemoryAdd &legacy) override;
     [[nodiscard]] Result<MemoryCompactionResult> compact(const MemoryScope &scope) override;
     [[nodiscard]] Result<ErasureResult> erase(const ErasureRequest &request) override;
+    [[nodiscard]] bool supports_record_erasure() const noexcept override {
+        return !diagnostics().read_only;
+    }
     [[nodiscard]] Result<MemoryRecordErasureReceipt>
     erase_record(const MemoryRecordErasureRequest &request) override;
 

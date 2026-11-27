@@ -53,6 +53,13 @@ struct PreferenceIntentRequest final {
     PreferenceIntent intent = PreferenceIntent::Remember;
     PreferenceProposalRequest proposal;
 };
+
+struct MemoryForgetRequest final {
+    OperationId operation;
+    MemoryScopeKind scope = MemoryScopeKind::User;
+    MemoryId record;
+    std::uint64_t expected_version = 0;
+};
 struct PreferenceProposal final {
     MutationId id;
     Sha256Digest digest;
@@ -265,6 +272,8 @@ class MemoryAgentService final {
     // Must precede out-of-service mutations; invalidates all dependent work.
     [[nodiscard]] Result<void> invalidate_scope(const MemoryScope &scope);
     [[nodiscard]] Result<ErasureResult> erase_scope(const MemoryScope &scope);
+    [[nodiscard]] Result<MemoryRecordErasureReceipt>
+    forget_record(const PrincipalContext &, const MemoryForgetRequest &, const OperationContext &);
 
     // DEC-109: finite synchronous I/O; invoke via the injected Executor and
     // consume the result. Propose is bound to an active work; preview/decide

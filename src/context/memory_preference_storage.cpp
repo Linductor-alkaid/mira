@@ -38,14 +38,14 @@ Result<void> MemoryAgentService::State::append_preference(const char *type,
     return *preference_fence;
 }
 
-Result<PreferenceProposal>
-MemoryAgentService::State::read_preference(const PreferenceEntry &entry) const {
+Result<PreferenceProposal> MemoryAgentService::State::read_preference(const PreferenceEntry &entry,
+                                                                      bool for_erasure) const {
     auto result = entry.proposal;
     if (closed(result.state))
         return result;
     // The frozen body is never reissued after its review/source window.
     // Terminal metadata remains useful without replaying old personal data.
-    if (Timestamp::now().wall >= result.expires_at) {
+    if (!for_erasure && Timestamp::now().wall >= result.expires_at) {
         if (result.state == PreferenceProposalState::Pending)
             result.state = PreferenceProposalState::Expired;
         return result;
@@ -101,22 +101,27 @@ MemoryAgentService::State::read_preference(const PreferenceEntry &entry) const {
     return result;
 }
 
+Result<void> MemoryAgentService::State::clean_preference_body(const PreferenceEntry &entry) {
+    if (!config.artifacts)
+        return error(ErrorCode::InvalidState, "preference cleanup requires artifacts");
+    const auto erased = config.artifacts->erase({entry.artifact.id, "preference-withdrawn"});
+    if (erased && erased.value().payload_erased)
+        return {};
+    if (!erased && erased.error().code == ErrorCode::NotFound) {
+        const auto remaining = config.artifacts->open(entry.artifact);
+        if (!remaining && remaining.error().code == ErrorCode::NotFound)
+            return {};
+    }
+    return error(ErrorCode::DataLoss, "preference artifact cleanup is pending");
+}
+
 Result<void> MemoryAgentService::State::clean_preference_bodies() {
     for (const auto &[id, entry] : preference_entries) {
         (void)id;
-        if (!closed(entry.proposal.state))
-            continue;
-        if (!config.artifacts)
-            return error(ErrorCode::InvalidState, "preference cleanup requires artifacts");
-        const auto erased = config.artifacts->erase({entry.artifact.id, "preference-withdrawn"});
-        if (erased && erased.value().payload_erased)
-            continue;
-        if (!erased && erased.error().code == ErrorCode::NotFound) {
-            const auto remaining = config.artifacts->open(entry.artifact);
-            if (!remaining && remaining.error().code == ErrorCode::NotFound)
-                continue;
+        if (closed(entry.proposal.state)) {
+            if (auto erased = clean_preference_body(entry); !erased)
+                return erased;
         }
-        return error(ErrorCode::DataLoss, "preference artifact cleanup is pending");
     }
     return {};
 }
