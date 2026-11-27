@@ -99,6 +99,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 - [DEC-167](../decisions/DEC-167-evidenced-agent-persona-suggestions.md)：从已记录用户消息提交待审人格建议。
 - [DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)：通用 Record 的候选证据校验与分页处置。
 - [DEC-178](../decisions/DEC-178-memory-recording-receipts.md)：宿主汇总六类写入处置。
+- [DEC-179](../decisions/DEC-179-memory-recording-batches.md)：按类型批处理宿主候选并保留原始回执。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -153,7 +154,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 | 工作项 | 所有者、契约与复用路径 | 验收依据 |
 | --- | --- | --- |
 | M30-02 / M30-15 / M30-37 | 当前主体及版本化 scope 摘要约束 `SqliteGoalStore` 的归属与版本，StoreChannel 和既有派发 Executor 分别负责存取及唤起 | M30-G3/G4 |
-| M30-03 / M30-38 | Memory Agent 在结算及输入对账后由 Executor worker 提取，经合并或类型化 owner 写入。页区间、版本、取消及 deadline 约束水位推进 | M30-G1/G2 |
+| M30-03 / M30-38 | 宿主汇集已归类候选，经合并或类型化 owner 写入。Memory Agent 在结算及输入对账后提取 Record。M30-38 接通各来源的生产触发和跨重启消费 | M30-G1/G2 |
 | M30-05 | Interaction 解析受控意图，既有提案和擦除 owner 负责归属、版本、幂等与回执 | M30-G5/G6/G7 |
 | M30-06 | Gateway 准入结果提供实际使用证据，记录所有者保存独立的值与使用投影 | M30-G2/G7 |
 | M30-09 | Memory Agent 擦除 owner 保留屏障并约束同 scope 世代，执行句柄由原 owner 回收 | M30-G5/G6 |
@@ -171,7 +172,6 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 
 后续工作按原编号推进。已交付的基础机制和增量证据见第 5.2 节及[验收文档](m30-memory-acceptance.md#2-按交付能力查证)。
 
-- [ ] `M30-03` 补齐六类候选的共用收集及写入边界验收。宿主已可统一汇总待审人格建议、Session Record 与 Episode、社交属性与关系、结构化世界观察、一次性承诺与重复计划、技能提示的结果。通用 Record 已按页和行报告证据拒因。显式偏好继续沿既有审批入口。生产统一触发由 M30-38 验收。
 - [ ] `M30-05` 补齐「记住、纠正、忘掉」的结构化路由、精确范围与歧义处理、逐记录遗忘及可解释回执。显式偏好批准、版本化纠正与范围擦除已有独立证据。
 - [ ] `M30-06` 从有证据的已确认重要性和 Gateway 实际准入产出价值信号，区分未入选、失败准入、幂等重放与擦除，供 M31 消费。
 - [ ] `M30-09` 按 DEC-156 接通同 scope 删除后的新世代。旧来源、摘要、审批和在途结果继续受已有擦除屏障阻断，新明确输入可重新接纳。与 M31 联验屏障保留与回收。
@@ -187,6 +187,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 
 - [x] `M30-01` 立项与实施细则冻结。DEC-107/109 和 DEC-119 的已落地契约由 DEC-156 补齐，验收归属见 §4.1。
 - [x] `M30-02` 主体 → MemoryScope 映射规则与租户隔离落地（User/Session/Application 内部摘要，自动 User + 当前 Session 白名单，当前授权及归属校验；Linux 离线验收）。
+- [x] `M30-03` 在既有写入边界批量处理六类候选并汇总处置。通用 Record 提供证据拒因，批次保留原始类型回执。Linux 离线验证授权、错误隔离、取消及幂等；显式偏好沿既有审批入口。生产触发和重启消费由 M30-38 验收。
 - [x] `M30-04` 按当前工作的记忆选择与上下文装配接线（目标/最新约束、队列接纳边界、Gateway P4 候选、Layer 0 准入与失效探针；Linux 离线验收）。
 - [x] `M30-10` 冻结六类契约并交付宿主可配置的独立召回组，验证类别配额、ACL、
       追加查询、去重和 Gateway 候选失效（Linux 离线首增量）。

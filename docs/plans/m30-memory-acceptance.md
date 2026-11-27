@@ -15,7 +15,7 @@
 
 | 门禁 | 当前证据 | 未完成的验收及归属 |
 | --- | --- | --- |
-| `M30-G1` 候选经既有写入管线 | 六类均有专用候选增量及共同处置汇总。通用 Record 已校验原行证据及拒绝绕过社交来源的提议。见[写入验收索引](#evidence-recording) | `M30-03` 补六类共用的候选收集和其余类型的写入边界。`M30-38` 验收统一自动触发及六类路由 |
+| `M30-G1` 候选经既有写入管线 | `M30-03` 已在 Linux 离线验收六类候选的统一汇集、既有写入边界及共同回执。通用 Record 校验原行证据。见[写入验收索引](#evidence-recording) | `M30-38` 验收统一自动触发、重启消费及生产六类路由 |
 | `M30-G2` 重复提及不抬高可信度，验证等级具备证据链 | Linux 离线已验收。`mira_m30_preference_approval_test` 同一主张重复提出仍为 Unverified。`mira_m4_write_evolution_test` 验证独立证据合并、严格晋升与防降级。见[偏好记录](#history-preference)和[写入演进](maintenance-2026-11-write-evolution.md) | — |
 | `M30-G3` 主体映射与范围隔离 | Linux 离线已验收。`mira_m30_scope_binding_test` 验证 User、Session、Application 的稳定映射及主体摘要。`mira_m30_lifecycle_test` 验证跨 Session 仅复用授权用户偏好，并隔离其他用户、租户和 Session 范围。见[生命周期记录](#history-lifecycle) | — |
 | `M30-G4` 承诺、到期与状态解释 | 终答证据接纳、存储创建、纠正、取消、擦除、到期索引和任务完成证据对账已有覆盖，见[目标验收索引](#evidence-goals) | `M30-37` 验收到期承诺的生产调度和恢复闭环，`M30-05` 验收面向用户的状态与证据解释 |
@@ -37,6 +37,7 @@
 | --- | --- | --- |
 | 实施细则、主体绑定、低权限候选准入 | M30-01 / M30-02 / M30-04 | [生命周期](#history-lifecycle)、[实施细则与 scoped Record](#history-record-cursors)，以及 [M36 机制验收](m36-memory-agent-context-integration.md) |
 | 偏好批准与版本化纠正 | M30-05 已交付部分 | [偏好审批、恢复与擦除测试](#history-preference) |
+| 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
 | 社交目录、属性、关系及联合擦除 | M30-13 汇总 M30-18～21 | [身份、属性、双端关系与配对擦除](#history-social-foundation) |
@@ -53,7 +54,8 @@
 [偏好](#history-preference)、[社交候选](#history-social-attributes)、[验证事实写入](#history-verified-world-recording)、
 [目标候选](#history-evidenced-commitments)及[技能提示](#history-skill-hint-candidate-report)。
 各自沿对应的范围与证据规则验收。
-六类入口的宿主回执汇总见[六类写入处置](#history-recording-receipts)。
+六类入口的宿主接线与回执汇总见[统一批处理](#history-recording-batches)和
+[六类写入处置](#history-recording-receipts)。
 
 <a id="evidence-goals"></a>
 
@@ -142,6 +144,33 @@ ctest --test-dir build/asan --output-on-failure \
 
 Mira Maintainers 继续接通共同的候选收集。生产事件的重启消费、真实模型和目标平台按
 M30-38 和第 3 节补证。
+
+<a id="history-recording-batches"></a>
+
+### 2026-11-26 六类候选批处理
+
+以 `31dee9e` 加本增量按 [DEC-179](../decisions/DEC-179-memory-recording-batches.md) 完成
+M30-03 的 Linux 离线验收。`mira_m30_recording_batch_test` 从真实会话事件、社交目录和
+目标库验证混合批，覆盖待审人格、Episode、画像属性及关系、一次性承诺和重复计划，核对
+证据错误、权限撤回、结果顺序、取消、截止和目标重放。`mira_m30_world_fact_test` 从已
+验证的事件通过批次写入世界观察。`mira_m7_tool_runtime_skill_test` 从实际成功的技能调用
+通过批次记录 SkillHint，并复核原证据及授权边界。
+
+混合批运行在 Kairo 阻塞 worker。测试让 Record 提取器通过同一个 Executor 的单线程有限池
+完成子任务，验证等待中的批次不会占用该槽。Linux Debug 全量 **216/216**，批处理专项连续
+通过 **10/10**，上述三项 ASan 通过 **3/3**。clang-tidy、格式、文档、SBOM、平台边界和
+架构检查通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure \
+  -R '^mira_m30_recording_batch_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m30_(recording_batch|world_fact)|m7_tool_runtime_skill)_test$'
+```
+
+Mira Maintainers 与宿主集成者在接通生产事实源和当前授权后完成 M30-38 的默认分类、触发、
+幂等重放及跨重启消费验收。真实模型和目标平台按第 3 节补证。
 
 ## 4. 历史验收记录
 

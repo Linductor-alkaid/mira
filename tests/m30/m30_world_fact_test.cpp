@@ -1,6 +1,7 @@
 #include "support/m36_support.hpp"
 #include "support/test.hpp"
 
+#include <mira/memory_recording_batch.hpp>
 #include <mira/verified_fact.hpp>
 #include <mira/world_fact.hpp>
 #include <mira/world_fact_recording.hpp>
@@ -172,7 +173,18 @@ int records_committed_verification() {
     const WorldFactQuery query{binding.world_scope, binding.property, {}, {}};
     MIRA_CHECK(fixture.memory->lookup_world_fact(query).value().state == WorldFactState::Missing);
 
-    const auto applied = record(binding, source);
+    MemoryRecordingOwners owners{*fixture.events};
+    owners.world_memory = fixture.memory.get();
+    owners.acquire_world = acquire;
+    const std::vector<MemoryRecordingCandidate> candidates{
+        WorldFactRecordingCandidate{binding, source}};
+    const auto batch =
+        fixture.executor
+            .submit_auto([&] { return record_memory_batch(owners, candidates, context); })
+            .get();
+    MIRA_CHECK(batch && batch.value().outcomes.size() == 1 &&
+               batch.value().report.totals(MemoryRecordingSystem::World).applied == 1);
+    const auto &applied = std::get<Result<ConsolidationReport>>(batch.value().outcomes.front());
     MIRA_CHECK(applied && applied.value().count_of(CandidateDisposition::Applied) == 1 &&
                !applied.value().entries.front().idempotent_replay);
     const auto current = fixture.memory->lookup_world_fact(query);

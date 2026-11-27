@@ -20,6 +20,7 @@
 #include "../support/test.hpp"
 #include "tr2_wiring_support.hpp"
 
+#include <mira/memory_recording_batch.hpp>
 #include <mira/sqlite_memory_store.hpp>
 
 #include <algorithm>
@@ -997,7 +998,23 @@ int m30_skill_hint_uses_completed_skill_evidence() {
     MIRA_CHECK(!stopped && stopped.error().code == ErrorCode::Cancelled);
     MIRA_CHECK(workflow->recall_skill_hints(skills, name, allowed).value().records.empty());
 
-    const auto stored = must(submit_hint(note, allowed, operation), "record hint candidate");
+    MemoryRecordingOwners owners{*fixture.events_};
+    owners.workflow = workflow.get();
+    owners.skills = &skills;
+    owners.authorize_skill = allowed;
+    auto batch_operation = operation;
+    batch_operation.session = SessionId::generate();
+    const std::vector<MemoryRecordingCandidate> candidates{
+        SkillHintRecordingCandidate{name, first, note}};
+    const auto batch =
+        fixture.executor_
+            .submit_auto([&] { return record_memory_batch(owners, candidates, batch_operation); })
+            .get();
+    MIRA_CHECK(batch && batch.value().outcomes.size() == 1 &&
+               batch.value().report.totals(MemoryRecordingSystem::Skill).applied == 1);
+    const auto stored = must(
+        std::get<Result<WorkflowRuntime::SkillHintRecordReport>>(batch.value().outcomes.front()),
+        "record hint candidate");
     const auto &applied = stored.consolidation.entries.front();
     MIRA_CHECK(stored.record == rejected.record &&
                stored.consolidation.count_of(CandidateDisposition::Applied) == 1 &&

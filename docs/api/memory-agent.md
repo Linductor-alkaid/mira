@@ -133,6 +133,34 @@ for (const auto &attempt : recording.attempts()) {
 类型化回执中的证据、具体记录和版本仍由原入口提供。`memory_result` 与宿主接口共用
 Record 的计数语义，发布在 `recording_counts`。见 [DEC-178](../decisions/DEC-178-memory-recording-receipts.md)。
 
+### 按批处理六类候选
+
+`mira/memory_recording_batch.hpp` 为宿主提供已归类候选的处理入口。安装包消费者链接
+`Mira::core`、`Mira::state_store` 和 `Mira::workflow`。宿主在交互结算及输入对账后提供
+Record 的当前工作和范围，其他类提供各自的证据定位及当前授权。包含 Record 的批次运行在
+宿主已有的 Executor 阻塞 worker 上，以便提取处理器使用有限任务池。下例在该 worker
+内部处理一个 Record 和一组已索引消息的画像候选。
+
+```cpp
+MemoryRecordingOwners owners{*events};
+owners.event_memory = &memory_agent;
+owners.social = directory.get();
+owners.authorize_social = authorize_indexed_message;
+const std::array<MemoryRecordingCandidate, 2> candidates{
+    EventRecordingCandidate{session_scope, kMaxRecordPagesPerJob},
+    SocialAttributeRecordingCandidate{environment, message, validated_attributes},
+};
+const auto batch = record_memory_batch(owners, candidates, operation);
+```
+
+同一批次复用当前会话及操作，也保留 Record 的可选版本约束。社交授权回调按具体环境和
+消息检查宿主的当前权限；宿主维持所有者及授权依赖直到结果返回。批次上限为 32 个条目，
+超限直接返回 `ResourceExhausted`。`outcomes` 按原顺序保留已处理条目的类型化回执或
+错误，`report` 提供同顺序汇总。某条出现错误时仍可处理后续条目。操作取消或到期时停止
+发出后续写入，`interruption` 说明原因，`outcomes.size()` 指向第一个尚未处理的位置。
+候选的证据校验、幂等和待处理状态沿各所有者契约。默认触发及重启续办归 M30-38。
+见 [DEC-179](../decisions/DEC-179-memory-recording-batches.md)。
+
 ## 修订、删除与关闭
 
 current 失效但 refreshable 为真、且 Runtime 仍接纳同一 task/epoch 时，Gateway 报告
