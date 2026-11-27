@@ -9,6 +9,18 @@
 
 namespace mira {
 
+struct MemoryUseReference final {
+    Sha256Digest scope_digest;
+    MemoryId record;
+    std::uint64_t version = 0;
+    friend bool operator==(const MemoryUseReference &, const MemoryUseReference &) = default;
+};
+
+struct MemoryUseCandidate final {
+    ContextItemId item;
+    std::vector<MemoryUseReference> records;
+};
+
 // DEC-101: immutable, request-scoped optional data. A supplier must perform
 // only bounded cache reads. Never fetch models/storage on the infer caller.
 struct ModelContextSnapshot final {
@@ -23,6 +35,8 @@ struct ModelContextSnapshot final {
     // Wire-role replay items may precede the first original User message.
     // Other candidates retain their normal trailing position.
     bool prepend_history = false;
+    // Metadata paired with optional RetrievedMemory items. It stays local.
+    std::vector<MemoryUseCandidate> memory_candidates{};
 };
 using ModelContextSupplier =
     std::function<Result<ModelContextSnapshot>(const ModelRequest &, const OperationContext &)>;
@@ -40,6 +54,7 @@ struct ModelContextAdmissionConfig final {
 struct AdmittedModelRequest final {
     ModelRequest request;
     PreparedModelContext context;
+    std::vector<MemoryUseReference> selected_memory{};
 };
 
 // Accounts for the entire selected request and output/schema overhead using

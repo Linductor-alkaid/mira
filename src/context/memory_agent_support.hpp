@@ -63,6 +63,7 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
         bool revoked = false;
         bool input_pending = false;
         std::vector<ContextItem> candidates;
+        std::vector<MemoryUseCandidate> memory_candidates;
         std::chrono::system_clock::time_point cache_until{};
         std::vector<ModelInputItem> prefix;
         std::vector<ModelInputItem> compacted;

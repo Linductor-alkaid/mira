@@ -48,6 +48,14 @@ int main() {
     };
     MIRA_CHECK(field("use") == "advisory" && field("applies_to") == "current-user" &&
                field("statement") == "volume=30");
+    MemoryQuery user_preference;
+    user_preference.scopes = {memory_user_scope(host.principal)};
+    user_preference.claim_key = "volume";
+    const auto stored = host.storage.memory->query(user_preference);
+    MIRA_CHECK(stored && stored.value().records.size() == 1);
+    const auto &record = stored.value().records.front();
+    const std::vector<MemoryUseReference> expected{
+        {memory_erasure_scope_digest(record.scope), record.id, record.version}};
     status = host.coordinator->memory_status(host.principal, task);
     MIRA_CHECK(status && !status.value().suspended && status.value().job);
     const auto operation = status.value().job->operation;
@@ -62,6 +70,11 @@ int main() {
         model.spec_.profile_id = model.profile_->id;
         model.use_provider({text_response("received scoped preference")});
         model.gateway_->set_context_supplier(host.service->context_supplier());
+        std::vector<MemoryUseReceipt> receipts;
+        model.gateway_->set_memory_use_sink([&](const MemoryUseReceipt &receipt) -> Result<void> {
+            receipts.push_back(receipt);
+            return {};
+        });
         auto loop = model.make_loop({}, false);
         const std::string task_requirement = "Set volume=45 for this task.";
         MIRA_CHECK(loop.enqueue_user_message(task_requirement));
@@ -80,6 +93,11 @@ int main() {
                    preference->authority == Sensitivity::Public &&
                    std::get<TextPart>(preference->content.front()).text == block);
         MIRA_CHECK(requests.front().prompt_provenance.context_selection_digest != Hash{});
+        MIRA_CHECK(receipts.size() == 1 && receipts.front().records == expected);
+        MIRA_CHECK(receipts.front().attempt == requests.front().request_id &&
+                   receipts.front().task == task &&
+                   receipts.front().selection_digest ==
+                       requests.front().prompt_provenance.context_selection_digest);
     }
 
     auto correction = host.input("correction", "volume=30");

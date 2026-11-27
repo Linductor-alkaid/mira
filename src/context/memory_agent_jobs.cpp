@@ -38,6 +38,7 @@ std::string_view verification_prefix(const MemoryRecord &record) {
 struct RecallBlock final {
     std::string lines;
     std::vector<EventId> provenance;
+    std::vector<MemoryUseReference> records;
     std::size_t count = 0;
     Sensitivity sensitivity = Sensitivity::Public;
     bool has_preferences = false;
@@ -540,6 +541,8 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 block.lines += line;
                 block.provenance.insert(block.provenance.end(), record.provenance.begin(),
                                         record.provenance.end());
+                block.records.push_back(
+                    {memory_erasure_scope_digest(record.scope), record.id, record.version});
                 ++block.count;
                 block.sensitivity = std::max(block.sensitivity, record.sensitivity);
                 block.has_preferences = has_preferences;
@@ -552,10 +555,14 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                 return extra.error();
         }
         for (std::size_t index = 0; index < groups.size(); ++index) {
-            if (selected[index].count > 0)
-                result.candidates.push_back(
-                    memory_block(std::move(selected[index]), job->id,
-                                 grouped ? std::optional{index} : std::nullopt));
+            auto &block = selected[index];
+            if (block.count == 0)
+                continue;
+            auto records = std::move(block.records);
+            auto item = memory_block(std::move(block), job->id,
+                                     grouped ? std::optional{index} : std::nullopt);
+            result.memory_candidates.push_back({item.id, std::move(records)});
+            result.candidates.push_back(std::move(item));
         }
         std::size_t bytes = 0;
         for (const auto &item : result.candidates)
@@ -629,6 +636,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
                     continue;
                 ++dependent.revision;
                 dependent.candidates.clear();
+                dependent.memory_candidates.clear();
                 dependent.prefix.clear();
                 dependent.compacted.clear();
                 dependent.captured.clear();
@@ -660,6 +668,7 @@ Result<MemoryAgentResult> MemoryAgentService::State::execute(const std::shared_p
         auto &work = works.at(job->request.task);
         if (input.mode == MemoryAgentMode::Recall) {
             work.candidates = result.candidates;
+            work.memory_candidates = result.memory_candidates;
             work.cache_until = cache_until;
         } else if (input.mode == MemoryAgentMode::Record) {
             job->after_sequence = std::max(job->after_sequence, result.through_event_sequence);

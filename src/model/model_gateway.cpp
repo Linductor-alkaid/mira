@@ -129,6 +129,10 @@ void ModelGateway::set_context_supplier(ModelContextSupplier supplier) {
     context_supplier_ = std::move(supplier);
 }
 
+void ModelGateway::set_memory_use_sink(std::function<Result<void>(const MemoryUseReceipt &)> sink) {
+    memory_use_sink_ = std::move(sink);
+}
+
 void ModelGateway::set_persona_supplier(AgentPersonaSupplier supplier) {
     persona_supplier_ = std::move(supplier);
 }
@@ -521,15 +525,45 @@ Result<ModelCallOutcome> ModelGateway::infer(const ModelRequest &original_reques
                         outcome.tool_proposals.reset();
                     }
                 }
-                emit(request, "ModelResponseReceived",
-                     JsonValue::Object{
-                         {"attempts", static_cast<std::int64_t>(outcome.attempts)},
-                         {"admitted", outcome.admitted},
-                         {"context_refreshable", outcome.context_refreshable},
-                         {"parse_outcome", static_cast<std::int64_t>(
-                                               static_cast<std::uint8_t>(outcome.parse.outcome))},
-                         {"settlement_quality", static_cast<std::int64_t>(static_cast<std::uint8_t>(
-                                                    outcome.settlement.quality))}},
+                JsonValue::Object response_audit{
+                    {"attempts", static_cast<std::int64_t>(outcome.attempts)},
+                    {"admitted", outcome.admitted},
+                    {"context_refreshable", outcome.context_refreshable},
+                    {"parse_outcome", static_cast<std::int64_t>(outcome.parse.outcome)},
+                    {"settlement_quality", static_cast<std::int64_t>(outcome.settlement.quality)}};
+                const auto &records = prepared_requests[candidate_index].selected_memory;
+                const auto now = Timestamp::now();
+                const bool provider_accepted =
+                    outcome.response.status == ModelCompletionStatus::Completed ||
+                    (outcome.response.status == ModelCompletionStatus::Incomplete &&
+                     outcome.response.incomplete_reason == IncompleteReason::MaxOutputTokens);
+                if (outcome.admitted && provider_accepted && !records.empty() &&
+                    !context.cancelled_or_expired(now)) {
+                    outcome.memory_use =
+                        MemoryUseReceipt{request.request_id,
+                                         attempt_request.request_id,
+                                         request.task_id,
+                                         attempt_request.prompt_provenance.context_selection_digest,
+                                         now.wall,
+                                         records};
+                    response_audit.emplace_back("memory_use_records", records.size());
+                    if (memory_use_sink_) {
+                        try {
+                            auto reported = memory_use_sink_(*outcome.memory_use);
+                            if (!reported)
+                                outcome.memory_use_report_error = reported.error();
+                        } catch (...) {
+                            outcome.memory_use_report_error = Error{};
+                            outcome.memory_use_report_error->code = ErrorCode::Unavailable;
+                            outcome.memory_use_report_error->domain = "mira.model.gateway";
+                            outcome.memory_use_report_error->safe_message =
+                                "memory use sink failed";
+                        }
+                        if (outcome.memory_use_report_error)
+                            response_audit.emplace_back("memory_use_report_failed", true);
+                    }
+                }
+                emit(request, "ModelResponseReceived", JsonValue{std::move(response_audit)},
                      EventClass::State);
                 return outcome;
             }

@@ -90,8 +90,10 @@ ModelContextSupplier MemoryAgentService::context_supplier() const {
                 !memory_agent_support::same_owner(context, found->second.binding.work) ||
                 request.task_epoch != found->second.binding.work.task_epoch)
                 return error(ErrorCode::InvalidState, "memory request identity is not current");
-            if (std::chrono::system_clock::now() < found->second.cache_until)
+            if (std::chrono::system_clock::now() < found->second.cache_until) {
                 snapshot.candidates = found->second.candidates;
+                snapshot.memory_candidates = found->second.memory_candidates;
+            }
             if (!snapshot.candidates.empty())
                 expires = found->second.cache_until;
             snapshot.environment_epoch = found->second.binding.environment_epoch;

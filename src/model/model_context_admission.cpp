@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <set>
 #include <tuple>
 
@@ -22,6 +23,30 @@ Error invalid_candidate(std::size_t index, std::string_view reason) {
     return make_context_error(ContextDomainCode::InvalidItem, "context candidate " +
                                                                   std::to_string(index) + ": " +
                                                                   std::string(reason));
+}
+
+using MemoryCandidates = std::map<ContextItemId, const MemoryUseCandidate *>;
+
+Result<MemoryCandidates> index_memory_candidates(const ModelContextSnapshot &snapshot) {
+    constexpr std::size_t kMaxMemoryReferences = 64;
+    if (snapshot.memory_candidates.size() > kMaxMemoryReferences)
+        return invalid("too many memory reference groups");
+    MemoryCandidates by_item;
+    std::size_t remaining = kMaxMemoryReferences;
+    for (const auto &group : snapshot.memory_candidates) {
+        const auto item = std::ranges::find(snapshot.candidates, group.item, &ContextItem::id);
+        if (item == snapshot.candidates.end() || item->kind != ContextItemKind::RetrievedMemory ||
+            group.records.empty() || group.records.size() > remaining ||
+            !by_item.emplace(group.item, &group).second)
+            return invalid("invalid memory reference group");
+        if (std::ranges::any_of(group.records, [](const auto &record) {
+                return record.record.is_nil() || record.version == 0 ||
+                       record.scope_digest == Sha256Digest{};
+            }))
+            return invalid("invalid memory record reference");
+        remaining -= group.records.size();
+    }
+    return by_item;
 }
 } // namespace
 
@@ -126,6 +151,9 @@ Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
         }
         build.items.push_back(candidate);
     }
+    const auto memory_candidates = index_memory_candidates(snapshot);
+    if (!memory_candidates)
+        return memory_candidates.error();
     const StandardContextManager manager{counter};
     auto selected = manager.prepare(build);
     if (!selected)
@@ -174,6 +202,14 @@ Result<AdmittedModelRequest> admit_model_request(const ModelRequest &request,
                                 ? prefix
                                 : admitted.request.input;
         destination.push_back(admitted.context.input[i]);
+        const auto memory = memory_candidates.value().find(build.items[order[i]].id);
+        if (memory != memory_candidates.value().end() &&
+            admitted.context.item_audit[order[i]].disposition == ContextItemDisposition::Selected) {
+            for (const auto &record : memory->second->records)
+                if (std::ranges::find(admitted.selected_memory, record) ==
+                    admitted.selected_memory.end())
+                    admitted.selected_memory.push_back(record);
+        }
     }
     if (!prefix.empty()) {
         // Work with the validated original envelope, never with the compacted

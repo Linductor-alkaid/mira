@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -32,6 +33,15 @@ struct InferOptions final {
     ModelPreviewSink preview_sink{};
     ModelThinkingPreviewSink thinking_preview_sink{};
     bool replace_default_conversation_system_with_persona = false;
+};
+
+struct MemoryUseReceipt final {
+    ModelRequestId request;
+    ModelRequestId attempt;
+    TaskId task;
+    Hash selection_digest;
+    WallTimePoint used_at;
+    std::vector<MemoryUseReference> records;
 };
 
 // The aggregate outcome of one gateway call: three success layers stay
@@ -55,6 +65,8 @@ struct ModelCallOutcome final {
     std::string rejection_reason;
     // Final complete-request Layer 0 selection for the actual provider.
     std::optional<PreparedModelContext> context_admission;
+    std::optional<MemoryUseReceipt> memory_use{};
+    std::optional<Error> memory_use_report_error{};
 };
 
 struct ModelGatewayConfig final {
@@ -123,6 +135,8 @@ class ModelGateway final {
     void set_admission_gate(std::shared_ptr<const TaskAdmissionGate> gate);
     // Configure before infer(); bounded cache read, no blocking/model calls.
     void set_context_supplier(ModelContextSupplier supplier);
+    // Configure before infer(). A bounded host callback, with no I/O or reentry.
+    void set_memory_use_sink(std::function<Result<void>(const MemoryUseReceipt &)> sink);
     // Configure before infer(). Supplies only from current authenticated
     // task bindings and an already loaded host-owned catalog.
     void set_persona_supplier(AgentPersonaSupplier supplier);
@@ -160,6 +174,7 @@ class ModelGateway final {
     SessionId session_;
     RepairPolicy repair_policy_;
     ModelContextSupplier context_supplier_;
+    std::function<Result<void>(const MemoryUseReceipt &)> memory_use_sink_;
     AgentPersonaSupplier persona_supplier_;
 };
 

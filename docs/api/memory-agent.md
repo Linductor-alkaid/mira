@@ -54,6 +54,34 @@ Recall 的 query 只在绑定 scope 中检索，返回类型化候选，实际�
 和转义后的内容，超过额度的偏好候选报告降级。见
 [DEC-185](../decisions/DEC-185-advisory-preference-recall.md)。
 
+### 模型实际使用的记忆版本
+
+`MemoryAgentService::context_supplier()` 在召回候选旁带上记录 ID、版本与精确范围摘要。
+每个快照最多带 64 项记录引用，引用通过上下文条目 ID 关联。Gateway 从实际 provider
+的 Layer 0 结果中取已进入请求的版本。完成响应或达到输出
+token 上限的响应通过当前性复核后，`ModelCallOutcome::memory_use` 提供回执。回执含
+逻辑请求 ID、实际尝试 ID、选择摘要、记录版本及时间。候选未装入、调用失败、取消与
+迟到拒绝均没有使用回执。
+
+宿主可于使用 Gateway 前配置 `set_memory_use_sink`，通过有界回调接收回执。回调按
+既有 Gateway 调用生命周期运行，负责接收和转交回执。回调失败可从调用结果诊断，宿主
+仍可读取原回执。回执的去重依据是逻辑请求、精确范围、记录 ID 和版本。持久计数、
+重要性和擦除联动由 M30-06 后续增量交付。见
+[DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)。
+
+串行调用 Gateway 的宿主可以在内存中保留最近一张回执。`last_use` 须至少存活到回调注销。
+
+```cpp
+std::optional<mira::MemoryUseReceipt> last_use;
+auto remember_use = [&last_use] (const mira::MemoryUseReceipt &receipt) -> mira::Result<void> {
+    last_use = receipt;
+    return {};
+};
+gateway.set_memory_use_sink(remember_use);
+```
+
+### 召回分组与记录
+
 宿主可在构造服务前配置召回组。每组独立按 kinds 查询并形成一个候选，组序即供给顺序。
 kind 在全部组内唯一，单组 max_records 为正、max_bytes 至少 64。各组配额之和分别
 受 max_records 与 max_result_bytes 限制。配额覆盖初始及模型补充查询，max_bytes

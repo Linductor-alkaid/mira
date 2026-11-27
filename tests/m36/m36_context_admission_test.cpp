@@ -216,6 +216,92 @@ int fallback_uses_actual_profile_and_stale_completion_is_rejected() {
     MIRA_CHECK(fallback->requests().front().profile_id == fallback_profile->id);
     return 0;
 }
+
+int reports_only_memory_used_by_the_accepted_attempt() {
+    ConversationFixture fixture;
+    fixture.profile_->capabilities.limits.max_context_tokens = 128;
+    fixture.use_provider({text_response("unused primary")});
+    auto fallback_profile = std::make_shared<ModelProfile>(
+        make_profile(ProtocolDialect::OpenAIResponsesV1, "https://fallback.test"));
+    fallback_profile->capabilities.limits.max_context_tokens = 2048;
+    auto refused = text_response("refused");
+    refused.status = ModelCompletionStatus::Refused;
+    auto fallback = std::make_shared<RecordingProvider>(
+        fallback_profile,
+        std::vector{text_response("ok"), text_response("replay"), text_response("stale"), refused});
+    fixture.gateway_->mutable_router().register_profile(fallback_profile);
+    fixture.gateway_->register_provider(fallback);
+    fixture.admission_->activate(fixture.spec_.task_id, fixture.spec_.task_epoch);
+
+    ContextItem kept;
+    kept.id = ContextItemId::generate();
+    kept.kind = ContextItemKind::RetrievedMemory;
+    kept.authority = ContextAuthority::RetrievedMemory;
+    kept.content = {TextPart{"selected memory"}};
+    auto duplicate = kept;
+    duplicate.id = ContextItemId::generate();
+    auto dropped = kept;
+    dropped.id = ContextItemId::generate();
+    dropped.content = {TextPart{std::string(8192, 'x')}};
+    const auto scope = digest_string("test scope");
+    const MemoryUseReference used{scope, MemoryId::generate(), 4};
+    const MemoryUseReference unused{scope, MemoryId::generate(), 1};
+    const std::vector expected{used};
+    bool current = true;
+    fixture.gateway_->set_context_supplier(
+        [&](const auto &, const auto &) -> Result<ModelContextSnapshot> {
+            ModelContextSnapshot snapshot;
+            snapshot.candidates = {kept, duplicate, dropped};
+            snapshot.memory_candidates = {
+                {kept.id, {used}}, {duplicate.id, {used}}, {dropped.id, {unused}}};
+            snapshot.current = [&] { return current; };
+            return snapshot;
+        });
+    std::vector<MemoryUseReceipt> receipts;
+    fixture.gateway_->set_memory_use_sink([&](const MemoryUseReceipt &receipt) -> Result<void> {
+        receipts.push_back(receipt);
+        if (receipts.size() == 2)
+            throw std::runtime_error("test use sink failure");
+        return {};
+    });
+    fallback->on_after_response(2, [&] { current = false; });
+    const auto request = memory_request(fixture.spec_);
+    const auto run = [&] {
+        return fixture.gateway_->infer(request, memory_context(fixture.spec_));
+    };
+    const auto first = run();
+    MIRA_CHECK(first && first.value().admitted && first.value().memory_use &&
+               first.value().memory_use->records == expected && receipts.size() == 1);
+    MIRA_CHECK(first.value().memory_use->request == request.request_id &&
+               first.value().memory_use->attempt == fallback->requests().front().request_id &&
+               first.value().memory_use->selection_digest ==
+                   fallback->requests().front().prompt_provenance.context_selection_digest);
+    MIRA_CHECK(first.value().context_admission->profile_id == fallback_profile->id &&
+               first.value().context_admission->budget.dropped_items == 1);
+
+    const auto replay = run();
+    MIRA_CHECK(replay && replay.value().admitted && replay.value().memory_use &&
+               replay.value().memory_use_report_error && receipts.size() == 2);
+    MIRA_CHECK(receipts[0].request == receipts[1].request &&
+               receipts[0].records == receipts[1].records &&
+               receipts[0].attempt != receipts[1].attempt);
+
+    const auto stale = run();
+    MIRA_CHECK(stale && !stale.value().admitted && !stale.value().memory_use);
+    current = true;
+    const auto rejected = run();
+    MIRA_CHECK(rejected && !rejected.value().memory_use && receipts.size() == 2);
+    MIRA_CHECK(!run() && receipts.size() == 2);
+    MIRA_CHECK(fixture.provider_->requests().empty());
+
+    ModelContextSnapshot unlinked;
+    unlinked.candidates = {kept};
+    unlinked.memory_candidates = {{dropped.id, {unused}}};
+    MIRA_CHECK(
+        !admit_model_request(request, *fallback_profile, fixture.spec_.session_id, unlinked));
+    return 0;
+}
+
 int replay_wire_roles_reach_the_wire_and_system_roles_fail_closed() {
     ConversationFixture fixture;
     fixture.use_provider({text_response("unused")});
@@ -310,6 +396,8 @@ int main() {
     if (overflow_and_elevated_candidates_never_dispatch())
         return 1;
     if (replay_wire_roles_reach_the_wire_and_system_roles_fail_closed())
+        return 1;
+    if (reports_only_memory_used_by_the_accepted_attempt())
         return 1;
     return fallback_uses_actual_profile_and_stale_completion_is_rejected();
 }

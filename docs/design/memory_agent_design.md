@@ -95,6 +95,10 @@ Recall 在绑定 allowlist 中查询，模型可选择提供的记录或提出�
 留在候选 provenance。Gateway 继续按 P4 可选信息准入。见
 [DEC-185](../decisions/DEC-185-advisory-preference-recall.md)。
 
+召回块的记录版本与块 ID 作为本地元数据随工作缓存发布。Gateway 按最终实际请求所选
+条目产生可核对的使用回执，使用计量与模型决策是否采纳该内容分别解释。宿主可通过
+调用结果或有界回调消费回执。见 [DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)。
+
 Record 从该 Session 的 EventStore 有界读取增量，只消费所属 Task 的事件。模型只返回
 带事件索引引用的 statement/kind。服务填充 provenance、scope 和 Unverified 等字段，
 通过既有 MemoryConsolidator 提交；Preference 可能待审批，事实类验证不足会拒绝。

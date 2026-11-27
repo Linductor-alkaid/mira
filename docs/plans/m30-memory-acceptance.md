@@ -41,6 +41,7 @@
 | 单条纠正与遗忘的目标解析及歧义 | M30-05 已交付部分 | [当前主张精确查找](#history-memory-intent-target) |
 | 显式偏好命令准备与当前输入复核 | M30-05 已交付部分 | [按已接纳原文准备意图](#history-evidenced-preference-input) |
 | 偏好召回的归属、参考语义与字节接纳 | M30-05 已交付部分 | [带归属的偏好参考](#history-advisory-preference-recall) |
+| 实际进入获准模型请求的记忆版本 | M30-06 已交付部分 | [记忆使用回执](#history-admitted-memory-use) |
 | 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
@@ -75,7 +76,7 @@
 | 当前分支的完整远端 CI，包括 Windows/MSVC、Android/NDK 及仓库指定 sanitizer 组合 | Mira Maintainers | 推送被测提交并触发完整平台矩阵，保存同一 head 的 CI run 与平台结果。早期偏好主干 CI 只覆盖其被测版本 |
 | 社交账号推断、多方指代和生产事件触发 | Mira Maintainers、Mirage 宿主集成者 | 使用 QQ/B 站合成双来源和生产 Adapter 场景验收 M30-36，覆盖多方群聊、同人多账号、同名不同人、反证纠正、跨环境隔离与擦除 |
 | 技能、世界事实和目标的真实宿主联动 | Mira Maintainers、宿主集成者 | 接通生产授权及技能目录后补 M30-16 的宿主和真实环境验证。验证世界事实过期重观，并在 M30-37 检查漏触发、重复、取消、纠正、兑现和进程退出恢复 |
-| 价值信号进入容量策略 | Mira Maintainers | M30-06 提供确认重要性及 Gateway 实际准入信号后，复跑正常准入、幂等重放、失败与擦除，再由 M31 验证策略读取 |
+| 价值信号进入容量策略 | Mira Maintainers | M30-06 已提供实际准入回执。接通持久计数与确认重要性后，验证跨重启去重、版本过期和擦除，再由 M31 验证策略读取 |
 | 真实模型的提取、巩固、召回质量及长会话稳定性 | Mira Maintainers、宿主集成者 | 固定端点、模型、测试语料与真实工作负载，提交可复跑的准确率、延迟及稳定性结果 |
 | 删除生命周期与后续里程碑接缝 | Mira Maintainers、宿主集成者 | M30-05 接通自然语言意图、M30-09 接通新世代后复跑来源回灌和删除说明。容量回收与擦除屏障由 M31 联验。M33 消费到期派发，其主动预算和主动行为准入独立验收 |
 
@@ -321,6 +322,30 @@ ctest --test-dir build/asan --output-on-failure \
 
 Mira Maintainers 与宿主集成者在配置真实模型后补跑本轮任务与历史偏好冲突、不同对象的
 偏好交错及偏好与已承诺目标冲突场景，核对模型的实际选择。目标平台补跑条件见第 3 节。
+
+<a id="history-admitted-memory-use"></a>
+
+### 2026-11-27 已准入记忆使用回执
+
+以 `e10cf5a` 加本增量验证 M30-06，依据
+[DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)。`mira_m30_lifecycle_test`
+从 SQLite 中的偏好记录经协调层、Memory Agent 和真实 Gateway 检查精确范围摘要、版本与
+实际尝试信息。`mira_m36_context_admission_test` 验证备选 profile 的实际选择、预算裁掉的
+候选、同版本去重、逻辑请求重放标识、迟到、拒绝、失败和宿主回调异常。
+
+Linux Debug 全量 **218/218**，生命周期和上下文准入测试各连续复跑 **10/10**，
+ASan 专项 **2/2**。clang-tidy、格式、文档、SBOM、平台边界和架构检查通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure \
+  -R '^mira_(m30_lifecycle|m36_context_admission)_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m30_lifecycle|m36_context_admission)_test$'
+```
+
+Mira Maintainers 在接通持久投影后补跑跨程序重启去重、版本修改、撤权及擦除。已确认
+重要性由 M30-06 跟踪，目标平台补跑条件见第 3 节。
 
 ## 4. 历史验收记录
 

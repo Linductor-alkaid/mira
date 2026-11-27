@@ -219,6 +219,7 @@ Result<void> MemoryAgentService::bind(MemoryWorkBinding binding) {
 void MemoryAgentService::State::invalidate(Work &work) {
     ++work.revision;
     work.candidates.clear();
+    work.memory_candidates.clear();
     work.prefix.clear();
     work.compacted.clear();
     work.captured.clear();
