@@ -134,6 +134,8 @@ class SqliteMemoryStore final : public IMemory,
                                    const LegacyMemoryAdd &legacy) override;
     [[nodiscard]] Result<MemoryCompactionResult> compact(const MemoryScope &scope) override;
     [[nodiscard]] Result<ErasureResult> erase(const ErasureRequest &request) override;
+    [[nodiscard]] Result<MemoryRecordErasureReceipt>
+    erase_record(const MemoryRecordErasureRequest &request) override;
 
     // Exact address lookup with a freshness result. No record is supplied
     // when a current fact cannot be established.

@@ -263,7 +263,7 @@ int older_schema_is_reindexed_in_place() {
         fixture.close();
     }
     // The index now holds the segmentation and the record is intact.
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.9");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.10");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM memory_fts") == "2");
     MIRA_CHECK(scalar(path, "SELECT statement FROM memory_fts WHERE statement LIKE '%北%'") ==
                lexical_index_text(weather));

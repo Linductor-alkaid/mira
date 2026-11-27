@@ -1,4 +1,5 @@
 #include "memory_capacity_vfs.hpp"
+#include "sqlite_memory_record_erasure.hpp"
 #include "sqlite_store_open.hpp"
 #include <mira/embedding_math.hpp>
 #include <mira/social_profile.hpp>
@@ -37,7 +38,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 9};
+constexpr SchemaVersion kMemoryStoreSchema{1, 10};
 constexpr const char *kStoreKind = "memory";
 constexpr const char *kSocialFieldIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
@@ -530,7 +531,9 @@ class SqliteMemoryStore::Impl final {
     // ---- scope holds (pending erasure fail-closed) ----
 
     [[nodiscard]] static Result<void> check_no_hold(sqlite3 *db, const std::string &scope_key) {
-        Statement hold(db, "SELECT reason FROM memory_scope_holds WHERE scope_key = ?1");
+        Statement hold(db, "SELECT scope_key FROM memory_scope_holds WHERE scope_key = ?1"
+                           " UNION ALL SELECT scope_key FROM memory_record_erasure_ops"
+                           " WHERE scope_key = ?1 AND complete = 0");
         if (!hold.valid()) {
             return store_error(ErrorCode::Internal, "scope hold check failed to prepare");
         }
@@ -789,6 +792,9 @@ class SqliteMemoryStore::Impl final {
             scope.kind == MemoryScopeKind::SkillEnvironment) {
             if (auto held = check_scope_holds(db, scope, scope_key); !held)
                 return held.error();
+        } else if (scope.kind == MemoryScopeKind::User || scope.kind == MemoryScopeKind::Session) {
+            if (auto held = storage::record_erasure::check_not_pending(db, scope_key); !held)
+                return held.error();
         }
         return existing.value();
     }
@@ -934,6 +940,19 @@ class SqliteMemoryStore::Impl final {
             }
             if (step != SQLITE_DONE)
                 return store_error(ErrorCode::Internal, "mutation replay failed");
+        }
+
+        if (mutation.type == MemoryMutationType::Add ||
+            mutation.type == MemoryMutationType::Supersede ||
+            mutation.type == MemoryMutationType::PreserveAlternative) {
+            const auto erased_identity = storage::record_erasure::has_entry(
+                db, "SELECT 1 FROM memory_record_erasure_ops WHERE record_id = ?1 AND complete = 1",
+                mutation.proposed.id.to_string());
+            if (!erased_identity)
+                return erased_identity.error();
+            if (erased_identity.value())
+                return make_memory_error(MemoryDomainCode::VersionConflict,
+                                         "record identity has been erased");
         }
 
         bool reserve_legacy = false;
@@ -2113,7 +2132,8 @@ class SqliteMemoryStore::Impl final {
     // Runs inside an open transaction (caller owns BEGIN/COMMIT). Erasure
     // itself bypasses the pending-erasure hold: the retry is the only way a
     // held scope can be released, so blocking it would wedge the scope.
-    [[nodiscard]] Result<ErasureResult> erase_locked(sqlite3 *db, const ErasureRequest &request) {
+    [[nodiscard]] Result<ErasureResult> erase_locked(sqlite3 *db, const ErasureRequest &request,
+                                                     bool guarded_record = false) {
         const auto writable = check_writable();
         if (!writable) {
             return writable.error();
@@ -2127,6 +2147,10 @@ class SqliteMemoryStore::Impl final {
             return targets.error();
         }
         const std::string scope_key = targets.value().scope_key.value_or(std::string{});
+        if (!guarded_record && !scope_key.empty()) {
+            if (auto held = storage::record_erasure::check_not_pending(db, scope_key); !held)
+                return held.error();
+        }
         ErasureResult result;
         result.status = ErasureStatus::Complete;
         const std::int64_t now = wall_nanos(std::chrono::system_clock::now());
@@ -2138,6 +2162,11 @@ class SqliteMemoryStore::Impl final {
             if (!evidence) {
                 failed = true;
                 failure_note = "evidence lookup failed";
+                break;
+            }
+            if (guarded_record && evidence.value() && !artifacts_) {
+                failed = true;
+                failure_note = "evidence artifact owner is unavailable";
                 break;
             }
             // Resolve the record's scope before the deletions: a partial
@@ -2185,7 +2214,7 @@ class SqliteMemoryStore::Impl final {
                     } else if (std::string_view(step.label) == "embeddings") {
                         result.counts.embeddings_removed += 1;
                     } else if (std::string_view(step.label) == "versions") {
-                        result.counts.versions_removed += 1;
+                        result.counts.versions_removed += static_cast<std::size_t>(removed);
                     } else if (std::string_view(step.label) == "records") {
                         result.counts.records_removed += 1;
                     }
@@ -2200,7 +2229,10 @@ class SqliteMemoryStore::Impl final {
                 artifact_request.id = *evidence.value();
                 artifact_request.reason = request.reason;
                 const auto artifact_result = artifacts_->erase(artifact_request);
-                if (!artifact_result) {
+                if (!artifact_result ||
+                    (guarded_record && (artifact_result.value().id != artifact_request.id ||
+                                        !artifact_result.value().payload_erased ||
+                                        !artifact_result.value().tombstone_written))) {
                     failed = true;
                     failure_note = "artifact erasure failed";
                     break;
@@ -2338,6 +2370,62 @@ class SqliteMemoryStore::Impl final {
         return settled;
     }
 
+    [[nodiscard]] Result<MemoryRecordErasureReceipt>
+    erase_record(sqlite3 *db, const MemoryRecordErasureRequest &request) {
+        using namespace storage::record_erasure;
+        if (auto writable = check_writable(); !writable)
+            return writable.error();
+        if (auto valid = validate(request); !valid)
+            return valid.error();
+        const auto key = scope_key_of(request.scope);
+        {
+            Transaction prepare(db);
+            if (!prepare.valid())
+                return failure("record erasure intent transaction unavailable");
+            const auto saved = lookup(db, request, key);
+            if (!saved)
+                return saved.error();
+            if (saved.value() && saved.value()->erasure.status == ErasureStatus::Complete)
+                return *saved.value();
+            if (!saved.value()) {
+                if (auto current = check_version(db, request, key); !current)
+                    return current.error();
+                if (auto allowed = check_no_hold(db, key); !allowed)
+                    return allowed.error();
+                if (auto inserted = insert_intent(db, request, key); !inserted)
+                    return inserted.error();
+                if (auto persisted = prepare.commit(); !persisted)
+                    return persisted.error();
+            }
+        }
+
+        Transaction transaction(db);
+        if (!transaction.valid())
+            return failure("record erasure transaction unavailable");
+        const auto saved = lookup(db, request, key);
+        if (!saved)
+            return saved.error();
+        if (!saved.value())
+            return failure("record erasure intent is missing");
+        if (saved.value()->erasure.status == ErasureStatus::Complete)
+            return *saved.value();
+        if (auto current = check_version(db, request, key); !current)
+            return current.error();
+        auto erased = erase_locked(db, {{}, request.record, "user-record-forget"}, true);
+        if (!erased)
+            return erased.error();
+        if (erased.value().status == ErasureStatus::Pending) {
+            erased.value().counts = {};
+            erased.value().held_scope = request.scope;
+        } else {
+            if (auto written = complete(db, request.operation, erased.value().counts); !written)
+                return written.error();
+            if (auto committed = transaction.commit(); !committed)
+                return committed.error();
+        }
+        return MemoryRecordErasureReceipt{request, std::move(erased).value()};
+    }
+
     // Purges one record inside the caller's transaction.
     //
     // A failed erasure is rolled back to its savepoint: the partial
@@ -2402,6 +2490,8 @@ class SqliteMemoryStore::Impl final {
         if (!transaction.valid()) {
             return store_error(ErrorCode::Internal, "compaction transaction rejected");
         }
+        if (auto held = storage::record_erasure::check_not_pending(db, key); !held)
+            return held.error();
         // Retention expiry: physical purge through the erasure path semantics.
         {
             std::vector<std::string> expired;
@@ -2572,11 +2662,12 @@ class SqliteMemoryStore::Impl final {
         // Phase 1: expired records across every scope.
         {
             std::vector<Candidate> expired;
-            const auto scanned =
-                collect("SELECT id, scope_key FROM memory_records WHERE expires_at IS NOT NULL"
-                        " AND expires_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
-                        " memory_scope_holds) ORDER BY expires_at LIMIT ?2",
-                        now, options.max_records, expired);
+            const auto scanned = collect(
+                "SELECT id, scope_key FROM memory_records WHERE expires_at IS NOT NULL"
+                " AND expires_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
+                " memory_scope_holds UNION ALL SELECT scope_key FROM"
+                " memory_record_erasure_ops WHERE complete = 0) ORDER BY expires_at LIMIT ?2",
+                now, options.max_records, expired);
             if (!scanned) {
                 return scanned.error();
             }
@@ -2602,11 +2693,13 @@ class SqliteMemoryStore::Impl final {
         }
         // Phase 2: version history beyond the keep window, every scope.
         {
-            Statement prune(db,
-                            "DELETE FROM memory_versions WHERE rowid IN (SELECT rowid FROM"
-                            " memory_versions WHERE record_id IN (SELECT id FROM memory_records)"
-                            " AND version <= (SELECT MAX(version) FROM memory_versions v2"
-                            " WHERE v2.record_id = memory_versions.record_id) - ?1 LIMIT ?2)");
+            Statement prune(
+                db, "DELETE FROM memory_versions WHERE rowid IN (SELECT rowid FROM"
+                    " memory_versions WHERE record_id IN (SELECT id FROM memory_records"
+                    " WHERE scope_key NOT IN (SELECT scope_key FROM memory_record_erasure_ops"
+                    " WHERE complete = 0))"
+                    " AND version <= (SELECT MAX(version) FROM memory_versions v2"
+                    " WHERE v2.record_id = memory_versions.record_id) - ?1 LIMIT ?2)");
             if (!prune.valid()) {
                 return store_error(ErrorCode::Internal, "version prune failed to prepare");
             }
@@ -2629,11 +2722,12 @@ class SqliteMemoryStore::Impl final {
                           std::chrono::duration_cast<std::chrono::seconds>(options_.purge_horizon))
                           .count();
             std::vector<Candidate> tombstoned;
-            const auto scanned =
-                collect("SELECT id, scope_key FROM memory_records WHERE status = 'tombstoned'"
-                        " AND updated_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
-                        " memory_scope_holds) ORDER BY updated_at LIMIT ?2",
-                        horizon, options.max_records, tombstoned);
+            const auto scanned = collect(
+                "SELECT id, scope_key FROM memory_records WHERE status = 'tombstoned'"
+                " AND updated_at <= ?1 AND scope_key NOT IN (SELECT scope_key FROM"
+                " memory_scope_holds UNION ALL SELECT scope_key FROM"
+                " memory_record_erasure_ops WHERE complete = 0) ORDER BY updated_at LIMIT ?2",
+                horizon, options.max_records, tombstoned);
             if (!scanned) {
                 return scanned.error();
             }
@@ -2710,59 +2804,61 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     }
     const std::string schema_ddl = std::string(kSchemaDdl) + kSocialFieldIndex +
                                    kSocialRelationshipIndexes + kSocialEnvironmentIndex +
-                                   kWorldPropertyIndex + recovery_lesson_index_sql();
+                                   kWorldPropertyIndex + storage::record_erasure::schema +
+                                   recovery_lesson_index_sql();
     auto opened = storage::open_reference_store(
-        db_options, {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
-                     [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
-                         // The callback receives the file's recorded version
-                         // once, so the chain must fall through each step.
-                         if (previous.major == 1 && previous.minor < 1) {
-                             auto migrated = migrate_memory_schema_1_0_to_1_1(db);
-                             if (!migrated) {
-                                 return migrated.error();
-                             }
-                         }
-                         if (previous.major == 1 && previous.minor < 2) {
-                             auto migrated = migrate_memory_schema_1_1_to_1_2(db);
-                             if (!migrated) {
-                                 return migrated.error();
-                             }
-                         }
-                         if (previous.major == 1 && previous.minor < 3) {
-                             auto migrated = migrate_memory_schema_1_2_to_1_3(db);
-                             if (!migrated) {
-                                 return migrated.error();
-                             }
-                         }
-                         if (previous.minor < 4) {
-                             auto migrated = storage::exec_sql(db, kSocialFieldIndex);
-                             if (!migrated)
-                                 return migrated.error();
-                         }
-                         if (previous.minor < 5) {
-                             auto migrated = storage::exec_sql(db, kSocialRelationshipIndexes);
-                             if (!migrated)
-                                 return migrated.error();
-                         }
-                         if (previous.minor < 6) {
-                             auto migrated = storage::exec_sql(db, kSocialEnvironmentIndex);
-                             if (!migrated)
-                                 return migrated.error();
-                         }
-                         if (previous.minor < 7) {
-                             if (auto migrated = storage::exec_sql(db, kWorldPropertyIndex);
-                                 !migrated)
-                                 return migrated.error();
-                         }
-                         if (previous.minor < 9) {
-                             auto migrated = migrate_memory_schema_1_8_to_1_9(db);
-                             if (!migrated) {
-                                 return migrated.error();
-                             }
-                         }
-                         const auto sql = recovery_lesson_index_sql();
-                         return storage::exec_sql(db, sql.c_str());
-                     }});
+        db_options,
+        {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
+         [](sqlite3 *db, SchemaVersion previous) -> Result<void> {
+             // The callback receives the file's recorded version
+             // once, so the chain must fall through each step.
+             if (previous.major == 1 && previous.minor < 1) {
+                 auto migrated = migrate_memory_schema_1_0_to_1_1(db);
+                 if (!migrated) {
+                     return migrated.error();
+                 }
+             }
+             if (previous.major == 1 && previous.minor < 2) {
+                 auto migrated = migrate_memory_schema_1_1_to_1_2(db);
+                 if (!migrated) {
+                     return migrated.error();
+                 }
+             }
+             if (previous.major == 1 && previous.minor < 3) {
+                 auto migrated = migrate_memory_schema_1_2_to_1_3(db);
+                 if (!migrated) {
+                     return migrated.error();
+                 }
+             }
+             if (previous.minor < 4) {
+                 auto migrated = storage::exec_sql(db, kSocialFieldIndex);
+                 if (!migrated)
+                     return migrated.error();
+             }
+             if (previous.minor < 5) {
+                 auto migrated = storage::exec_sql(db, kSocialRelationshipIndexes);
+                 if (!migrated)
+                     return migrated.error();
+             }
+             if (previous.minor < 6) {
+                 auto migrated = storage::exec_sql(db, kSocialEnvironmentIndex);
+                 if (!migrated)
+                     return migrated.error();
+             }
+             if (previous.minor < 7) {
+                 if (auto migrated = storage::exec_sql(db, kWorldPropertyIndex); !migrated)
+                     return migrated.error();
+             }
+             if (previous.minor < 9) {
+                 auto migrated = migrate_memory_schema_1_8_to_1_9(db);
+                 if (!migrated) {
+                     return migrated.error();
+                 }
+             }
+             const auto sql =
+                 std::string(storage::record_erasure::schema) + recovery_lesson_index_sql();
+             return storage::exec_sql(db, sql.c_str());
+         }});
     if (!opened) {
         if (capacity && capacity->rejected())
             return storage::memory_capacity_error();
@@ -2836,6 +2932,12 @@ Result<MemoryCompactionResult> SqliteMemoryStore::sweep(MemorySweepOptions optio
 Result<ErasureResult> SqliteMemoryStore::erase(const ErasureRequest &request) {
     return impl_->run<ErasureResult>(
         [this, request](sqlite3 *db) { return impl_->erase(db, request); });
+}
+
+Result<MemoryRecordErasureReceipt>
+SqliteMemoryStore::erase_record(const MemoryRecordErasureRequest &request) {
+    return impl_->run<MemoryRecordErasureReceipt>(
+        [this, request](sqlite3 *db) { return impl_->erase_record(db, request); });
 }
 
 Result<Id128> SqliteMemoryStore::social_erasure_store_id() {

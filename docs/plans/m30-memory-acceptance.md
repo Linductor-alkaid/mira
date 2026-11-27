@@ -37,6 +37,7 @@
 | --- | --- | --- |
 | 实施细则、主体绑定、低权限候选准入 | M30-01 / M30-02 / M30-04 | [生命周期](#history-lifecycle)、[实施细则与 scoped Record](#history-record-cursors)，以及 [M36 机制验收](m36-memory-agent-context-integration.md) |
 | 偏好记住、审批与版本化纠正 | M30-05 已交付部分 | [结构化偏好意图](#history-preference-intents)、[偏好审批、恢复与擦除测试](#history-preference) |
+| 逐记录擦除与重启回执 | M30-05 存储层增量 | [精确范围和版本擦除](#history-scoped-record-erasure) |
 | 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
@@ -195,6 +196,30 @@ ctest --test-dir build/asan --output-on-failure \
 
 Mira Maintainers 继续按 M30-05 补自然语言到受控意图的路由、逐记录遗忘与擦除回执，
 并由宿主集成者在真实输入及当前授权接通后验收。目标平台按第 3 节补证。
+
+<a id="history-scoped-record-erasure"></a>
+
+### 2026-11-27 逐记录擦除和持久回执
+
+以 `1f397a0` 加本增量验证 M30-05 的 SQLite 逐记录擦除，依据
+[DEC-181](../decisions/DEC-181-scoped-record-erasure.md)。`mira_m30_record_erasure_test`
+覆盖范围外与缺失的同样拒绝、过时版本、工件删除未确认、待处理范围读写屏障和排除保留期
+清扫、重开续办、精确删除版本及两类索引、回执重放和拦截已擦除 ID。`mira_m4_store_open_test`
+验证 schema 1.10 与旧文件迁移同事务回滚。既有 SQLite、词法索引及清扫测试复核兼容性。
+
+Linux Debug 全量 **218/218**，逐记录擦除连续复跑 **10/10**，逐记录擦除与保留期清扫
+ASan 专项 **2/2**。clang-tidy、格式、文档、SBOM、平台边界和架构门禁通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure \
+  -R '^mira_m30_record_erasure_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_(m30_record_erasure|m4_retention_sweep)_test$'
+```
+
+Mira Maintainers 继续接通 M30-05 的交互入口和提案、缓存等派生内容清理。接通持久来源和
+宿主授权后联验旧证据的重新提取、目标平台及真实宿主场景。条件见第 3 节。
 
 ## 4. 历史验收记录
 

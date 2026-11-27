@@ -1,7 +1,7 @@
 # 持久记忆宿主接入
 
 > 状态：Active
-> 更新日期：2026-11-26
+> 更新日期：2026-11-27
 > 关联：[存储研究](../design/memory-storage-reference-study.md)、
 > [记忆代理 API](memory-agent.md)、[存储维护计划](../plans/maintenance-2026-11-memory-storage.md)
 
@@ -62,6 +62,24 @@ ResourceExhausted。`directory_capacity()` 返回当前总量和扫描计数，�
 `log_bytes()` 可查询实际文件长度；分段归档和共享引用回收由 M31 跟踪。
 对已授权任务取证时，可使用[事件切片](events-recovery.md#有界事件切片)分批读取任务、
 事件类型和时间窗口。FileEventStore 重开时从日志重建位置索引。
+
+## 存储层逐记录擦除
+
+已核对当前授权的宿主可对 User 或 Session 记录调用 `erase_record`。调用提供稳定操作
+ID、精确范围、记录 ID 和先前确认的正版本。SQLite 在登记擦除前核对范围和版本，范围外
+与缺失记录返回相同拒绝。版本过时返回 `VersionConflict`。后端通过既有 StoreChannel
+执行；宿主从已受管的有限作业消费结果。
+
+```cpp
+const MemoryRecordErasureRequest request{operation_id, scope, record_id, expected_version};
+const auto receipt = executor.submit_auto([&] { return memory->erase_record(request); }).get();
+```
+
+SQLite schema 1.10 持久保存操作身份及状态。`Pending` 封闭该范围的记录读写和保留期清理，
+可在重开后使用相同请求续办。`Complete` 返回移除记录、历史版本、全文索引、嵌入和当前
+证据工件的计数；再次提交同一操作返回原回执及 `idempotent_replay`。完成的记录 ID 保留
+擦除身份。该回执适用于 SQLite 和其已绑定工件，交互层的缓存、提案正文、会话索引和源
+事件分别由其所有者处理。见 [DEC-181](../decisions/DEC-181-scoped-record-erasure.md)。
 
 ## 持久会话片段索引
 

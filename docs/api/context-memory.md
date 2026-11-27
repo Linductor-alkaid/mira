@@ -53,6 +53,8 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
   `compact(scope)`（保留期清扫，连带删除引用的 Artifact）/ `erase(ErasureRequest)`。
   隐私删除部分失败时整体保持 `ErasureResult` Pending 并 fail-closed 阻止该 scope 进入
   Context；审计只含 id/计数/原因，不含被删正文。
+- User/Session 记录可经 `erase_record(MemoryRecordErasureRequest)` 比对精确 scope、
+  记录版本和操作 ID，获得可续办的擦除回执。见[存储层逐记录擦除](durable-memory-host.md#存储层逐记录擦除)。
 - `get()` 按 scope 绑定：调用方声明目标 scope，scope 不符时返回空 optional，与
   「记录不存在」不可区分（返回 `ScopeDenied` 会让按 id 读取成为跨 scope 存在性
   预言机）。`get()` 不过滤生命周期——Tombstone 表示「不再参与检索」而非删除，

@@ -498,6 +498,19 @@ struct ErasureResult final {
     std::string note;
 };
 
+struct MemoryRecordErasureRequest final {
+    OperationId operation;
+    MemoryScope scope;
+    MemoryId record;
+    std::uint64_t expected_version = 0;
+};
+
+struct MemoryRecordErasureReceipt final {
+    MemoryRecordErasureRequest identity;
+    ErasureResult erasure;
+    bool idempotent_replay = false;
+};
+
 struct MemoryCompactionResult final {
     // Retention expiry purges (payload/FTS/embeddings/artifacts included).
     std::size_t expired_records_purged = 0;
@@ -573,6 +586,16 @@ class IMemory {
     // scope out of Context (query/apply reject for held scopes) until a retry
     // completes; the audit trail never records the erased statements.
     [[nodiscard]] virtual Result<ErasureResult> erase(const ErasureRequest &request) = 0;
+    // Trusted host supplies the exact authorized scope and version. Backends
+    // without atomic scoped erasure must fail without mutating the record.
+    [[nodiscard]] virtual Result<MemoryRecordErasureReceipt>
+    erase_record(const MemoryRecordErasureRequest &) {
+        Error error;
+        error.code = ErrorCode::UnsupportedCapability;
+        error.domain = "mira.memory";
+        error.safe_message = "scoped record erasure is unavailable";
+        return error;
+    }
 };
 
 // The store owner's retention surface: one bounded pass over every scope.
