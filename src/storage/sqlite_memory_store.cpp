@@ -1,7 +1,9 @@
 #include "memory_capacity_vfs.hpp"
 #include "sqlite_memory_record_erasure.hpp"
+#include "sqlite_memory_usage.hpp"
 #include "sqlite_store_open.hpp"
 #include <mira/embedding_math.hpp>
+#include <mira/memory_agent.hpp>
 #include <mira/social_profile.hpp>
 #include <mira/sqlite_memory_store.hpp>
 #include <mira/text_segmentation.hpp>
@@ -38,7 +40,7 @@ using storage::Transaction;
     return error;
 }
 
-constexpr SchemaVersion kMemoryStoreSchema{1, 10};
+constexpr SchemaVersion kMemoryStoreSchema{1, 11};
 constexpr const char *kStoreKind = "memory";
 constexpr const char *kSocialFieldIndex =
     "CREATE INDEX IF NOT EXISTS memory_records_by_social_field"
@@ -2861,7 +2863,7 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
     const std::string schema_ddl = std::string(kSchemaDdl) + kSocialFieldIndex +
                                    kSocialRelationshipIndexes + kSocialEnvironmentIndex +
                                    kWorldPropertyIndex + storage::record_erasure::schema +
-                                   recovery_lesson_index_sql();
+                                   recovery_lesson_index_sql() + storage::memory_usage::schema;
     auto opened = storage::open_reference_store(
         db_options,
         {kStoreKind, kMemoryStoreSchema, schema_ddl.c_str(), store_error,
@@ -2911,8 +2913,8 @@ Result<std::unique_ptr<SqliteMemoryStore>> SqliteMemoryStore::open(kairo::Execut
                      return migrated.error();
                  }
              }
-             const auto sql =
-                 std::string(storage::record_erasure::schema) + recovery_lesson_index_sql();
+             const auto sql = std::string(storage::record_erasure::schema) +
+                              recovery_lesson_index_sql() + storage::memory_usage::schema;
              return storage::exec_sql(db, sql.c_str());
          }});
     if (!opened) {
@@ -3004,6 +3006,86 @@ Result<MemoryRecordErasureReceipt>
 SqliteMemoryStore::erase_record(const MemoryRecordErasureRequest &request) {
     return impl_->run<MemoryRecordErasureReceipt>(
         [this, request](sqlite3 *db) { return impl_->erase_record(db, request); });
+}
+
+Result<MemoryUseWriteResult> SqliteMemoryStore::record_memory_use(const MemoryUseReceipt &receipt) {
+    if (receipt.request.is_nil() || receipt.attempt.is_nil() || receipt.task.is_nil() ||
+        receipt.used_at == WallTimePoint{} || receipt.records.empty() ||
+        receipt.records.size() > 64 ||
+        std::any_of(receipt.records.begin(), receipt.records.end(), [](const auto &entry) {
+            return entry.record.is_nil() || !storage::memory_usage::valid_version(entry.version) ||
+                   entry.scope_digest == Sha256Digest{};
+        }))
+        return store_error(ErrorCode::InvalidArgument, "invalid memory use receipt");
+
+    return impl_->run<MemoryUseWriteResult>([this,
+                                             receipt](sqlite3 *db) -> Result<MemoryUseWriteResult> {
+        if (auto writable = impl_->check_writable(); !writable)
+            return writable.error();
+        Transaction transaction(db);
+        if (!transaction.valid())
+            return store_error(ErrorCode::Unavailable, "memory usage transaction unavailable");
+        const auto now = wall_nanos(std::chrono::system_clock::now());
+        const auto used_at = wall_nanos(receipt.used_at);
+        const auto request = receipt.request.to_string();
+        MemoryUseWriteResult result;
+        for (const auto &ref : receipt.records) {
+            const auto id = ref.record.to_string();
+            const auto version = storage::memory_usage::current_version(db, id, ref.version, now);
+            if (!version)
+                return version.error();
+            if (!version.value() || used_at < version.value()->written_at ||
+                memory_erasure_scope_digest(version.value()->scope) != ref.scope_digest) {
+                ++result.skipped;
+                continue;
+            }
+            const auto &scope = version.value()->scope;
+            if (auto held = Impl::check_scope_holds(db, scope, scope_key_of(scope)); !held) {
+                if (held.error().domain_code != static_cast<int>(MemoryDomainCode::ErasurePending))
+                    return held.error();
+                ++result.skipped;
+                continue;
+            }
+            auto inserted = storage::memory_usage::insert(db, id, ref.version, request, used_at);
+            if (!inserted)
+                return inserted.error();
+            if (inserted.value())
+                ++result.recorded;
+            else
+                ++result.duplicates;
+        }
+        if (auto committed = transaction.commit(); !committed)
+            return committed.error();
+        return result;
+    });
+}
+
+Result<std::optional<MemoryUsage>> SqliteMemoryStore::memory_usage(const MemoryScope &scope,
+                                                                   MemoryId record,
+                                                                   std::uint64_t version) const {
+    if (record.is_nil() || !storage::memory_usage::valid_version(version))
+        return store_error(ErrorCode::InvalidArgument, "invalid memory usage address");
+    return impl_->run<std::optional<MemoryUsage>>(
+        [scope, record, version](sqlite3 *db) -> Result<std::optional<MemoryUsage>> {
+            Transaction snapshot(db, Transaction::Mode::ReadSnapshot);
+            if (!snapshot.valid())
+                return store_error(ErrorCode::Unavailable, "memory usage snapshot unavailable");
+            const auto id = record.to_string();
+            const auto current = storage::memory_usage::current_version(
+                db, id, version, wall_nanos(std::chrono::system_clock::now()));
+            if (!current)
+                return current.error();
+            if (!current.value() || current.value()->scope != scope)
+                return std::optional<MemoryUsage>{};
+            if (auto held = Impl::check_scope_holds(db, scope, scope_key_of(scope)); !held)
+                return held.error();
+            auto usage = storage::memory_usage::read(db, id, version);
+            if (!usage)
+                return usage.error();
+            if (auto closed = snapshot.commit(); !closed)
+                return closed.error();
+            return std::optional<MemoryUsage>{usage.value()};
+        });
 }
 
 Result<Id128> SqliteMemoryStore::social_erasure_store_id() {

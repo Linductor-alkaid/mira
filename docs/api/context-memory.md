@@ -177,6 +177,11 @@ M36 补齐两个 Loop 共用的 Gateway 最终准入，以及宿主记忆服务�
 - **词法索引文本**（SQLite schema 1.9）：`memory_fts` 行保存语句的索引文本，即
   [确定性分词](#text_segmentationhpp确定性文本原语)产出的词与汉字单字。旧库打开时
   按已索引的记录重建全部 FTS 行，记录本身不变。
+- **实际使用投影**（SQLite schema 1.11）：受信任宿主在模型调用返回后将 `MemoryUseReceipt`
+  传给 `record_memory_use()`。结果区分已入账、重复与跳过，操作超时后可以用原回执重试。
+  `memory_usage(scope, record, version)` 读取获准精确范围内的当前有效版本，返回次数与
+  最近使用时间。版本过期或范围不符时返回空，擦除封闭以错误报告。存活版本从零计数。
+  见 [DEC-187](../decisions/DEC-187-durable-memory-usage.md)。
 - **近重去重**（`near_dup_threshold`，store 默认关、接线器默认 0.85）：排序后
   top-64 内按查询身份嵌入余弦抑制过阈候选，`MemoryQueryQuality::dedup_suppressed`
   计数；无向量候选豁免，阈值按 embedder 实测标定。

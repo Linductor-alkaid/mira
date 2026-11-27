@@ -263,7 +263,7 @@ int older_schema_is_reindexed_in_place() {
         fixture.close();
     }
     // The index now holds the segmentation and the record is intact.
-    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.10");
+    MIRA_CHECK(scalar(path, "SELECT value FROM store_meta WHERE key = 'schema_version'") == "1.11");
     MIRA_CHECK(scalar(path, "SELECT count(*) FROM memory_fts") == "2");
     MIRA_CHECK(scalar(path, "SELECT statement FROM memory_fts WHERE statement LIKE '%北%'") ==
                lexical_index_text(weather));
@@ -313,7 +313,7 @@ int overlong_queries_match_a_subset_and_say_so() {
 
 } // namespace
 
-int main() {
+int main() try {
     if (const int result = chinese_statements_are_recalled(); result != 0) {
         return result;
     }
@@ -328,4 +328,10 @@ int main() {
         return result;
     }
     return overlong_queries_match_a_subset_and_say_so();
+} catch (const std::exception &error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "memory lexical test raised an unknown exception\n";
+    return 1;
 }

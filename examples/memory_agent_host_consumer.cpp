@@ -156,9 +156,21 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
     }
     ModelRouter router;
     router.register_profile(std::make_shared<const ModelProfile>(provider->profile()));
+    std::optional<MemoryUseReceipt> pending_use;
     ModelGateway gateway(executor, router, nullptr, PriceTable{});
     gateway.register_provider(provider);
     gateway.set_context_supplier(service.context_supplier());
+    // This serial sample has one handoff slot per call. Commit outside Gateway.
+    gateway.set_memory_use_sink([&](const MemoryUseReceipt &receipt) -> Result<void> {
+        if (pending_use) {
+            Error error;
+            error.code = ErrorCode::ResourceExhausted;
+            error.safe_message = "memory use slot is full";
+            return error;
+        }
+        pending_use = receipt;
+        return {};
+    });
     AgentPersonaCatalog personas;
     const AgentPersonaKey persona_key{principal.tenant_id, Id128::generate()};
     if (!personas.activate(persona_key, {1, "Use the initial host persona."}))
@@ -254,6 +266,9 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
         return false;
     }
     auto answer1 = first_loop.run(bindings[0].work, context_for(bindings[0].work));
+    if (pending_use && !memory->record_memory_use(*pending_use))
+        return false;
+    pending_use.reset();
     if (!personas.activate(persona_key, {2, "Use the updated host persona."}))
         return false;
     auto answer2 = second_loop.run(bindings[1].work, context_for(bindings[1].work));
@@ -264,6 +279,19 @@ bool run(kairo::Executor &executor, const std::filesystem::path &root) {
                   << (answer1 ? answer1.value().safe_summary : answer1.error().safe_message) << "; "
                   << (answer2 ? answer2.value().safe_summary : answer2.error().safe_message)
                   << '\n';
+        return false;
+    }
+    if (!pending_use || pending_use->task != bindings[1].work.task_id ||
+        pending_use->records.size() != 1) {
+        std::cerr << "memory host: missing usage receipt\n";
+        return false;
+    }
+    const auto stored = memory->record_memory_use(*pending_use);
+    const auto &used = pending_use->records.front();
+    const auto usage = memory->memory_usage(bindings[1].scopes.front(), used.record, used.version);
+    if (!stored || stored.value().recorded != 1 || !usage || !usage.value() ||
+        usage.value()->use_count != 1 || usage.value()->last_used != pending_use->used_at) {
+        std::cerr << "memory host: usage projection failed\n";
         return false;
     }
     const bool correct =

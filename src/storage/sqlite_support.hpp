@@ -116,12 +116,14 @@ class Statement final {
     sqlite3_stmt *statement_ = nullptr;
 };
 
-// RAII write transaction: BEGIN IMMEDIATE on the single writer connection;
-// any early return rolls back, commit() closes it exactly once.
+// RAII transaction. Writes acquire the writer lock up front; a read snapshot
+// keeps several queries consistent without acquiring that lock.
 class Transaction final {
   public:
+    enum class Mode : std::uint8_t { Write, ReadSnapshot };
+
     Transaction() noexcept = default;
-    explicit Transaction(sqlite3 *database);
+    explicit Transaction(sqlite3 *database, Mode mode = Mode::Write);
     ~Transaction();
 
     Transaction(const Transaction &) = delete;

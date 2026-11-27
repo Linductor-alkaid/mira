@@ -217,9 +217,10 @@ void Statement::reset() noexcept {
     }
 }
 
-Transaction::Transaction(sqlite3 *database) : database_(database) {
+Transaction::Transaction(sqlite3 *database, Mode mode) : database_(database) {
+    const char *begin = mode == Mode::Write ? "BEGIN IMMEDIATE" : "BEGIN DEFERRED";
     if (database_ != nullptr &&
-        sqlite3_exec(database_, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_exec(database_, begin, nullptr, nullptr, nullptr) != SQLITE_OK) {
         database_ = nullptr; // leave valid() false; caller reports the failure
     }
 }

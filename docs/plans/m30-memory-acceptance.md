@@ -1,7 +1,7 @@
 # M30 验收与验证记录
 
 > 状态：In Progress
-> 更新日期：2026-11-26
+> 更新日期：2026-11-27
 > 负责人：Mira Maintainers
 > 所属计划：[M30 长期记忆接入](m30-long-term-memory-integration.md)
 > 验收依据：[DEC-070](../decisions/DEC-070-long-term-memory-behavior-contract.md) 与
@@ -41,7 +41,7 @@
 | 单条纠正与遗忘的目标解析及歧义 | M30-05 已交付部分 | [当前主张精确查找](#history-memory-intent-target) |
 | 显式偏好命令准备与当前输入复核 | M30-05 已交付部分 | [按已接纳原文准备意图](#history-evidenced-preference-input) |
 | 偏好召回的归属、参考语义与字节接纳 | M30-05 已交付部分 | [带归属的偏好参考](#history-advisory-preference-recall) |
-| 实际进入获准模型请求的记忆版本 | M30-06 已交付部分 | [记忆使用回执](#history-admitted-memory-use) |
+| 实际进入获准模型请求的记忆版本及持久计数 | M30-06 已交付部分 | [记忆使用回执](#history-admitted-memory-use)、[使用计数](#history-durable-memory-usage) |
 | 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
@@ -76,7 +76,7 @@
 | 当前分支的完整远端 CI，包括 Windows/MSVC、Android/NDK 及仓库指定 sanitizer 组合 | Mira Maintainers | 推送被测提交并触发完整平台矩阵，保存同一 head 的 CI run 与平台结果。早期偏好主干 CI 只覆盖其被测版本 |
 | 社交账号推断、多方指代和生产事件触发 | Mira Maintainers、Mirage 宿主集成者 | 使用 QQ/B 站合成双来源和生产 Adapter 场景验收 M30-36，覆盖多方群聊、同人多账号、同名不同人、反证纠正、跨环境隔离与擦除 |
 | 技能、世界事实和目标的真实宿主联动 | Mira Maintainers、宿主集成者 | 接通生产授权及技能目录后补 M30-16 的宿主和真实环境验证。验证世界事实过期重观，并在 M30-37 检查漏触发、重复、取消、纠正、兑现和进程退出恢复 |
-| 价值信号进入容量策略 | Mira Maintainers | M30-06 已提供实际准入回执。接通持久计数与确认重要性后，验证跨重启去重、版本过期和擦除，再由 M31 验证策略读取 |
+| 价值信号进入容量策略 | Mira Maintainers、宿主集成者 | 实际准入回执与 SQLite 持久计数已接通参考宿主。生产宿主消费回执并补跑重放与撤权。接通确认重要性后由 M31 验证容量策略读取 |
 | 真实模型的提取、巩固、召回质量及长会话稳定性 | Mira Maintainers、宿主集成者 | 固定端点、模型、测试语料与真实工作负载，提交可复跑的准确率、延迟及稳定性结果 |
 | 删除生命周期与后续里程碑接缝 | Mira Maintainers、宿主集成者 | M30-05 接通自然语言意图、M30-09 接通新世代后复跑来源回灌和删除说明。容量回收与擦除屏障由 M31 联验。M33 消费到期派发，其主动预算和主动行为准入独立验收 |
 
@@ -344,8 +344,33 @@ ctest --test-dir build/asan --output-on-failure \
   -R '^mira_(m30_lifecycle|m36_context_admission)_test$'
 ```
 
-Mira Maintainers 在接通持久投影后补跑跨程序重启去重、版本修改、撤权及擦除。已确认
-重要性由 M30-06 跟踪，目标平台补跑条件见第 3 节。
+持久投影及关联补跑见[使用计数](#history-durable-memory-usage)。已确认重要性由 M30-06
+跟踪，目标平台补跑条件见第 3 节。
+
+<a id="history-durable-memory-usage"></a>
+
+### 2026-11-27 记忆版本使用计数
+
+以 `5b5b3da` 加本增量验证 M30-06，依据
+[DEC-187](../decisions/DEC-187-durable-memory-usage.md)。宿主示例把获准调用的回执提交
+到 SQLite，按任务范围读取记录版本的计数和时间。记录擦除测试覆盖旧版和过期引用、错
+范围、乱序、同一逻辑请求换尝试后跨库重开去重、待擦除阻断，以及记录和范围擦除后的
+派生行删除，也验证只读诊断能读出已入账值。存储打开测试验证 schema 1.11 和版本戳在
+迁移失败后一起回滚。
+
+Linux Debug 全量 **218/218**，四项专项各连续复跑 **10/10**，ASan 专项 **3/3**。
+变更编译单元的 clang-tidy 及格式、文档、SBOM、平台边界和架构检查通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug -j 4 --output-on-failure --repeat until-fail:10 \
+  -R '^mira_(m30_record_erasure|m4_(store_open|memory_lexical)|memory_agent_host_consumer)_test$'
+ctest --test-dir build/asan -j 3 --output-on-failure \
+  -R '^mira_(m30_record_erasure|m4_store_open|memory_agent_host_consumer)_test$'
+```
+
+生产宿主回执消费和 ACL 撤权联动需要宿主集成者在接入生产授权后补跑。已确认重要性
+由 Mira Maintainers 在 M30-06 接通并验证。目标平台补跑条件见第 3 节。
 
 ## 4. 历史验收记录
 

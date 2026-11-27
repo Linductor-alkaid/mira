@@ -11,6 +11,8 @@
 
 namespace mira {
 
+struct MemoryUseReceipt;
+
 // ---------------------------------------------------------------------------
 // Durable SQLite/WAL long-term memory reference backend (M4-09..M4-13)
 // ---------------------------------------------------------------------------
@@ -101,6 +103,17 @@ struct SqliteMemoryCapacitySnapshot final {
     std::uint64_t peak_admitted_file_bytes = 0;
 };
 
+struct MemoryUseWriteResult final {
+    std::size_t recorded = 0;
+    std::size_t duplicates = 0;
+    std::size_t skipped = 0;
+};
+
+struct MemoryUsage final {
+    std::uint64_t use_count = 0;
+    std::optional<WallTimePoint> last_used;
+};
+
 // IMemory over SQLite/WAL. One Executor blocking-I/O worker owns the single
 // connection (single writer, bounded admission); FTS5 carries the lexical
 // leg — words and single characters are indexed, a query matches them with
@@ -142,6 +155,14 @@ class SqliteMemoryStore final : public IMemory,
     }
     [[nodiscard]] Result<MemoryRecordErasureReceipt>
     erase_record(const MemoryRecordErasureRequest &request) override;
+
+    // DEC-187: submit only trusted Gateway receipts, after the call returns.
+    // This waits on the store worker and may be retried with the same receipt.
+    [[nodiscard]] Result<MemoryUseWriteResult> record_memory_use(const MemoryUseReceipt &receipt);
+    // The caller supplies a currently authorized exact scope. Only a live
+    // current version has a usage snapshot, including a known zero count.
+    [[nodiscard]] Result<std::optional<MemoryUsage>>
+    memory_usage(const MemoryScope &scope, MemoryId record, std::uint64_t version) const;
 
     // Exact address lookup with a freshness result. No record is supplied
     // when a current fact cannot be established.

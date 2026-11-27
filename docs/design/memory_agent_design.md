@@ -98,6 +98,9 @@ Recall 在绑定 allowlist 中查询，模型可选择提供的记录或提出�
 召回块的记录版本与块 ID 作为本地元数据随工作缓存发布。Gateway 按最终实际请求所选
 条目产生可核对的使用回执，使用计量与模型决策是否采纳该内容分别解释。宿主可通过
 调用结果或有界回调消费回执。见 [DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)。
+SQLite 所有者在一个事务内以当前范围与版本复核回执，保留每个逻辑请求的去重键，并维护
+次数和最近使用时间。当前性查询与擦除封闭共用记录所有者，版本替换或物理擦除同事务清除
+投影。运行时和排序仍按既有契约消费记忆。见 [DEC-187](../decisions/DEC-187-durable-memory-usage.md)。
 
 Record 从该 Session 的 EventStore 有界读取增量，只消费所属 Task 的事件。模型只返回
 带事件索引引用的 statement/kind。服务填充 provenance、scope 和 Unverified 等字段，

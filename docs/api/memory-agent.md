@@ -65,9 +65,10 @@ token 上限的响应通过当前性复核后，`ModelCallOutcome::memory_use` �
 
 宿主可于使用 Gateway 前配置 `set_memory_use_sink`，通过有界回调接收回执。回调按
 既有 Gateway 调用生命周期运行，负责接收和转交回执。回调失败可从调用结果诊断，宿主
-仍可读取原回执。回执的去重依据是逻辑请求、精确范围、记录 ID 和版本。持久计数、
-重要性和擦除联动由 M30-06 后续增量交付。见
-[DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)。
+仍可读取原回执。回执的去重依据是逻辑请求、精确范围、记录 ID 和版本。SQLite 宿主
+在调用返回后使用 `record_memory_use()` 提交回执。已提交的计数跨重启保留，未提交的
+回执由宿主负责保留与重投。见 [DEC-186](../decisions/DEC-186-admitted-memory-use-receipts.md)
+和 [DEC-187](../decisions/DEC-187-durable-memory-usage.md)。
 
 串行调用 Gateway 的宿主可以在内存中保留最近一张回执。`last_use` 须至少存活到回调注销。
 
@@ -79,6 +80,9 @@ auto remember_use = [&last_use] (const mira::MemoryUseReceipt &receipt) -> mira:
 };
 gateway.set_memory_use_sink(remember_use);
 ```
+
+宿主消费存储的入账结果，并在存储操作超时等可重试错误后保留原回执。端到端接线见
+[宿主示例](../../examples/memory_agent_host_consumer.cpp)。
 
 ### 召回分组与记录
 
