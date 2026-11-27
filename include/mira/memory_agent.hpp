@@ -48,6 +48,11 @@ struct PreferenceProposalRequest final {
     std::optional<MemoryId> target;
     std::optional<std::uint64_t> expected_version;
 };
+enum class PreferenceIntent : std::uint8_t { Remember, Correct };
+struct PreferenceIntentRequest final {
+    PreferenceIntent intent = PreferenceIntent::Remember;
+    PreferenceProposalRequest proposal;
+};
 struct PreferenceProposal final {
     MutationId id;
     Sha256Digest digest;
@@ -268,6 +273,9 @@ class MemoryAgentService final {
     // HumanConfirmed truth; all writes use consolidation/apply_pending.
     [[nodiscard]] Result<PreferenceProposal> propose_preference(PreferenceProposalRequest,
                                                                 const OperationContext &);
+    [[nodiscard]] Result<PreferenceProposal> propose_preference_intent(const PrincipalContext &,
+                                                                       PreferenceIntentRequest,
+                                                                       const OperationContext &);
     [[nodiscard]] Result<PreferenceProposal>
     preference_proposal(const PrincipalContext &, MutationId, const OperationContext &) const;
     [[nodiscard]] Result<PreferenceProposal> decide_preference(const PrincipalContext &, MutationId,

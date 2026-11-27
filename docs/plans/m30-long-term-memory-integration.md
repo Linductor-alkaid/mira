@@ -100,6 +100,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 - [DEC-177](../decisions/DEC-177-record-candidate-evidence-report.md)：通用 Record 的候选证据校验与分页处置。
 - [DEC-178](../decisions/DEC-178-memory-recording-receipts.md)：宿主汇总六类写入处置。
 - [DEC-179](../decisions/DEC-179-memory-recording-batches.md)：按类型批处理宿主候选并保留原始回执。
+- [DEC-180](../decisions/DEC-180-explicit-preference-intent.md)：按当前工作和用户范围提交偏好记住与纠正。
 - [自动记忆与目标执行参考](../design/m30-memory-automation-references.md)：社交认知、到期执行与通用提取。
 - [DEC-122](../decisions/DEC-122-durable-conversation-index.md)：持久片段和联合擦除。
 - [DEC-121](../decisions/DEC-121-indexed-event-slices.md)：有界事件切片、索引重建与 Record 水位。
@@ -172,7 +173,7 @@ mira-bridge 集成反馈及各项验证状态见 [宿主反馈维护计划](main
 
 后续工作按原编号推进。已交付的基础机制和增量证据见第 5.2 节及[验收文档](m30-memory-acceptance.md#2-按交付能力查证)。
 
-- [ ] `M30-05` 补齐「记住、纠正、忘掉」的结构化路由、精确范围与歧义处理、逐记录遗忘及可解释回执。显式偏好批准、版本化纠正与范围擦除已有独立证据。
+- [ ] `M30-05` 补齐「记住、纠正、忘掉」的结构化路由、精确范围与歧义处理、逐记录遗忘及可解释回执。偏好的结构化记住、版本化纠正和审批已有协调入口；其他类别的意图解释、逐记录遗忘和范围擦除回执继续按 DEC-156 推进。
 - [ ] `M30-06` 从有证据的已确认重要性和 Gateway 实际准入产出价值信号，区分未入选、失败准入、幂等重放与擦除，供 M31 消费。
 - [ ] `M30-09` 按 DEC-156 接通同 scope 删除后的新世代。旧来源、摘要、审批和在途结果继续受已有擦除屏障阻断，新明确输入可重新接纳。与 M31 联验屏障保留与回收。
 - [ ] `M30-36` 补齐社交域自动认知闭环。待接通生产来源适配器的消息记录、跨平台账号同一性和反证纠正，并验证有证据的身份、画像与关系召回。宿主已有 M30-35/40～42 与 DEC-159～161 的账号、归因和候选接口。

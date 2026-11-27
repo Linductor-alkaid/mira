@@ -191,4 +191,20 @@ InteractionCoordinator::memory_status(const PrincipalContext &principal, TaskId 
     }
     return status;
 }
+
+Result<PreferenceProposal>
+InteractionCoordinator::submit_preference_intent(const PrincipalContext &principal,
+                                                 PreferenceIntentRequest request,
+                                                 const OperationContext &operation) {
+    std::shared_ptr<MemoryAgentService> service;
+    {
+        const std::lock_guard serialize(impl_->submit_mutex);
+        if (!impl_->initialized || impl_->stopping.load() || !impl_->memory)
+            return memory_error(ErrorCode::InvalidState, "memory intent owner is unavailable");
+        if (!interaction_support::permitted(principal, impl_->config))
+            return memory_error(ErrorCode::PermissionDenied, "memory intent is unavailable");
+        service = impl_->memory;
+    }
+    return service->propose_preference_intent(principal, std::move(request), operation);
+}
 } // namespace mira

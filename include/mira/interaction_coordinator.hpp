@@ -605,6 +605,10 @@ class InteractionCoordinator final {
     // this coordinator and before Runtime/Executor. Automatically maps only
     // User + current Session scopes; no model-selected scope expansion.
     [[nodiscard]] Result<void> set_memory_service(std::shared_ptr<MemoryAgentService>);
+    // Submit a host-interpreted user intent under the current work and grant.
+    [[nodiscard]] Result<PreferenceProposal> submit_preference_intent(const PrincipalContext &,
+                                                                      PreferenceIntentRequest,
+                                                                      const OperationContext &);
     [[nodiscard]] Result<MemoryLifecycleStatus> memory_status(const PrincipalContext &,
                                                               TaskId) const;
 

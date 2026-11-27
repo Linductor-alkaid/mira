@@ -79,6 +79,8 @@ struct ConsolidationPolicy final {
     bool require_explicit_approval = false;
     // DEC-170: admit evidence-backed Unverified EnvironmentFact/ApplicationFact in Session.
     bool allow_unverified_session_facts = false;
+    // Read-only duplicate handling during explicit intent review.
+    bool allow_duplicate_evidence_updates = true;
 
     [[nodiscard]] Result<void> validate() const;
 };

@@ -132,8 +132,13 @@ struct MemoryAgentService::State final : std::enable_shared_from_this<State> {
     [[nodiscard]] Result<void> erase_preference_bodies(const std::string &, bool privacy);
     [[nodiscard]] Result<void> invalidate_preference_proposals(const MemoryScope &);
     [[nodiscard]] Result<void> clean_preference_bodies();
-    [[nodiscard]] Result<PreferenceProposal> propose_preference(PreferenceProposalRequest,
-                                                                const OperationContext &);
+    struct PreferenceIntentAuthority final {
+        const PrincipalContext &principal;
+        PreferenceIntent intent;
+    };
+    [[nodiscard]] Result<PreferenceProposal>
+    propose_preference(PreferenceProposalRequest, const OperationContext &,
+                       std::optional<PreferenceIntentAuthority> = std::nullopt);
     [[nodiscard]] Result<PreferenceProposal> decide_preference(const PrincipalContext &, MutationId,
                                                                Sha256Digest, ConfirmationDecision,
                                                                const OperationContext &);

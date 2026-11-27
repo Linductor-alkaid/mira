@@ -441,7 +441,8 @@ MemoryConsolidator::consolidate_candidates(IMemory &memory, std::vector<MemoryCa
                 known_evidence.insert(event.to_string());
             }
             for (const auto &event : candidate_evidence) {
-                if (known_evidence.insert(event.to_string()).second) {
+                if (policy_.allow_duplicate_evidence_updates &&
+                    known_evidence.insert(event.to_string()).second) {
                     fresh_evidence.push_back(event);
                 }
             }

@@ -36,7 +36,7 @@
 | 能力 | 工作项 | 已执行证据 |
 | --- | --- | --- |
 | 实施细则、主体绑定、低权限候选准入 | M30-01 / M30-02 / M30-04 | [生命周期](#history-lifecycle)、[实施细则与 scoped Record](#history-record-cursors)，以及 [M36 机制验收](m36-memory-agent-context-integration.md) |
-| 偏好批准与版本化纠正 | M30-05 已交付部分 | [偏好审批、恢复与擦除测试](#history-preference) |
+| 偏好记住、审批与版本化纠正 | M30-05 已交付部分 | [结构化偏好意图](#history-preference-intents)、[偏好审批、恢复与擦除测试](#history-preference) |
 | 六类候选批处理及回执 | M30-03 | [统一批处理](#history-recording-batches)、[六类写入处置](#history-recording-receipts)、[逐行校验证据](#history-record-candidate-evidence) |
 | 六类契约、人格目录、事件切片及会话资产索引 | M30-10 / M30-11 / M30-12 / M30-17 | [六类与人格](#history-systems)、[事件切片](#history-event-slices)、[持久会话片段](#history-conversation-index) |
 | 从已记录原文提出人格建议 | M30-03 接通宿主待审接收器 | [人格候选交付](#history-persona-suggestions) |
@@ -171,6 +171,30 @@ ctest --test-dir build/asan --output-on-failure \
 
 Mira Maintainers 与宿主集成者在接通生产事实源和当前授权后完成 M30-38 的默认分类、触发、
 幂等重放及跨重启消费验收。真实模型和目标平台按第 3 节补证。
+
+<a id="history-preference-intents"></a>
+
+### 2026-11-27 结构化偏好记住与纠正
+
+以 `0bfd317` 加本增量验证 M30-05 的偏好意图入口，依据
+[DEC-180](../decisions/DEC-180-explicit-preference-intent.md)。`mira_m30_preference_intent_test`
+通过协调层和持久记忆库检查当前用户范围、管理授权缺失、授权到期、跨用户和跨范围拒绝。
+同值提案保持原版本及出处，冲突值和歧义分别拒绝；纠正按当前目标 ID 与版本参加既有审批，
+重开后相同意图与 ID 可恢复原提案。全量验收覆盖原偏好审批、安全、恢复及范围擦除。
+
+Linux Debug 全量 **217/217**，偏好意图连续复跑 **10/10**，偏好意图和审批 ASan 专项
+通过 **2/2**。clang-tidy、格式、文档、SBOM、平台边界与架构门禁通过。
+
+```bash
+ctest --test-dir build/debug -j 10 --output-on-failure
+ctest --test-dir build/debug --output-on-failure \
+  -R '^mira_m30_preference_intent_test$' --repeat until-fail:10
+ctest --test-dir build/asan --output-on-failure \
+  -R '^mira_m30_preference_(intent|approval)_test$'
+```
+
+Mira Maintainers 继续按 M30-05 补自然语言到受控意图的路由、逐记录遗忘与擦除回执，
+并由宿主集成者在真实输入及当前授权接通后验收。目标平台按第 3 节补证。
 
 ## 4. 历史验收记录
 

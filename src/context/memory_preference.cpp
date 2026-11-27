@@ -45,7 +45,8 @@ Result<void> precondition(IMemory &memory, const PreferenceProposal &proposal) {
 
 Result<PreferenceProposal>
 MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
-                                              const OperationContext &context) {
+                                              const OperationContext &context,
+                                              std::optional<PreferenceIntentAuthority> intent) {
     const std::lock_guard lifecycle(close_mutex);
     const std::lock_guard serialize(commit_mutex);
     if (auto ready = preference_available(context); !ready)
@@ -54,6 +55,22 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
         !memory_claim_key(request.statement).keyed ||
         request.target.has_value() != request.expected_version.has_value())
         return error(ErrorCode::InvalidArgument, "preference requires an id and bounded key=value");
+    if (intent) {
+        switch (intent->intent) {
+        case PreferenceIntent::Remember:
+            if (request.target)
+                return error(ErrorCode::InvalidArgument,
+                             "remember cannot carry a correction target");
+            break;
+        case PreferenceIntent::Correct:
+            if (!request.target || request.target->is_nil() || *request.expected_version == 0)
+                return error(ErrorCode::InvalidArgument,
+                             "correction requires a record and version");
+            break;
+        default:
+            return error(ErrorCode::InvalidArgument, "unknown preference intent");
+        }
+    }
     MemoryWorkBinding binding;
     {
         const std::lock_guard lock(mutex);
@@ -71,6 +88,18 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
         std::find(binding.scopes.begin(), binding.scopes.end(), scope) == binding.scopes.end() ||
         blocked_scopes.contains(memory_agent_support::scope_key(scope)))
         return error(ErrorCode::PermissionDenied, "preference user scope is not authorized");
+    const auto authorized = [&] {
+        return !intent ||
+               (owner(binding.principal, intent->principal) && manage(intent->principal, scope));
+    };
+    if (!authorized())
+        return error(ErrorCode::PermissionDenied, "preference intent is unavailable");
+    const auto receipt = [&](const PreferenceEntry &entry) -> Result<PreferenceProposal> {
+        auto result = read_preference(entry);
+        if (intent && (!authorized() || !memory_agent_support::request_current(binding)))
+            return error(ErrorCode::PermissionDenied, "preference intent is unavailable");
+        return result;
+    };
     JsonValue::Object fingerprint{
         {"tenant", binding.principal.tenant_id.to_string()},
         {"user", binding.principal.user_id.to_string()},
@@ -82,13 +111,16 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
         fingerprint.emplace_back("target", request.target->to_string());
         fingerprint.emplace_back("version", std::to_string(*request.expected_version));
     }
+    if (intent)
+        fingerprint.emplace_back(
+            "intent", intent->intent == PreferenceIntent::Remember ? "remember" : "correct");
     const auto request_digest = canonical_json_digest(JsonValue{std::move(fingerprint)});
     if (const auto existing = preference_entries.find(request.id);
         existing != preference_entries.end()) {
         if (!owner(existing->second.owner, binding.principal) ||
             existing->second.request_digest != request_digest)
             return error(ErrorCode::PermissionDenied, "preference request id is unavailable");
-        return read_preference(existing->second);
+        return receipt(existing->second);
     }
     if (preference_entries.size() >= config.max_preference_proposals)
         return error(ErrorCode::ResourceExhausted, "preference receipt capacity exceeded");
@@ -99,6 +131,10 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
                            previous.value()->version != *request.expected_version))
         return make_memory_error(MemoryDomainCode::VersionConflict,
                                  "preference target is not current");
+    if (intent && intent->intent == PreferenceIntent::Remember && previous.value() &&
+        memory_claim_key(*previous.value()).value != memory_claim_key(request.statement).value)
+        return make_memory_error(MemoryDomainCode::VersionConflict,
+                                 "existing preference requires an explicit correction");
     const auto source = identity<EventId>("mira.preference.source.v1/", request.id);
     MemoryCandidate candidate;
     candidate.proposed.id = identity<MemoryId>("mira.preference.record.v1/", request.id);
@@ -119,6 +155,8 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
     auto policy = config.consolidation;
     policy.allow_model_import_exemption = false;
     policy.require_explicit_approval = true;
+    if (intent)
+        policy.allow_duplicate_evidence_updates = false;
     auto report = MemoryConsolidator{policy}.consolidate_candidates(*memory, {candidate}, scope,
                                                                     Timestamp::now());
     if (!report)
@@ -132,6 +170,13 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
     if (!no_change && report.value().pending_approval.size() != 1)
         return error(ErrorCode::SafetyRejected,
                      "preference candidate was rejected by consolidation");
+    if (intent && !no_change) {
+        const auto &mutation = report.value().pending_approval.front();
+        if (mutation.target != request.target ||
+            mutation.expected_version != request.expected_version)
+            return make_memory_error(MemoryDomainCode::VersionConflict,
+                                     "preference target changed during review preparation");
+    }
     JsonValue::Object body{{"schema", "mira.memory-agent.preference.v1"},
                            {"id", request.id.to_string()},
                            {"statement", request.statement}};
@@ -175,6 +220,8 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
     if (!memory_agent_support::request_current(binding)) {
         return abandon(error(ErrorCode::InvalidState, "preference work frame changed"));
     }
+    if (!authorized())
+        return abandon(error(ErrorCode::PermissionDenied, "preference intent grant expired"));
     PreferenceEntry entry;
     entry.owner.tenant_id = binding.principal.tenant_id;
     entry.owner.user_id = binding.principal.user_id;
@@ -211,7 +258,7 @@ MemoryAgentService::State::propose_preference(PreferenceProposalRequest request,
         source);
     if (!registered)
         return registered.error(); // Keep body if its registration may be durable.
-    return read_preference(stored);
+    return receipt(stored);
 }
 
 Result<PreferenceProposal>
@@ -325,6 +372,21 @@ Result<PreferenceProposal> MemoryAgentService::propose_preference(PreferenceProp
                                                                   const OperationContext &context) {
     try {
         return state_->propose_preference(std::move(request), context);
+    } catch (...) {
+        const std::lock_guard lock(state_->commit_mutex);
+        state_->preference_fence =
+            error(ErrorCode::DataLoss, "preference proposal failed; reopen required");
+        return *state_->preference_fence;
+    }
+}
+Result<PreferenceProposal>
+MemoryAgentService::propose_preference_intent(const PrincipalContext &principal,
+                                              PreferenceIntentRequest request,
+                                              const OperationContext &context) {
+    try {
+        return state_->propose_preference(
+            std::move(request.proposal), context,
+            State::PreferenceIntentAuthority{principal, request.intent});
     } catch (...) {
         const std::lock_guard lock(state_->commit_mutex);
         state_->preference_fence =

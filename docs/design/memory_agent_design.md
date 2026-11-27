@@ -172,6 +172,10 @@ continuation_source 返回有界状态报告；父 Loop 拟结束时在自身受
 
 ## 长期偏好的显式确认边界（DEC-109）
 
+已认证的宿主可以经协调层提交显式偏好意图。记住拒绝替换已有不同值，纠正须与当前
+记录和版本一致。显式意图复核绑定范围和管理授权；同值提案保留原有出处及版本。已有
+DEC-109 决定接口负责审批。见 [DEC-180](../decisions/DEC-180-explicit-preference-intent.md)。
+
 主代理通过 memory_propose_preference 提出 key=value，不获得 MemoryRecord 写入或
 确认权限。服务强制将包括纠正的 candidate 留在既有 consolidation 的审批门后，冻结
 mutation/previous/version；待确认内容用 Sensitive Artifact 保存，元数据在控制事件面

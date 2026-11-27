@@ -1,7 +1,7 @@
 # 记忆代理与完整请求准入
 
 > 状态：Active
-> 更新日期：2026-11-26
+> 更新日期：2026-11-27
 > 头文件：`mira/memory_agent.hpp`、`mira/model_context_admission.hpp`
 > 契约：[DEC-101](../decisions/DEC-101-memory-agent-context-admission.md)、
 > [DEC-107](../decisions/DEC-107-interaction-memory-lifecycle.md)、
@@ -329,3 +329,22 @@ Approving 需宿主核对，不能以过期为由声称先前没有写入。
 scope erase 与重开会清理关联提案 Artifact，包括已批准回执的正文；已被调用方持有
 的预览副本不能再次作为准入或审批凭据。scope 删除后仍不可重新绑定，M30-09 未开放。
 本 API 不新增自然语言解析器、承诺调度、逐记录物理删除或 UI；这些继续由后续工作承担。
+
+### 显式的记住与纠正
+
+宿主从已认证的当前工作构造 `PreferenceIntentRequest`，在 Executor 有限作业内调用
+`InteractionCoordinator::submit_preference_intent(principal, request, operation)`。入口从
+工作绑定得出用户范围，复用该范围的 `mira.memory.manage` 授权和 DEC-109 的审批回执。
+
+```cpp
+PreferenceIntentRequest intent{PreferenceIntent::Remember,
+    {proposal_id, "answer.style=brief", {}, {}}};
+const auto staged = executor.submit_auto([&] {
+    return coordinator.submit_preference_intent(principal, intent, operation);
+}).get();
+```
+
+`Remember` 接纳新偏好，已知同值返回 `NoChange`。现有值不同或匹配存在歧义时返回
+`VersionConflict`。`Correct` 使用确切的记录 ID 和当前版本，替换同一偏好键的值。
+相同意图和 ID 可恢复原提案，重复值保留原记录版本和出处。新的或更正后的偏好须由宿主
+使用已有 `decide_preference` 结算。见 [DEC-180](../decisions/DEC-180-explicit-preference-intent.md)。
